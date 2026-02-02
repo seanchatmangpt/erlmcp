@@ -10,8 +10,13 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+%% Import nominal types for type safety
+-import(erlmcp_mcp_types, [mcp_resource_uri/0]).
+
 %% Types
--type root_uri() :: binary().
+%% Note: root_uri() is now a nominal type from erlmcp_mcp_types
+%% This prevents accidental confusion with other binary types like tool names
+-type root_uri() :: mcp_resource_uri().
 -type root_name() :: binary().
 -type root_entry() :: #{uri => root_uri(), name => root_name()}.
 
@@ -35,6 +40,7 @@ stop() ->
     gen_server:stop(?MODULE).
 
 %% @doc List all registered roots
+%% Uses OTP 27 optimized maps:values/1 for extraction
 -spec list_roots() -> {ok, [root_entry()]}.
 list_roots() ->
     gen_server:call(?MODULE, list_roots).
@@ -158,7 +164,8 @@ check_file_exists(FilePath) ->
     end.
 
 %% @doc Read a resource by URI (supports file:// scheme)
--spec do_read_resource(binary()) -> {ok, binary()} | {error, atom()}.
+%% Returns compressed data if size exceeds threshold (default 1MB)
+-spec do_read_resource(binary()) -> {ok, binary()} | {ok, binary(), map()} | {error, atom()}.
 do_read_resource(<<"file://", Path/binary>>) ->
     %% Extract path and read file
     FilePath =
@@ -170,7 +177,19 @@ do_read_resource(<<"file://", Path/binary>>) ->
         end,
     case file:read_file(FilePath) of
         {ok, Content} ->
-            {ok, Content};
+            %% Apply compression for large resources (OTP 28 zstd)
+            case byte_size(Content) > 1048576 of  % 1MB threshold
+                true ->
+                    case erlmcp_compression:compress_with_metadata(Content) of
+                        {ok, Compressed, Metadata} ->
+                            {ok, Compressed, Metadata};
+                        {error, _} ->
+                            %% Fallback to uncompressed on compression error
+                            {ok, Content}
+                    end;
+                false ->
+                    {ok, Content}
+            end;
         {error, Reason} ->
             {error, Reason}
     end;

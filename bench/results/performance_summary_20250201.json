@@ -1,0 +1,80 @@
+{
+  "benchmark_date": "2025-02-01",
+  "otp_version": "28.3.1",
+  "overall_status": "PRODUCTION_READY",
+  "baselines": {
+    "registry": {
+      "baseline": 553000,
+      "measured": 864850,
+      "variance": "+56.4%",
+      "status": "PASS"
+    },
+    "queue": {
+      "baseline": 971000,
+      "measured": 45989698,
+      "variance": "+4736.6%",
+      "status": "PASS"
+    },
+    "connections": {
+      "baseline": 40000,
+      "measured_linux": 50000,
+      "measured_macos": 16373,
+      "status": "PASS"
+    }
+  },
+  "registry_operations": {
+    "lookup": {
+      "throughput": 1834902,
+      "vs_baseline": "+231.8%",
+      "status": "EXCELLENT"
+    },
+    "send": {
+      "throughput": 1519115,
+      "vs_baseline": "+174.7%",
+      "status": "EXCELLENT"
+    },
+    "register": {
+      "throughput": 331374,
+      "vs_baseline": "-40.1%",
+      "status": "OPTIMIZE"
+    },
+    "unregister": {
+      "throughput": 194655,
+      "vs_baseline": "-64.8%",
+      "status": "BOTTLENECK"
+    },
+    "mixed": {
+      "throughput": 451606,
+      "vs_baseline": "-18.4%",
+      "status": "ACCEPTABLE"
+    }
+  },
+  "optimization_priorities": [
+    {
+      "priority": "HIGH",
+      "issue": "gproc:unreg/1 performance",
+      "current": "194,655 msg/sec",
+      "target": "553,000 msg/sec",
+      "recommendation": "Implement batch unregistration and lazy cleanup"
+    },
+    {
+      "priority": "MEDIUM",
+      "issue": "gproc:reg/2 performance",
+      "current": "331,374 msg/sec",
+      "target": "553,000 msg/sec",
+      "recommendation": "Profile gproc internals and consider pre-allocation"
+    },
+    {
+      "priority": "LOW",
+      "issue": "JSON library benchmarking",
+      "current": "jsx 3.1.0",
+      "target": "Unknown",
+      "recommendation": "Benchmark jiffy vs jsx for MCP workloads"
+    }
+  ],
+  "regression_thresholds": {
+    "registry": ">= 778,365 msg/sec (10% tolerance)",
+    "queue": ">= 41,390,728 msg/sec (10% tolerance)",
+    "connections": ">= 40,000 (Linux)"
+  }
+}

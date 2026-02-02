@@ -6,8 +6,13 @@
 -export([validate_tool/1, validate_tool_name/1, validate_tool_description/1,
          validate_input_schema/1, validate_tool_metadata/1, encode_tool/1, decode_tool/1]).
 
+%% Import nominal type for tool names
+-import(erlmcp_mcp_types, [mcp_tool_name/0]).
+
 %% Types
--type tool_name() :: binary().
+%% Note: tool_name() is now a nominal type from erlmcp_mcp_types
+%% This prevents accidental confusion with other binary types like resource URIs
+-type tool_name() :: mcp_tool_name().
 
 -export_type([tool_name/0]).
 

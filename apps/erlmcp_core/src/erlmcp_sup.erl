@@ -146,20 +146,22 @@ transport_type_from_module(_) ->
 
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
-    %% v1.4.0: Simplified 3-Tier Supervision Tree
+    %% v2.1.0: Fixed 3-Tier Supervision Tree
     %%
-    %% Strategy: one_for_all - all subsystems restart together on any failure
-    %% - TIER 1: Core (registry + infrastructure consolidated)
-    %% - TIER 2: Protocol (servers with simple_one_for_one)
-    %% - TIER 3: Observability (isolated - failures don't affect core)
+    %% Strategy: one_for_one - individual subsystem restart on failure
+    %% - TIER 1: Core (registry + infrastructure) - isolated restart
+    %% - TIER 2: Protocol (servers with simple_one_for_one) - isolated restart
+    %% - TIER 3: Observability (isolated) - isolated restart
     %%
-    %% Changes from v1.3.0:
-    %% - Merged erlmcp_registry_sup + erlmcp_infrastructure_sup -> erlmcp_core_sup
-    %% - Removed erlmcp_transport_sup (moved to erlmcp_transports app)
-    %% - Renamed erlmcp_monitoring_sup -> erlmcp_observability_sup
-    %% - Changed strategy: rest_for_one -> one_for_all (all restart together)
+    %% Critical Fix: Changed from one_for_all to one_for_one
+    %% Now failures are isolated and don't cause mass restarts
+    %% Each subsystem recovers independently of others
+    %%
+    %% Changes from v1.4.0:
+    %% - Fixed strategy: one_for_all -> one_for_one (proper isolation)
+    %% - Now individual components restart independently
     SupFlags =
-        #{strategy => one_for_all,  % All subsystems restart together on failure
+        #{strategy => one_for_one,  % Individual subsystem restart on failure
           intensity => 5,
           period => 60},
 

@@ -13,6 +13,509 @@
       "domain": "erlmcp_observability_compilation",
       "model": "sonnet",
       "modelRoutedBy": "explicit"
+    },
+    "agent-1769986341458-i1s4mp": {
+      "agentId": "agent-1769986341458-i1s4mp",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-01T22:52:21.458Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769986341497-p97hf0": {
+      "agentId": "agent-1769986341497-p97hf0",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-01T22:52:21.497Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769986341575-3yi4c6": {
+      "agentId": "agent-1769986341575-3yi4c6",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-01T22:52:21.575Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769986341658-7jsced": {
+      "agentId": "agent-1769986341658-7jsced",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-01T22:52:21.658Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769986341724-g1kd45": {
+      "agentId": "agent-1769986341724-g1kd45",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-01T22:52:21.724Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769986341787-bmlehk": {
+      "agentId": "agent-1769986341787-bmlehk",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-01T22:52:21.787Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769986341850-g6imci": {
+      "agentId": "agent-1769986341850-g6imci",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-01T22:52:21.850Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769986341879-1j0a1g": {
+      "agentId": "agent-1769986341879-1j0a1g",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-01T22:52:21.879Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769986341941-ybq77j": {
+      "agentId": "agent-1769986341941-ybq77j",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-01T22:52:21.941Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996182798-qv82o5": {
+      "agentId": "agent-1769996182798-qv82o5",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T01:36:22.798Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996182894-0tip7l": {
+      "agentId": "agent-1769996182894-0tip7l",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T01:36:22.894Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996182940-lhr08m": {
+      "agentId": "agent-1769996182940-lhr08m",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T01:36:22.940Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996183118-h29kgu": {
+      "agentId": "agent-1769996183118-h29kgu",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T01:36:23.118Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996183221-9gfv5q": {
+      "agentId": "agent-1769996183221-9gfv5q",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T01:36:23.221Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996183322-zw1yzj": {
+      "agentId": "agent-1769996183322-zw1yzj",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T01:36:23.322Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996183423-blymj6": {
+      "agentId": "agent-1769996183423-blymj6",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T01:36:23.423Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996183519-aw536g": {
+      "agentId": "agent-1769996183519-aw536g",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T01:36:23.519Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996183626-p9cfjt": {
+      "agentId": "agent-1769996183626-p9cfjt",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T01:36:23.626Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1769996255549-bqw75j": {
+      "agentId": "agent-1769996255549-bqw75j",
+      "agentType": "researcher",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "domain": "research",
+        "capabilities": [
+          "code_analysis"
+        ]
+      },
+      "createdAt": "2026-02-02T01:37:35.553Z",
+      "model": "haiku",
+      "modelRoutedBy": "router"
+    },
+    "agent-1769996259613-uu39bj": {
+      "agentId": "agent-1769996259613-uu39bj",
+      "agentType": "code-analyzer",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "domain": "analysis",
+        "capabilities": [
+          "compliance_review",
+          "specification_analysis"
+        ]
+      },
+      "createdAt": "2026-02-02T01:37:39.615Z",
+      "model": "haiku",
+      "modelRoutedBy": "router"
+    },
+    "agent-1770000451979-14vqkh": {
+      "agentId": "agent-1770000451979-14vqkh",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:47:31.980Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770000452113-tofnlv": {
+      "agentId": "agent-1770000452113-tofnlv",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:47:32.113Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770000452286-y0zrfv": {
+      "agentId": "agent-1770000452286-y0zrfv",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:47:32.286Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770000452424-a12hgp": {
+      "agentId": "agent-1770000452424-a12hgp",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:47:32.424Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770000452612-2dbyv2": {
+      "agentId": "agent-1770000452612-2dbyv2",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:47:32.612Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770000452755-c27pwl": {
+      "agentId": "agent-1770000452755-c27pwl",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:47:32.755Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770000452908-i9bbd9": {
+      "agentId": "agent-1770000452908-i9bbd9",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:47:32.908Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770000453080-mcc0ry": {
+      "agentId": "agent-1770000453080-mcc0ry",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:47:33.080Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770000453231-axvlt2": {
+      "agentId": "agent-1770000453231-axvlt2",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:47:33.231Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "cli-researcher": {
+      "agentId": "cli-researcher",
+      "agentType": "erlang-researcher",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:49:36.541Z",
+      "model": "sonnet",
+      "modelRoutedBy": "router"
+    },
+    "cli-validator": {
+      "agentId": "cli-validator",
+      "agentType": "erlang-otp-developer",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:49:41.006Z",
+      "model": "sonnet",
+      "modelRoutedBy": "router"
+    },
+    "cli-tester": {
+      "agentId": "cli-tester",
+      "agentType": "erlang-test-engineer",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:49:43.040Z",
+      "model": "haiku",
+      "modelRoutedBy": "router"
+    },
+    "cli-performance": {
+      "agentId": "cli-performance",
+      "agentType": "erlang-performance",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:49:46.352Z",
+      "model": "sonnet",
+      "modelRoutedBy": "router"
+    },
+    "cli-verifier": {
+      "agentId": "cli-verifier",
+      "agentType": "verifier",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T02:49:50.629Z",
+      "model": "haiku",
+      "modelRoutedBy": "router"
+    },
+    "agent-1770002245821-ipofx4": {
+      "agentId": "agent-1770002245821-ipofx4",
+      "agentType": "production-validator",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:17:25.822Z",
+      "model": "haiku",
+      "modelRoutedBy": "router"
+    },
+    "agent-1770002247744-ugsg8y": {
+      "agentId": "agent-1770002247744-ugsg8y",
+      "agentType": "code-analyzer",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:17:27.745Z",
+      "model": "opus",
+      "modelRoutedBy": "router"
+    },
+    "agent-1770002257101-fypjax": {
+      "agentId": "agent-1770002257101-fypjax",
+      "agentType": "system-architect",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:17:37.102Z",
+      "model": "opus",
+      "modelRoutedBy": "router"
+    },
+    "agent-1770002261293-ggmtub": {
+      "agentId": "agent-1770002261293-ggmtub",
+      "agentType": "performance-benchmarker",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:17:41.296Z",
+      "model": "sonnet",
+      "modelRoutedBy": "router"
+    },
+    "agent-1770002266533-2ldb3k": {
+      "agentId": "agent-1770002266533-2ldb3k",
+      "agentType": "backend-dev",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:17:46.534Z",
+      "model": "sonnet",
+      "modelRoutedBy": "router"
+    },
+    "agent-1770003972410-zi3z1x": {
+      "agentId": "agent-1770003972410-zi3z1x",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:46:12.410Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770003972671-1cudqy": {
+      "agentId": "agent-1770003972671-1cudqy",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:46:12.671Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770003972917-90sghw": {
+      "agentId": "agent-1770003972917-90sghw",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:46:12.917Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770003973181-dl4zf3": {
+      "agentId": "agent-1770003973181-dl4zf3",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:46:13.181Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770003973431-a2dkdk": {
+      "agentId": "agent-1770003973431-a2dkdk",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:46:13.431Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770003973673-g11rr9": {
+      "agentId": "agent-1770003973673-g11rr9",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:46:13.673Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770003973920-9c37rf": {
+      "agentId": "agent-1770003973920-9c37rf",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:46:13.920Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770003974175-wrw08x": {
+      "agentId": "agent-1770003974175-wrw08x",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:46:14.175Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
+    },
+    "agent-1770003974432-wr3w6s": {
+      "agentId": "agent-1770003974432-wr3w6s",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {},
+      "createdAt": "2026-02-02T03:46:14.432Z",
+      "model": "sonnet",
+      "modelRoutedBy": "default"
     }
   },
   "version": "3.0.0"

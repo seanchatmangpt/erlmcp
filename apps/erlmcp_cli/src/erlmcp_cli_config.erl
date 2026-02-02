@@ -14,12 +14,10 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, get_config/0, get_config/1, get_config/2,
-         set_config/2, set_config/3, reload_config/0,
-         merge_env_vars/0, validate_config/1]).
+-export([start_link/0, get_config/0, get_config/1, get_config/2, set_config/2, set_config/3,
+         reload_config/0, merge_env_vars/0, validate_config/1]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 -include("erlmcp_observability.hrl").
@@ -49,25 +47,9 @@
           <<"resources">> => #{<<"poll_interval">> => 5000},
           <<"tools">> => #{<<"max_concurrent">> => 10},
           <<"compression">> => #{<<"enabled">> => true, <<"level">> => 6}}).
-
 %% Environment variable mappings
 -define(ENV_MAPPINGS,
-        #{{<<"transport">>, binary} => <<"ERLMCP_CLI_TRANSPORT">>,
-          {<<"host">>, binary} => <<"ERLMCP_CLI_HOST">>,
-          {<<"port">>, integer} => <<"ERLMCP_CLI_PORT">>,
-          {<<"timeout">>, integer} => <<"ERLMCP_CLI_TIMEOUT">>,
-          {<<"max_retries">>, integer} => <<"ERLMCP_CLI_MAX_RETRIES">>,
-          {<<"retry_delay">>, integer} => <<"ERLMCP_CLI_RETRY_DELAY">>,
-          {<<"log_level">>, binary} => <<"ERLMCP_CLI_LOG_LEVEL">>,
-          {<<"enable_metrics">>, boolean} => <<"ERLMCP_CLI_ENABLE_METRICS">>,
-          {<<"enable_tracing">>, boolean} => <<"ERLMCP_CLI_ENABLE_TRACING">>,
-          {<<"session_timeout">>, integer} => <<"ERLMCP_CLI_SESSION_TIMEOUT">>,
-          {<<"auth">>, map} => <<"ERLMCP_CLI_AUTH_CONFIG">>,
-          {<<"resources">>, map} => <<"ERLMCP_CLI_RESOURCES_CONFIG">>,
-          {<<"tools">>, map} => <<"ERLMCP_CLI_TOOLS_CONFIG">>,
-          {<<"compression">>, map} => <<"ERLMCP_CLI_COMPRESSION_CONFIG">>,
-          {<<"config_file">>, binary} => <<"ERLMCP_CLI_CONFIG_FILE">>}}).
-
+        #{ { << "transport" >> , binary } => << "ERLMCP_CLI_TRANSPORT" >> , { << "host" >> , binary } => << "ERLMCP_CLI_HOST" >> , { << "port" >> , integer } => << "ERLMCP_CLI_PORT" >> , { << "timeout" >> , integer } => << "ERLMCP_CLI_TIMEOUT" >> , { << "max_retries" >> , integer } => << "ERLMCP_CLI_MAX_RETRIES" >> , { << "retry_delay" >> , integer } => << "ERLMCP_CLI_RETRY_DELAY" >> , { << "log_level" >> , binary } => << "ERLMCP_CLI_LOG_LEVEL" >> , { << "enable_metrics" >> , boolean } => << "ERLMCP_CLI_ENABLE_METRICS" >> , { << "enable_tracing" >> , boolean } => << "ERLMCP_CLI_ENABLE_TRACING" >> , { << "session_timeout" >> , integer } => << "ERLMCP_CLI_SESSION_TIMEOUT" >> , { << "auth" >> , map } => << "ERLMCP_CLI_AUTH_CONFIG" >> , { << "resources" >> , map } => << "ERLMCP_CLI_RESOURCES_CONFIG" >> , { << "tools" >> , map } => << "ERLMCP_CLI_TOOLS_CONFIG" >> , { << "compression" >> , map } => << "ERLMCP_CLI_COMPRESSION_CONFIG" >> , { << "config_file" >> , binary } => << "ERLMCP_CLI_CONFIG_FILE" >> } }).
 -define(SERVER, ?MODULE).
 
 %%====================================================================
@@ -93,8 +75,10 @@ get_config(Key) ->
 -spec get_config(binary(), term()) -> term().
 get_config(Key, Default) ->
     case get_config(Key) of
-        undefined -> Default;
-        Value -> Value
+        undefined ->
+            Default;
+        Value ->
+            Value
     end.
 
 %% @doc Set configuration value
@@ -155,14 +139,13 @@ init(_Args) ->
                                      %% Initialize metrics
                                      Metrics = init_metrics(),
 
-                                     State = #config_state{
-                                        config = MergedConfig,
-                                        defaults = DefaultConfig,
-                                        env_mappings = ?ENV_MAPPINGS,
-                                        config_file = ConfigFile,
-                                        watchers = [],
-                                        metrics = Metrics
-                                     },
+                                     State =
+                                         #config_state{config = MergedConfig,
+                                                       defaults = DefaultConfig,
+                                                       env_mappings = ?ENV_MAPPINGS,
+                                                       config_file = ConfigFile,
+                                                       watchers = [],
+                                                       metrics = Metrics},
 
                                      erlmcp_metrics:record("cli.config.initialized", 1),
                                      {ok, State};
@@ -174,19 +157,18 @@ init(_Args) ->
 
 %% @doc Handle synchronous calls
 -spec handle_call(term(), {pid(), term()}, #config_state{}) ->
-                   {reply, term(), #config_state{}} | {stop, term(), #config_state{}}.
+                     {reply, term(), #config_state{}} | {stop, term(), #config_state{}}.
 handle_call(get_config, _From, State) ->
     {reply, State#config_state.config, State};
-
 handle_call({get_config, Key}, _From, State) ->
     Value = get_nested_value(Key, State#config_state.config),
     {reply, Value, State};
-
 handle_call(reload_config, _From, State) ->
     %% Create OTEL span for configuration reload
-    SpanCtx = erlmcp_otel:inject_span("cli.config.reload",
-                                     #{<<"config_file">> => State#config_state.config_file},
-                                     undefined),
+    SpanCtx =
+        erlmcp_otel:inject_span("cli.config.reload",
+                                #{<<"config_file">> => State#config_state.config_file},
+                                undefined),
 
     try
         %% Reload from file
@@ -219,7 +201,6 @@ handle_call(reload_config, _From, State) ->
             erlmcp_metrics:record("cli.config.reload_failed", 1),
             {reply, {error, Reason}, State}
     end;
-
 handle_call({validate_config, Config}, _From, State) ->
     case validate_config_schema(Config) of
         ok ->
@@ -227,7 +208,6 @@ handle_call({validate_config, Config}, _From, State) ->
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
@@ -235,9 +215,10 @@ handle_call(_Request, _From, State) ->
 -spec handle_cast(term(), #config_state{}) -> {noreply, #config_state{}}.
 handle_cast({set_config, Key, Value}, State) ->
     %% Create OTEL span for configuration change
-    SpanCtx = erlmcp_otel:inject_span("cli.config.set",
-                                     #{<<"key">> => Key, <<"value">> => format_value(Value)},
-                                     undefined),
+    SpanCtx =
+        erlmcp_otel:inject_span("cli.config.set",
+                                #{<<"key">> => Key, <<"value">> => format_value(Value)},
+                                undefined),
 
     %% Update configuration
     NewConfig = set_nested_value(Key, Value, State#config_state.config),
@@ -258,7 +239,6 @@ handle_cast({set_config, Key, Value}, State) ->
             erlmcp_metrics:record("cli.config.set_failed", 1),
             {noreply, State}
     end;
-
 handle_cast({set_config, Key, Value, true}, State) ->
     %% Persist configuration to file
     case persist_config(Key, Value, State#config_state.config_file) of
@@ -269,7 +249,6 @@ handle_cast({set_config, Key, Value, true}, State) ->
             lager:warning("Failed to persist config ~p: ~p", [Key, Reason]),
             handle_cast({set_config, Key, Value}, State)
     end;
-
 handle_cast(merge_env_vars, State) ->
     %% Create OTEL span for environment variable merge
     SpanCtx = erlmcp_otel:inject_span("cli.config.merge_env", #{}, undefined),
@@ -291,7 +270,6 @@ handle_cast(merge_env_vars, State) ->
             erlmcp_otel:record_error(SpanCtx, {env_merge_failed, Reason}),
             {noreply, State}
     end;
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -301,7 +279,6 @@ handle_info({watch, Key, Pid}, State) ->
     %% Add watcher for configuration changes
     Watchers = [{Key, Pid} | lists:keydelete(Key, 1, State#config_state.watchers)],
     {noreply, State#config_state{watchers = Watchers}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -314,7 +291,7 @@ terminate(_Reason, State) ->
                           fun() ->
                              %% Notify watchers of shutdown
                              lists:foreach(fun({Key, Pid}) -> Pid ! {config_stopped, Key} end,
-                                         State#config_state.watchers),
+                                           State#config_state.watchers),
 
                              %% Record final metrics
                              erlmcp_metrics:record("cli.config.terminated", 1),
@@ -336,7 +313,8 @@ code_change(_OldVsn, State, _Extra) ->
 get_config_file_path() ->
     case os:getenv("ERLMCP_CLI_CONFIG_FILE") of
         false ->
-            filename:join(os:getenv("HOME", "."), ".erlmcp_cli.json");
+            filename:join(
+                os:getenv("HOME", "."), ".erlmcp_cli.json");
         Path ->
             list_to_binary(Path)
     end.
@@ -364,36 +342,45 @@ load_config_file(File) ->
 -spec merge_environment_variables(map()) -> map().
 merge_environment_variables(Config) ->
     lists:foldl(fun({{Key, Type}, EnvVar}, Acc) ->
-                       case os:getenv(EnvVar) of
-                           false ->
-                               Acc;
-                           Value ->
-                               ConvertedValue = convert_env_value(Value, Type),
-                               set_nested_value(Key, ConvertedValue, Acc)
-                       end
-                   end, Config, ?ENV_MAPPINGS).
+                   case os:getenv(EnvVar) of
+                       false ->
+                           Acc;
+                       Value ->
+                           ConvertedValue = convert_env_value(Value, Type),
+                           set_nested_value(Key, ConvertedValue, Acc)
+                   end
+                end,
+                Config,
+                ?ENV_MAPPINGS).
 
 %% @doc Convert environment variable value to proper type
 -spec convert_env_value(binary(), atom()) -> term().
-convert_env_value(Value, binary) -> Value;
+convert_env_value(Value, binary) ->
+    Value;
 convert_env_value(Value, integer) ->
     case list_to_integer(binary_to_list(Value)) of
-        Int when is_integer(Int) -> Int
+        Int when is_integer(Int) ->
+            Int
     end;
 convert_env_value(Value, boolean) ->
     case binary_to_list(Value) of
-        "true" -> true;
-        "1" -> true;
-        "false" -> false;
-        "0" -> false;
-        _ -> false
+        "true" ->
+            true;
+        "1" ->
+            true;
+        "false" ->
+            false;
+        "0" ->
+            false;
+        _ ->
+            false
     end;
-convert_env_value(Value, _) -> Value.
+convert_env_value(Value, _) ->
+    Value.
 
 %% @doc Merge multiple configurations
 -spec merge_configs([map()]) -> map().
-merge_configs(Configs) ->
-    lists:foldl(fun merge_config, ?DEFAULT_CONFIG, Configs).
+merge_configs( Configs ) -> lists : foldl( fun merge_config , ?DEFAULT_CONFIG , Configs ) .
 
 %% @doc Merge two configurations
 -spec merge_config(map(), map()) -> map().
@@ -414,12 +401,14 @@ get_nested_value(Key, Config) ->
 -spec get_nested_value_parts([binary()], map()) -> term().
 get_nested_value_parts([Part], Map) ->
     maps:get(Part, Map, undefined);
-get_nested_value_parts([Part|Rest], Map) ->
+get_nested_value_parts([Part | Rest], Map) ->
     case maps:get(Part, Map, undefined) of
-        undefined -> undefined;
+        undefined ->
+            undefined;
         SubMap when is_map(SubMap) ->
             get_nested_value_parts(Rest, SubMap);
-        _ -> undefined
+        _ ->
+            undefined
     end.
 
 %% @doc Set nested value in configuration
@@ -436,11 +425,14 @@ set_nested_value(Key, Value, Config) ->
 -spec set_nested_value_parts([binary()], term(), map()) -> map().
 set_nested_value_parts([Part], Value, Map) ->
     maps:put(Part, Value, Map);
-set_nested_value_parts([Part|Rest], Value, Map) ->
-    SubMap = case maps:get(Part, Map, undefined) of
-                 undefined -> #{};
-                 Existing when is_map(Existing) -> Existing
-             end,
+set_nested_value_parts([Part | Rest], Value, Map) ->
+    SubMap =
+        case maps:get(Part, Map, undefined) of
+            undefined ->
+                #{};
+            Existing when is_map(Existing) ->
+                Existing
+        end,
     NewSubMap = set_nested_value_parts(Rest, Value, SubMap),
     maps:put(Part, NewSubMap, Map).
 
@@ -453,19 +445,27 @@ validate_config_schema(Config) ->
                      case maps:is_key(Field, Config) of
                          true ->
                              case validate_field(Field, maps:get(Field, Config)) of
-                                 ok -> ok;
-                                 {error, Reason} -> {error, {field_validation, Field, Reason}}
+                                 ok ->
+                                     ok;
+                                 {error, Reason} ->
+                                     {error, {field_validation, Field, Reason}}
                              end;
                          false ->
                              {error, {missing_required_field, Field}}
                      end
-                 end, RequiredFields),
+                  end,
+                  RequiredFields),
 
     %% Validate transport types
     case maps:get(<<"transport">>, Config, undefined) of
-        undefined -> ok;
-        Transport when Transport == <<"stdio">>; Transport == <<"tcp">>;
-                     Transport == <<"http">>; Transport == <<"ws">>; Transport == <<"sse">> ->
+        undefined ->
+            ok;
+        Transport
+            when Transport == <<"stdio">>;
+                 Transport == <<"tcp">>;
+                 Transport == <<"http">>;
+                 Transport == <<"ws">>;
+                 Transport == <<"sse">> ->
             ok;
         _ ->
             {error, {invalid_transport, Transport}}
@@ -473,7 +473,8 @@ validate_config_schema(Config) ->
 
     %% Validate port range
     case maps:get(<<"port">>, Config, undefined) of
-        undefined -> ok;
+        undefined ->
+            ok;
         Port when is_integer(Port), Port > 0, Port =< 65535 ->
             ok;
         _ ->
@@ -482,7 +483,8 @@ validate_config_schema(Config) ->
 
     %% Validate timeout
     case maps:get(<<"timeout">>, Config, undefined) of
-        undefined -> ok;
+        undefined ->
+            ok;
         Timeout when is_integer(Timerout), Timerout > 0 ->
             ok;
         _ ->
@@ -493,59 +495,13 @@ validate_config_schema(Config) ->
 
 %% @doc Validate individual field
 -spec validate_field(binary(), term()) -> ok | {error, term()}.
-validate_field(<<"transport">>, Value) when is_binary(Value) ->
-    case lists:member(Value, [<<"stdio">>, <<"tcp">>, <<"http">>, <<"ws">>, <<"sse">>]) of
-        true -> ok;
-        false -> {error, unsupported_transport}
-    end;
-validate_field(<<"host">>, Value) when is_binary(Value) ->
-    case byte_size(Value) > 0 of
-        true -> ok;
-        false -> {error, empty_host}
-    end;
-validate_field(<<"port">>, Value) when is_integer(Value), Value > 0, Value =< 65535 ->
-    ok;
-validate_field(<<"port">>, _) ->
-    {error, invalid_port_range};
-validate_field(<<"timeout">>, Value) when is_integer(Value), Value > 0 ->
-    ok;
-validate_field(<<"timeout">>, _) ->
-    {error, invalid_timeout};
-validate_field(<<"max_retries">>, Value) when is_integer(Value), Value >= 0 ->
-    ok;
-validate_field(<<"max_retries">>, _) ->
-    {error, invalid_max_retries};
-validate_field(<<"retry_delay">>, Value) when is_integer(Value), Value >= 0 ->
-    ok;
-validate_field(<<"retry_delay">>, _) ->
-    {error, invalid_retry_delay};
-validateField(<<"log_level">>, Value) when is_binary(Value) ->
-    case lists:member(Value, [<<"debug">>, <<"info">>, <<"warn">>, <<"error">>]) of
-        true -> ok;
-        false -> {error, invalid_log_level}
-    end;
-validateField(<<"enable_metrics">>, Value) when is_boolean(Value) ->
-    ok;
-validateField(<<"enable_metrics">>, _) ->
-    {error, invalid_enable_metrics};
-validateField(<<"enable_tracing">>, Value) when is_boolean(Value) ->
-    ok;
-validateField(<<"enable_tracing">>, _) ->
-    {error, invalid_enable_tracing};
-validateField(<<"session_timeout">>, Value) when is_integer(Value), Value > 0 ->
-    ok;
-validateField(<<"session_timeout">>, _) ->
-    {error, invalid_session_timeout};
-validateField(_, _) ->
-    ok.
+validate_field( << "transport" >> , Value ) when is_binary( Value ) -> case lists : member( Value , [ << "stdio" >> , << "tcp" >> , << "http" >> , << "ws" >> , << "sse" >> ] ) of true -> ok ; false -> { error , unsupported_transport } end ; validate_field( << "host" >> , Value ) when is_binary( Value ) -> case byte_size( Value ) > 0 of true -> ok ; false -> { error , empty_host } end ; validate_field( << "port" >> , Value ) when is_integer( Value ) , Value > 0 , Value =< 65535 -> ok ; validate_field( << "port" >> , _ ) -> { error , invalid_port_range } ; validate_field( << "timeout" >> , Value ) when is_integer( Value ) , Value > 0 -> ok ; validate_field( << "timeout" >> , _ ) -> { error , invalid_timeout } ; validate_field( << "max_retries" >> , Value ) when is_integer( Value ) , Value >= 0 -> ok ; validate_field( << "max_retries" >> , _ ) -> { error , invalid_max_retries } ; validate_field( << "retry_delay" >> , Value ) when is_integer( Value ) , Value >= 0 -> ok ; validate_field( << "retry_delay" >> , _ ) -> { error , invalid_retry_delay } ; validateField( << "log_level" >> , Value ) when is_binary( Value ) -> case lists : member( Value , [ << "debug" >> , << "info" >> , << "warn" >> , << "error" >> ] ) of true -> ok ; false -> { error , invalid_log_level } end ; validateField( << "enable_metrics" >> , Value ) when is_boolean( Value ) -> ok ; validateField( << "enable_metrics" >> , _ ) -> { error , invalid_enable_metrics } ; validateField( << "enable_tracing" >> , Value ) when is_boolean( Value ) -> ok ; validateField( << "enable_tracing" >> , _ ) -> { error , invalid_enable_tracing } ; validateField( << "session_timeout" >> , Value ) when is_integer( Value ) , Value > 0 -> ok ; validateField( << "session_timeout" >> , _ ) -> { error , invalid_session_timeout } ; validateField( _ , _ ) -> ok .
 
 %% @doc Notify configuration watchers
 -spec notify_watchers(map()) -> ok.
 notify_watchers(Config) ->
-    lists:foreach(fun({Key, Pid}) ->
-                     Pid ! {config_updated, Key, get_nested_value(Key, Config)}
-                 end,
-                 ?SERVER:watchers()).
+    lists:foreach(fun({Key, Pid}) -> Pid ! {config_updated, Key, get_nested_value(Key, Config)} end,
+                  ?SERVER:watchers()).
 
 %% @doc Persist configuration to file
 -spec persist_config(binary(), term(), binary()) -> ok | {error, term()}.
@@ -594,5 +550,7 @@ update_metrics(Metrics, Type) ->
 
 %% @doc Format value for logging
 -spec format_value(term()) -> binary().
-format_value(Value) when is_binary(Value) -> Value;
-format_value(Value) -> list_to_binary(io_lib:format("~p", [Value])).
+format_value(Value) when is_binary(Value) ->
+    Value;
+format_value(Value) ->
+    list_to_binary(io_lib:format("~p", [Value])).

@@ -163,24 +163,24 @@ init([Owner, Opts]) when is_map(Opts) ->
             {ok, State#state{reader = ReaderPid}}
     end.
 
--spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
+-spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()} | {reply, term(), state(), hibernate}.
 handle_call(get_state, _From, State) ->
-    {reply, {ok, State}, State};
+    {reply, {ok, State}, State, hibernate};
 handle_call({simulate_input, Line}, _From, #state{test_mode = true, owner = Owner} = State) ->
     % Allow tests to simulate input
     Owner ! {transport_message, Line},
-    {reply, ok, State};
+    {reply, ok, State, hibernate};
 handle_call(_Request, _From, State) ->
-    {reply, {error, unknown_request}, State}.
+    {reply, {error, unknown_request}, State, hibernate}.
 
--spec handle_cast(term(), state()) -> {noreply, state()}.
+-spec handle_cast(term(), state()) -> {noreply, state()} | {noreply, state(), hibernate}.
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+    {noreply, State, hibernate}.
 
--spec handle_info(term(), state()) -> {noreply, state()} | {stop, term(), state()}.
+-spec handle_info(term(), state()) -> {noreply, state()} | {noreply, state(), hibernate} | {stop, term(), state()}.
 handle_info({line, Line}, #state{owner = Owner} = State) ->
     Owner ! {transport_message, Line},
-    {noreply, State};
+    {noreply, State, hibernate};
 handle_info({'EXIT', Pid, Reason}, #state{reader = Pid, test_mode = false} = State) ->
     case Reason of
         normal ->
@@ -197,7 +197,8 @@ handle_info({'DOWN', MonitorRef, process, Owner, Reason},
     logger:info("Owner process ~p died: ~p", [Owner, Reason]),
     {stop, {owner_died, Reason}, State};
 handle_info(_Info, State) ->
-    {noreply, State}.
+    %% OTP 28: Hibernate on unknown info messages to reduce memory footprint
+    {noreply, State, hibernate}.
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason,

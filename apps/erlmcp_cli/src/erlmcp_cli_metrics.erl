@@ -20,60 +20,53 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, record_metric/2, record_counter/2, record_gauge/2,
-         get_metrics/0, get_metric/1, reset_metrics/0]).
+-export([start_link/0, record_metric/2, record_counter/2, record_gauge/2, get_metrics/0,
+         get_metric/1, reset_metrics/0]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 -include("erlmcp_observability.hrl").
 
 %% Records
--record(metric_data, {
-    name :: binary(),
-    type :: counter | gauge | histogram,
-    value :: number(),
-    timestamp :: integer(),
-    tags :: map()
-}).
-
--record(metrics_state, {
-    metrics :: map(),                  % Metric name to metric data
-    aggregators :: map(),              % Metric aggregators
-    exporters :: list(),               % Active exporters
-    config :: map()                    % Configuration
-}).
+-record(metric_data,
+        {name :: binary(),
+         type :: counter | gauge | histogram,
+         value :: number(),
+         timestamp :: integer(),
+         tags :: map()}).
+-record(metrics_state,
+        {metrics :: map(),                  % Metric name to metric data
+         aggregators :: map(),              % Metric aggregators
+         exporters :: list(),               % Active exporters
+         config :: map()}).                    % Configuration
 
 -define(SERVER, ?MODULE).
--define(DEFAULT_METRICS, #{
-    "cli.commands.total" => 0,
-    "cli.commands.success" => 0,
-    "cli.commands.failed" => 0,
-    "cli.commands.latency.p50" => 0,
-    "cli.commands.latency.p95" => 0,
-    "cli.commands.latency.p99" => 0,
-    "cli.sessions.active" => 0,
-    "cli.sessions.created" => 0,
-    "cli.sessions.terminated" => 0,
-    "cli.sessions.duration" => 0,
-    "cli.throughput" => 0.0,
-    "cli.errors.total" => 0,
-    "cli.errors.timeout" => 0,
-    "cli.errors.parsing" => 0,
-    "cli.errors.execution" => 0,
-    "cli.registry.commands" => 0,
-    "cli.registry.lookups" => 0,
-    "cli.registry.executions" => 0
-}).
-
--define(DEFAULT_CONFIG, #{
-    aggregation_interval => 10000,      % 10 seconds
-    retention_period => 86400000,      % 24 hours
-    exporters => [prometheus],
-    enable_histograms => true,
-    enable_tags => true
-}).
+-define(DEFAULT_METRICS,
+        #{"cli.commands.total" => 0,
+          "cli.commands.success" => 0,
+          "cli.commands.failed" => 0,
+          "cli.commands.latency.p50" => 0,
+          "cli.commands.latency.p95" => 0,
+          "cli.commands.latency.p99" => 0,
+          "cli.sessions.active" => 0,
+          "cli.sessions.created" => 0,
+          "cli.sessions.terminated" => 0,
+          "cli.sessions.duration" => 0,
+          "cli.throughput" => 0.0,
+          "cli.errors.total" => 0,
+          "cli.errors.timeout" => 0,
+          "cli.errors.parsing" => 0,
+          "cli.errors.execution" => 0,
+          "cli.registry.commands" => 0,
+          "cli.registry.lookups" => 0,
+          "cli.registry.executions" => 0}).
+-define(DEFAULT_CONFIG,
+        #{aggregation_interval => 10000,      % 10 seconds
+          retention_period => 86400000,      % 24 hours
+          exporters => [prometheus],
+          enable_histograms => true,
+          enable_tags => true}).
 
 %%====================================================================
 %% API Functions
@@ -120,40 +113,19 @@ reset_metrics() ->
 
 %% @doc Initialize the metrics system
 -spec init(list()) -> {ok, #metrics_state{}}.
-init(_Opts) ->
+init( _Opts ) -> SpanCtx = erlmcp_otel : with_span( "cli.metrics.init" , #{ << "metrics.init" >> => true } , fun ( ) -> ok end ) , State = #metrics_state{ metrics = ?DEFAULT_METRICS , aggregators = #{ } , exporters = init_exporters( ) , config = ?DEFAULT_CONFIG } , AggregationTimer = erlang : start_timer( State #metrics_state . config #{ aggregation_interval } , self( ) , aggregate_metrics ) , erlmcp_metrics : record( "cli.metrics.initialized" , 1 ) , { ok , State #metrics_state{ aggregators = #{ aggregation_timer => AggregationTimer } } } .
     %% Create OTEL span for metrics initialization
-    SpanCtx = erlmcp_otel:with_span("cli.metrics.init", #{
-        <<"metrics.init">> => true
-    }, fun() ->
-        ok
-    end),
-
     %% Initialize state
-    State = #metrics_state{
-        metrics = ?DEFAULT_METRICS,
-        aggregators = #{},
-        exporters = init_exporters(),
-        config = ?DEFAULT_CONFIG
-    },
 
     %% Start aggregation timer
-    AggregationTimer = erlang:start_timer(State#metrics_state.config#{aggregation_interval},
-                                         self(), aggregate_metrics),
 
     %% Record initialization
-    erlmcp_metrics:record("cli.metrics.initialized", 1),
-
-    {ok, State#metrics_state{aggregators = #{aggregation_timer => AggregationTimer}}}.
 
 %% @doc Handle synchronous calls
--spec handle_call(term(), {pid(), term()}, #metrics_state{}) ->
-    {reply, term(), #metrics_state{}}.
+-spec handle_call(term(), {pid(), term()}, #metrics_state{}) -> {reply, term(), #metrics_state{}}.
 handle_call(get_metrics, _From, State) ->
     %% Create span for metrics retrieval
-    erlmcp_otel:inject_rpc_span(<<"cli.metrics.get">>,
-                               make_request_id(),
-                               #{},
-                               undefined),
+    erlmcp_otel:inject_rpc_span(<<"cli.metrics.get">>, make_request_id(), #{}, undefined),
 
     %% Get all metrics
     MetricsMap = State#metrics_state.metrics,
@@ -166,15 +138,12 @@ handle_call(get_metrics, _From, State) ->
     erlmcp_metrics:record("cli.metrics.retrieved", 1),
 
     {reply, Response, State};
-
 handle_call({get_metric, Name}, _From, State) ->
     %% Create span for metric retrieval
     erlmcp_otel:inject_rpc_span(<<"cli.metrics.get_single">>,
-                               make_request_id(),
-                               #{
-                                   <<"metric.name">> => Name
-                               },
-                               undefined),
+                                make_request_id(),
+                                #{<<"metric.name">> => Name},
+                                undefined),
 
     case maps:find(Name, State#metrics_state.metrics) of
         {ok, MetricData} ->
@@ -186,7 +155,6 @@ handle_call({get_metric, Name}, _From, State) ->
             erlmcp_metrics:record("cli.metric.errors", 1),
             {reply, {error, metric_not_found}, State}
     end;
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
@@ -195,21 +163,17 @@ handle_call(_Request, _From, State) ->
 handle_cast({record_metric, Name, Value}, State) ->
     %% Create span for metric recording
     erlmcp_otel:inject_rpc_span(<<"cli.metrics.record">>,
-                               make_request_id(),
-                               #{
-                                   <<"metric.name">> => Name,
-                                   <<"metric.value">> => Value
-                               },
-                               undefined),
+                                make_request_id(),
+                                #{<<"metric.name">> => Name, <<"metric.value">> => Value},
+                                undefined),
 
     %% Record metric
-    MetricData = #metric_data{
-        name = Name,
-        type = determine_metric_type(Name),
-        value = Value,
-        timestamp = erlang:system_time(millisecond),
-        tags = extract_metric_tags(Name)
-    },
+    MetricData =
+        #metric_data{name = Name,
+                     type = determine_metric_type(Name),
+                     value = Value,
+                     timestamp = erlang:system_time(millisecond),
+                     tags = extract_metric_tags(Name)},
 
     %% Update metrics
     Metrics = maps:put(Name, MetricData, State#metrics_state.metrics),
@@ -221,37 +185,31 @@ handle_cast({record_metric, Name, Value}, State) ->
     export_metric(MetricData, State#metrics_state.exporters),
 
     %% Update state
-    NewState = State#metrics_state{
-        metrics = Metrics,
-        aggregators = Aggregators
-    },
+    NewState = State#metrics_state{metrics = Metrics, aggregators = Aggregators},
 
     {noreply, NewState};
-
 handle_cast({record_counter, Name, Increment}, State) ->
     %% Get current value
-    CurrentValue = case maps:find(Name, State#metrics_state.metrics) of
-        {ok, #metric_data{value = Value}} -> Value;
-        error -> 0
-    end,
+    CurrentValue =
+        case maps:find(Name, State#metrics_state.metrics) of
+            {ok, #metric_data{value = Value}} ->
+                Value;
+            error ->
+                0
+        end,
 
     %% Record as metric
     record_metric(Name, CurrentValue + Increment),
 
     {noreply, State};
-
 handle_cast({record_gauge, Name, Value}, State) ->
     %% Record as metric
     record_metric(Name, Value),
 
     {noreply, State};
-
 handle_cast(reset_metrics, State) ->
     %% Create span for metrics reset
-    erlmcp_otel:inject_rpc_span(<<"cli.metrics.reset">>,
-                               make_request_id(),
-                               #{},
-                               undefined),
+    erlmcp_otel:inject_rpc_span(<<"cli.metrics.reset">>, make_request_id(), #{}, undefined),
 
     %% Reset all metrics
     ResetMetrics = maps:map(fun(_, _) -> 0 end, ?DEFAULT_METRICS),
@@ -263,57 +221,29 @@ handle_cast(reset_metrics, State) ->
     %% Export reset event
     export_reset_event(State#metrics_state.exporters),
 
-    {noreply, State#metrics_state{
-        metrics = ResetMetrics,
-        aggregators = ResetAggregators
-    }};
-
+    {noreply, State#metrics_state{metrics = ResetMetrics, aggregators = ResetAggregators}};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @doc Handle messages
 -spec handle_info(term(), #metrics_state{}) -> {noreply, #metrics_state{}}.
-handle_info({timeout, Timer, aggregate_metrics}, State) ->
+handle_info( { timeout , Timer , aggregate_metrics } , State ) -> case Timer of State #metrics_state . aggregators #{ aggregation_timer } -> Aggregated = aggregate_metrics( State #metrics_state . aggregators ) , UpdatedMetrics = maps : merge( State #metrics_state . metrics , Aggregated ) , ResetAggregators = maps : map( fun ( _ , _ ) -> [ ] end , State #metrics_state . aggregators ) , NewTimer = erlang : start_timer( State #metrics_state . config #{ aggregation_interval } , self( ) , aggregate_metrics ) , erlmcp_metrics : record( "cli.metrics.aggregated" , 1 ) , NewState = State #metrics_state{ metrics = UpdatedMetrics , aggregators = maps : remove( aggregation_timer , ResetAggregators ) , aggregators = maps : put( aggregation_timer , NewTimer , NewState #metrics_state . aggregators ) } , { noreply , NewState } ; _ -> { noreply , State } end ; handle_info( _Info , State ) -> { noreply , State } .
     %% Aggregation timer expired
-    case Timer of
-        State#metrics_state.aggregators#{aggregation_timer} ->
             %% Aggregate metrics
-            Aggregated = aggregate_metrics(State#metrics_state.aggregators),
 
             %% Update metrics with aggregated values
-            UpdatedMetrics = maps:merge(State#metrics_state.metrics, Aggregated),
 
             %% Reset aggregators
-            ResetAggregators = maps:map(fun(_, _) -> [] end, State#metrics_state.aggregators),
 
             %% Start new timer
-            NewTimer = erlang:start_timer(State#metrics_state.config#{aggregation_interval},
-                                         self(), aggregate_metrics),
 
             %% Record aggregation
-            erlmcp_metrics:record("cli.metrics.aggregated", 1),
-
-            NewState = State#metrics_state{
-                metrics = UpdatedMetrics,
-                aggregators = maps:remove(aggregation_timer, ResetAggregators),
-                aggregators = maps:put(aggregation_timer, NewTimer, NewState#metrics_state.aggregators)
-            },
-
-            {noreply, NewState};
-        _ ->
-            {noreply, State}
-    end;
-
-handle_info(_Info, State) ->
-    {noreply, State}.
 
 %% @doc Terminate the metrics system
 -spec terminate(term(), #metrics_state{}) -> ok.
 terminate(_Reason, State) ->
     %% Shutdown all exporters
-    lists:foreach(fun(Exporter) ->
-        shutdown_exporter(Exporter)
-    end, State#metrics_state.exporters),
+    lists:foreach(fun(Exporter) -> shutdown_exporter(Exporter) end, State#metrics_state.exporters),
 
     %% Finalize metrics
     export_final_metrics(State#metrics_state.metrics, State#metrics_state.exporters),
@@ -331,32 +261,29 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Initialize exporters
 -spec init_exporters() -> list().
-init_exporters() ->
-    Config = ?DEFAULT_CONFIG#{exporters},
-    lists:map(fun(ExporterType) ->
-        init_exporter(ExporterType)
-    end, Config).
+init_exporters( ) -> Config = ?DEFAULT_CONFIG #{ exporters } , lists : map( fun ( ExporterType ) -> init_exporter( ExporterType ) end , Config ) .
 
 %% @doc Initialize a specific exporter
 -spec init_exporter(atom()) -> {atom(), pid() | undefined}.
 init_exporter(prometheus) ->
     %% Initialize Prometheus exporter
     case erlmcp_prometheus_exporter:start() of
-        {ok, Pid} -> {prometheus, Pid};
-        {error, _} -> undefined
+        {ok, Pid} ->
+            {prometheus, Pid};
+        {error, _} ->
+            undefined
     end;
-
 init_exporter(otlp) ->
     %% Initialize OTLP exporter
     case erlmcp_otlp_exporter:start() of
-        {ok, Pid} -> {otlp, Pid};
-        {error, _} -> undefined
+        {ok, Pid} ->
+            {otlp, Pid};
+        {error, _} ->
+            undefined
     end;
-
 init_exporter(console) ->
     %% Console exporter (always available)
     {console, undefined};
-
 init_exporter(_Exporter) ->
     undefined.
 
@@ -383,18 +310,19 @@ extract_metric_tags(Name) ->
     Tags = #{},
 
     %% Add category tag
-    Category = case Name of
-        _ when binary:matches(Name, [<<"cli.commands">>]) ->
-            "commands";
-        _ when binary:matches(Name, [<<"cli.sessions">>]) ->
-            "sessions";
-        _ when binary:matches(Name, [<<"cli.errors">>]) ->
-            "errors";
-        _ when binary:matches(Name, [<<"cli.registry">>]) ->
-            "registry";
-        _ ->
-            "other"
-    end,
+    Category =
+        case Name of
+            _ when binary:matches(Name, [<<"cli.commands">>]) ->
+                "commands";
+            _ when binary:matches(Name, [<<"cli.sessions">>]) ->
+                "sessions";
+            _ when binary:matches(Name, [<<"cli.errors">>]) ->
+                "errors";
+            _ when binary:matches(Name, [<<"cli.registry">>]) ->
+                "registry";
+            _ ->
+                "other"
+        end,
 
     Tags#{category => Category}.
 
@@ -415,13 +343,15 @@ add_to_aggregator(Name, MetricData, Aggregators) ->
 -spec aggregate_metrics(map()) -> map().
 aggregate_metrics(Aggregators) ->
     maps:fold(fun(Name, Values, Acc) ->
-        case aggregate_metric_values(Name, Values) of
-            {ok, AggregatedValue} ->
-                Acc#{Name => AggregatedValue};
-            {error, _} ->
-                Acc
-        end
-    end, #{}, Aggregators).
+                 case aggregate_metric_values(Name, Values) of
+                     {ok, AggregatedValue} ->
+                         Acc#{Name => AggregatedValue};
+                     {error, _} ->
+                         Acc
+                 end
+              end,
+              #{},
+              Aggregators).
 
 %% @doc Aggregate metric values
 -spec aggregate_metric_values(binary(), list()) -> {ok, number()} | {error, term()}.
@@ -466,42 +396,42 @@ calculate_histogram_percentiles(Values) ->
 -spec export_metric(#metric_data{}, list()) -> ok.
 export_metric(MetricData, Exporters) ->
     lists:foreach(fun(Exporter) ->
-        case Exporter of
-            {prometheus, Pid} ->
-                erlmcp_prometheus_exporter:record(Pid, MetricData);
-            {otlp, Pid} ->
-                erlmcp_otlp_exporter:record(Pid, MetricData);
-            {console, _} ->
-                %% Console output for debugging
-                io:format("CLI Metric: ~s = ~p~n", [MetricData#metric_data.name, MetricData#metric_data.value]);
-            _ ->
-                ok
-        end
-    end, Exporters).
+                     case Exporter of
+                         {prometheus, Pid} ->
+                             erlmcp_prometheus_exporter:record(Pid, MetricData);
+                         {otlp, Pid} ->
+                             erlmcp_otlp_exporter:record(Pid, MetricData);
+                         {console, _} ->
+                             %% Console output for debugging
+                             io:format("CLI Metric: ~s = ~p~n",
+                                       [MetricData#metric_data.name, MetricData#metric_data.value]);
+                         _ ->
+                             ok
+                     end
+                  end,
+                  Exporters).
 
 %% @doc Export reset event
 -spec export_reset_event(list()) -> ok.
 export_reset_event(Exporters) ->
-    ResetEvent = #metric_data{
-        name = <<"cli.metrics.reset">>,
-        type = counter,
-        value = 1,
-        timestamp = erlang:system_time(millisecond),
-        tags = #{event => "reset"}
-    },
+    ResetEvent =
+        #metric_data{name = <<"cli.metrics.reset">>,
+                     type = counter,
+                     value = 1,
+                     timestamp = erlang:system_time(millisecond),
+                     tags = #{event => "reset"}},
 
     export_metric(ResetEvent, Exporters).
 
 %% @doc Export final metrics
 -spec export_final_metrics(map(), list()) -> ok.
 export_final_metrics(Metrics, Exporters) ->
-    FinalEvent = #metric_data{
-        name = <<"cli.metrics.shutdown">>,
-        type = counter,
-        value = 1,
-        timestamp = erlang:system_time(millisecond),
-        tags = #{event => "shutdown"}
-    },
+    FinalEvent =
+        #metric_data{name = <<"cli.metrics.shutdown">>,
+                     type = counter,
+                     value = 1,
+                     timestamp = erlang:system_time(millisecond),
+                     tags = #{event => "shutdown"}},
 
     export_metric(FinalEvent, Exporters).
 
@@ -509,13 +439,17 @@ export_final_metrics(Metrics, Exporters) ->
 -spec shutdown_exporter({atom(), pid() | undefined}) -> ok.
 shutdown_exporter({prometheus, Pid}) ->
     case Pid of
-        undefined -> ok;
-        _ -> erlmcp_prometheus_exporter:stop(Pid)
+        undefined ->
+            ok;
+        _ ->
+            erlmcp_prometheus_exporter:stop(Pid)
     end;
 shutdown_exporter({otlp, Pid}) ->
     case Pid of
-        undefined -> ok;
-        _ -> erlmcp_otlp_exporter:stop(Pid)
+        undefined ->
+            ok;
+        _ ->
+            erlmcp_otlp_exporter:stop(Pid)
     end;
 shutdown_exporter(_) ->
     ok.

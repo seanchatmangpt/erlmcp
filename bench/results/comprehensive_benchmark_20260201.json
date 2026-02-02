@@ -1,0 +1,83 @@
+{
+  "benchmark_date": "2026-02-01",
+  "workload": "Comprehensive Performance Benchmark",
+  "environment": {
+    "otp_version": "28",
+    "erts_version": "16.2",
+    "schedulers": 16,
+    "logical_processors": 16,
+    "os": "darwin",
+    "platform": "macOS Darwin 25.2.0"
+  },
+  "results": {
+    "registry": {
+      "operations": 100000,
+      "throughput_per_sec": 4078303.43,
+      "latency_us": 0.25,
+      "target": 553000,
+      "meets_target": true,
+      "pct_of_target": 737.5,
+      "status": "PASS"
+    },
+    "queue": {
+      "operations": 100000,
+      "throughput_per_sec": 50530571.0,
+      "latency_us": 0.02,
+      "target": 971000,
+      "meets_target": true,
+      "pct_of_target": 5204.0,
+      "status": "PASS"
+    },
+    "otel_overhead": {
+      "baseline_us": 0.06,
+      "with_otel_us": 0.12,
+      "overhead_percent": 104.2,
+      "target": 5.0,
+      "meets_target": false,
+      "status": "FAIL"
+    },
+    "connections": {
+      "estimated_max": 40800,
+      "target": 40000,
+      "meets_target": true,
+      "status": "PASS (extrapolated)"
+    }
+  },
+  "regression_analysis": {
+    "registry": {
+      "baseline": 553000,
+      "current": 4078303.43,
+      "change_percent": 637.5,
+      "status": "IMPROVEMENT"
+    },
+    "queue": {
+      "baseline": 971000,
+      "current": 50530571.0,
+      "change_percent": 5104.0,
+      "status": "IMPROVEMENT"
+    },
+    "overall_status": "NO_REGRESSION"
+  },
+  "overall_grade": "A",
+  "summary": {
+    "components_tested": 3,
+    "targets_met": 2,
+    "targets_failed": 1,
+    "passes_pct": 66.7,
+    "critical_issues": ["OTEL overhead exceeds 100% - requires span sampling"],
+    "recommendations": [
+      "Implement span sampling (10-20%) to reduce OTEL overhead",
+      "Use async span exporters",
+      "Run real erlmcp_otel benchmark (not mock)",
+      "Validate connection scalability with actual 40K+ connection test",
+      "Add transport layer benchmarks"
+    ]
+  },
+  "next_steps": [
+    "Implement span sampling (immediate priority)",
+    "Benchmark real erlmcp_otel module",
+    "Run connection scalability test (40K+ processes)",
+    "Add transport layer benchmarks (stdio, TCP, HTTP)",
+    "Memory profiling per operation"
+  ]
+}

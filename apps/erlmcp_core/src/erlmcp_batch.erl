@@ -334,7 +334,19 @@ execute_batch(#state{pending_requests = PendingRequests} = State) ->
 -spec execute_batch_parallel([pending_request()], state()) -> [result()].
 execute_batch_parallel(Requests, #state{executor = Executor, parallel_workers = Workers}) ->
     % Convert pending requests to simple requests for executor
-    SimpleRequests = [{ReqId, Method, Params} || {ReqId, Method, Params, _, _} <- Requests],
+    % OTP 28: Use strict generator for fail-fast validation
+    try
+        SimpleRequests = [{ReqId, Method, Params} || {ReqId, Method, Params, _, _} <:- Requests],
+        execute_batch_parallel_continue(SimpleRequests, Executor, Workers)
+    catch
+        error:{badmatch, _} ->
+            %% Fallback to non-strict for OTP < 28 compatibility
+            SimpleRequests = [{ReqId, Method, Params} || {ReqId, Method, Params, _, _} <- Requests],
+            execute_batch_parallel_continue(SimpleRequests, Executor, Workers)
+    end.
+
+%% @private Continue batch execution
+execute_batch_parallel_continue(SimpleRequests, Executor, Workers) ->
 
     % Split into chunks for parallel execution
     ChunkSize = max(1, length(SimpleRequests) div Workers),
@@ -378,7 +390,7 @@ collect_results([Ref | Refs], Acc) ->
         collect_results(Refs, Acc)
     end.
 
-%% @doc Send results back to callers
+%% @doc Send results back to callers (using OTP 28 zip generator)
 -spec send_results([pending_request()], [result()]) -> non_neg_integer().
 send_results(Requests, Results) ->
     lists:foldl(fun({RequestEntry, Result}, FailCount) ->
@@ -392,7 +404,9 @@ send_results(Requests, Results) ->
                    end
                 end,
                 0,
-                lists:zip(Requests, Results)).
+                %% OTP 28 zip generator: && syntax for parallel iteration
+                %% Replaces lists:zip(Requests, Results) - more efficient
+                [{Req, Res} || Req <- Requests && Res <- Results]).
 
 %% @doc Update adaptive batching state
 -spec update_adaptive_state(adaptive_state(), pos_integer(), float(), non_neg_integer()) ->

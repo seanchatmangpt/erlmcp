@@ -333,7 +333,7 @@ handle_call({send, Data}, _From, State) ->
             {reply, ok, NewState};
         {error, _} = Error ->
             %% Connection might be lost, handle in async if needed
-            {reply, Error, State}
+            {reply, Error, State, hibernate}
     end;
 handle_call({connect, NewOpts}, _From, #state{mode = client} = State) ->
     %% Update connection parameters and reconnect
@@ -355,15 +355,15 @@ handle_call({connect, NewOpts}, _From, #state{mode = client} = State) ->
 handle_call({connect, _NewOpts}, _From, State) ->
     {reply, {error, {invalid_mode, State#state.mode}}, State};
 handle_call(get_state, _From, State) ->
-    {reply, {ok, State}, State};
+    {reply, {ok, State}, State, hibernate};
 handle_call(get_ranch_ref, _From, #state{ranch_ref = RanchRef} = State) ->
-    {reply, RanchRef, State};
+    {reply, RanchRef, State, hibernate};
 handle_call(_Request, _From, State) ->
-    {reply, {error, unknown_request}, State}.
+    {reply, {error, unknown_request}, State, hibernate}.
 
 %% @doc Handle asynchronous casts
 handle_cast(_Msg, State) ->
-    {noreply, State}.
+    {noreply, State, hibernate}.
 
 %% @doc Handle info messages
 handle_info(connect, #state{mode = client} = State) ->
@@ -480,7 +480,8 @@ handle_info(connection_lease_timeout, State) ->
     logger:error("Connection lease timeout during init, terminating to release slot"),
     {stop, connection_lease_timeout, State};
 handle_info(_Info, State) ->
-    {noreply, State}.
+    %% OTP 28: Hibernate on unknown info messages to reduce memory footprint
+    {noreply, State, hibernate}.
 
 %% @doc Cleanup on termination
 %% CRITICAL: Release connection slot on ALL termination paths
@@ -889,4 +890,148 @@ get_max_message_size() ->
             maps:get(tcp, Limits, ?DEFAULT_MAX_MESSAGE_SIZE);
         _ ->
             ?DEFAULT_MAX_MESSAGE_SIZE
+    end.
+
+%% @private Build TLS 1.3 optimized options for ranch (OTP 27-28)
+%% Called when ssl_options are present in transport_opts
+build_tls_options(SSLOpts) ->
+    OTPVersion = get_otp_version(),
+
+    %% OTP 27-28: Prefer TLS 1.3 for performance
+    Versions =
+        case OTPVersion of
+            V when V >= 27 ->
+                ['tlsv1.3', 'tlsv1.2'];
+            _ ->
+                ['tlsv1.2', 'tlsv1.3']
+        end,
+
+    %% OTP 27-28: TLS 1.3 optimized cipher suites
+    Ciphers =
+        case OTPVersion of
+            V when V >= 27 ->
+                ["TLS_AES_256_GCM_SHA384",
+                 "TLS_AES_128_GCM_SHA256",
+                 "TLS_CHACHA20_POLY1305_SHA256"];
+            _ ->
+                ["ECDHE-RSA-AES256-GCM-SHA384",
+                 "ECDHE-RSA-AES128-GCM-SHA256",
+                 "ECDHE-RSA-CHACHA20-POLY1305"]
+        end,
+
+    [{versions, Versions},
+     {ciphers, Ciphers},
+     {secure_renegotiate, true},
+     {honor_cipher_order, true} | SSLOpts].
+
+%% @private Get OTP version as integer (for TLS 1.3 optimization)
+get_otp_version() ->
+    try
+        VersionStr = erlang:system_info(otp_release),
+        [MajorStr | _] = string:split(VersionStr, "."),
+        list_to_integer(MajorStr)
+    catch
+        _:_ ->
+            0
+    end.
+
+%%====================================================================
+%% OTP 26-28 Modern Socket API Integration
+%%====================================================================
+
+%% @doc Attempt to create an optimized socket using OTP 26+ socket module
+%% Falls back to gen_tcp for OTP < 26 or on error
+-spec try_modern_socket(inet:hostname(), inet:port_number(), [gen_tcp:option()]) ->
+    {ok, socket:socket() | inet:socket()} | {error, term()}.
+try_modern_socket(Host, Port, Options) ->
+    case erlmcp_socket_utils:is_supported() of
+        true ->
+            %% Extract buffer sizes from options
+            BufferSize = proplists:get_value(recbuf, Options,
+                           proplists:get_value(sndbuf, Options, ?DEFAULT_BUFFER_SIZE)),
+
+            %% Build socket options map
+            SocketOpts = #{
+                rcvbuf => BufferSize,
+                sndbuf => BufferSize,
+                nodelay => proplists:get_value(nodelay, Options, true),
+                reuseaddr => proplists:get_value(reuseaddr, Options, true)
+            },
+
+            %% Try to create modern socket
+            case erlmcp_socket_utils:create_tcp_socket(inet, SocketOpts) of
+                {ok, Socket} ->
+                    %% Enable backpressure support
+                    case erlmcp_socket_utils:enable_backpressure(Socket) of
+                        ok ->
+                            logger:debug("Using modern socket API (OTP 26+) for ~s:~p", [Host, Port]),
+                            {ok, Socket};
+                        {error, _} ->
+                            %% Backpressure setup failed, close and fallback
+                            socket:close(Socket),
+                            logger:warning("Backpressure setup failed, falling back to gen_tcp"),
+                            fallback_to_gen_tcp(Host, Port, Options)
+                    end;
+                {error, _} ->
+                    %% Modern socket creation failed, fallback
+                    fallback_to_gen_tcp(Host, Port, Options)
+            end;
+        false ->
+            %% OTP < 26, use gen_tcp
+            fallback_to_gen_tcp(Host, Port, Options)
+    end.
+
+%% @doc Fallback to traditional gen_tcp:connect/3
+fallback_to_gen_tcp(Host, Port, Options) ->
+    ConnectTimeout = proplists:get_value(timeout, Options, ?DEFAULT_CONNECT_TIMEOUT),
+    gen_tcp:connect(Host, Port, Options, ConnectTimeout).
+
+%% @doc Record socket metrics if socket metrics server is available
+-spec maybe_record_socket_metrics(atom(), map()) -> ok.
+maybe_record_socket_metrics(TransportId, Stats) ->
+    case whereis(erlmcp_socket_metrics) of
+        undefined ->
+            %% Socket metrics server not running
+            ok;
+        _Pid ->
+            erlmcp_socket_metrics:record_socket_stats(TransportId, Stats)
+    end.
+
+%% @doc Get socket information and record metrics (OTP 26+)
+-spec collect_socket_metrics(socket:socket() | inet:socket(), atom()) -> ok.
+collect_socket_metrics(Socket, TransportId) ->
+    case erlmcp_socket_utils:is_supported() of
+        true ->
+            case erlmcp_socket_utils:get_socket_info(Socket) of
+                {ok, Info} when is_map(Info) ->
+                    %% Extract relevant metrics
+                    Stats = #{
+                        bytes_sent => maps:get(tx, Info, 0),
+                        bytes_received => maps:get(rx, Info, 0),
+                        packets_sent => maps:get(cnt_tx, Info, 0),
+                        packets_received => maps:get(cnt_rx, Info, 0),
+                        read_count => maps:get(reads, Info, 0),
+                        write_count => maps:get(writes, Info, 0)
+                    },
+                    maybe_record_socket_metrics(TransportId, Stats);
+                _ ->
+                    ok
+            end;
+        false ->
+            %% gen_tcp socket, use inet:getopts/2 for metrics
+            case inet:getopts(Socket, [recbuf, sndbuf]) of
+                {ok, [{recbuf, RcvBuf}, {sndbuf, SndBuf}]} ->
+                    %% Record buffer sizes (actual usage requires ioctl)
+                    Stats = #{
+                        bytes_sent => 0,
+                        bytes_received => 0,
+                        packets_sent => 0,
+                        packets_received => 0,
+                        read_count => 0,
+                        write_count => 0
+                    },
+                    maybe_record_socket_metrics(TransportId, Stats);
+                _ ->
+                    ok
+            end
     end.

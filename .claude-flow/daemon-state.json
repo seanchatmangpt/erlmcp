@@ -3,44 +3,49 @@
   "startedAt": "2026-02-01T20:42:13.296Z",
   "workers": {
     "map": {
-      "runCount": 0,
-      "successCount": 0,
+      "runCount": 22,
+      "successCount": 22,
       "failureCount": 0,
-      "averageDurationMs": 0,
+      "averageDurationMs": 0.6363636363636364,
       "isRunning": false,
-      "nextRun": "2026-02-01T20:42:13.296Z"
+      "nextRun": "2026-02-02T03:55:31.036Z",
+      "lastRun": "2026-02-02T03:40:31.036Z"
     },
     "audit": {
-      "runCount": 0,
+      "runCount": 32,
       "successCount": 0,
-      "failureCount": 0,
+      "failureCount": 32,
       "averageDurationMs": 0,
       "isRunning": false,
-      "nextRun": "2026-02-01T20:44:13.296Z"
+      "nextRun": "2026-02-02T03:40:31.023Z",
+      "lastRun": "2026-02-02T03:45:31.041Z"
     },
     "optimize": {
-      "runCount": 0,
+      "runCount": 21,
       "successCount": 0,
-      "failureCount": 0,
+      "failureCount": 21,
       "averageDurationMs": 0,
       "isRunning": false,
-      "nextRun": "2026-02-01T20:46:13.296Z"
+      "nextRun": "2026-02-02T04:00:31.039Z",
+      "lastRun": "2026-02-02T03:45:31.039Z"
     },
     "consolidate": {
-      "runCount": 0,
-      "successCount": 0,
+      "runCount": 11,
+      "successCount": 11,
       "failureCount": 0,
-      "averageDurationMs": 0,
+      "averageDurationMs": 0.36363636363636365,
       "isRunning": false,
-      "nextRun": "2026-02-01T20:48:13.296Z"
+      "nextRun": "2026-02-02T03:55:31.226Z",
+      "lastRun": "2026-02-02T03:25:31.226Z"
     },
     "testgaps": {
-      "runCount": 0,
+      "runCount": 16,
       "successCount": 0,
-      "failureCount": 0,
+      "failureCount": 16,
       "averageDurationMs": 0,
       "isRunning": false,
-      "nextRun": "2026-02-01T20:50:13.296Z"
+      "nextRun": "2026-02-02T03:50:31.231Z",
+      "lastRun": "2026-02-02T03:30:31.230Z"
     },
     "predict": {
       "runCount": 0,
@@ -126,5 +131,5 @@
       }
     ]
   },
-  "savedAt": "2026-02-01T20:42:13.296Z"
+  "savedAt": "2026-02-02T03:45:31.041Z"
 }

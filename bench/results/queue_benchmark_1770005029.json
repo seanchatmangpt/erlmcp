@@ -1,0 +1,49 @@
+{
+  "benchmark": "queue_operations",
+  "timestamp": "2026-02-01T19:30:00Z",
+  "baseline_requirement": 971000,
+  "baseline_unit": "msg/sec",
+  "results": {
+    "100k_ops": {
+      "throughput_msg_per_sec": 49539284.65,
+      "baseline_ratio": 51.02
+    },
+    "500k_ops": {
+      "throughput_msg_per_sec": 43021114.76,
+      "baseline_ratio": 44.31
+    },
+    "1m_ops": {
+      "throughput_msg_per_sec": 45989698.31,
+      "baseline_ratio": 47.36
+    }
+  },
+  "max_throughput": 45989698.31,
+  "baseline_comparison": {
+    "measured": 45989698.31,
+    "baseline": 971000,
+    "ratio": 47.36,
+    "status": "PASS"
+  },
+  "test_configuration": {
+    "operation_type": "enqueue_dequeue_cycle",
+    "iterations": 5,
+    "warmup_ops": 10000,
+    "measurement_precision": "microsecond"
+  },
+  "environment": {
+    "erlang_otp": "28.3.1",
+    "platform": "macOS Darwin 25.2.0",
+    "queue_implementation": "Erlang/OTP stdlib queue"
+  },
+  "analysis": {
+    "performance": "exceptional",
+    "scaling": "stable",
+    "regression_threshold": 41390728.48,
+    "recommendations": [
+      "No optimization needed",
+      "Update baseline to reflect actual performance",
+      "Monitor for 10% degradation"
+    ]
+  },
+  "conclusion": "Queue operations perform at 45.9M msg/sec, 47.36x above baseline requirement. Status: PASS"
+}

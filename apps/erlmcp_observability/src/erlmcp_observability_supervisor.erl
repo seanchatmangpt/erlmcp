@@ -180,6 +180,14 @@ build_child_specs(_Opts) ->
                    [erlmcp_process_monitor]),
 
         %% ================================================================
+        %% Process Monitor Supervisor - OTP 28 iterator-based introspection
+        %% ================================================================
+        %% Real-time process monitoring using OTP 28 process_iterator BIFs
+        %% Provides O(1) memory-efficient process scanning and statistics
+        child_spec(erlmcp_process_monitor_sup, worker, permanent, 5000,
+                   [erlmcp_process_monitor_sup]),
+
+        %% ================================================================
         %% Audit Log - Tamper-proof audit trail with hash chain
         %% ================================================================
         %% Critical: Maintains compliance trail for GDPR, SOC2, HIPAA
