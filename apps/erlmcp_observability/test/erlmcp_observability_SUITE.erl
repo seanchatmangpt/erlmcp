@@ -301,10 +301,20 @@ test_metrics_component() ->
             ok = erlmcp_metrics:record_transport_operation(stack_test, stdio, 256, 5),
             gen_server:stop(Pid),
             ok;
-        {error, {already_started, _}} ->
+        {error, {already_started, Pid}} when is_pid(Pid) ->
+            %% Already running via supervision tree, test with existing process
+            ok = erlmcp_metrics:record_transport_operation(stack_test, stdio, 256, 5),
             ok;
-        _ ->
-            {error, metrics_failed}
+        {'EXIT', {{noproc, _}, _}} ->
+            %% Module not available or not running
+            {error, metrics_unavailable};
+        {'EXIT', Reason} ->
+            %% Other exit reason
+            {error, {metrics_exit, Reason}};
+        Other ->
+            %% Unexpected return value
+            ct:log("Unexpected result from erlmcp_metrics:start_link: ~p", [Other]),
+            {error, {unexpected_result, Other}}
     end.
 
 test_otel_component() ->

@@ -148,7 +148,7 @@ transport_type_from_module(_) ->
 init([]) ->
     %% v1.4.0: Simplified 3-Tier Supervision Tree
     %%
-    %% Strategy: one_for_one - no cascading failures between subsystems
+    %% Strategy: one_for_all - all subsystems restart together on any failure
     %% - TIER 1: Core (registry + infrastructure consolidated)
     %% - TIER 2: Protocol (servers with simple_one_for_one)
     %% - TIER 3: Observability (isolated - failures don't affect core)
@@ -157,9 +157,9 @@ init([]) ->
     %% - Merged erlmcp_registry_sup + erlmcp_infrastructure_sup -> erlmcp_core_sup
     %% - Removed erlmcp_transport_sup (moved to erlmcp_transports app)
     %% - Renamed erlmcp_monitoring_sup -> erlmcp_observability_sup
-    %% - Changed strategy: rest_for_one -> one_for_one (no cascades)
+    %% - Changed strategy: rest_for_one -> one_for_all (all restart together)
     SupFlags =
-        #{strategy => one_for_one,  % Each subsystem fails independently
+        #{strategy => one_for_all,  % All subsystems restart together on failure
           intensity => 5,
           period => 60},
 

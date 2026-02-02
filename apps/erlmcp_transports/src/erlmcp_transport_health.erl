@@ -76,7 +76,7 @@ check_health(TransportId, Timeout) ->
 %% @doc Get current health status for a transport
 -spec get_health_status(transport_id()) -> {ok, transport_health()} | {error, term()}.
 get_health_status(TransportId) ->
-    gen_server:call(?MODULE, {get_health_status, TransportId}).
+    gen_server:call(?MODULE, {get_health_status, TransportId}, 5000).
 
 %% @doc Register a transport for health monitoring
 -spec register_transport(transport_id(), pid(), map()) -> ok | {error, term()}.

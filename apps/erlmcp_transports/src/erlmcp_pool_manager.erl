@@ -117,17 +117,17 @@ checkin(Pool, ConnPid) ->
 %% @doc Get pool metrics
 -spec get_metrics(pid()) -> pool_metrics().
 get_metrics(Pool) ->
-    gen_server:call(Pool, get_metrics).
+    gen_server:call(Pool, get_metrics, 5000).
 
 %% @doc Get pool status
 -spec get_status(pid()) -> map().
 get_status(Pool) ->
-    gen_server:call(Pool, get_status).
+    gen_server:call(Pool, get_status, 5000).
 
 %% @doc Resize pool
 -spec resize(pid(), pos_integer()) -> ok | {error, term()}.
 resize(Pool, NewSize) ->
-    gen_server:call(Pool, {resize, NewSize}).
+    gen_server:call(Pool, {resize, NewSize}, 5000).
 
 %% @doc Stop pool manager
 -spec stop(pid()) -> ok.

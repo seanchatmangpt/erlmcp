@@ -603,20 +603,14 @@ init([TransportType, Config]) ->
     Owner = maps:get(owner, Config, self()),
     TestMode = maps:get(test_mode, Config, false),
 
-    %% Initialize transport based on type
-    case init_transport(TransportType, Config) of
-        {ok, TransportPid} ->
-            State =
-                #state{transport_pid = TransportPid,
-                       transport_type = TransportType,
-                       transport_config = Config,
-                       owner = Owner,
-                       test_mode = TestMode,
-                       connected = true},
-            {ok, State};
-        {error, Reason} ->
-            {stop, Reason}
-    end.
+    %% Return immediately, initialize transport asynchronously via timeout
+    State =
+        #state{transport_type = TransportType,
+               transport_config = Config,
+               owner = Owner,
+               test_mode = TestMode,
+               connected = false},
+    {ok, State, 0}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
                      {reply, term(), state()} | {noreply, state()} | {stop, term(), state()}.
@@ -734,6 +728,15 @@ handle_info({transport_message, Data}, State) when is_binary(Data) ->
         _:Reason ->
             logger:error("Failed to decode message: ~p", [Reason]),
             {noreply, State}
+    end;
+handle_info(timeout, #state{transport_pid = undefined, transport_type = TransportType, transport_config = Config} = State) ->
+    %% Async transport initialization from init/1 timeout
+    case init_transport(TransportType, Config) of
+        {ok, TransportPid} ->
+            {noreply, State#state{transport_pid = TransportPid, connected = true}};
+        {error, Reason} ->
+            logger:error("Failed to initialize transport: ~p", [Reason]),
+            {stop, {transport_init_failed, Reason}, State}
     end;
 handle_info({'DOWN', _MonitorRef, process, Pid, Reason}, #state{transport_pid = Pid} = State) ->
     logger:error("Transport process died: ~p", [Reason]),
