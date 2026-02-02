@@ -1,0 +1,479 @@
+name: erlmcp-flow CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'claude/erlmcp-flow-*'
+      - 'release/v*'
+    paths:
+      - 'apps/erlmcp_flow/**'
+      - 'docs/erlmcp-flow-*.md'
+      - 'docs/ERLMCP_FLOW_*.md'
+      - '.github/workflows/erlmcp-flow-ci.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'apps/erlmcp_flow/**'
+      - 'docs/erlmcp-flow-*.md'
+      - 'docs/ERLMCP_FLOW_*.md'
+      - '.github/workflows/erlmcp-flow-ci.yml'
+
+jobs:
+  erlmcp-flow-quality-gates:
+    name: erlmcp-flow Quality Gates - OTP ${{ matrix.otp_version }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        otp_version: [26, 27, 28]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Erlang/OTP
+      uses: erlef/setup-beam@v1
+      with:
+        otp-version: ${{ matrix.otp_version }}
+        rebar3-version: ${{ matrix.otp_version >= 26 && '3.25' || '3.22' }}
+
+    - name: Check rebar3 version
+      run: rebar3 --version
+
+    - name: Cache rebar3 dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cache/rebar3
+          _build
+        key: ${{ runner.os }}-rebar3-otp${{ matrix.otp_version }}-erlmcp-flow-${{ hashFiles('apps/erlmcp_flow/rebar.config') }}
+        restore-keys: |
+          ${{ runner.os }}-rebar3-otp${{ matrix.otp_version }}-erlmcp-flow-
+          ${{ runner.os }}-rebar3-otp${{ matrix.otp_version }}-
+          ${{ runner.os }}-rebar3-
+
+    # ========================================================================
+    # BLOCKING GATE 1: COMPILATION - MUST PASS
+    # ========================================================================
+    - name: Compile erlmcp_flow application
+      id: compile
+      run: |
+        echo "::group::Compilation"
+        TERM=dumb rebar3 compile
+        COMPILE_EXIT=$?
+        echo "::endgroup::"
+
+        if [ $COMPILE_EXIT -ne 0 ]; then
+          echo "::error::erlmcp_flow compilation FAILED - This BLOCKS the merge"
+          echo "compile_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        echo "compile_status=success" >> $GITHUB_OUTPUT
+
+    - name: Verify erlmcp_flow compiled
+      run: |
+        echo "Checking erlmcp_flow application compilation..."
+        echo ""
+        echo "## erlmcp_flow Compilation Status" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        if [ -d "_build/default/lib/erlmcp_flow/ebin" ]; then
+          BEAM_COUNT=$(find _build/default/lib/erlmcp_flow/ebin -name "*.beam" 2>/dev/null | wc -l)
+          APP_FILE=$(find _build/default/lib/erlmcp_flow/ebin -name "*.app" 2>/dev/null | wc -l)
+
+          echo "✓ erlmcp_flow compiled successfully"
+          echo "  - Modules: $BEAM_COUNT"
+          echo "  - App file: $APP_FILE"
+
+          echo "- ✅ **erlmcp_flow**: $BEAM_COUNT modules, app file present" >> $GITHUB_STEP_SUMMARY
+
+          if [ "$BEAM_COUNT" -eq 0 ]; then
+            echo "::error::erlmcp_flow has no compiled beam files"
+            exit 1
+          fi
+        else
+          echo "❌ erlmcp_flow ebin directory not found"
+          echo "- ❌ **erlmcp_flow**: NOT COMPILED" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "✅ erlmcp_flow compiled successfully"
+
+    # ========================================================================
+    # BLOCKING GATE 2: FORMAT CHECK - MUST PASS
+    # ========================================================================
+    - name: Check code formatting
+      id: format
+      run: |
+        echo "::group::Format Check"
+        cd apps/erlmcp_flow
+        rebar3 format --check
+        FORMAT_EXIT=$?
+        echo "::endgroup::"
+
+        if [ $FORMAT_EXIT -ne 0 ]; then
+          echo "::error::Code formatting check FAILED - Run 'rebar3 format' locally"
+          echo "format_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        echo "format_status=success" >> $GITHUB_OUTPUT
+
+    # ========================================================================
+    # BLOCKING GATE 3: XREF - WARNING (will be blocking in future)
+    # ========================================================================
+    - name: Run xref checks
+      id: xref
+      run: |
+        echo "::group::Xref Cross-Reference Analysis"
+        cd apps/erlmcp_flow
+        rebar3 xref
+        XREF_EXIT=$?
+        echo "::endgroup::"
+
+        if [ $XREF_EXIT -ne 0 ]; then
+          echo "::warning::Xref found undefined function calls - review required"
+          echo "xref_status=warning" >> $GITHUB_OUTPUT
+          # Non-blocking for now
+        else
+          echo "xref_status=success" >> $GITHUB_OUTPUT
+        fi
+      continue-on-error: true
+
+    # ========================================================================
+    # BLOCKING GATE 4: DIALYZER - MUST PASS (type checking)
+    # ========================================================================
+    - name: Run dialyzer (type checking)
+      id: dialyzer
+      run: |
+        echo "::group::Dialyzer Type Checking"
+        cd apps/erlmcp_flow
+        rebar3 dialyzer
+        DIALYZER_EXIT=$?
+        echo "::endgroup::"
+
+        # Allow OTP 28 to continue with warnings (experimental version)
+        if [ $DIALYZER_EXIT -ne 0 ] && [ ${{ matrix.otp_version }} -ne 28 ]; then
+          echo "::error::Dialyzer FAILED - This BLOCKS the merge"
+          echo "dialyzer_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        echo "dialyzer_status=success" >> $GITHUB_OUTPUT
+      continue-on-error: ${{ matrix.otp_version == 28 }}
+
+    # ========================================================================
+    # BLOCKING GATE 5: EUNIT TESTS - MUST PASS (100% pass rate)
+    # ========================================================================
+    - name: Run EUnit tests with coverage
+      id: eunit
+      run: |
+        echo "::group::EUnit Tests"
+        rebar3 eunit --app erlmcp_flow --cover
+        EUNIT_EXIT=$?
+        echo "::endgroup::"
+
+        if [ $EUNIT_EXIT -ne 0 ]; then
+          echo "::error::EUnit tests FAILED - This BLOCKS the merge"
+          echo "eunit_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        else
+          echo "eunit_status=success" >> $GITHUB_OUTPUT
+        fi
+
+    # ========================================================================
+    # BLOCKING GATE 6: COVERAGE - MUST BE ≥82%
+    # ========================================================================
+    - name: Check coverage threshold (82%) - BLOCKING
+      id: coverage
+      run: |
+        echo "::group::Coverage Threshold Check"
+
+        rebar3 cover --verbose
+
+        # Extract coverage for erlmcp_flow app
+        if [ -f _build/test/cover/cover.log ]; then
+          # Parse coverage percentage for erlmcp_flow modules
+          FLOW_COVERAGE=$(grep "erlmcp_flow" _build/test/cover/cover.log | grep -oP '\d+%' | sed 's/%//' | head -1)
+
+          if [ -z "$FLOW_COVERAGE" ]; then
+            echo "::warning::Could not parse coverage percentage, checking total"
+            FLOW_COVERAGE=$(grep "total" _build/test/cover/cover.log | grep -oP '\d+%' | sed 's/%//' | head -1)
+          fi
+
+          if [ -z "$FLOW_COVERAGE" ]; then
+            FLOW_COVERAGE=0
+          fi
+
+          echo "Measured coverage: ${FLOW_COVERAGE}%"
+
+          if [ $FLOW_COVERAGE -ge 82 ]; then
+            echo "✅ Coverage passed - ${FLOW_COVERAGE}% ≥ 82%"
+            echo "coverage_status=success" >> $GITHUB_OUTPUT
+            echo "coverage_percent=$FLOW_COVERAGE" >> $GITHUB_OUTPUT
+          else
+            echo "::error::Coverage below 82% threshold - This BLOCKS the merge"
+            echo "Measured: ${FLOW_COVERAGE}% < 82% required"
+            echo "coverage_status=failed" >> $GITHUB_OUTPUT
+            echo "coverage_percent=$FLOW_COVERAGE" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+        else
+          echo "::error::Coverage report not found"
+          echo "coverage_status=failed" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        echo "::endgroup::"
+
+    - name: Upload coverage HTML report
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: erlmcp-flow-coverage-report-otp-${{ matrix.otp_version }}
+        path: _build/test/cover/
+        retention-days: 30
+
+    - name: Generate coverage summary
+      if: always()
+      run: |
+        echo "## Coverage Report - erlmcp_flow - OTP ${{ matrix.otp_version }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        if [ -f _build/test/cover/cover.log ]; then
+          grep "erlmcp_flow" _build/test/cover/cover.log | head -20 || echo "Coverage data not available"
+          echo "" >> $GITHUB_STEP_SUMMARY
+          COVERAGE=${{ steps.coverage.outputs.coverage_percent || 'N/A' }}
+          echo "**Overall Coverage:** ${COVERAGE}%"
+        else
+          echo "Coverage log not found"
+        fi
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+    # ========================================================================
+    # BLOCKING GATE 7: COMMON TEST - MUST PASS
+    # ========================================================================
+    - name: Run Common Test integration tests
+      id: ct
+      run: |
+        echo "::group::Common Test Integration"
+        if [ -d "apps/erlmcp_flow/test" ]; then
+          rebar3 ct --dir=apps/erlmcp_flow/test --cover
+          CT_EXIT=$?
+          echo "::endgroup::"
+
+          if [ $CT_EXIT -ne 0 ]; then
+            echo "::error::Common Test FAILED - This BLOCKS the merge"
+            echo "ct_status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          else
+            echo "ct_status=success" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "::warning::No Common Test suites found (apps/erlmcp_flow/test missing)"
+          echo "ct_status=skipped" >> $GITHUB_OUTPUT
+        fi
+      continue-on-error: false
+
+    # ========================================================================
+    # GATE 8: BENCHMARKS - WARNING (performance regression check)
+    # ========================================================================
+    - name: Run performance benchmarks
+      id: benchmark
+      if: matrix.otp_version == 26
+      run: |
+        echo "::group::Performance Benchmarks"
+        if [ -f "apps/erlmcp_flow/bench/erlmcp_flow_bench.erl" ]; then
+          echo "Running erlmcp_flow benchmarks..."
+          rebar3 eunit --module=erlmcp_flow_bench
+          BENCH_EXIT=$?
+          echo "::endgroup::"
+
+          if [ $BENCH_EXIT -ne 0 ]; then
+            echo "::warning::Benchmarks failed (non-blocking)"
+            echo "benchmark_status=warning" >> $GITHUB_OUTPUT
+          else
+            echo "benchmark_status=success" >> $GITHUB_OUTPUT
+          fi
+        else
+          echo "::warning::Benchmark module not found (apps/erlmcp_flow/bench/erlmcp_flow_bench.erl)"
+          echo "benchmark_status=skipped" >> $GITHUB_OUTPUT
+        fi
+      timeout-minutes: 10
+      continue-on-error: true
+
+    - name: Upload benchmark results
+      if: always() && matrix.otp_version == 26
+      uses: actions/upload-artifact@v3
+      with:
+        name: erlmcp-flow-benchmark-results
+        path: |
+          bench/results/*.json
+          bench/results/*.txt
+        retention-days: 90
+
+    # ========================================================================
+    # FINAL GATE STATUS - Fail entire job if any blocking gate failed
+    # ========================================================================
+    - name: Quality Gates Summary
+      if: always()
+      run: |
+        echo "## Quality Gates Summary - erlmcp_flow - OTP ${{ matrix.otp_version }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Gate | Status | Blocking |" >> $GITHUB_STEP_SUMMARY
+        echo "|------|--------|----------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Compilation | ${{ steps.compile.outputs.compile_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| Format Check | ${{ steps.format.outputs.format_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| Xref | ${{ steps.xref.outputs.xref_status || 'not run' }} | ⚠️ NO |" >> $GITHUB_STEP_SUMMARY
+        echo "| Dialyzer | ${{ steps.dialyzer.outputs.dialyzer_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| EUnit Tests | ${{ steps.eunit.outputs.eunit_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| Coverage ≥82% | ${{ steps.coverage.outputs.coverage_status || 'not run' }} (${{ steps.coverage.outputs.coverage_percent || 'N/A' }}%) | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| Common Test | ${{ steps.ct.outputs.ct_status || 'not run' }} | ✅ YES |" >> $GITHUB_STEP_SUMMARY
+        echo "| Benchmark | ${{ steps.benchmark.outputs.benchmark_status || 'not run' }} | ⚠️ NO |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+
+        # Check if any blocking gate failed
+        COMPILE="${{ steps.compile.outputs.compile_status }}"
+        FORMAT="${{ steps.format.outputs.format_status }}"
+        DIALYZER="${{ steps.dialyzer.outputs.dialyzer_status }}"
+        EUNIT="${{ steps.eunit.outputs.eunit_status }}"
+        COVERAGE="${{ steps.coverage.outputs.coverage_status }}"
+        CT="${{ steps.ct.outputs.ct_status }}"
+
+        if [ "$COMPILE" != "success" ] || \
+           [ "$FORMAT" != "success" ] || \
+           [ "$DIALYZER" != "success" ] || \
+           [ "$EUNIT" != "success" ] || \
+           [ "$COVERAGE" != "success" ] || \
+           ([ "$CT" != "success" ] && [ "$CT" != "skipped" ]); then
+          echo "::error::One or more BLOCKING quality gates FAILED"
+          echo "❌ **MERGE BLOCKED** - Fix issues and re-push" >> $GITHUB_STEP_SUMMARY
+          exit 1
+        fi
+
+        echo "✅ **All blocking quality gates PASSED** - Ready to merge" >> $GITHUB_STEP_SUMMARY
+
+  erlmcp-flow-structure-check:
+    name: Verify erlmcp_flow Application Structure
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Verify erlmcp_flow application structure
+      run: |
+        echo "Checking erlmcp_flow application structure..."
+
+        if [ ! -d "apps/erlmcp_flow" ]; then
+          echo "❌ apps/erlmcp_flow directory NOT found"
+          exit 1
+        fi
+        echo "✓ apps/erlmcp_flow exists"
+
+        if [ ! -f "apps/erlmcp_flow/src/erlmcp_flow.app.src" ]; then
+          echo "⚠ apps/erlmcp_flow/src/erlmcp_flow.app.src NOT found"
+          # Not blocking for now (may not be created yet)
+        else
+          echo "✓ apps/erlmcp_flow/src/erlmcp_flow.app.src found"
+        fi
+
+        if [ -d "apps/erlmcp_flow/src" ]; then
+          MODULE_COUNT=$(find "apps/erlmcp_flow/src" -name "*.erl" 2>/dev/null | wc -l)
+          echo "✓ apps/erlmcp_flow/src has $MODULE_COUNT modules"
+        else
+          echo "⚠ apps/erlmcp_flow/src directory not found"
+        fi
+
+        if [ -d "apps/erlmcp_flow/test" ]; then
+          TEST_COUNT=$(find "apps/erlmcp_flow/test" -name "*.erl" 2>/dev/null | wc -l)
+          echo "✓ apps/erlmcp_flow/test has $TEST_COUNT test modules"
+        else
+          echo "⚠ apps/erlmcp_flow/test directory not found"
+        fi
+
+        echo "✓ erlmcp_flow structure verified"
+
+  erlmcp-flow-docs-check:
+    name: Verify erlmcp_flow Documentation
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check erlmcp_flow documentation
+      run: |
+        echo "Checking erlmcp_flow documentation..."
+
+        REQUIRED_DOCS=(
+          "docs/ERLMCP-FLOW-README.md"
+          "docs/ERLMCP_FLOW_GIT_WORKFLOW.md"
+        )
+
+        ALL_OK=true
+        for doc in "${REQUIRED_DOCS[@]}"; do
+          if [ -f "$doc" ]; then
+            echo "✓ $doc exists"
+          else
+            echo "⚠ $doc NOT found"
+            ALL_OK=false
+          fi
+        done
+
+        if [ "$ALL_OK" = false ]; then
+          echo "::warning::Some erlmcp_flow documentation files are missing"
+        fi
+
+        echo "✓ Documentation check complete"
+
+  erlmcp-flow-quality-gates-summary:
+    name: erlmcp-flow Quality Gates Summary
+    runs-on: ubuntu-22.04
+    needs: [erlmcp-flow-quality-gates, erlmcp-flow-structure-check, erlmcp-flow-docs-check]
+    if: always()
+
+    steps:
+    - name: Print quality gates summary
+      run: |
+        cat << 'EOF'
+        ╔═══════════════════════════════════════════╗
+        ║   erlmcp-flow CI Quality Gates Summary   ║
+        ╚═══════════════════════════════════════════╝
+
+        Quality Gates Results:
+        ✓ Compilation: ${{ needs.erlmcp-flow-quality-gates.result }}
+        ✓ Format Check: ${{ needs.erlmcp-flow-quality-gates.result }}
+        ✓ Type Checking (Dialyzer): ${{ needs.erlmcp-flow-quality-gates.result }}
+        ✓ Cross-Reference (Xref): ${{ needs.erlmcp-flow-quality-gates.result }}
+        ✓ Unit Tests (EUnit): ${{ needs.erlmcp-flow-quality-gates.result }}
+        ✓ Coverage (≥82%): ${{ needs.erlmcp-flow-quality-gates.result }}
+        ✓ Integration Tests (CT): ${{ needs.erlmcp-flow-quality-gates.result }}
+        ✓ Structure Check: ${{ needs.erlmcp-flow-structure-check.result }}
+        ✓ Documentation Check: ${{ needs.erlmcp-flow-docs-check.result }}
+
+        Performance Benchmarks: See artifacts
+
+        Next Steps:
+        1. Review coverage reports in artifacts
+        2. Check for dialyzer/xref warnings
+        3. Verify all tests passed
+        4. Review benchmark results
+        EOF
+
+    - name: Check if all gates passed - BLOCKING
+      run: |
+        if [ "${{ needs.erlmcp-flow-quality-gates.result }}" = "success" ] && \
+           [ "${{ needs.erlmcp-flow-structure-check.result }}" = "success" ] && \
+           [ "${{ needs.erlmcp-flow-docs-check.result }}" = "success" ]; then
+          echo "✓ All erlmcp-flow quality gates PASSED - MERGE ALLOWED"
+          exit 0
+        else
+          echo "❌ Some erlmcp-flow quality gates FAILED - MERGE BLOCKED"
+          echo "  Quality Gates: ${{ needs.erlmcp-flow-quality-gates.result }}"
+          echo "  Structure Check: ${{ needs.erlmcp-flow-structure-check.result }}"
+          echo "  Documentation Check: ${{ needs.erlmcp-flow-docs-check.result }}"
+          exit 1
+        fi
