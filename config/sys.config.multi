@@ -1,0 +1,310 @@
+%% Multi-OTP Configuration for ErlMCP
+%% Version-aware configuration that adapts to different OTP versions
+%%
+%% This configuration provides optimal settings for:
+%%   - OTP 26: Legacy mode with conservative resource limits
+%%   - OTP 27: Stable mode with balanced performance
+%%   - OTP 28+: Optimal mode with full feature support
+%%
+%% Usage:
+%%   1. Detect OTP version at runtime
+%%   2. Apply version-specific optimizations
+%%   3. Enable appropriate features
+%%   4. Set resource limits based on capabilities
+%%
+
+[
+    {erlmcp, [
+        %% Version detection and configuration
+        {otp_version, erlmcp_version_detector:otp_version()},
+        {otp_version_string, erlmcp_version_detector:otp_version_string()},
+        {support_level, erlmcp_version_detector:get_support_level()},
+        {feature_flags, erlmcp_feature_detector:get_feature_flags()},
+
+        %% Runtime adaptation
+        {auto_adapt, true},
+        {configuration_version, "multi-otp-1.0"},
+
+        %% Version-specific optimization levels
+        {optimization_level,
+            case erlmcp_version_detector:get_support_level() of
+                unsupported -> error;
+                legacy -> conservative;
+                stable -> balanced;
+                recommended -> optimal
+            end
+        },
+
+        %% Feature toggles based on available features
+        {native_json_enabled, erlmcp_feature_detector:is_feature_available(native_json)},
+        {process_iterator_enabled, erlmcp_feature_detector:is_feature_available(process_iterator)},
+        {priority_messages_enabled, erlmcp_feature_detector:is_feature_available(priority_messages)},
+        {advanced_maps_enabled, erlmcp_feature_detector:is_feature_available(advanced_maps)},
+
+        %% Resource limits by support level
+        {resource_limits,
+            case erlmcp_version_detector:get_support_level() of
+                unsupported -> #{
+                    max_connections => 500,
+                    max_processes => 1000,
+                    max_memory => 1073741824  % 1GB
+                };
+                legacy -> #{
+                    max_connections => 2000,
+                    max_processes => 5000,
+                    max_memory => 2147483648  % 2GB
+                };
+                stable -> #{
+                    max_connections => 5000,
+                    max_processes => 10000,
+                    max_memory => 4294967296  % 4GB
+                };
+                recommended -> #{
+                    max_connections => 10000,
+                    max_processes => 20000,
+                    max_memory => 8589934592  % 8GB
+                }
+            end
+        },
+
+        %% Performance monitoring configuration
+        {performance_monitoring, #{
+            enabled => true,
+            monitoring_interval =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported -> 60000;  % 60s
+                    legacy -> 30000;      % 30s
+                    stable -> 15000;      % 15s
+                    recommended -> 5000    % 5s
+                end,
+            alert_thresholds => #{
+                memory_usage => 90,
+                cpu_usage => 85,
+                process_count => erlmcp_version_detector:get_optimal_settings()
+            }
+        }},
+
+        %% Version-specific timeouts
+        {timeouts,
+            case erlmcp_version_detector:get_support_level() of
+                unsupported -> #{
+                    connection => 30000,
+                    request => 15000,
+                    response => 30000,
+                    operation => 7500
+                };
+                legacy -> #{
+                    connection => 20000,
+                    request => 10000,
+                    response => 20000,
+                    operation => 5000
+                };
+                stable -> #{
+                    connection => 15000,
+                    request => 7500,
+                    response => 15000,
+                    operation => 3750
+                };
+                recommended -> #{
+                    connection => 5000,
+                    request => 2500,
+                    response => 5000,
+                    operation => 1250
+                }
+            end
+        },
+
+        %% Connection pooling configuration
+        {connection_pools,
+            case erlmcp_version_detector:get_support_level() of
+                unsupported -> #{
+                    tcp => #{
+                        pool_size => 5,
+                        max_overflow => 2,
+                        timeout => 30000
+                    },
+                    http => #{
+                        pool_size => 3,
+                        max_overflow => 1,
+                        timeout => 30000
+                    }
+                };
+                legacy -> #{
+                    tcp => #{
+                        pool_size => 10,
+                        max_overflow => 5,
+                        timeout => 20000
+                    },
+                    http => #{
+                        pool_size => 6,
+                        max_overflow => 3,
+                        timeout => 20000
+                    }
+                };
+                stable -> #{
+                    tcp => #{
+                        pool_size => 20,
+                        max_overflow => 10,
+                        timeout => 15000
+                    },
+                    http => #{
+                        pool_size => 12,
+                        max_overflow => 6,
+                        timeout => 15000
+                    }
+                };
+                recommended -> #{
+                    tcp => #{
+                        pool_size => 50,
+                        max_overflow => 25,
+                        timeout => 5000
+                    },
+                    http => #{
+                        pool_size => 30,
+                        max_overflow => 15,
+                        timeout => 5000
+                    }
+                }
+            end
+        },
+
+        %% Feature-specific configurations
+        {features, #{
+            %% JSON handling
+            json_library =>
+                case erlmcp_feature_detector:is_feature_available(native_json) of
+                    true -> native;
+                    false -> jsx
+                end,
+            json_optimization =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported -> basic;
+                    legacy -> standard;
+                    stable -> advanced;
+                    recommended -> optimal
+                end,
+
+            %% Process handling
+            process_method =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported -> legacy;
+                    legacy -> legacy;
+                    stable -> standard;
+                    recommended -> iterator
+                end,
+            process_optimization =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported -> disabled;
+                    legacy -> basic;
+                    stable -> enhanced;
+                    recommended -> optimal
+                end,
+
+            %% Message processing
+            message_priority =>
+                erlmcp_feature_detector:is_feature_available(priority_messages),
+            message_optimization =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported -> sequential;
+                    legacy -> parallel;
+                    stable -> parallel;
+                    recommended -> priority_queue
+                end,
+
+            %% Memory management
+            memory_optimization =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported -> basic;
+                    legacy -> standard;
+                    stable -> enhanced;
+                    recommended -> optimal
+                end,
+            gc_optimization =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported => legacy;
+                    legacy => legacy;
+                    stable => modern;
+                    recommended => advanced
+                end
+        }},
+
+        %% Error handling and recovery
+        {error_handling, #{
+            retry_attempts =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported -> 3;
+                    legacy -> 5;
+                    stable -> 10;
+                    recommended -> 20
+                end,
+            retry_backoff_ms => 100,
+            circuit_breaker_enabled => true,
+            graceful_degradation_enabled => true
+        }},
+
+        %% Logging configuration
+        {logging, #{
+            version_level =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported -> warning;
+                    legacy -> info;
+                    stable -> info;
+                    recommended -> debug
+                end,
+            feature_logging => true,
+            performance_logging =>
+                case erlmcp_version_detector:get_support_level() of
+                    unsupported => false;
+                    legacy -> true;
+                    stable => true;
+                    recommended => true
+                end
+        }}
+    ]},
+
+    %% Kernel configuration
+    {kernel, [
+        % Process limits based on support level
+        {process_limit,
+            case erlmcp_version_detector:get_support_level() of
+                unsupported -> 32768;
+                legacy -> 65536;
+                stable -> 131072;
+                recommended -> 262144
+            end
+        },
+
+        % Error logger
+        {error_logger, {file, "logs/erlmcp_error.log"}},
+        {logger_level,
+            case erlmcp_version_detector:get_support_level() of
+                unsupported -> warning;
+                legacy -> info;
+                stable -> info;
+                recommended -> debug
+            end
+        },
+
+        % Global name registration
+        {global_name_lookup, false},
+        {global_groups_enabled, false}
+    ]},
+
+    % SASL configuration
+    {sasl, [
+        {sasl_error_logger, {file, "logs/erlmcp_sasl.log"}},
+        {errlog_type, all},
+        {error_logger_format_depth, 50}
+    ]},
+
+    % Application configuration
+    {application, [
+        {applications, [
+            kernel, stdlib, sasl, gproc, jsx, jesse,
+            gun, ranch, cowboy, poolboy, bbmustache, jose,
+            opentelemetry_api, opentelemetry, opentelemetry_exporter
+        ]},
+        {included_applications, []},
+        {mod, {erlmcp_app, []}}
+    ]}
+].

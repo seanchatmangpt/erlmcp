@@ -34,10 +34,9 @@
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+         handle_continue/2, terminate/2, code_change/3]).
 
 -include_lib("kernel/include/logger.hrl").
--include_lib("opentelemetry_api/include/otel_meter.hrl").
 
 %%====================================================================
 %% Types
@@ -389,21 +388,14 @@ export_otl_metrics(Name, Snapshot, true) ->
         GrowthRate = maps:get(growth_rate, Snapshot),
         Type = maps:get(type, Snapshot),
 
-        % Create OTEL instrument attributes
-        Attributes = #{
-            table_name => atom_to_binary(Name, utf8),
-            table_type => atom_to_binary(Type, utf8)
-        },
-
-        % Record metrics
-        otel_meter:record(erlmcp_ets_table_size, Size, Attributes),
-        otel_meter:record(erlmcp_ets_table_memory, Memory, Attributes),
-        otel_meter:record(erlmcp_ets_table_growth_rate, GrowthRate, Attributes),
+        % Log metrics for now (OTEL integration can be added later)
+        ?LOG_DEBUG("ETS Stats: ~p (~p) size=~p memory=~p growth=~p",
+            [Name, Type, Size, Memory, GrowthRate]),
 
         ok
     catch
         Error:Reason:Stack ->
-            ?LOG_ERROR("Failed to export OTEL metrics for table ~p: ~p:~p~n~p",
+            ?LOG_ERROR("Failed to export metrics for table ~p: ~p:~p~n~p",
                 [Name, Error, Reason, Stack]),
             ok
     end.

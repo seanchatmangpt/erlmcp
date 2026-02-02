@@ -64,7 +64,35 @@ init([]) ->
                    restart => permanent,
                    shutdown => 5000,
                    type => worker,
-                   modules => [erlmcp_split_brain_detector]}];
+                   modules => [erlmcp_split_brain_detector]},
+                 %% OTP 26-28 Cluster management
+                 #{id => erlmcp_cluster,
+                   start => {erlmcp_cluster, start_link, []},
+                   restart => permanent,
+                   shutdown => 5000,
+                   type => worker,
+                   modules => [erlmcp_cluster]},
+                 %% Session affinity for distributed routing
+                 #{id => erlmcp_session_affinity,
+                   start => {erlmcp_session_affinity, start_link, []},
+                   restart => permanent,
+                   shutdown => 5000,
+                   type => worker,
+                   modules => [erlmcp_session_affinity]},
+                 %% Distributed tracing for cluster correlation
+                 #{id => erlmcp_distributed_tracer,
+                   start => {erlmcp_distributed_tracer, start_link, []},
+                   restart => permanent,
+                   shutdown => 5000,
+                   type => worker,
+                   modules => [erlmcp_distributed_tracer]},
+                 %% Cluster health monitoring
+                 #{id => erlmcp_cluster_monitor,
+                   start => {erlmcp_cluster_monitor, start_link, []},
+                   restart => permanent,
+                   shutdown => 5000,
+                   type => worker,
+                   modules => [erlmcp_cluster_monitor]}];
             false ->
                 logger:info("Starting cluster supervisor in local mode (no distributed components)"),
                 %% Empty child list when clustering disabled

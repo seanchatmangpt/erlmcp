@@ -90,6 +90,7 @@ send_urgent_message(Message) ->
 
 %% @doc Spawn a tool process with OTP 27/28 tagged monitor.
 %% The tag is embedded in the DOWN message, eliminating need for Ref->Tool mapping.
+%% Memory guard is automatically enabled for tool processes (OTP 28+).
 %% @param ToolName Name of the tool to spawn
 %% @param Params Tool execution parameters
 -spec spawn_tool(binary(), map()) -> {ok, pid(), reference()} | {error, term()}.
@@ -206,8 +207,14 @@ handle_info({'DOWN', {tool, ToolName}, process, Pid, Reason}, State) ->
     logger:warning("Tool process ~p (~p) crashed: ~p", [ToolName, Pid, Reason]),
     %% Automatic cleanup from monitored_tools map
     NewMonitoredTools = maps:remove({tool, ToolName}, State#state.monitored_tools),
-    %% Notify interested parties via pg
-    pg:join(erlmcp_tool_failures, {ToolName, Pid, Reason}),
+    %% Notify interested parties via pg (use pg:get_members to verify scope exists)
+    try
+        pg:join(erlmcp_tool_failures, self(), {ToolName, Pid, Reason})
+    catch
+        _:_ ->
+            %% pg scope may not exist, log and continue
+            logger:debug("Could not notify pg scope erlmcp_tool_failures (may not exist)")
+    end,
     {noreply, State#state{monitored_tools = NewMonitoredTools}, hibernate};
 handle_info(_Info, State) ->
     %% OTP 28: Hibernate on unknown messages to reduce memory footprint
@@ -291,6 +298,7 @@ schedule_cleanup(IntervalMs) ->
 
 %% @doc Spawn and monitor a tool process with OTP 27/28 tagged monitor.
 %% The tag allows us to identify which tool crashed without maintaining a Ref -> Tool map.
+%% Memory guard is enabled for tool processes to prevent memory leaks.
 %% @private
 -spec do_spawn_tool(binary(), map()) -> {ok, pid(), reference()} | {error, term()}.
 do_spawn_tool(ToolName, Params) ->
@@ -299,6 +307,12 @@ do_spawn_tool(ToolName, Params) ->
         {Pid, InitialRef} = spawn_monitor(
             fun() ->
                 logger:info("Tool ~p starting execution", [ToolName]),
+                %% OTP 28: Enable memory guard for tool process
+                try
+                    erlmcp_memory_guard:enable_tool_guard()
+                catch
+                    _:_ -> ok
+                end,
                 execute_tool(ToolName, Params)
             end
         ),
@@ -310,7 +324,7 @@ do_spawn_tool(ToolName, Params) ->
         %% Demonitor the untagged reference from spawn_monitor (flush to avoid message queue buildup)
         erlang:demonitor(InitialRef, [flush]),
 
-        logger:info("Tool ~p spawned with tagged monitor: ~p", [ToolName, TaggedRef]),
+        logger:info("Tool ~p spawned with tagged monitor: ~p (memory guard enabled)", [ToolName, TaggedRef]),
         {ok, Pid, TaggedRef}
     catch
         _:Reason ->

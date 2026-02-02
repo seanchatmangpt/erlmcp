@@ -9,45 +9,27 @@ main(_) ->
     io:format("Test 1: Basic compression (100KB)~n"),
     Data = crypto:strong_rand_bytes(1024 * 100),
 
-    case erlmcp_compression:compress(Data) of
-        {ok, Compressed} ->
-            Ratio = byte_size(Compressed) / byte_size(Data),
-            io:format("  Original: ~p bytes~n", [byte_size(Data)]),
-            io:format("  Compressed: ~p bytes~n", [byte_size(Compressed)]),
-            io:format("  Ratio: ~.4f~n", [Ratio]);
-        {error, Reason} ->
-            io:format("  ERROR: ~p~n", [Reason]),
-            halt(1)
-    end,
+    {ok, Compressed} = erlmcp_compression:compress(Data),
+    Ratio = byte_size(Compressed) / byte_size(Data),
+    io:format("  Original: ~p bytes~n", [byte_size(Data)]),
+    io:format("  Compressed: ~p bytes~n", [byte_size(Compressed)]),
+    io:format("  Ratio: ~.4f~n", [Ratio]),
 
     %% Test 2: Roundtrip
     io:format("~nTest 2: Roundtrip compression/decompression~n"),
-    case erlmcp_compression:decompress(Compressed) of
-        {ok, Decompressed} ->
-            case Data =:= Decompressed of
-                true ->
-                    io:format("  Roundtrip: SUCCESS~n");
-                false ->
-                    io:format("  Roundtrip: FAILED (data mismatch)~n"),
-                    halt(1)
-            end;
-        {error, Reason} ->
-            io:format("  ERROR: ~p~n", [Reason]),
-            halt(1)
+    {ok, Decompressed} = erlmcp_compression:decompress(Compressed),
+    case Data =:= Decompressed of
+        true -> io:format("  Roundtrip: SUCCESS~n");
+        false -> io:format("  Roundtrip: FAILED~n"), halt(1)
     end,
 
     %% Test 3: Compression with metadata
     io:format("~nTest 3: Compression with metadata~n"),
-    case erlmcp_compression:compress_with_metadata(Data) of
-        {ok, Compressed2, Metadata} ->
-            io:format("  Encoding: ~p~n", [maps:get(encoding, Metadata)]),
-            io:format("  Original size: ~p bytes~n", [maps:get(original_size, Metadata)]),
-            io:format("  Compressed size: ~p bytes~n", [maps:get(compressed_size, Metadata)]),
-            io:format("  Ratio: ~.4f~n", [maps:get(ratio, Metadata)]);
-        {error, Reason} ->
-            io:format("  ERROR: ~p~n", [Reason]),
-            halt(1)
-    end,
+    {ok, _, Metadata} = erlmcp_compression:compress_with_metadata(Data),
+    io:format("  Encoding: ~p~n", [maps:get(encoding, Metadata)]),
+    io:format("  Original size: ~p bytes~n", [maps:get(original_size, Metadata)]),
+    io:format("  Compressed size: ~p bytes~n", [maps:get(compressed_size, Metadata)]),
+    io:format("  Ratio: ~.4f~n", [maps:get(ratio, Metadata)]),
 
     %% Test 4: Different compression levels
     io:format("~nTest 4: Compression levels comparison~n"),
@@ -77,7 +59,7 @@ main(_) ->
 
     %% Test 6: Threshold-based compression
     io:format("~nTest 6: Threshold-based compression~n"),
-    {ok, Pid} = erlmcp_compression:start_link(),
+    {ok, _} = erlmcp_compression:start_link(),
     ok = erlmcp_compression:set_compression_threshold(102400), % 100KB
 
     SmallData = crypto:strong_rand_bytes(1024 * 50), % 50KB

@@ -30,7 +30,34 @@ init([]) ->
     %% Replaces monolithic core_sup with 4 specialized supervisors
 
     %% Base domain supervisors (always present)
-    BaseChildSpecs = DomainChildSpecs,
+    BaseChildSpecs =
+        [%% ================================================================
+         %% REGISTRY SUPERVISOR: Registry domain (servers, transports)
+         %% ================================================================
+         #{id => erlmcp_registry_sup,
+           start => {erlmcp_registry_sup, start_link, []},
+           restart => permanent,
+           shutdown => infinity,
+           type => supervisor,
+           modules => [erlmcp_registry_sup]},
+         %% ================================================================
+         %% SESSION SUPERVISOR: Session domain (backend, manager, failover)
+         %% ================================================================
+         #{id => erlmcp_session_sup,
+           start => {erlmcp_session_sup, start_link, []},
+           restart => permanent,
+           shutdown => infinity,
+           type => supervisor,
+           modules => [erlmcp_session_sup]},
+         %% ================================================================
+         %% RESILIENCE SUPERVISOR: Resilience domain (cache, circuit_breaker)
+         %% ================================================================
+         #{id => erlmcp_resilience_sup,
+           start => {erlmcp_resilience_sup, start_link, []},
+           restart => permanent,
+           shutdown => infinity,
+           type => supervisor,
+           modules => [erlmcp_resilience_sup]}],
 
     %% Additional supervisors for optional features
     AdditionalChildSpecs =

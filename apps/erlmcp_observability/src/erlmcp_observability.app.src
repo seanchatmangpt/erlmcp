@@ -19,13 +19,27 @@
   {modules, []},
   {licenses, ["Apache-2.0"]},
   {links, []},
+  %% OTP 27+ Runtime Dependencies
+  {runtime_dependencies, [
+    "erts-16.0.3",     % OTP 28 ERTS minimum
+    "kernel-10.4",     % OTP 28 Kernel minimum
+    "stdlib-6.0",      % OTP 28 STDLIB minimum
+    "sasl-4.0",        % SASL (OTP 28)
+    "crypto-5.3",      % Crypto (OTP 27+)
+    "inets-9.0",       % HTTP client (OTP 28)
+    "opentelemetry_api-1.5.0",  % OTEL API (external)
+    "opentelemetry-1.7.0",       % OTEL SDK (external)
+    "opentelemetry_exporter-1.10.0",  % OTEL Exporter (external)
+    "cowboy-2.10.0",   % HTTP server (external)
+    "erlmcp_core-2.1.0"  % Core application
+  ]},
   %% OTP Version Requirements
   {notes, [
-      "Supports Erlang/OTP 25-28",
-      "OTP 28+ features: improved process iteration for monitoring, native JSON metrics",
-      "OTP 27+ features: enhanced monitoring capabilities",
-      "Dependencies: opentelemetry_api 1.5+, opentelemetry 1.7+",
-      "Minimum: OTP 25 (full observability support)",
-      "Recommended: OTP 28+ for best metrics performance"
+      "Requires: Erlang/OTP 28+ (STRICT)",
+      "OTP 28+ features: improved process iteration for monitoring, native JSON metrics, hibernate/0",
+      "OTP 26+ features: persistent config, prep_stop/1 for cleanup",
+      "Dependencies: opentelemetry_api 1.5+, opentelemetry 1.7+, opentelemetry_exporter 1.10+",
+      "Previous OTP 25 support deprecated - upgrade to OTP 28+ required",
+      "See docs/OTP_APPLICATION_CONFIG_RESEARCH.md for observability features"
   ]}
  ]}.
