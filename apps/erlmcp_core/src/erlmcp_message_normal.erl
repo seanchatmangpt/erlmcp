@@ -29,7 +29,7 @@
 
 %% Types
 -type message() :: term().
--type timeout() :: pos_integer() | infinity.
+-type message_timeout() :: pos_integer() | infinity.
 -type message_metrics() :: #{
     sent_count => non_neg_integer(),
     received_count => non_neg_integer(),
@@ -90,7 +90,7 @@ send_message(Dest, Msg) ->
     end.
 
 %% @doc Send message with timeout
--spec send_message_with_timeout(pid() | atom(), message(), timeout()) -> ok | {error, timeout}.
+-spec send_message_with_timeout(pid() | atom(), message(), message_timeout()) -> ok | {error, timeout}.
 send_message_with_timeout(Dest, Msg, Timeout) ->
     StartTime = erlang:monotonic_time(microsecond),
 
@@ -220,14 +220,10 @@ message_monitor_loop(Iteration) ->
     Metrics = get_message_metrics(),
 
     % Log warnings for poor performance
-    case Metrics#{
-        average_latency := AvgLatency,
-        error_count := ErrorCount,
-        sent_count := SentCount
-    } of
+    case Metrics of
         #{average_latency := Lat} when Lat > 1000 ->
             logger:warning("High message latency detected: ~p microseconds", [Lat]);
-        #{error_count := Errors} when Errors > 100 and SentCount > 1000 ->
+        #{error_count := Errors, sent_count := SentCount} when Errors > 100 andalso SentCount > 1000 ->
             logger:warning("High message error rate: ~p errors out of ~p messages",
                           [Errors, SentCount]);
         _ ->
@@ -268,13 +264,11 @@ get_performance_statistics() ->
     Metrics = get_message_metrics(),
 
     % Calculate performance indicators
-    SuccessRate = case Metrics#{
-        sent_count := Sent,
-        error_count := Errors
-    } of
+    SuccessRate = case Metrics of
         #{error_count := 0} -> 100.0;
         #{sent_count := S, error_count := E} ->
-            ((S - E) / S) * 100.0
+            ((S - E) / S) * 100.0;
+        _ -> 0.0
     end,
 
     #{

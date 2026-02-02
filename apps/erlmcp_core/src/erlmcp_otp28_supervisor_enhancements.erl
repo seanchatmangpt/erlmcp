@@ -67,28 +67,32 @@ restart_child_with_tracking(ChildId, Supervisor) ->
         end,
 
         %% Perform restart
-        Result = case supervisor:terminate_child(Supervisor, ChildId) of
-            ok ->
-                case supervisor:restart_child(Supervisor, ChildId) of
-                    {ok, Pid} = OK ->
-                        %% Track restart
-                        gen_server:cast(?MODULE, {track_restart, ChildId, OldPid, Pid}),
-                        OK;
-                    {error, already_present} ->
-                        %% Already restarted
-                        {ok, self()};
-                    Error ->
-                        Error
-                end;
-            {error, not_found} ->
-                supervisor:restart_child(Supervisor, ChildId)
-        end,
-
-        Result
+        do_restart_child(ChildId, Supervisor, OldPid)
     catch
-        _:Error ->
-            ?LOG_ERROR("Failed to restart child ~p: ~p", [ChildId, Error]),
-            {error, Error}
+        _:CatchError ->
+            ?LOG_ERROR("Failed to restart child ~p: ~p", [ChildId, CatchError]),
+            {error, CatchError}
+    end.
+
+%% @doc Helper to perform restart with proper scoping
+-spec do_restart_child(child_id(), supervisor_ref(), pid() | undefined) ->
+    {ok, pid()} | {error, term()}.
+do_restart_child(ChildId, Supervisor, OldPid) ->
+    case supervisor:terminate_child(Supervisor, ChildId) of
+        ok ->
+            case supervisor:restart_child(Supervisor, ChildId) of
+                {ok, NewPid} ->
+                    %% Track restart
+                    gen_server:cast(?MODULE, {track_restart, ChildId, OldPid, NewPid}),
+                    {ok, NewPid};
+                {error, already_present} ->
+                    %% Already restarted
+                    {ok, self()};
+                RestartError ->
+                    RestartError
+            end;
+        {error, not_found} ->
+            supervisor:restart_child(Supervisor, ChildId)
     end.
 
 %% @doc Restart multiple children in bulk
@@ -241,7 +245,7 @@ supervisor_detailed_health(Supervisor) ->
             health => Health,
             total_children => Total,
             active_children => Active,
-            restarting_children => Restaring,
+            restarting_children => Restarting,
             dead_children => Dead,
             avg_memory => AvgMem,
             avg_reductions => AvgRed

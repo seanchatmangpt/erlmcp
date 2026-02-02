@@ -1,1 +1,1 @@
-/Users/sac/erlmcp/include/erlmcp.hrl
+/home/user/erlmcp/include/erlmcp.hrl
