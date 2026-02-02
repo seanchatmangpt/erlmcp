@@ -241,7 +241,7 @@ supervisor_detailed_health(Supervisor) ->
             health => Health,
             total_children => Total,
             active_children => Active,
-            restarting_children => Restaring,
+            restarting_children => Restarting,
             dead_children => Dead,
             avg_memory => AvgMem,
             avg_reductions => AvgRed
