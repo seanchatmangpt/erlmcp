@@ -158,7 +158,7 @@ test_buffer_management() ->
     {ok, _Pid} = erlmcp_transport_stdio:start_link(#{session_id => <<"test-buffer">>}),
 
     %% Send large message
-    LargeMessage = <<"{\"data\":\"", binary:copy(<<"x">>, 10000), "\"}">>,
+    LargeMessage = <<"{\"data\":\"", (binary:copy(<<"x">>, 10000))/binary, "\"}">>,
     ok = erlmcp_transport_stdio:send(LargeMessage),
 
     %% Verify buffer handled correctly

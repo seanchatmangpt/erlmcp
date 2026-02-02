@@ -15,17 +15,17 @@
 %% @doc Test transport interface creation
 transport_interface_test() ->
     %% Test transport interface with different types
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"stdio">>, #{})),
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"tcp">>, #{})),
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"http">>, #{})),
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"ws">>, #{})),
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"sse">>, #{})),
+    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"stdio">>, %{})),
+    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"tcp">>, %{})),
+    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"http">>, %{})),
+    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"ws">>, %{})),
+    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"sse">>, %{})),
 
     %% Test invalid transport type
-    {error, invalid_transport_type} = erlmcp_cli_transport:transport(<<"invalid">>, #{}),
+    {error, invalid_transport_type} = erlmcp_cli_transport:transport(<<"invalid">>, %{}),
 
     %% Test transport with invalid options
-    {error, invalid_transport_options} = erlmcp_cli_transport:transport(<<"stdio>>, #{}),  # Malformed options
+    {error, invalid_transport_options} = erlmcp_cli_transport:transport(<<"stdio">>, %{}),  % Malformed options
     ok.
 
 %% @doc Test transport status checking
@@ -34,7 +34,7 @@ transport_status_test() ->
     false = erlmcp_cli_transport:is_active(<<"nonexistent">>),
 
     %% Start a transport and check status
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, #{}),
+    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{}),
     true = erlmcp_cli_transport:is_active(<<"stdio">>),
 
     %% Stop transport and check status
@@ -45,7 +45,7 @@ transport_status_test() ->
 %% @doc Test transport statistics
 transport_stats_test() ->
     %% Start a transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, #{}),
+    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{}),
 
     %% Get transport statistics
     Stats = erlmcp_cli_transport:get_transport_stats(<<"stdio">>),
@@ -76,24 +76,24 @@ transport_config_test() ->
     lists:foreach(fun(Config) ->
         case erlmcp_cli_transport:validate_config(Config) of
             true -> ok;
-            false ?fail("Valid configuration rejected: ~p", [Config])
+            false -> ?assert(false)  % Valid configuration rejected: ~p, [Config]  % TODO: Fix EUnit macro
         end
     end, ValidConfigs),
 
     %% Test invalid configurations
     InvalidConfigs = [
         #{"type" => "invalid"},
-        #{"type" => "tcp"},  # Missing port
-        #{"type" => "http", "port" => "invalid"},  # Invalid port type
-        #{"type" => "stdio", "host" => 123},  # Invalid host type
-        #{},  # Empty config
-        #{"type" => null}  # Invalid type
+        #{"type" => "tcp"},  % Missing port
+        #{"type" => "http", "port" => "invalid"},  % Invalid port type
+        #{"type" => "stdio", "host" => 123},  % Invalid host type
+        #{},  % Empty config
+        #{"type" => null}  % Invalid type
     ],
 
     lists:foreach(fun(Config) ->
         case erlmcp_cli_transport:validate_config(Config) of
             false -> ok;
-            true ?fail("Invalid configuration accepted: ~p", [Config])
+            true -> ?assert(false)  % Invalid configuration accepted: ~p, [Config]
         end
     end, InvalidConfigs),
     ok.
@@ -101,7 +101,7 @@ transport_config_test() ->
 %% @doc Test transport message handling
 transport_message_test() ->
     %% Start stdio transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, #{}),
+    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{}),
 
     %% Test message sending
     Message = <<"{\"jsonrpc\":\"2.0\",\"method\":\"test\",\"id\":1}">>,
@@ -122,7 +122,7 @@ concurrent_transport_test() ->
     %% Start multiple transports concurrently
     Transports = [<<"stdio">>, <<"tcp">>, <<"http">>, <<"ws">>, <<"sse">>],
     lists:foreach(fun(Type) ->
-        ok = erlmcp_cli_transport:transport(Type, #{
+        ok = erlmcp_cli_transport:transport(Type, %{
             "host" => "localhost",
             "port" => 8080
         })
@@ -160,8 +160,8 @@ transport_error_test() ->
     {error, invalid_transport_type} = erlmcp_cli_transport:send_data(<<"invalid">>, <<"test">>),
 
     %% Test with malformed message
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, #{}),
-    ok = erlmcp_cli_transport:send_data(<<"stdio">>, <<"invalid json">>),  # Should handle gracefully
+    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{}),
+    ok = erlmcp_cli_transport:send_data(<<"stdio">>, <<"invalid json">>),  % Should handle gracefully
     ok = erlmcp_cli_transport:close_transport(<<"stdio">>),
     ok.
 
@@ -171,16 +171,16 @@ transport_events_test() ->
     ok = erlmcp_cli_transport:start_monitor(),
 
     %% Start a transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, #{ "host" => "localhost" }),
+    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{ "host" => "localhost" }),
 
     %% Transport should emit connect event
     receive
         {transport_event, <<"stdio">>, connected} ->
             ok;
-        Other ->
-            ?fail("Unexpected event: ~p", [Other])
+        _ ->
+            ?assert(false)  % Unexpected event
     after 1000 ->
-        ?fail("No connect event received")
+        ?assert(false)  % No connect event received
     end,
 
     %% Send data (should emit send event)
@@ -190,10 +190,10 @@ transport_events_test() ->
     receive
         {transport_event, <<"stdio">>, {sent, _Size}} ->
             ok;
-        Other2 ->
-            ?fail("Unexpected event: ~p", [Other2])
+        _ ->
+            ?assert(false)  % Unexpected event
     after 1000 ->
-        ?fail("No send event received")
+        ?assert(false)  % No send event received
     end,
 
     %% Close transport (should emit disconnect event)
@@ -202,10 +202,10 @@ transport_events_test() ->
     receive
         {transport_event, <<"stdio">>, disconnected} ->
             ok;
-        Other3 ->
-            ?fail("Unexpected event: ~p", [Other3])
+        _ ->
+            ?assert(false)  % Unexpected event
     after 1000 ->
-        ?fail("No disconnect event received")
+        ?assert(false)  % No disconnect event received
     end,
 
     %% Stop monitoring
@@ -218,7 +218,7 @@ transport_health_test() ->
     unhealthy = erlmcp_cli_transport:check_health(<<"nonexistent">>),
 
     %% Start a transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, #{ "host" => "localhost" }),
+    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{ "host" => "localhost" }),
 
     %% Check transport health
     Health = erlmcp_cli_transport:check_health(<<"stdio">>),
@@ -234,7 +234,7 @@ transport_health_test() ->
 %% @doc Test transport metrics integration
 transport_metrics_test() ->
     %% Start a transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, #{ "host" => "localhost" }),
+    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{ "host" => "localhost" }),
 
     %% Get transport metrics
     Metrics = erlmcp_cli_transport:get_transport_metrics(<<"stdio">>),
@@ -250,7 +250,7 @@ transport_metrics_test() ->
 
     %% Check that metrics were updated
     UpdatedMetrics = erlmcp_cli_transport:get_transport_metrics(<<"stdio">>),
-    ?assertEqual(maps:get(<<"messages_sent>>>, UpdatedMetrics) > maps:get(<<"messages_sent">>, Metrics)),
+    ?assert(maps:get(<<"messages_sent">>, UpdatedMetrics) > maps:get(<<"messages_sent">>, Metrics)),
 
     %% Cleanup
     ok = erlmcp_cli_transport:close_transport(<<"stdio">>),
