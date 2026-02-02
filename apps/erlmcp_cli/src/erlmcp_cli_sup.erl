@@ -97,7 +97,14 @@ init(_Opts) ->
            restart => permanent,
            shutdown => 5000,
            type => worker,
-           modules => [erlmcp_cli_metrics]}],
+           modules => [erlmcp_cli_metrics]},
+         %% CLI Status Server - OTP 28 feature display
+         #{id => erlmcp_cli_status,
+           start => {erlmcp_cli_status, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_cli_status]}],
 
     {ok, {SupFlags, Children}}.
 

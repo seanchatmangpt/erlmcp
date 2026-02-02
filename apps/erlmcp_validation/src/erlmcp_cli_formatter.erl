@@ -170,7 +170,7 @@ format_tree(Value, _Indent) ->
 -spec format_json(map() | list()) -> iolist().
 format_json(Data) ->
     try
-        JSON = jsx:encode(Data, [space, {indent, 2}]),
+        JSON = erlmcp_json_native:encode(Data, [space, {indent, 2}]),
         color(cyan, JSON)
     catch
         _:_ ->
@@ -433,9 +433,9 @@ format_json_with_opts(Data, Opts) ->
 
     case Indent of
         0 ->
-            jsx:encode(JsonData);
+            erlmcp_json_native:encode(JsonData);
         _ ->
-            jsx:encode(JsonData, [{space, 1}, {indent, Indent}])
+            erlmcp_json_native:encode(JsonData, [{space, 1}, {indent, Indent}])
     end.
 
 %% @private Normalize data for JSON encoding

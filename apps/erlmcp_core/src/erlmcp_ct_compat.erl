@@ -110,7 +110,7 @@ encode_json(Data) ->
         true ->
             json:encode(Data);
         false ->
-            jsx:encode(convert_atom_keys(Data))
+            erlmcp_json_native:encode(convert_atom_keys(Data))
     end.
 
 %% @doc decode JSON using best available decoder
@@ -120,7 +120,7 @@ decode_json(JSON) ->
         true ->
             json:decode(JSON);
         false ->
-            jsx:decode(JSON, [return_maps])
+            erlmcp_json_native:decode(JSON)
     end.
 
 %% @doc Execute function with native coverage if available

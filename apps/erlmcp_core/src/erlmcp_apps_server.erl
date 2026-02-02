@@ -236,8 +236,15 @@ terminate(_Reason, State) ->
                  State#state.running_apps),
 
     %% Clean up ETS tables
-    catch ets:delete(State#state.apps_ets),
-    catch ets:delete(State#state.app_policies),
+    %% OTP 28: Modernize catch to try/catch for better error handling
+    try ets:delete(State#state.apps_ets)
+    catch
+        _:Error1 -> logger:warning("Failed to delete apps_ets: ~p", [Error1])
+    end,
+    try ets:delete(State#state.app_policies)
+    catch
+        _:Error2 -> logger:warning("Failed to delete app_policies: ~p", [Error2])
+    end,
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.

@@ -119,7 +119,7 @@ handle_info(collect_metrics, #state{opts = Opts,
         undefined ->
             ok;
         _ ->
-            FormattedData = jsx:encode(NewHistory, [{space, 1}, {indent, 2}]),
+            FormattedData = erlmcp_json_native:encode(NewHistory, [{space, 1}, {indent, 2}]),
             file:write_file(OutputFile, FormattedData)
     end,
 
@@ -319,7 +319,7 @@ collect_health_metrics() ->
 display_metrics(Metrics, table) ->
     display_metrics_table(Metrics);
 display_metrics(Metrics, json) ->
-    io:format("~s~n", [jsx:encode(Metrics, [{space, 1}, {indent, 2}])]);
+    io:format("~s~n", [erlmcp_json_native:encode(Metrics, [{space, 1}, {indent, 2}])]);
 display_metrics(Metrics, _Format) ->
     io:format("~p~n", [Metrics]).
 

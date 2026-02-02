@@ -132,7 +132,7 @@ code_change(_OldVsn, State, _Extra) ->
 parse_json_rpc(JsonData, SpanCtx) ->
     try
         %% Parse JSON
-        JsonDataDecoded = jsx:decode(JsonData, [{labels, binary}, return_maps]),
+        JsonDataDecoded = erlmcp_json_native:decode(JsonData),
 
         %% Validate JSON-RPC 2.0 structure
         case validate_json_rpc_request(JsonDataDecoded) of

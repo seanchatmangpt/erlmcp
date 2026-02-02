@@ -406,7 +406,7 @@ update_stats(Command, Execution, Stats) ->
 -spec export_stats_internal(map(), string(), atom()) -> ok | {error, term()}.
 export_stats_internal(Stats, Filename, json) ->
     try
-        JsonData = jsx:encode(Stats, [{space, 1}, {indent, 2}]),
+        JsonData = erlmcp_json_native:encode(Stats, [{space, 1}, {indent, 2}]),
         file:write_file(Filename, JsonData)
     catch
         Class:Error:Stack ->

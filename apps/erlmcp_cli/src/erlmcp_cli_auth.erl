@@ -501,7 +501,7 @@ load_file_config() ->
                 os:getenv("HOME", "."), ".erlmcp_auth.json"),
         case file:read_file(ConfigFile) of
             {ok, Content} ->
-                jsx:decode(Content, [{labels, binary}, return_maps]);
+                erlmcp_json_native:decode(Content);
             {error, enoent} ->
                 #{};
             {error, Reason} ->
@@ -666,8 +666,8 @@ generate_jwt_token(Claims, ProviderConfig) ->
             #{<<"alg">> => atom_to_binary(maps:get(<<"algorithm">>, ProviderConfig, RS256)),
               <<"typ">> => <<"JWT">>},
 
-        Payload = jsx:encode(EnhancedClaims),
-        HeaderEncoded = base64url_encode(jsx:encode(Header)),
+        Payload = erlmcp_json_native:encode(EnhancedClaims),
+        HeaderEncoded = base64url_encode(erlmcp_json_native:encode(Header)),
         PayloadEncoded = base64url_encode(Payload),
         Signature = <<"dummy_signature">>,
 
@@ -700,8 +700,8 @@ validate_jwt_token(Token, State) ->
         case length(Parts) of
             3 ->
                 [HeaderEnc, PayloadEnc, _] = Parts,
-                Header = jsx:decode(base64url_decode(HeaderEnc), [{labels, binary}, return_maps]),
-                Payload = jsx:decode(base64url_decode(PayloadEnc), [{labels, binary}, return_maps]),
+                Header = erlmcp_json_native:decode(base64url_decode(HeaderEnc)),
+                Payload = erlmcp_json_native:decode(base64url_decode(PayloadEnc)),
 
                 %% Validate signature (simplified)
                 case verify_token_signature(Token, Header, State) of

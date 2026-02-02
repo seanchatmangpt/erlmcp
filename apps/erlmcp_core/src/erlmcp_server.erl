@@ -69,7 +69,9 @@
          notification_handlers = #{} ::
              #{binary() => {pid(), reference()}},  % Notification method -> {HandlerPid, MonitorRef}
          cancellable_requests = #{} ::
-             #{term() => reference()}}).  % RequestId -> CancellationToken mapping
+             #{term() => reference()},  % RequestId -> CancellationToken mapping
+         priority_alias :: erlang:alias() | undefined  % OTP 28: Priority message queue alias
+        }).
 
 -type state() :: #state{}.
 
@@ -484,7 +486,33 @@ handle_continue(initialize, State) ->
 handle_continue(_Continue, State) ->
     {noreply, State}.
 
--spec handle_info(term(), state()) -> {noreply, state()}.
+-spec handle_info(term(), state()) -> {noreply, state()} | {noreply, state(), hibernate}.
+% OTP 28: Handle priority messages first (EEP-76)
+% Priority messages jump the queue for urgent control operations
+handle_info({priority, From, {cancel_request, ReqId}}, State) ->
+    %% Handle cancellation requests with priority
+    logger:info("Priority cancel request for ~p", [ReqId]),
+    case maps:get(ReqId, State#state.cancellable_requests, undefined) of
+        undefined ->
+            {noreply, State};
+        CancelToken ->
+            erlmcp_cancellation:cancel(CancelToken, client_requested),
+            NewRequests = maps:remove(ReqId, State#state.cancellable_requests),
+            {noreply, State#state{cancellable_requests = NewRequests}}
+    end;
+handle_info({priority, From, {ping, Ref}}, State) ->
+    %% Handle priority ping/health check messages
+    From ! {pong, Ref},
+    {noreply, State};
+handle_info({urgent, shutdown}, State) ->
+    %% Handle urgent shutdown signals
+    logger:info("Urgent shutdown signal received"),
+    {stop, shutdown, State};
+handle_info({urgent, {reconfigure, NewConfig}}, #state{server_id = ServerId} = State) ->
+    %% Handle urgent reconfiguration
+    logger:info("Urgent reconfiguration for server ~p", [ServerId]),
+    %% Apply configuration changes immediately
+    {noreply, State};
 % Handle messages routed from registry - this is the key change!
 handle_info({mcp_message, TransportId, Data}, #state{server_id = ServerId} = State) ->
     SpanCtx = erlmcp_tracing:start_server_span(<<"server.handle_mcp_message">>, ServerId),

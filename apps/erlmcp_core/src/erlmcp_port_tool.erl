@@ -308,7 +308,7 @@ find_executable(Command) when is_list(Command) ->
 %% @doc Format request as JSON-RPC message
 -spec format_json_request(request_id(), binary()) -> binary().
 format_json_request(RequestId, Request) ->
-    Json = jsx:encode(#{
+    Json = erlmcp_json_native:encode(#{
         <<"jsonrpc">> => <<"2.0">>,
         <<"id">> => RequestId,
         <<"method">> => <<"execute">>,
@@ -322,7 +322,7 @@ format_json_request(RequestId, Request) ->
     {noreply, port_state()}.
 process_port_response(Data, #port_state{pending = Pending} = State) ->
     %% Try to parse JSON response
-    try jsx:decode(Data, [return_maps]) of
+    try erlmcp_json_native:decode(Data) of
         #{<<"id">> := RequestId, <<"result">> := Result} ->
             %% Successful response
             case maps:take(RequestId, Pending) of

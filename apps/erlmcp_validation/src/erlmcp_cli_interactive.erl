@@ -586,7 +586,7 @@ cmd_call_tool([Name | ArgsStr], State) ->
                         #{};
                     [JsonStr] ->
                         try
-                            jsx:decode(list_to_binary(JsonStr), [return_maps])
+                            erlmcp_json_native:decode(list_to_binary(JsonStr))
                         catch
                             _:_ ->
                                 #{}

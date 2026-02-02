@@ -458,7 +458,7 @@ verify_jwt_signature(Token, State) ->
         % Peek at protected header using jose library to extract kid
         % This properly handles base64url encoding used in JWT
         ProtectedBin = jose_jws:peek_protected(Token),
-        Protected = jsx:decode(ProtectedBin, [return_maps]),
+        Protected = erlmcp_json_native:decode(ProtectedBin),
 
         % Extract key ID (kid) from protected header
         KeyId = maps:get(<<"kid">>, Protected, undefined),
@@ -511,7 +511,7 @@ verify_jwt_with_key(Token, PublicKeyPem, State) ->
         % Supports RS256, RS384, RS512, ES256, ES384, ES512, HS256, etc.
         case jose_jws:verify(JWK, Token) of
             {true, Payload, _JWS} ->
-                Claims = jsx:decode(Payload, [return_maps]),
+                Claims = erlmcp_json_native:decode(Payload),
                 logger:debug("JWT signature verified successfully"),
                 validate_jwt_claims(Claims, State);
             {false, _, _} ->
@@ -785,7 +785,7 @@ handle_introspect_response(Status, _Headers, Body, Token, State) ->
     case Status of
         200 ->
             try
-                TokenInfo = jsx:decode(Body, [return_maps]),
+                TokenInfo = erlmcp_json_native:decode(Body),
                 case validate_introspection_response(TokenInfo) of
                     {ok, EnrichedTokenInfo, CacheTTL} ->
                         % Cache the validated token with TTL

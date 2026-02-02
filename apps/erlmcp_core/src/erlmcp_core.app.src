@@ -144,7 +144,7 @@
     "crypto-5.3",      % Crypto library (OTP 27+)
     "ssl-11.0",        % SSL/TLS support (OTP 28)
     "public_key-1.5",  % Public key cryptography
-    "jsx-3.1.0",       % JSON encoding (external dep)
+    % jsx-3.1.0 removed - migrated to OTP 27+ native json module
     "jesse-1.8.1",     % JSON Schema validation (external dep)
     "gproc-0.9.0"      % Process registry (external dep)
   ]},
