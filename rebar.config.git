@@ -7,11 +7,19 @@
 
 {minimum_otp_vsn, "28"}.
 
+%% Plugins - DISABLED when using git fallback (requires hex.pm)
+%% Uncomment these when hex.pm is accessible
+%% {plugins,
+%%  [rebar3_hex,                % Hex.pm publishing
+%%   rebar3_format,             % Code formatting
+%%   rebar3_lint,               % Linting
+%%   rebar3_proper,             % Property-based testing
+%%   rebar3_auto]}.                % Auto-compilation
+
 %% Dependencies from Git repositories (fallback when hex.pm unreachable)
 {deps,
- [% JSON encoding/decoding
-  {jsx, {git, "https://github.com/talentdeficit/jsx.git", {tag, "v3.1.0"}}},
-  % JSON Schema validation
+ [% JSON Schema validation (jesse maintained fork)
+  % Note: jsx removed - migrated to OTP 27+ native json module
   {jesse, {git, "https://github.com/for-GET/jesse.git", {tag, "1.8.1"}}},
   % Process registry
   {gproc, {git, "https://github.com/uwiger/gproc.git", {tag, "0.9.0"}}},
@@ -30,7 +38,9 @@
   % OpenTelemetry (observability)
   {opentelemetry_api, {git, "https://github.com/open-telemetry/opentelemetry-erlang.git", {branch, "main"}}},
   {opentelemetry, {git, "https://github.com/open-telemetry/opentelemetry-erlang.git", {branch, "main"}}},
-  {opentelemetry_exporter, {git, "https://github.com/open-telemetry/opentelemetry-erlang.git", {branch, "main"}}}
+  {opentelemetry_exporter, {git, "https://github.com/open-telemetry/opentelemetry-erlang.git", {branch, "main"}}},
+  % gRPC support (transitive dependency of opentelemetry_exporter)
+  {grpcbox, {git, "https://github.com/tsloughter/grpcbox.git", {tag, "v0.17.1"}}}
  ]}.
 
 %% Shell (for `rebar3 shell`)
