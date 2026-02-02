@@ -325,7 +325,7 @@ load_config_file(File) ->
     try
         case file:read_file(File) of
             {ok, Content} ->
-                jsx:decode(Content, [{labels, binary}, return_maps]);
+                erlmcp_json_native:decode(Content);
             {error, enoent} ->
                 #{};
             {error, Reason} ->
@@ -514,7 +514,7 @@ persist_config(Key, Value, File) ->
         NewConfig = set_nested_value(Key, Value, ExistingConfig),
 
         %% Write to file
-        JsonData = jsx:encode(NewConfig, [{indent, 2}]),
+        JsonData = erlmcp_json_native:encode(NewConfig, [{indent, 2}]),
         file:write_file(File, JsonData),
 
         ok

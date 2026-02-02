@@ -4,7 +4,8 @@
 
 %% API exports
 -export([validate_tool/1, validate_tool_name/1, validate_tool_description/1,
-         validate_input_schema/1, validate_tool_metadata/1, encode_tool/1, decode_tool/1]).
+         validate_input_schema/1, validate_tool_metadata/1, encode_tool/1, decode_tool/1,
+         send_priority_cancel/3, send_urgent_tool_alert/2]).
 
 %% Import nominal type for tool names
 -import(erlmcp_mcp_types, [mcp_tool_name/0]).
@@ -204,4 +205,88 @@ validate_semver(Version) when is_binary(Version) ->
             true;
         _ ->
             false
+    end.
+
+%%====================================================================
+%% Priority Message API (OTP 28 EEP-76)
+%%====================================================================
+
+%% @doc Send priority cancellation signal for tool execution.
+%%
+%% Use this to cancel long-running tool operations (e.g., LLM generation).
+%% Priority messages jump the queue, ensuring immediate cancellation.
+%%
+%% == Example ==
+%% <pre>
+%% %% Start long-running tool
+%% {ok, ToolPid} = erlmcp_tool:execute_tool(llm_generate, Params),
+%%
+%% %% Later: cancel via priority message
+%% ok = erlmcp_tool:send_priority_cancel(ToolPid, RequestId, self()),
+%%
+%% %% Receive confirmation
+%% receive
+%%     {cancel_ack, RequestId} -> ok
+%% after 5000 ->
+%%     {error, timeout}
+%% end.
+%% </pre>>
+%%
+%% @param TargetPid Process executing the tool
+%% @param RequestId Unique request identifier to cancel
+%% @param FromPid Sender process (for reply correlation)
+%% @returns ok
+-spec send_priority_cancel(pid(), term(), pid()) -> ok.
+send_priority_cancel(TargetPid, RequestId, FromPid) when is_pid(TargetPid), is_pid(FromPid) ->
+    %% Check if priority messages available (OTP 28+)
+    case have_priority_messages() of
+        true ->
+            %% Use OTP 28 priority message for immediate cancellation
+            erlang:send(TargetPid, {priority, FromPid, {cancel_tool, RequestId}},
+                       [nosuspend, {priority, high}]);
+        false ->
+            %% Fallback to normal message (OTP < 28)
+            TargetPid ! {cancel_tool, RequestId, FromPid}
+    end,
+    ok.
+
+%% @doc Send urgent tool alert (system-level notification).
+%%
+%% Use for critical tool events that require immediate attention:
+%% - Tool execution failures
+%% - Resource exhaustion
+%% - Security violations
+%%
+%% == Example ==
+%% <pre>
+%% %% Tool detected security issue
+%% erlmcp_tool:send_urgent_tool_alert(ServerPid,
+%%     {security_violation, <<"SQL injection detected">>})
+%% </pre>>
+%%
+%% @param TargetPid Process to notify
+%% @param Alert Alert message (any term)
+%% @returns ok
+-spec send_urgent_tool_alert(pid(), term()) -> ok.
+send_urgent_tool_alert(TargetPid, Alert) when is_pid(TargetPid) ->
+    %% Check if priority messages available (OTP 28+)
+    case have_priority_messages() of
+        true ->
+            %% Use urgent priority for system-level alerts
+            erlang:send(TargetPid, {urgent, Alert}, [nosuspend, {priority, high}]);
+        false ->
+            %% Fallback to normal message
+            TargetPid ! {urgent, Alert}
+    end,
+    ok.
+
+%% @private
+%% @doc Check if priority messages are available (OTP 28+).
+-spec have_priority_messages() -> boolean().
+have_priority_messages() ->
+    %% Check OTP version
+    case erlang:system_info(otp_release) of
+        "28" ++ _ -> true;
+        "29" ++ _ -> true;
+        _ -> false
     end.

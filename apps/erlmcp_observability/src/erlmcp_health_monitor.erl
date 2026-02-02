@@ -327,6 +327,49 @@ handle_info({health_check, ComponentId}, State) ->
 handle_info(system_health_check, State) ->
     NewState = perform_system_health_check(State),
     {noreply, NewState};
+%% OTP 28 Priority Message Handling
+handle_info({priority, From, {ping, Ref}}, State) ->
+    %% Priority health check ping - respond immediately
+    From ! {pong, Ref, {self(), healthy, State#state.system_health}},
+    {noreply, State};
+handle_info({priority, From, {health_check_request, ComponentId}}, State) ->
+    %% Priority health check request for specific component
+    NewState = perform_component_health_check(ComponentId, State),
+    %% Send response with priority
+    case maps:find(ComponentId, NewState#state.components) of
+        {ok, Component} ->
+            From ! {health_check_response, ComponentId, Component#component_health.status};
+        error ->
+            From ! {health_check_response, ComponentId, not_found}
+    end,
+    {noreply, NewState};
+handle_info({priority, From, {emergency_health_report}}, State) ->
+    %% Priority request for emergency health report
+    Report = generate_system_health_report(State),
+    From ! {emergency_health_report, Report},
+    {noreply, State};
+handle_info({urgent, reset_health_status}, State) ->
+    %% Urgent reset of all health statuses
+    ?LOG_WARNING("Urgent health status reset requested"),
+    ResetComponents =
+        maps:map(fun(_Id, Component) ->
+                    Component#component_health{status = unknown,
+                                               consecutive_failures = 0,
+                                               last_error = undefined,
+                                               circuit_breaker_active = false,
+                                               degraded = false}
+                 end,
+                 State#state.components),
+    NewState =
+        State#state{components = ResetComponents,
+                    system_health = unknown,
+                    alerts = []},
+    {noreply, NewState};
+handle_info({urgent, {critical_alert, Alert}}, State) ->
+    %% Urgent critical alert - add to front of alerts
+    ?LOG_ERROR("Urgent critical alert: ~p", [Alert]),
+    NewAlerts = [{critical, Alert, erlang:timestamp()} | State#state.alerts],
+    {noreply, State#state{alerts = NewAlerts}};
 handle_info(Info, State) ->
     ?LOG_DEBUG("Unexpected info: ~p", [Info]),
     {noreply, State}.

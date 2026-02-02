@@ -89,7 +89,7 @@ generate_report(ValidationResults, Options) ->
             false ->
                 []
         end,
-    jsx:encode(Report, JSEncodeOptions).
+    erlmcp_json_native:encode(Report, JSEncodeOptions).
 
 %% @doc Format individual validator result for JSON
 -spec format_validator_result(atom(), validation_results()) -> map().

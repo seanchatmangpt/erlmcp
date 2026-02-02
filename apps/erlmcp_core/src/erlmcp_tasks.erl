@@ -332,7 +332,12 @@ handle_info(_Info, State) ->
 terminate(_Reason, #state{task_count = Count}) ->
     logger:info("Tasks manager terminating with ~p active tasks", [Count]),
     % Clean up ETS table to prevent state leakage
-    catch ets:delete(?TASKS_TABLE),
+    %% OTP 28: Modernize catch to try/catch for better error handling
+    try ets:delete(?TASKS_TABLE)
+    catch
+        _:Error ->
+            logger:warning("Failed to delete tasks table: ~p", [Error])
+    end,
     ok.
 
 %% @private

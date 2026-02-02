@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-02-02T03:40:31.036Z",
+  "timestamp": "2026-02-02T16:42:30.672Z",
   "projectRoot": "/Users/sac/erlmcp",
   "structure": {
     "hasPackageJson": false,
@@ -7,5 +7,5 @@
     "hasClaudeConfig": true,
     "hasClaudeFlow": true
   },
-  "scannedAt": 1770003631036
+  "scannedAt": 1770050550672
 }

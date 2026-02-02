@@ -314,7 +314,7 @@ handle_cast({received_data, Data}, State) ->
     %% Process received data
     try
         %% Parse JSON-RPC request
-        JsonData = jsx:decode(Data, [{labels, binary}]),
+        JsonData = erlmcp_json_native:decode(Data),
 
         %% Forward to JSON-RPC handler
         case erlmcp_cli_json_rpc:handle_json_rpc(Data, #{}, State#tcp_state.session_id) of

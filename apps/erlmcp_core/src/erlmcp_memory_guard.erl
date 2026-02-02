@@ -243,22 +243,68 @@ validate_memory(ProcessType) ->
             {error, UsagePercent};
         P when P >= Threshold * 90 ->
             logger:warning("Process memory usage high: ~.2f% (~p / ~p bytes)",
-                          [P, CurrentHeap, MaxHeap]),
+                          [UsagePercent, CurrentHeap, MaxHeap]),
             {warning, UsagePercent};
-        P ->
+        _UsagePercent ->
             {ok, UsagePercent}
     end.
 
 %% @doc Get memory limits for a process type.
 %% Returns map with max_heap, max_bin_heap, and hibernate_threshold.
+%% Reads from application config (sys.config) with defaults as fallback.
 %%
 %% @param ProcessType Type of process
 %% @return Memory limits map
 -spec get_limits(process_type()) -> memory_limit().
-get_limits(context) -> ?DEFAULT_CONTEXT_LIMITS;
-get_limits(tool) -> ?DEFAULT_TOOL_LIMITS;
-get_limits(transport) -> ?DEFAULT_TRANSPORT_LIMITS;
-get_limits(generic) -> ?DEFAULT_GENERIC_LIMITS.
+get_limits(ProcessType) ->
+    case application:get_env(erlmcp_core, memory_guard) of
+        {ok, Config} ->
+            case lists:keyfind(ProcessType, 1, Config) of
+                {ProcessType, Limits} ->
+                    MaxHeap = proplists:get_value(max_heap_size, Limits,
+                        default_max_heap(ProcessType)),
+                    MaxBinHeap = proplists:get_value(max_bin_vheap_size, Limits,
+                        default_max_bin_heap(ProcessType)),
+                    Threshold = default_threshold(ProcessType),
+                    #{max_heap => MaxHeap,
+                      max_bin_heap => MaxBinHeap,
+                      hibernate_threshold => Threshold};
+                false ->
+                    %% No config for this type, use defaults
+                    default_limits(ProcessType)
+            end;
+        undefined ->
+            %% No config at all, use defaults
+            default_limits(ProcessType)
+    end.
+
+%% @private Get default limits for a process type
+-spec default_limits(process_type()) -> memory_limit().
+default_limits(context) -> ?DEFAULT_CONTEXT_LIMITS;
+default_limits(tool) -> ?DEFAULT_TOOL_LIMITS;
+default_limits(transport) -> ?DEFAULT_TRANSPORT_LIMITS;
+default_limits(generic) -> ?DEFAULT_GENERIC_LIMITS.
+
+%% @private Get default max heap size for process type
+-spec default_max_heap(process_type()) -> pos_integer().
+default_max_heap(context) -> 100_000_000;
+default_max_heap(tool) -> 50_000_000;
+default_max_heap(transport) -> 30_000_000;
+default_max_heap(generic) -> 20_000_000.
+
+%% @private Get default max binary heap size for process type
+-spec default_max_bin_heap(process_type()) -> pos_integer().
+default_max_bin_heap(context) -> 50_000_000;
+default_max_bin_heap(tool) -> 25_000_000;
+default_max_bin_heap(transport) -> 15_000_000;
+default_max_bin_heap(generic) -> 10_000_000.
+
+%% @private Get default hibernate threshold for process type
+-spec default_threshold(process_type()) -> float().
+default_threshold(context) -> 0.9;
+default_threshold(tool) -> 0.85;
+default_threshold(transport) -> 0.80;
+default_threshold(generic) -> 0.80.
 
 %% @doc Check if running on OTP 28 or later.
 %% Memory guard flags require OTP 28+.

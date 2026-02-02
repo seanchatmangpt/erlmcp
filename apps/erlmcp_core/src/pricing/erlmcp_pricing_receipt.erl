@@ -414,7 +414,7 @@ export_receipts(PlanId, Version, Format)
 
         case Format of
             json ->
-                {ok, jsx:encode(Receipts)};
+                {ok, erlmcp_json_native:encode(Receipts)};
             csv ->
                 {ok, receipts_to_csv(Receipts)};
             tsv ->
@@ -521,7 +521,7 @@ compute_hash(Receipt) ->
         end,
 
     % Serialize to JSON for hashing
-    Json = jsx:encode(Data),
+    Json = erlmcp_json_native:encode(Data),
 
     % SHA-256 hash
     Hash = crypto:hash(sha256, Json),
@@ -564,7 +564,7 @@ store_receipt(Receipt) ->
     Filename = receipt_filename(Timestamp),
     FilePath = filename:join(Dir, Filename),
 
-    Json = jsx:encode(Receipt),
+    Json = erlmcp_json_native:encode(Receipt),
     file:write_file(FilePath, Json).
 
 %% Generate receipt filename from timestamp
@@ -604,7 +604,7 @@ read_receipt_file(FilePath) ->
     case file:read_file(FilePath) of
         {ok, Json} ->
             try
-                Receipt = jsx:decode(Json, [return_maps]),
+                Receipt = erlmcp_json_native:decode(Json),
                 {ok, Receipt}
             catch
                 _:_ ->
@@ -672,7 +672,7 @@ find_violations(Envelope, Metrics) ->
 
 %% Format receipt for export
 format_receipt(Receipt, json) ->
-    jsx:encode(Receipt);
+    erlmcp_json_native:encode(Receipt);
 format_receipt(Receipt, csv) ->
     receipt_to_csv(Receipt);
 format_receipt(Receipt, tsv) ->

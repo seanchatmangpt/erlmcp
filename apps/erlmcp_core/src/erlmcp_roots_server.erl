@@ -167,7 +167,12 @@ handle_info(_Info, State) ->
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, State) ->
     logger:info("Roots server terminating, cleaning up ETS table"),
-    catch ets:delete(State#state.roots_ets),
+    %% OTP 28: Modernize catch to try/catch for better error handling
+    try ets:delete(State#state.roots_ets)
+    catch
+        _:Error ->
+            logger:warning("Failed to delete roots_ets: ~p", [Error])
+    end,
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.

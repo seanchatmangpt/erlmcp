@@ -58,8 +58,10 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
-%% Include OTEL for observability
+%% Include OTEL for observability (optional)
+-ifdef(OTEL_AVAILABLE).
 -include_lib("erlmcp_observability/include/erlmcp_otel.hrl").
+-endif.
 
 %%====================================================================
 %% Type Definitions
@@ -222,8 +224,9 @@ handle_call({set_config, NewConfig}, _From, State) ->
     NormalizedConfig = normalize_config(MergedConfig),
 
     %% Reschedule timer if interval changed
+    OldInterval = maps:get(check_interval, State#state.config),
     NewTimer = case maps:get(check_interval, NewConfig) of
-                   Interval when Interval =/= maps:get(check_interval, State#state.config) ->
+                   Interval when Interval =/= OldInterval ->
                        erlang:cancel_timer(State#state.check_timer),
                        erlang:send_after(Interval, self(), check_memory);
                    _ ->
@@ -405,7 +408,7 @@ detect_memory_leak(History) ->
     Denominator = lists:sum([ (X - MeanX) * (X - MeanX) || X <- Indices ]),
 
     case Denominator of
-        0.0 -> false;
+        +0.0 -> false;
         _ ->
             Slope = Numerator / Denominator,
             %% If slope > 1KB per check and mostly increasing

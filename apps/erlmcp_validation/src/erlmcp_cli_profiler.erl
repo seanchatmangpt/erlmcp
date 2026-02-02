@@ -490,7 +490,7 @@ get_cprof_results() ->
 %% @private Format profile data
 -spec format_profile_data(map(), atom()) -> iolist().
 format_profile_data(ProfileData, json) ->
-    jsx:encode(normalize_for_json(ProfileData), [{space, 1}, {indent, 2}]);
+    erlmcp_json_native:encode(normalize_for_json(ProfileData), [{space, 1}, {indent, 2}]);
 format_profile_data(ProfileData, text) ->
     io_lib:format("~p~n", [ProfileData]);
 format_profile_data(ProfileData, html) ->

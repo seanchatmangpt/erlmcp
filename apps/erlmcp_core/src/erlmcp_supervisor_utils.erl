@@ -170,7 +170,7 @@ export_to_json(SupRef) ->
           <<"metrics">> => serialize_metrics(Metrics),
           <<"timestamp">> => erlang:system_time(second)},
 
-    jsx:encode(Export).
+    erlmcp_json_native:encode(Export).
 
 %% @doc Export supervision tree to pretty-printed JSON
 -spec export_to_json_pretty(sup_ref()) -> binary().
@@ -183,7 +183,9 @@ export_to_json_pretty(SupRef) ->
           <<"metrics">> => serialize_metrics(Metrics),
           <<"timestamp">> => erlang:system_time(second)},
 
-    jsx:encode(Export, [space, {indent, 2}]).
+    %% Note: Native JSON doesn't support pretty print options
+    %% For formatted output, use external tooling or post-process
+    erlmcp_json_native:encode(Export).
 
 %% @doc Get performance metrics for a single process
 -spec get_process_metrics(pid()) -> map() | {error, term()}.

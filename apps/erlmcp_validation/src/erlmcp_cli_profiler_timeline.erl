@@ -170,7 +170,7 @@ visualize_profile(InputFile, OutputFile) ->
 
     case file:read_file(InputFile) of
         {ok, JSON} ->
-            try jsx:decode(JSON, [return_maps]) of
+            try erlmcp_json_native:decode(JSON) of
                 Timeline ->
                     Extension = filename:extension(OutputFile),
                     OutputFileBin = list_to_binary(OutputFile),
@@ -288,7 +288,7 @@ print_timeline_summary(Timeline) ->
 %% @private Save profile to file
 -spec save_profile(map(), binary()) -> ok.
 save_profile(Timeline, Filename) ->
-    JSON = jsx:encode(Timeline, [space, {indent, 2}]),
+    JSON = erlmcp_json_native:encode(Timeline, [space, {indent, 2}]),
     file:write_file(Filename, JSON).
 
 %% @private Load profile from file
@@ -297,7 +297,7 @@ load_profile(Filename) ->
     case file:read_file(Filename) of
         {ok, JSON} ->
             try
-                Timeline = jsx:decode(JSON, [return_maps]),
+                Timeline = erlmcp_json_native:decode(JSON),
                 {ok, Timeline}
             catch
                 _:_ ->
