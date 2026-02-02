@@ -170,7 +170,7 @@ do_openai_compatible_request(Messages, Params, State) ->
     end.
 
 parse_ollama_response(ResponseBody) ->
-    try jsx:decode(ResponseBody, [return_maps]) of
+    try erlmcp_json_native:decode(ResponseBody, [return_maps]) of
         #{<<"message">> := Message} ->
             Content = maps_get(<<"content">>, Message, <<>>),
             {ok,
@@ -194,7 +194,7 @@ parse_ollama_response(ResponseBody) ->
     end.
 
 parse_openai_compatible_response(ResponseBody) ->
-    try jsx:decode(ResponseBody, [return_maps]) of
+    try erlmcp_json_native:decode(ResponseBody, [return_maps]) of
         #{<<"choices">> := [#{<<"message">> := Message} | _], <<"usage">> := Usage} ->
             {ok,
              #{<<"role">> => maps_get(<<"role">>, Message, <<"assistant">>),
@@ -222,7 +222,7 @@ http_post(Url, Headers, BodyMap, Timeout) ->
       port := Port} =
         uri_string:parse(Url),
     Path = maps_get(path, uri_string:parse(Url), <<"/">>),
-    Body = jsx:encode(BodyMap),
+    Body = erlmcp_json_native:encode(BodyMap),
 
     Transport =
         case Scheme of

@@ -1,0 +1,201 @@
+```mermaid
+graph TB
+    subgraph "erlmcp v3.0.0 - 4-Tier Supervision Architecture"
+        direction TB
+
+        ROOT[erlmcp_app]
+        SUP[erlmcp_sup<br/>one_for_one<br/>Strategy: Bulkhead Isolation]
+
+        subgraph TIER1["TIER 1: CORE FOUNDATION (one_for_one)"]
+            direction TB
+            CORE_SUP[erlmcp_core_sup<br/>Core Supervisor]
+
+            REGISTRY[erlmcp_registry<br/>gproc-based routing]
+            SESSION_MGR[erlmcp_session_manager<br/>Session lifecycle]
+            CONN_LIM[erlmcp_connection_limiter<br/>FD exhaustion prevention]
+            RATE_LIM[erlmcp_rate_limiter<br/>DoS protection]
+            CIRCUIT[erlmcp_circuit_breaker<br/>Failure threshold]
+            HEALTH[erlmcp_health<br/>Health aggregator]
+            RELOAD_SUP[erlmcp_reload_sup<br/>Hot reload]
+            RESOURCE_SUB[erlmcp_resource_subscriptions<br/>Change notifications]
+            SSE_STORE[erlmcp_sse_event_store<br/>Event persistence]
+            ICON_CACHE[erlmcp_icon_cache<br/>Icon caching]
+            CACHE[erlmcp_cache<br/>Multi-level cache]
+            CACHE_WARM_SUP[erlmcp_cache_warmer_sup<br/>Async warmers]
+            SESSION_REP[erlmcp_session_replicator<br/>Replication]
+            SESSION_FAIL[erlmcp_session_failover<br/>Failover coord]
+            FAIL_SUP[erlmcp_failover_worker_sup<br/>Failover workers]
+            CONN_MON[erlmcp_connection_monitor<br/>FD leak detection]
+            MEM_MON[erlmcp_memory_monitor<br/>Binary GC]
+            CPU_QUOTA[erlmcp_cpu_quota<br/>CPU DoS protection]
+            CANCEL[erlmcp_cancellation<br/>Request cancellation]
+            PAGE[erlmcp_pagination<br/>Cursor pagination]
+            NOTIF_SUP[erlmcp_notification_handler_sup<br/>Notification workers]
+            CLIENT_SUP[erlmcp_client_sup<br/>simple_one_for_one]
+            PLUGIN_SUP[erlmcp_plugin_sup<br/>Plugin isolation]
+        end
+
+        subgraph TIER2["TIER 2: PROTOCOL LAYER (one_for_one) - NEW"]
+            direction TB
+            PROTO_SUP[erlmcp_protocol_sup<br/>Protocol Supervisor<br/>NEW]
+
+            METHOD_REG[erlmcp_method_registry<br/>Dynamic routing<br/>NEW]
+            CAP_MGR[erlmcp_capability_manager<br/>Feature flags<br/>NEW]
+            SCHEMA_CACHE[erlmcp_schema_cache<br/>Compiled validators<br/>NEW - 100x speedup]
+            BATCH_PROC[erlmcp_batch_processor<br/>Async batching<br/>NEW]
+            SONA[erlmcp_sona_router<br/>Claude-flow bridge<br/>NEW]
+        end
+
+        subgraph TIER3["TIER 3: SERVICES (one_for_one)"]
+            direction TB
+            SERVICES_SUP[erlmcp_services_sup<br/>Services Supervisor]
+
+            SERVER_SUP[erlmcp_server_sup<br/>simple_one_for_one<br/>Per-connection processes]
+            TASKS[erlmcp_tasks_manager<br/>Async tasks<br/>NEW - 0% → 100%]
+            SAMPLING[erlmcp_sampling_coordinator<br/>LLM integration<br/>ENHANCED - 18% → 100%]
+            ELICIT[erlmcp_elicitation_server<br/>User interaction<br/>ENHANCED - 1% → 100%]
+            COMPLETE[erlmcp_completion_server<br/>Autocomplete<br/>ENHANCED - 42% → 100%]
+            ROOTS[erlmcp_roots_server<br/>Root directories<br/>Existing]
+            APPS[erlmcp_apps_server<br/>App lifecycle<br/>Existing]
+        end
+
+        subgraph TIER4["TIER 4: OBSERVABILITY (one_for_one) - ISOLATED"]
+            direction TB
+            OBS_SUP[erlmcp_observability_sup<br/>Observability Supervisor<br/>Zero Protocol Impact]
+
+            EVENT_MGR[erlmcp_event_manager<br/>Event handling]
+            METRICS[erlmcp_metrics<br/>Metrics collection]
+            METRICS_SRV[erlmcp_metrics_server<br/>HTTP endpoint]
+            METRICS_AGG[erlmcp_metrics_aggregator<br/>Aggregation]
+            DASH[erlmcp_dashboard_server<br/>WebSocket dashboard]
+            HEALTH_MON[erlmcp_health_monitor<br/>Component health]
+            RECOVERY[erlmcp_recovery_manager<br/>Auto-recovery]
+            CHAOS[erlmcp_chaos<br/>Resilience testing]
+            CHAOS_SUP[erlmcp_chaos_worker_sup<br/>Chaos workers]
+            PROC_MON[erlmcp_process_monitor<br/>Process tracking]
+            AUDIT[erlmcp_audit_log<br/>Tamper-proof audit]
+        end
+
+        subgraph TRANS["TRANSPORT LAYER (Separate App)"]
+            direction TB
+            TRANS_SUP[erlmcp_transport_sup<br/>one_for_one<br/>erlmcp_transports app]
+
+            STDIO[erlmcp_transport_stdio<br/>Process I/O]
+            TCP[erlmcp_transport_tcp<br/>Ranch acceptors]
+            HTTP[erlmcp_transport_http<br/>Gun/Cowboy]
+            WS[erlmcp_transport_ws<br/>WebSocket]
+            SSE[erlmcp_transport_sse<br/>Server-Sent Events]
+            SESSION_COR[erlmcp_session_correlator<br/>Cross-transport sessions<br/>NEW]
+        end
+
+        %% Tier 1 Connections
+        ROOT --> SUP
+        SUP --> CORE_SUP
+        CORE_SUP --> REGISTRY
+        CORE_SUP --> SESSION_MGR
+        CORE_SUP --> CONN_LIM
+        CORE_SUP --> RATE_LIM
+        CORE_SUP --> CIRCUIT
+        CORE_SUP --> HEALTH
+        CORE_SUP --> RELOAD_SUP
+        CORE_SUP --> RESOURCE_SUB
+        CORE_SUP --> SSE_STORE
+        CORE_SUP --> ICON_CACHE
+        CORE_SUP --> CACHE
+        CORE_SUP --> CACHE_WARM_SUP
+        CORE_SUP --> SESSION_REP
+        CORE_SUP --> SESSION_FAIL
+        CORE_SUP --> FAIL_SUP
+        CORE_SUP --> CONN_MON
+        CORE_SUP --> MEM_MON
+        CORE_SUP --> CPU_QUOTA
+        CORE_SUP --> CANCEL
+        CORE_SUP --> PAGE
+        CORE_SUP --> NOTIF_SUP
+        CORE_SUP --> CLIENT_SUP
+        CORE_SUP --> PLUGIN_SUP
+
+        %% Tier 2 Connections (NEW)
+        SUP --> PROTO_SUP
+        PROTO_SUP --> METHOD_REG
+        PROTO_SUP --> CAP_MGR
+        PROTO_SUP --> SCHEMA_CACHE
+        PROTO_SUP --> BATCH_PROC
+        PROTO_SUP --> SONA
+
+        %% Tier 3 Connections
+        SUP --> SERVICES_SUP
+        SERVICES_SUP --> SERVER_SUP
+        SERVICES_SUP --> TASKS
+        SERVICES_SUP --> SAMPLING
+        SERVICES_SUP --> ELICIT
+        SERVICES_SUP --> COMPLETE
+        SERVICES_SUP --> ROOTS
+        SERVICES_SUP --> APPS
+
+        %% Tier 4 Connections
+        SUP --> OBS_SUP
+        OBS_SUP --> EVENT_MGR
+        OBS_SUP --> METRICS
+        OBS_SUP --> METRICS_SRV
+        OBS_SUP --> METRICS_AGG
+        OBS_SUP --> DASH
+        OBS_SUP --> HEALTH_MON
+        OBS_SUP --> RECOVERY
+        OBS_SUP --> CHAOS
+        OBS_SUP --> CHAOS_SUP
+        OBS_SUP --> PROC_MON
+        OBS_SUP --> AUDIT
+
+        %% Transport Connections
+        TRANS_SUP --> STDIO
+        TRANS_SUP --> TCP
+        TRANS_SUP --> HTTP
+        TRANS_SUP --> WS
+        TRANS_SUP --> SSE
+        TRANS_SUP --> SESSION_COR
+
+        %% Inter-tier Dependencies (dashed)
+        METHOD_REG -.depends on.-> REGISTRY
+        METHOD_REG -.depends on.-> CAP_MGR
+        METHOD_REG -.depends on.-> SCHEMA_CACHE
+        SERVER_SUP -.registers with.-> REGISTRY
+        TASKS -.routes via.-> METHOD_REG
+        SAMPLING -.routes via.-> METHOD_REG
+        ELICIT -.routes via.-> METHOD_REG
+        COMPLETE -.routes via.-> METHOD_REG
+
+    end
+
+    classDef tier1Style fill:#e8f5e9,stroke:#1b5e20,stroke-width:3px
+    classDef tier2Style fill:#fff9c4,stroke:#f57f17,stroke-width:3px
+    classDef tier3Style fill:#e1f5fe,stroke:#01579b,stroke-width:3px
+    classDef tier4Style fill:#fce4ec,stroke:#880e4f,stroke-width:3px
+    classDef transStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef newStyle fill:#ffeb3b,stroke:#f57f17,stroke-width:4px,stroke-dasharray: 5 5
+
+    class CORE_SUP,REGISTRY,SESSION_MGR,CONN_LIM,RATE_LIM,CIRCUIT,HEALTH,RELOAD_SUP,RESOURCE_SUB,SSE_STORE,ICON_CACHE,CACHE,CACHE_WARM_SUP,SESSION_REP,SESSION_FAIL,FAIL_SUP,CONN_MON,MEM_MON,CPU_QUOTA,CANCEL,PAGE,NOTIF_SUP,CLIENT_SUP,PLUGIN_SUP tier1Style
+    class PROTO_SUP,METHOD_REG,CAP_MGR,SCHEMA_CACHE,BATCH_PROC,SONA tier2Style
+    class SERVICES_SUP,SERVER_SUP,TASKS,SAMPLING,ELICIT,COMPLETE,ROOTS,APPS tier3Style
+    class OBS_SUP,EVENT_MGR,METRICS,METRICS_SRV,METRICS_AGG,DASH,HEALTH_MON,RECOVERY,CHAOS,CHAOS_SUP,PROC_MON,AUDIT tier4Style
+    class TRANS_SUP,STDIO,TCP,HTTP,WS,SSE,SESSION_COR transStyle
+    class METHOD_REG,CAP_MGR,SCHEMA_CACHE,BATCH_PROC,SONA,TASKS,SESSION_COR newStyle
+
+    %% Legend
+    subgraph LEGEND["LEGEND"]
+        direction LR
+        L1[TIER 1: Core Foundation<br/>Infrastructure & Guards]
+        L2[TIER 2: Protocol Layer<br/>NEW - Dynamic Routing]
+        L3[TIER 3: Services<br/>Capabilities & Handlers]
+        L4[TIER 4: Observability<br/>ISOLATED - Zero Impact]
+        LT[Transport Layer<br/>Separate App]
+        LN[NEW/ENHANCED Modules<br/>Yellow Border]
+    end
+
+    class L1 tier1Style
+    class L2 tier2Style
+    class L3 tier3Style
+    class L4 tier4Style
+    class LT transStyle
+    class LN newStyle
+```

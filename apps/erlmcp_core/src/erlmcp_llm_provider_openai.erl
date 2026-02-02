@@ -159,7 +159,7 @@ do_create_message(Messages, Params, State) ->
     end.
 
 parse_openai_response(ResponseBody) ->
-    try jsx:decode(ResponseBody, [return_maps]) of
+    try erlmcp_json_native:decode(ResponseBody, [return_maps]) of
         #{<<"choices">> := [#{<<"message">> := Message} | _], <<"usage">> := Usage} ->
             {ok,
              #{<<"role">> => maps_get(<<"role">>, Message, <<"assistant">>),
@@ -188,7 +188,7 @@ http_post(Url, Headers, BodyMap, Timeout) ->
       port := Port} =
         uri_string:parse(Url),
     Path = maps_get(path, uri_string:parse(Url), <<"/">>),
-    Body = jsx:encode(BodyMap),
+    Body = erlmcp_json_native:encode(BodyMap),
 
     Transport =
         case Scheme of

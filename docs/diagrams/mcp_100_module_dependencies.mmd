@@ -1,0 +1,229 @@
+```mermaid
+graph TB
+    subgraph "erlmcp v3.0.0 - Module Dependency Graph"
+        direction TB
+
+        subgraph FOUNDATION["FOUNDATION LAYER"]
+            direction TB
+            GPROC[gproc<br/>External Lib<br/>Process Registry]
+            JESSE[jesse<br/>External Lib<br/>JSON Schema]
+            JSX[jsx<br/>External Lib<br/>JSON Codec]
+            GUN[gun<br/>External Lib<br/>HTTP Client]
+            RANCH[ranch<br/>External Lib<br/>TCP Acceptor]
+            POOLBOY[poolboy<br/>External Lib<br/>Worker Pool]
+        end
+
+        subgraph CORE["CORE MODULES (erlmcp_core)"]
+            direction TB
+            REGISTRY[erlmcp_registry<br/>Process Registration]
+            SESSION_MGR[erlmcp_session_manager<br/>Session Lifecycle]
+            CONN_LIM[erlmcp_connection_limiter<br/>Connection Limits]
+            RATE_LIM[erlmcp_rate_limiter<br/>Rate Limiting]
+            CIRCUIT[erlmcp_circuit_breaker<br/>Circuit Breaker]
+            JSON_RPC[erlmcp_json_rpc<br/>JSON-RPC Codec]
+            MSG_PARSER[erlmcp_message_parser<br/>Message Parsing]
+        end
+
+        subgraph PROTOCOL["PROTOCOL LAYER (NEW)"]
+            direction TB
+            METHOD_REG[erlmcp_method_registry<br/>Dynamic Routing<br/>NEW]
+            CAP_MGR[erlmcp_capability_manager<br/>Capability Negotiation<br/>NEW]
+            SCHEMA_CACHE[erlmcp_schema_cache<br/>Compiled Validators<br/>NEW - 100x speedup]
+            ERROR_MAP[erlmcp_error_mapper<br/>89 Refusal Codes<br/>NEW]
+            BATCH_PROC[erlmcp_batch_processor<br/>Async Batching<br/>NEW]
+            SONA[erlmcp_sona_router<br/>SONA Routing<br/>NEW]
+        end
+
+        subgraph CAPABILITIES["CAPABILITY MODULES"]
+            direction TB
+            RESOURCES[erlmcp_resources<br/>Resource Management]
+            TOOLS[erlmcp_tool<br/>Tool Invocation]
+            PROMPTS[erlmcp_prompt_template<br/>Prompt Templates]
+            TASKS[erlmcp_tasks_manager<br/>Async Tasks<br/>NEW]
+            SAMPLING[erlmcp_sampling_coordinator<br/>LLM Integration<br/>ENHANCED]
+            ELICIT[erlmcp_elicitation_server<br/>User Interaction<br/>ENHANCED]
+            COMPLETE[erlmcp_completion_server<br/>Autocomplete<br/>ENHANCED]
+            ROOTS[erlmcp_roots_server<br/>Root Directories]
+            APPS[erlmcp_apps_server<br/>App Lifecycle]
+        end
+
+        subgraph HANDLERS["PROTOCOL HANDLERS"]
+            direction TB
+            SERVER[erlmcp_server<br/>MCP Server Gen_Server]
+            CLIENT[erlmcp_client<br/>MCP Client Gen_Server]
+            RESOURCE_SUB[erlmcp_resource_subscriptions<br/>Change Notifications]
+        end
+
+        subgraph TRANSPORT["TRANSPORT LAYER (erlmcp_transports)"]
+            direction TB
+            TRANS_STDIO[erlmcp_transport_stdio<br/>STDIO Transport]
+            TRANS_TCP[erlmcp_transport_tcp<br/>TCP Transport]
+            TRANS_HTTP[erlmcp_transport_http<br/>HTTP Transport]
+            TRANS_WS[erlmcp_transport_ws<br/>WebSocket]
+            TRANS_SSE[erlmcp_transport_sse<br/>Server-Sent Events]
+            SESSION_COR[erlmcp_session_correlator<br/>Session Affinity<br/>NEW]
+        end
+
+        subgraph OBSERVABILITY["OBSERVABILITY (ISOLATED)"]
+            direction TB
+            METRICS[erlmcp_metrics<br/>Metrics Collection]
+            OTEL[erlmcp_otel<br/>OpenTelemetry]
+            HEALTH_MON[erlmcp_health_monitor<br/>Health Checks]
+            AUDIT[erlmcp_audit_log<br/>Audit Trail]
+        end
+
+        %% Foundation Dependencies
+        REGISTRY --> GPROC
+        JSON_RPC --> JSX
+        SCHEMA_CACHE --> JESSE
+        TRANS_HTTP --> GUN
+        TRANS_TCP --> RANCH
+        BATCH_PROC --> POOLBOY
+
+        %% Core Dependencies
+        SESSION_MGR --> REGISTRY
+        SERVER --> REGISTRY
+        CLIENT --> REGISTRY
+        METHOD_REG --> REGISTRY
+
+        %% Protocol Layer Dependencies
+        METHOD_REG --> CAP_MGR
+        METHOD_REG --> SCHEMA_CACHE
+        METHOD_REG --> ERROR_MAP
+        SCHEMA_CACHE --> JESSE
+        BATCH_PROC --> METHOD_REG
+
+        %% Capability Dependencies (Register with Method Registry)
+        RESOURCES -.registers.-> METHOD_REG
+        TOOLS -.registers.-> METHOD_REG
+        PROMPTS -.registers.-> METHOD_REG
+        TASKS -.registers.-> METHOD_REG
+        SAMPLING -.registers.-> METHOD_REG
+        ELICIT -.registers.-> METHOD_REG
+        COMPLETE -.registers.-> METHOD_REG
+        ROOTS -.registers.-> METHOD_REG
+        APPS -.registers.-> METHOD_REG
+
+        %% Capability Uses Schema Cache
+        TOOLS --> SCHEMA_CACHE
+        RESOURCES --> SCHEMA_CACHE
+        ELICIT --> SCHEMA_CACHE
+
+        %% Handler Dependencies
+        SERVER --> METHOD_REG
+        SERVER --> CAP_MGR
+        SERVER --> JSON_RPC
+        SERVER --> MSG_PARSER
+        CLIENT --> METHOD_REG
+        CLIENT --> CAP_MGR
+        CLIENT --> JSON_RPC
+        RESOURCE_SUB --> REGISTRY
+
+        %% Transport Dependencies
+        TRANS_STDIO --> SESSION_COR
+        TRANS_TCP --> SESSION_COR
+        TRANS_HTTP --> SESSION_COR
+        TRANS_WS --> SESSION_COR
+        TRANS_SSE --> SESSION_COR
+        SESSION_COR --> REGISTRY
+
+        %% SONA Integration
+        METHOD_REG --> SONA
+        SONA -.routes to.-> METHOD_REG
+
+        %% Observability Dependencies (Isolated)
+        METRICS -.monitors.-> METHOD_REG
+        METRICS -.monitors.-> SERVER
+        OTEL -.traces.-> METHOD_REG
+        HEALTH_MON -.checks.-> REGISTRY
+        AUDIT -.logs.-> SERVER
+
+        %% Resource Guards
+        SERVER --> CONN_LIM
+        SERVER --> RATE_LIM
+        SERVER --> CIRCUIT
+    end
+
+    %% Styling
+    classDef foundationStyle fill:#f5f5f5,stroke:#424242,stroke-width:2px
+    classDef coreStyle fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    classDef protocolStyle fill:#fff9c4,stroke:#f57f17,stroke-width:3px
+    classDef capabilityStyle fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    classDef handlerStyle fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef transportStyle fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    classDef obsStyle fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    classDef newStyle fill:#ffeb3b,stroke:#f57f17,stroke-width:4px,stroke-dasharray: 5 5
+
+    class GPROC,JESSE,JSX,GUN,RANCH,POOLBOY foundationStyle
+    class REGISTRY,SESSION_MGR,CONN_LIM,RATE_LIM,CIRCUIT,JSON_RPC,MSG_PARSER coreStyle
+    class METHOD_REG,CAP_MGR,SCHEMA_CACHE,ERROR_MAP,BATCH_PROC,SONA protocolStyle
+    class RESOURCES,TOOLS,PROMPTS,TASKS,SAMPLING,ELICIT,COMPLETE,ROOTS,APPS capabilityStyle
+    class SERVER,CLIENT,RESOURCE_SUB handlerStyle
+    class TRANS_STDIO,TRANS_TCP,TRANS_HTTP,TRANS_WS,TRANS_SSE,SESSION_COR transportStyle
+    class METRICS,OTEL,HEALTH_MON,AUDIT obsStyle
+    class METHOD_REG,CAP_MGR,SCHEMA_CACHE,ERROR_MAP,BATCH_PROC,SONA,TASKS,SESSION_COR newStyle
+
+    %% Legend
+    subgraph LEGEND["DEPENDENCY TYPES"]
+        direction LR
+        D1[Solid Line<br/>Direct Dependency]
+        D2[Dashed Line<br/>Registration/Monitoring]
+        D3[Yellow Border<br/>NEW Module]
+    end
+
+    classDef legendStyle fill:#ffffff,stroke:#000000,stroke-width:1px
+    class D1,D2,D3 legendStyle
+```
+
+**Key Insights from Dependency Graph**:
+
+1. **Foundation Layer**: External libraries (gproc, jesse, gun, ranch)
+   - Zero circular dependencies
+   - Well-established libraries
+
+2. **Core Layer**: Infrastructure (registry, sessions, guards)
+   - Depends only on foundation
+   - No dependencies on protocol layer
+
+3. **Protocol Layer (NEW)**: Dynamic routing and optimization
+   - Method registry is central hub
+   - Schema cache eliminates performance bottleneck
+   - Capability manager enables feature flags
+
+4. **Capability Layer**: MCP capabilities (resources, tools, prompts, etc.)
+   - All register with method registry
+   - Use schema cache for validation
+   - No direct dependencies between capabilities (isolation)
+
+5. **Handler Layer**: Server and client gen_servers
+   - Route through method registry
+   - Check capabilities via capability manager
+   - Use JSON-RPC codec
+
+6. **Transport Layer**: Network I/O (STDIO, TCP, HTTP, WS, SSE)
+   - Session correlator enables cross-transport sessions
+   - All transports register with registry
+
+7. **Observability Layer**: Completely isolated
+   - Monitoring via side effects (no blocking)
+   - Zero impact on protocol operation
+
+**Circular Dependency Prevention**:
+- Method registry → capability manager (one-way)
+- Capabilities → method registry (registration only, no callbacks)
+- SONA router ↔ method registry (routing decision only)
+
+**Performance-Critical Paths**:
+```
+Request → Method Registry → Schema Cache → Handler → Response
+         <0.1ms           <0.1ms        Variable   <1ms total
+```
+
+**Failure Isolation**:
+- Foundation failures → all dependent modules fail (expected)
+- Core failures → individual restart (one_for_one)
+- Protocol failures → ETS-based state survives restart
+- Capability failures → isolated to that capability
+- Transport failures → only that transport affected
+- Observability failures → zero protocol impact
+```
