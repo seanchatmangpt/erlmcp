@@ -58,8 +58,9 @@
 %%====================================================================
 
 -type trace_session_id() :: binary().
+-type trace_session_ref() :: {reference(), reference()}.  % {StrongRef, WeakRef}
 -type trace_session() :: #{id := trace_session_id(),
-                            session := trace:session(),
+                            session := trace_session_ref(),
                             tracer_pid := pid(),
                             trace_opts := map(),
                             start_time := integer()}.
@@ -311,8 +312,8 @@ handle_call({export_trace_compressed, SessionId, Options}, _From, State) ->
 
 handle_call({monitor_process_tagged, Pid, Tag}, _From, State) ->
     try
-        %% Use tagged monitor (OTP 26+)
-        Ref = erlang:monitor(tagged, {process, Pid}, Tag),
+        %% Use tagged monitor (OTP 26+) - correct syntax
+        Ref = erlang:monitor(process, Pid, [{tag, Tag}]),
         NewMonitors = maps:put(Ref, {Pid, Tag}, State#state.tagged_monitors),
         {reply, {ok, Ref}, State#state{tagged_monitors = NewMonitors}, hibernate}
     catch

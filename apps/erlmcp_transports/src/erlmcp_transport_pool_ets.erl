@@ -70,7 +70,16 @@
     worker_opts => map()
 }.
 
--export_type([pool_opts/0]).
+-type metrics() :: #metrics{
+    total_checkouts :: non_neg_integer(),
+    total_checkins :: non_neg_integer(),
+    failed_checkouts :: non_neg_integer(),
+    avg_checkout_time_us :: float(),
+    active_connections :: non_neg_integer(),
+    idle_connections :: non_neg_integer()
+}.
+
+-export_type([pool_opts/0, metrics/0]).
 
 %% Defaults
 -define(DEFAULT_MIN_SIZE, 10).

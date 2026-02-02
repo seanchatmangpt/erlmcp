@@ -37,7 +37,7 @@
 -type tool_args() :: map().
 -type tool_result() :: map() | {error, term()}.
 -type session_event() :: created | initialized | closed | timeout.
--type message_type() :: send | receive.
+-type message_type() :: send | recv.
 
 %%====================================================================
 %% API Functions

@@ -32,7 +32,7 @@
 -record(state,
         {opts :: watch_opts(),
          refresh_interval :: pos_integer(),
-         output_file => string() | undefined,
+         output_file :: string() | undefined,
          history :: [map()]}).
 
 %%====================================================================
