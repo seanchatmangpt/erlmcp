@@ -1,0 +1,198 @@
+╔═══════════════════════════════════════════════════════════════════════════╗
+║                ERLMCP PACKAGE MANAGER DIAGNOSTICS                         ║
+║                      Quick Reference Card                                 ║
+╚═══════════════════════════════════════════════════════════════════════════╝
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ MASTER DIAGNOSTIC                                                        │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Quick check (30s):
+    ./scripts/diagnose-package-issues.sh --quick
+
+  Full diagnostic (5min):
+    ./scripts/diagnose-package-issues.sh --full
+
+  Auto-fix:
+    ./scripts/diagnose-package-issues.sh --fix
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ COMMON ISSUES                                                            │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  ✗ Cannot download packages
+    → ./scripts/hex-mirror-alternatives.sh
+    → export HEX_MIRROR=https://mirrors.aliyun.com/hex
+
+  ✗ Slow downloads
+    → ./scripts/hex-mirror-alternatives.sh
+    → Use fastest mirror from report
+
+  ✗ Network restricted
+    → ./scripts/git-fallback-test.sh
+    → cp rebar.config.git rebar.config
+
+  ✗ No internet access
+    → ./scripts/offline-package-test.sh --create-repo
+    → ./scripts/offline-package-test.sh --bundle
+
+  ✗ OTP version issues
+    → ./scripts/kerl-otp-manager.sh --install 28.3.1
+    → source ~/.kerl/installations/28.3.1/activate
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ INDIVIDUAL SCRIPTS                                                       │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  1. Hex Mirrors (1min)
+     ./scripts/hex-mirror-alternatives.sh [package] [version]
+     - Tests 4+ mirrors
+     - Measures speed
+     - Generates config
+
+  2. Git Fallback (5min)
+     ./scripts/git-fallback-test.sh [--dry-run]
+     - Converts to git deps
+     - Tests accessibility
+     - Creates hybrid config
+
+  3. Manual Download (5min)
+     ./scripts/manual-download.sh [--package PKG --version VER]
+     - Direct downloads
+     - Checksum verification
+     - Cache installation
+
+  4. Offline Mode (3min)
+     ./scripts/offline-package-test.sh [--create-repo|--test-offline|--bundle]
+     - Local repository
+     - Portable bundles
+     - Airgap support
+
+  5. OTP Manager (20min)
+     ./scripts/kerl-otp-manager.sh [--install|--activate|--test] [VERSION]
+     - Multiple OTP versions
+     - Source builds
+     - Compatibility testing
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ QUICK FIXES                                                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Clear cache:
+    rm -rf ~/.cache/rebar3/hex
+    rm -rf _build
+    TERM=dumb rebar3 compile
+
+  Use fastest mirror:
+    export HEX_MIRROR=https://mirrors.aliyun.com/hex
+    TERM=dumb rebar3 compile
+
+  Switch to git deps:
+    ./scripts/git-fallback-test.sh
+    cp rebar.config rebar.config.bak
+    cp rebar.config.git rebar.config
+    rm -rf _build
+    TERM=dumb rebar3 compile
+
+  Offline build:
+    ./scripts/offline-package-test.sh --create-repo
+    HEX_OFFLINE=true TERM=dumb rebar3 compile
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ ENVIRONMENT VARIABLES                                                    │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  HEX_MIRROR=https://mirrors.aliyun.com/hex    # Alternative mirror
+  HEX_OFFLINE=true                             # Offline mode
+  HEX_HOME=~/.cache/rebar3/hex/default         # Cache directory
+  REBAR_CACHE_DIR=~/.cache/rebar3              # Rebar cache
+  HTTP_PROXY=http://proxy:8080                 # HTTP proxy
+  HTTPS_PROXY=https://proxy:8080               # HTTPS proxy
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ FILES & DIRECTORIES                                                      │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Generated configs:
+    rebar.config.mirrors     # Alternative mirrors
+    rebar.config.git         # Full git dependencies
+    rebar.config.mixed       # Hybrid hex+git
+    hex-packages-bundle.tgz  # Offline bundle
+
+  Logs:
+    log/diagnostics/         # Diagnostic reports
+    log/hex-mirror-test/     # Mirror tests
+    log/git-fallback-test/   # Git tests
+    log/manual-download/     # Downloads
+    log/offline-test/        # Offline tests
+    log/kerl-manager/        # Kerl logs
+
+  Cache:
+    ~/.cache/rebar3/hex/     # Hex cache
+    ~/.kerl/                 # Kerl installations
+    .offline-hex-repo/       # Local repository
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ WORKFLOWS                                                                │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  First-time setup:
+    1. ./scripts/diagnose-package-issues.sh --full
+    2. Review recommendations
+    3. ./scripts/diagnose-package-issues.sh --fix
+    4. TERM=dumb rebar3 compile
+
+  CI/CD setup:
+    # Build machine:
+    1. ./scripts/offline-package-test.sh --create-repo
+    2. ./scripts/offline-package-test.sh --bundle
+    
+    # CI pipeline:
+    1. Extract bundle to cache
+    2. HEX_OFFLINE=true TERM=dumb rebar3 compile
+
+  Airgap environment:
+    # Internet machine:
+    1. ./scripts/offline-package-test.sh --bundle
+    2. Transfer bundle
+    
+    # Airgap machine:
+    1. Extract bundle
+    2. HEX_OFFLINE=true TERM=dumb rebar3 compile
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ VERIFICATION                                                             │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  Check installation:
+    erl -version                              # Erlang/OTP version
+    rebar3 version                            # Rebar3 version
+    curl -I https://hex.pm                    # Network connectivity
+    ls ~/.cache/rebar3/hex/default/tarballs/  # Hex cache
+
+  Test build:
+    rm -rf _build
+    TERM=dumb rebar3 compile
+    TERM=dumb rebar3 eunit
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ DOCUMENTATION                                                            │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  docs/PACKAGE_MANAGER_DIAGNOSTICS.md    # Full guide
+  scripts/README-DIAGNOSTICS.md          # Script reference
+  scripts/QUICK_REFERENCE.txt            # This file
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│ SUPPORT                                                                  │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  1. Run diagnostics: ./scripts/diagnose-package-issues.sh --full
+  2. Check logs: ls log/diagnostics/
+  3. Review report: cat log/diagnostics/diagnostic-report-*.txt
+  4. Follow recommendations
+  5. Try auto-fix: ./scripts/diagnose-package-issues.sh --fix
+
+╔═══════════════════════════════════════════════════════════════════════════╗
+║  For detailed documentation: docs/PACKAGE_MANAGER_DIAGNOSTICS.md          ║
+╚═══════════════════════════════════════════════════════════════════════════╝
