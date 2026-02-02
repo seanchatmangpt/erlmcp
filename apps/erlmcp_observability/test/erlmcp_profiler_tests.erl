@@ -1,168 +1,268 @@
-%%%-----------------------------------------------------------------------------
-%%% @doc Tests for erlmcp_profiler
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Test suite for Timeline Profiler (OTP 26-27)
+%%%
+%%% Tests timeline profiling, visualization, and CLI commands.
+%%%
 %%% @end
-%%%-----------------------------------------------------------------------------
+%%%-------------------------------------------------------------------
 -module(erlmcp_profiler_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
-%%%=============================================================================
-%%% TEST FIXTURES
-%%%=============================================================================
+%%====================================================================
+%% Test Generators
+%%====================================================================
 
-profiler_test_() ->
-    {foreach,
-     fun setup/0,
-     fun cleanup/1,
-     [{"Memory snapshot", fun test_memory_snapshot/0},
-      {"Process memory inspection", fun test_process_memory/0},
-      {"Binary leak detection", fun test_binary_leaks/0},
-      {"Heap fragmentation", fun test_heap_fragmentation/0},
-      {"Profile PID", fun test_profile_pid/0},
-      {"Message tracing", fun test_trace_messages/0}]}.
+%% @doc Test basic timeline profiling
+profile_timeline_test_() ->
+    {setup,
+     fun setup_profiler/0,
+     fun cleanup_profiler/1,
+     fun(_) ->
+         [
+          ?_test(profile_simple_function()),
+          ?_test(profile_function_with_error()),
+          ?_test(profile_function_with_options()),
+          ?_test(profile_tool_call()),
+          ?_test(profile_session_request())
+         ]
+     end}.
 
-setup() ->
-    application:ensure_all_started(erlmcp_observability),
-    %% Start a test process
-    Pid = spawn(fun test_worker/0),
-    register(test_worker, Pid),
+%% @doc Test timeline visualization
+timeline_viz_test_() ->
+    {setup,
+     fun setup_profiler/0,
+     fun cleanup_profiler/1,
+     fun(_) ->
+         [
+          ?_test(generate_svg()),
+          ?_test(generate_html()),
+          ?_test(export_json()),
+          ?_test(export_csv())
+         ]
+     end}.
+
+%% @doc Test profile aggregation and comparison
+profile_analysis_test_() ->
+    {setup,
+     fun setup_profiler/0,
+     fun cleanup_profiler/1,
+     fun(_) ->
+         [
+          ?_test(aggregate_profiles()),
+          ?_test(compare_profiles()),
+          ?_test(empty_profiles())
+         ]
+     end}.
+
+%%====================================================================
+%% Setup and Cleanup
+%%====================================================================
+
+setup_profiler() ->
+    {ok, Pid} = erlmcp_profiler:start_link(),
     Pid.
 
-cleanup(Pid) ->
-    catch unregister(test_worker),
-    catch exit(Pid, kill),
-    erlmcp_profiler:stop_profiling(),
-    ok.
+cleanup_profiler(_Pid) ->
+    erlmcp_profiler:stop().
 
-%%%=============================================================================
-%%% MEMORY PROFILING TESTS
-%%%=============================================================================
+%%====================================================================
+%% Test Functions
+%%====================================================================
 
-test_memory_snapshot() ->
-    {ok, Snapshot} = erlmcp_profiler:memory_snapshot(#{top => 10}),
+%% @private Test profiling a simple function
+profile_simple_function() ->
+    Fun = fun() -> lists:sum(lists:seq(1, 100)) end,
+    {ok, Result, Timeline} = erlmcp_profiler:profile_timeline(Fun, <<"simple_sum">>),
 
-    ?assert(is_list(Snapshot)),
-    ?assert(length(Snapshot) =< 10),
+    ?assertEqual(5050, Result),
+    ?assert(maps:is_key(profile_id, Timeline)),
+    ?assert(maps:is_key(start_time, Timeline)),
+    ?assert(maps:is_key(end_time, Timeline)),
+    ?assert(maps:is_key(total_duration_us, Timeline)),
+    ?assert(maps:is_key(events, Timeline)),
+    ?assert(maps:is_key(statistics, Timeline)),
 
-    case Snapshot of
-        [] ->
-            ok;
-        [First | _] ->
-            ?assertMatch(#{pid := _,
-                           memory_bytes := _,
-                           memory_mb := _,
-                           message_queue_len := _,
-                           reductions := _},
-                         First)
+    %% Verify duration is positive
+    DurationUs = maps:get(total_duration_us, Timeline),
+    ?assert(DurationUs > 0).
+
+%% @private Test profiling function with error
+profile_function_with_error() ->
+    Fun = fun() -> error(intentional_error) end,
+
+    try
+        erlmcp_profiler:profile_timeline(Fun, <<"error_test">>),
+        ?assert(false)  %% Should not reach here
+    catch
+        error:intentional_error ->
+            ok
     end.
 
-test_process_memory() ->
-    Pid = whereis(test_worker),
-    {ok, Info} = erlmcp_profiler:process_memory(Pid),
+%% @private Test profiling with custom options
+profile_function_with_options() ->
+    Fun = fun() -> timer:sleep(10) end,
+    Opts = #{include_scheduler => true,
+             include_gc => false,
+             include_ports => false,
+             max_events => 100},
 
-    ?assertMatch(#{pid := Pid,
-                   memory_bytes := _,
-                   memory_mb := _,
-                   heap_size_words := _,
-                   stack_size_words := _,
-                   heap_fragmentation_pct := _},
-                 Info),
+    {ok, ok, Timeline} = erlmcp_profiler:profile_function(Fun, <<"sleep_test">>, Opts),
 
-    %% Verify numeric values
-    ?assert(maps:get(memory_bytes, Info) > 0),
-    ?assert(maps:get(heap_fragmentation_pct, Info) >= 0.0).
+    %% Verify timeline was created
+    ?assert(maps:is_key(events, Timeline)),
+    Events = maps:get(events, Timeline, []),
+    ?assert(is_list(Events)).
 
-test_binary_leaks() ->
-    %% Create a process with large binaries
-    LeakyPid =
-        spawn(fun() ->
-                 Bin = binary:copy(<<1>>, 1000000),
-                 receive
-                     stop ->
-                         ok
-                 end,
-                 _ = Bin
-              end),
+%% @private Test profiling tool call (mock)
+profile_tool_call() ->
+    %% Create a mock tool call
+    Fun = fun() ->
+                  %% Simulate tool execution
+                  timer:sleep(5),
+                  {ok, #{result => <<"mock_result">>}}
+          end,
 
-    timer:sleep(100),
+    {ok, Result, Timeline} = erlmcp_profiler:profile_function(
+        Fun,
+        <<"tool.mock.execute">>,
+        #{}
+    ),
 
-    {ok, Suspects} = erlmcp_profiler:binary_leaks(),
+    ?assertMatch({ok, #{result := <<"mock_result">>}}, Result),
+    ?assert(maps:is_key(total_duration_us, Timeline)).
 
-    ?assert(is_list(Suspects)),
+%% @private Test profiling session request
+profile_session_request() ->
+    SessionId = <<"test_session_123">>,
+    Request = #{action => test},
 
-    %% Check if our leaky process is detected
-    Found = lists:any(fun(#{pid := P}) -> P == LeakyPid end, Suspects),
-    ?assert(Found orelse length(Suspects) >= 0),  % May or may not be flagged
+    {ok, Result, Timeline} = erlmcp_profiler:profile_session_request(SessionId, Request),
 
-    LeakyPid ! stop.
+    ?assertMatch({ok, #{status := processed}}, Result),
+    ?assert(maps:is_key(label, Timeline)),
+    ?assert(<< <<"session.", SessionId/binary>> >> =:= maps:get(label, Timeline)).
 
-test_heap_fragmentation() ->
-    Pid = whereis(test_worker),
-    {ok, Fragmentation} = erlmcp_profiler:heap_fragmentation(Pid),
+%% @private Test SVG generation
+generate_svg() ->
+    Timeline = create_mock_timeline(),
+    {ok, SVG} = erlmcp_timeline_viz:generate_svg(Timeline),
 
-    ?assert(is_float(Fragmentation)),
-    ?assert(Fragmentation >= 0.0),
-    ?assert(Fragmentation =< 100.0).
+    ?assert(is_binary(SVG)),
+    ?assert(<<"<?xml version=\"1.0\"">> =< SVG),
+    ?assert(<<"<svg">> =< SVG),
+    ?assert(<<"</svg>">> =< SVG).
 
-%%%=============================================================================
-%%% CPU PROFILING TESTS
-%%%=============================================================================
+%% @private Test HTML generation
+generate_html() ->
+    Timeline = create_mock_timeline(),
+    {ok, HTML} = erlmcp_timeline_viz:generate_html(Timeline),
 
-test_profile_pid() ->
-    Pid = whereis(test_worker),
+    ?assert(is_binary(HTML)),
+    ?assert(<<"<!DOCTYPE html>">> =< HTML),
+    ?assert(<<"<html>">> =< HTML),
+    ?assert(<<"</html>">> =< HTML),
+    ?assert(<<"Timeline Profile">> =< HTML).
 
-    %% Send some work to the process
-    [Pid ! {work, N} || N <- lists:seq(1, 100)],
+%% @private Test JSON export
+export_json() ->
+    Timeline = create_mock_timeline(),
+    {ok, JSON} = erlmcp_timeline_viz:export_json(Timeline),
 
-    {ok, Result} =
-        erlmcp_profiler:profile_pid(Pid,
-                                    #{duration => 100,
-                                      mode => fprof,
-                                      output => "/tmp/test_profile.out"}),
+    ?assert(is_binary(JSON)),
+    %% Verify it's valid JSON by decoding
+    Decoded = jsx:decode(JSON, [return_maps]),
+    ?assert(maps:is_key(<<"profile_id">>, Decoded)).
 
-    ?assertMatch(#{mode := fprof,
-                   pid := Pid,
-                   file := "/tmp/test_profile.out"},
-                 Result),
+%% @private Test CSV export
+export_csv() ->
+    Timeline = create_mock_timeline(),
+    {ok, CSV} = erlmcp_timeline_viz:export_csv(Timeline),
 
-    %% Verify file was created
-    ?assert(filelib:is_regular("/tmp/test_profile.out")),
+    ?assert(is_binary(CSV)),
+    %% Verify CSV header
+    Lines = binary:split(CSV, <<"\n">>, [global]),
+    [Header | _] = Lines,
+    ?assert(<<"timestamp,type,duration_us,relative_time_us">> =< Header).
 
-    %% Cleanup
-    file:delete("/tmp/test_profile.out").
+%% @private Test profile aggregation
+aggregate_profiles() ->
+    Profile1 = create_mock_timeline(),
+    Profile2 = create_mock_timeline(),
 
-%%%=============================================================================
-%%% MESSAGE TRACING TESTS
-%%%=============================================================================
+    {ok, Aggregated} = erlmcp_profiler:aggregate_profiles([Profile1, Profile2]),
 
-test_trace_messages() ->
-    Pid = whereis(test_worker),
+    ?assert(maps:is_key(profile_id, Aggregated)),
+    ?assert(maps:is_key(label, Aggregated)),
+    ?assert(<<"aggregate_2_profiles">> =:= maps:get(label, Aggregated)),
 
-    %% Start tracing
-    {ok, Messages} = erlmcp_profiler:trace_messages(Pid, 200),
+    Stats = maps:get(statistics, Aggregated),
+    ?assert(maps:is_key(profile_count, Stats)),
+    ?assertEqual(2, maps:get(profile_count, Stats)).
 
-    %% Send some messages during trace
-    [Pid ! {msg, N} || N <- lists:seq(1, 10)],
+%% @private Test profile comparison
+compare_profiles() ->
+    Profile1 = create_mock_timeline(#{total_duration_us => 1000}),
+    Profile2 = create_mock_timeline(#{total_duration_us => 900}),  %% 10% faster
 
-    timer:sleep(250),
+    Diff = erlmcp_profiler:compare_profiles(Profile1, Profile2),
 
-    ?assert(is_list(Messages)),
-    ?assert(length(Messages) >= 0).  % May capture some messages
+    ?assert(maps:is_key(baseline, Diff)),
+    ?assert(maps:is_key(comparison, Diff)),
+    ?assert(maps:is_key(diff, Diff)),
 
-%%%=============================================================================
-%%% HELPER FUNCTIONS
-%%%=============================================================================
+    DiffMap = maps:get(diff, Diff),
+    ?assert(maps:is_key(duration_us_diff, DiffMap)),
+    ?assert(maps:is_key(duration_percent_change, DiffMap)),
+    ?assert(maps:is_key(faster, DiffMap)),
+    ?assertEqual(true, maps:get(faster, DiffMap)).
 
-%% Simple worker process for testing
-test_worker() ->
-    receive
-        {work, N} ->
-            _ = lists:seq(1, N * 1000),
-            test_worker();
-        {msg, _} ->
-            test_worker();
-        stop ->
-            ok;
-        _ ->
-            test_worker()
-    end.
+%% @private Test empty profiles
+empty_profiles() ->
+    ?assertEqual({error, no_profiles},
+                 erlmcp_profiler:aggregate_profiles([])).
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+%% @private Create a mock timeline for testing
+-spec create_mock_timeline() -> map().
+create_mock_timeline() ->
+    create_mock_timeline(#{}).
+
+%% @private Create a mock timeline with custom fields
+-spec create_mock_timeline(map()) -> map().
+create_mock_timeline(Overrides) ->
+    Now = erlang:system_time(microsecond),
+    Events = [
+        #{type => scheduler,
+          timestamp => Now,
+          duration_us => 100,
+          details => #{mfa => <<"erlang:apply/3">>}},
+        #{type => process,
+          timestamp => Now + 100,
+          duration_us => 50,
+          details => #{mfa => <<"lists:seq/2">>}},
+        #{type => gc,
+          timestamp => Now + 200,
+          duration_us => 25,
+          details => #{reason => gc}}
+    ],
+
+    BaseTimeline = #{
+        profile_id => <<"test_profile_123">>,
+        label => <<"test_profile">>,
+        start_time => Now,
+        end_time => Now + 1000,
+        total_duration_us => 1000,
+        events => Events,
+        statistics => #{
+            total_duration_us => 1000,
+            event_counts => #{scheduler => 1, process => 1, gc => 1},
+            event_count => 3
+        }
+    },
+
+    maps:merge(BaseTimeline, Overrides).

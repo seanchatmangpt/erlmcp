@@ -458,6 +458,120 @@ lookup(Name, Key) ->
     end.
 ```
 
+## Memory Guard Patterns (OTP 28)
+
+### 1. Process Memory Limiting
+
+```erlang
+%% Enable memory guard for long-lived processes
+init([]) ->
+    erlmcp_memory_guard:enable_context_guard(),
+    {ok, #state{}}.
+```
+
+**Purpose**: Prevent unbounded memory growth in context processes.
+
+**OTP 28 Process Flags**:
+- `min_heap_size/1`: Prevents excessive GC cycles
+- `max_heap_size/1`: Triggers GC or kills process
+- `min_bin_vheap_size/1`: Binary heap minimum
+- `max_bin_vheap_size/1`: Binary heap maximum
+
+### 2. Per-Process-Type Limits
+
+```erlang
+%% Context processes (100MB heap, 50MB binary)
+erlmcp_memory_guard:enable_context_guard().
+
+%% Tool processes (50MB heap, 25MB binary)
+erlmcp_memory_guard:enable_tool_guard().
+
+%% Transport processes (30MB heap, 15MB binary)
+erlmcp_memory_guard:enable_transport_guard().
+```
+
+**Default Limits**:
+| Type | Max Heap | Max Bin Heap | Hibernate Threshold |
+|------|----------|--------------|---------------------|
+| context | 100MB | 50MB | 90% |
+| tool | 50MB | 25MB | 85% |
+| transport | 30MB | 15MB | 80% |
+| generic | 20MB | 10MB | 80% |
+
+### 3. Memory Validation and Hibernation
+
+```erlang
+handle_call(Request, _From, State) ->
+    %% Check memory before expensive operations
+    case erlmcp_memory_guard:validate_memory(context) of
+        {ok, _} ->
+            %% Process normally
+            Result = do_expensive_work(Request),
+            {reply, Result, State};
+        {warning, _} ->
+            %% Approaching limit, hibernate after work
+            Result = do_expensive_work(Request),
+            {reply, Result, State, hibernate};
+        {error, _} ->
+            %% Over limit, reject request
+            {reply, {error, memory_limit_exceeded}, State}
+    end.
+```
+
+### 4. Memory Monitoring Integration
+
+```erlang
+%% Register process for monitoring
+init([SessionId]) ->
+    erlmcp_memory_guard:enable_context_guard(),
+    ok = erlmcp_memory_monitor:register_process(self(), context),
+    {ok, #state{session_id = SessionId}}.
+
+%% Handle hibernation requests
+handle_info({hibernate_now, _Monitor}, State) ->
+    logger:info("Hibernating due to memory pressure"),
+    {noreply, State, hibernate}.
+```
+
+**Memory Monitor Features**:
+- Periodic memory checks (default: 5 seconds)
+- Memory leak detection (growth pattern analysis)
+- Automatic hibernation recommendations
+- OTEL integration for observability
+
+### 5. Custom Memory Limits
+
+```erlang
+%% Define custom process type with specific limits
+-spec enable_custom_guard() -> ok.
+enable_custom_guard() ->
+    %% 75MB heap, 30MB binary heap
+    ok = erlmcp_memory_guard:configure_limits(75_000_000, 30_000_000),
+    ok.
+```
+
+### 6. Memory Usage Tracking
+
+```erlang
+%% Track memory usage over time
+track_memory_usage() ->
+    {Heap, BinHeap} = erlmcp_memory_guard:get_memory_usage(),
+    logger:info("Memory: heap=~p, binary=~p", [Heap, BinHeap]),
+    
+    %% Emit OTEL metric
+    erlmcp_otel:add_event(current_span(), <<"memory.usage">>,
+        #{<<"heap">> => Heap, <<"binary">> => BinHeap}).
+```
+
+**Best Practices**:
+1. **Enable early**: Call `enable_*_guard/0` in `init/1`
+2. **Validate periodically**: Check memory before expensive operations
+3. **Hibernate proactively**: Force hibernation at 80-90% threshold
+4. **Monitor continuously**: Register with `erlmcp_memory_monitor`
+5. **Set appropriate limits**: Match limits to process role and lifetime
+
+**See Also**: [MEMORY_GUARD_LIMITS_OTP28.md](MEMORY_GUARD_LIMITS_OTP28.md)
+
 ## Library Integration Patterns (v0.6.0)
 
 ### 1. gproc Registry Pattern
