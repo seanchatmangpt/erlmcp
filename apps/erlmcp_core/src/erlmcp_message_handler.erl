@@ -54,16 +54,9 @@ handle_priority_message({cancel_request, RequestId}, _From, State) ->
 handle_priority_message({health_check_response, Ref, Status}, _From, State) ->
     %% Handle health check response with priority
     logger:debug("Priority health check response: ~p = ~p", [Ref, Status]),
-    %% Update health status in state
-    NewState = case maps:find(health_checks, State#mcp_server_state{}) of
-        {ok, Checks} ->
-            NewChecks = maps:put(Ref, Status, Checks),
-            State#mcp_server_state{health_checks = NewChecks};
-        error ->
-            %% Initialize health checks map if not present
-            State#mcp_server_state{health_checks = #{Ref => Status}}
-    end,
-    {ok, NewState};
+    %% Note: health_checks field not defined in mcp_server_state record
+    %% TODO: Add health_checks field to mcp_server_state record if needed
+    {ok, State};
 
 handle_priority_message({emergency_shutdown, Reason}, _From, State) ->
     %% Handle emergency shutdown with priority

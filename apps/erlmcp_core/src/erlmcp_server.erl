@@ -23,10 +23,7 @@
          report_progress/4, notify_resource_updated/3, notify_resources_changed/1,
          encode_resource_link/2, encode_resource_link/4, validate_resource_link_uri/1,
          register_notification_handler/3, unregister_notification_handler/2,
-         unregister_all_handlers/1, stop/1,
-         %% Safe extraction helpers
-         safe_extract_tool_result/1, safe_extract_resource_content/1,
-         safe_extract_capability/2, safe_validate_response/1]).
+         unregister_all_handlers/1, stop/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
          format_status/2]).
