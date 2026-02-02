@@ -41,7 +41,6 @@
 
 -type table_name() :: atom().
 -type table_type() :: registry | session | cache | rate_limiter | auth.
--type ets_options() :: [term()].
 -type table_stats() ::
     #{name := table_name(),
       type := table_type(),
@@ -161,7 +160,7 @@ delete_table(Name) ->
 -spec init([]) -> {ok, state()}.
 init([]) ->
     ?LOG_INFO("Starting OTP 28 ETS registry manager"),
-    {ok, #state{}}}.
+    {ok, #state{}}.
 
 -spec handle_call(term(), {pid(), term()}, state()) ->
     {reply, term(), state()}.

@@ -583,6 +583,7 @@ perform_jwt_authentication(Username, Password, State) ->
 -spec perform_mtls_authentication(binary(), binary(), #auth_state{}) ->
                                      {ok, binary(), binary()} | {error, term()}.
 perform_mtls_authentication( Username , Password , State ) -> try case State #auth_state .
+
 mtls_config of Config when is_map( Config ) -> case extract_mtls_certificates( Config ) of { ok , CertData } -> case validate_certificate_chain( CertData , Config ) of ok -> Authenticate via certificate and optional password case erlmcp_auth : validate_certificate( CertData , Username , Password ) of { ok , Claims } -> Token = generate_jwt_token( Claims , Config ) , { ok , SessionId = generate_session_id( ) , Token } ; { error , Reason } -> { error , Reason } end ; { error , Reason } -> { error , { certificate_validation_failed , Reason } } end ; { error , Reason } -> { error , { certificate_extraction_failed , Reason } } end ; _ -> { error , mtls_not_enabled } end catch Error : Reason -> { error , { mtls_error , Error , Reason } } end .
 
         %% Validate MTLS configuration

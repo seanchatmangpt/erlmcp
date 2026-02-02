@@ -4,7 +4,8 @@
 %%%
 %%% Provides comprehensive OpenTelemetry integration for CLI operations
 %%% with JSON-RPC 2.0 protocol support and multi-transport
- compatibility.
+compatibility.
+
 %%% Integrates with erlmcp_observability for distributed tracing.
 %%%
 %%% @end
@@ -14,13 +15,10 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, with_span/3, with_span/4, record_metric/2,
-         record_metric/3, record_error/2, record_event/3,
-         inject_span/3, inject_span/4, extract_span/1,
-         get_tracer/0, get_meter/0]).
+-export([start_link/0, with_span/3, with_span/4, record_metric/2, record_metric/3, record_error/2,
+         record_event/3, inject_span/3, inject_span/4, extract_span/1, get_tracer/0, get_meter/0]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
 -include("erlmcp_observability.hrl").
@@ -42,15 +40,14 @@
         #{<<"exporter">> => <<"otlp">>,              % OTLP exporter
           <<"endpoint">> => <<"http://localhost:4317">>,
           <<"headers">> => #{},
-          <<"resource">> => #{<<"service.name">> => <<"erlmcp_cli">>,
-                             <<"service.version">> => <<"2.1.0">>,
-                             <<"telemetry.sdk.name">> => <<"erlmcp">>,
-                             <<"telemetry.sdk.version">> => <<"2.1.0">>},
-          <<"sampling">> => #{<<"type">> => <<"always_on">>,
-                             <<"trace_ratio">> => 1.0},
+          <<"resource">> =>
+              #{<<"service.name">> => <<"erlmcp_cli">>,
+                <<"service.version">> => <<"2.1.0">>,
+                <<"telemetry.sdk.name">> => <<"erlmcp">>,
+                <<"telemetry.sdk.version">> => <<"2.1.0">>},
+          <<"sampling">> => #{<<"type">> => <<"always_on">>, <<"trace_ratio">> => 1.0},
           <<"batch_size">> => 512,
           <<"batch_timeout">> => 5000}).
-
 -define(SERVER, ?MODULE).
 
 %%====================================================================
@@ -133,8 +130,10 @@ inject_span(Name, Attributes, Links, SpanCtx) ->
 
         %% Add links to existing context
         case SpanCtx of
-            undefined -> NewSpanCtx;
-            _ -> link_spans(SpanCtx, NewSpanCtx)
+            undefined ->
+                NewSpanCtx;
+            _ ->
+                link_spans(SpanCtx, NewSpanCtx)
         end
     catch
         Error:Reason ->
@@ -195,16 +194,15 @@ init(_Args) ->
                                      %% Initialize metrics registry
                                      Metrics = init_metrics(),
 
-                                     State = #otel_state{
-                                        tracer = Tracer,
-                                        meter = Meter,
-                                        config = Config,
-                                        spans = #{},
-                                        exporters = Exporters,
-                                        metrics = Metrics,
-                                        resource = Resource,
-                                        service_name = <<"erlmcp_cli">>
-                                     },
+                                     State =
+                                         #otel_state{tracer = Tracer,
+                                                     meter = Meter,
+                                                     config = Config,
+                                                     spans = #{},
+                                                     exporters = Exporters,
+                                                     metrics = Metrics,
+                                                     resource = Resource,
+                                                     service_name = <<"erlmcp_cli">>},
 
                                      %% Initialize span cleanup timer
                                      erlang:send_after(30000, self(), cleanup_spans),
@@ -217,14 +215,11 @@ init(_Args) ->
                           end).
 
 %% @doc Handle synchronous calls
--spec handle_call(term(), {pid(), term()}, #otel_state{}) ->
-                   {reply, term(), #otel_state{}}.
+-spec handle_call(term(), {pid(), term()}, #otel_state{}) -> {reply, term(), #otel_state{}}.
 handle_call(get_tracer, _From, State) ->
     {reply, State#otel_state.tracer, State};
-
 handle_call(get_meter, _From, State) ->
     {reply, State#otel_state.meter, State};
-
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
 
@@ -245,7 +240,6 @@ handle_cast({record_metric, Name, Value, Attributes}, State) ->
     Metrics = update_metric_registry(State#otel_state.metrics, Name, Value, Attributes),
 
     {noreply, State#otel_state{metrics = Metrics}};
-
 handle_cast({record_error, SpanCtx, Error}, State) ->
     %% Record error on span
     try
@@ -253,10 +247,16 @@ handle_cast({record_error, SpanCtx, Error}, State) ->
             undefined ->
                 lager:warning("No span context for error recording");
             _ ->
-                otel_span:set_attribute(SpanCtx, <<"error.type">>, atom_to_binary(element(1, Error), utf8)),
-                otel_span:set_attribute(SpanCtx, <<"error.message">>, format_error(element(2, Error))),
+                otel_span:set_attribute(SpanCtx,
+                                        <<"error.type">>,
+                                        atom_to_binary(element(1, Error), utf8)),
+                otel_span:set_attribute(SpanCtx,
+                                        <<"error.message">>,
+                                        format_error(element(2, Error))),
                 otel_span:set_status(SpanCtx, opentelemetry:status(error, format_error(Error))),
-                otel_span:add_event(SpanCtx, <<"error">>, #{<<"error.stack">> => format_stacktrace(element(3, Error))})
+                otel_span:add_event(SpanCtx,
+                                    <<"error">>,
+                                    #{<<"error.stack">> => format_stacktrace(element(3, Error))})
         end
     catch
         Error1:Reason1 ->
@@ -264,7 +264,6 @@ handle_cast({record_error, SpanCtx, Error}, State) ->
     end,
 
     {noreply, State};
-
 handle_cast({record_event, SpanCtx, Name, Attributes}, State) ->
     %% Record event on span
     try
@@ -275,27 +274,30 @@ handle_cast({record_event, SpanCtx, Name, Attributes}, State) ->
     end,
 
     {noreply, State};
-
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @doc Handle messages
--spec handle_info(term(), #otel_state{}) -> {noreply, #otel_state{}}}.
+-spec handle_info( term( ) , #otel_state{ } ) -> { noreply , #otel_state{ } } } .
+
 handle_info(cleanup_spans, State) ->
     %% Clean up completed spans
     Now = erlang:system_time(millisecond),
-    ActiveSpans = maps:filter(fun(_SpanId, SpanCtx) ->
-                                   case otel_span:is_active(SpanCtx) of
-                                       true -> true;
-                                       false -> false
-                                   end
-                               end, State#otel_state.spans),
+    ActiveSpans =
+        maps:filter(fun(_SpanId, SpanCtx) ->
+                       case otel_span:is_active(SpanCtx) of
+                           true ->
+                               true;
+                           false ->
+                               false
+                       end
+                    end,
+                    State#otel_state.spans),
 
     %% Schedule next cleanup
     erlang:send_after(30000, self(), cleanup_spans),
 
     {noreply, State#otel_state{spans = ActiveSpans}};
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -307,17 +309,20 @@ terminate(_Reason, State) ->
                           #{<<"service_name">> => State#otel_state.service_name},
                           fun() ->
                              %% End all active spans
-                            lists:foreach(fun({_SpanId, SpanCtx}) ->
-                                             otel_span:end_span(SpanCtx)
-                                         end, maps:to_list(State#otel_state.spans)),
+                             lists:foreach(fun({_SpanId, SpanCtx}) -> otel_span:end_span(SpanCtx)
+                                           end,
+                                           maps:to_list(State#otel_state.spans)),
 
                              %% Shutdown exporters
-                            lists:foreach(fun(Pid) ->
-                                             case erlang:is_process_alive(Pid) of
-                                                 true -> erlang:exit(Pid, normal);
-                                                 false -> ok
-                                             end
-                                         end, State#otel_state.exporters),
+                             lists:foreach(fun(Pid) ->
+                                              case erlang:is_process_alive(Pid) of
+                                                  true ->
+                                                      erlang:exit(Pid, normal);
+                                                  false ->
+                                                      ok
+                                              end
+                                           end,
+                                           State#otel_state.exporters),
 
                              %% Record final metrics
                              erlmcp_metrics:record("cli.otel.terminated", 1),
@@ -358,10 +363,9 @@ init_opentelemetry() ->
 configure_exporters() ->
     try
         %% Configure OTLP exporter
-        Config = otel_exporter_otlp:configure(#{
-            <<"endpoint">> => <<"http://localhost:4317">>,
-            <<"headers">> => #{}
-        }),
+        Config =
+            otel_exporter_otlp:configure(#{<<"endpoint">> => <<"http://localhost:4317">>,
+                                           <<"headers">> => #{}}),
 
         ok = opentelemetry:add_exporter(otel_exporter_otlp, Config),
 
@@ -402,34 +406,40 @@ load_config() ->
     FileConfig = load_file_config(),
 
     %% Final merge
-    maps:merge(maps:merge(DefaultConfig, EnvConfig), FileConfig).
+    maps:merge(
+        maps:merge(DefaultConfig, EnvConfig), FileConfig).
 
 %% @doc Merge environment configuration
 -spec merge_env_config(map()) -> map().
 merge_env_config(Config) ->
     %% Environment variable mappings
-    EnvMappings = #{
-        <<"OTEL_EXPORTER_OTLP_ENDPOINT">> => <<"endpoint">>,
-        <<"OTEL_EXPORTER_OTLP_HEADERS">> => <<"headers">>,
-        <<"OTEL_SERVICE_NAME">> => <<"resource.service.name">>,
-        <<"OTEL_TRACES_SAMPLER">> => <<"sampling.type">>,
-        <<"OTEL_TRACES_SAMPLER_ARG">> => <<"sampling.trace_ratio">>,
-        <<"OTEL_EXPORTER_OTLP_BATCH_SIZE">> => <<"batch_size">>,
-        <<"OTEL_EXPORTER_OTLP_BATCH_TIMEOUT">> => <<"batch_timeout">>
-    },
+    EnvMappings =
+        #{<<"OTEL_EXPORTER_OTLP_ENDPOINT">> => <<"endpoint">>,
+          <<"OTEL_EXPORTER_OTLP_HEADERS">> => <<"headers">>,
+          <<"OTEL_SERVICE_NAME">> => <<"resource.service.name">>,
+          <<"OTEL_TRACES_SAMPLER">> => <<"sampling.type">>,
+          <<"OTEL_TRACES_SAMPLER_ARG">> => <<"sampling.trace_ratio">>,
+          <<"OTEL_EXPORTER_OTLP_BATCH_SIZE">> => <<"batch_size">>,
+          <<"OTEL_EXPORTER_OTLP_BATCH_TIMEOUT">> => <<"batch_timeout">>},
 
     lists:foldl(fun({EnvVar, ConfigKey}, Acc) ->
-                       case os:getenv(binary_to_list(EnvVar)) of
-                           false -> Acc;
-                           Value -> set_nested_config(ConfigKey, Value, Acc)
-                       end
-                   end, Config, EnvMappings).
+                   case os:getenv(binary_to_list(EnvVar)) of
+                       false ->
+                           Acc;
+                       Value ->
+                           set_nested_config(ConfigKey, Value, Acc)
+                   end
+                end,
+                Config,
+                EnvMappings).
 
 %% @doc Load file configuration
 -spec load_file_config() -> map().
 load_file_config() ->
     try
-        ConfigFile = filename:join(os:getenv("HOME", "."), ".erlmcp_otel.json"),
+        ConfigFile =
+            filename:join(
+                os:getenv("HOME", "."), ".erlmcp_otel.json"),
         case file:read_file(ConfigFile) of
             {ok, Content} ->
                 jsx:decode(Content, [{labels, binary}, return_maps]);
@@ -452,17 +462,20 @@ create_resource(Config) ->
     DefaultResource = maps:get(<<"resource">>, Config, #{}),
 
     %% Add host information
-    HostInfo = #{<<"host.name">> => get_hostname(),
-                 <<"host.arch">> => get_arch(),
-                 <<"host.os">> => get_os()},
+    HostInfo =
+        #{<<"host.name">> => get_hostname(),
+          <<"host.arch">> => get_arch(),
+          <<"host.os">> => get_os()},
 
     %% Add process information
-    ProcessInfo = #{<<"process.pid">> => os:getpid(),
-                   <<"process.executable.name">> => <<"erlmcp_cli">>,
-                   <<"process.executable.path">> => get_executable_path()},
+    ProcessInfo =
+        #{<<"process.pid">> => os:getpid(),
+          <<"process.executable.name">> => <<"erlmcp_cli">>,
+          <<"process.executable.path">> => get_executable_path()},
 
     %% Merge all resources
-    maps:merge(maps:merge(DefaultResource, HostInfo), ProcessInfo).
+    maps:merge(
+        maps:merge(DefaultResource, HostInfo), ProcessInfo).
 
 %% @doc Start exporters
 -spec start_exporters(map(), map()) -> list().
@@ -486,13 +499,12 @@ start_exporters(Config, Resource) ->
 start_otlp_exporter(Config, Resource) ->
     try
         %% Configure OTLP exporter
-        OtlpConfig = #{
-            <<"endpoint">> => maps:get(<<"endpoint">>, Config, <<"http://localhost:4317">>),
-            <<"headers">> => maps:get(<<"headers">>, Config, #{}),
-            <<"resource">> => Resource,
-            <<"batch_size">> => maps:get(<<"batch_size">>, Config, 512),
-            <<"batch_timeout">> => maps:get(<<"batch_timeout">>, Config, 5000)
-        },
+        OtlpConfig =
+            #{<<"endpoint">> => maps:get(<<"endpoint">>, Config, <<"http://localhost:4317">>),
+              <<"headers">> => maps:get(<<"headers">>, Config, #{}),
+              <<"resource">> => Resource,
+              <<"batch_size">> => maps:get(<<"batch_size">>, Config, 512),
+              <<"batch_timeout">> => maps:get(<<"batch_timeout">>, Config, 5000)},
 
         %% Start exporter
         {ok, Pid} = otel_exporter_otlp:start_link(OtlpConfig),
@@ -531,10 +543,12 @@ init_metrics() ->
 start_span(Name, Attributes, Links, ParentSpanCtx) ->
     try
         %% Create span context
-        SpanCtx = otel_span:start_span(get_tracer(), Name,
-                                      #{attributes => Attributes,
-                                        links => Links,
-                                        parent => ParentSpanCtx}),
+        SpanCtx =
+            otel_span:start_span(get_tracer(),
+                                 Name,
+                                 #{attributes => Attributes,
+                                   links => Links,
+                                   parent => ParentSpanCtx}),
 
         %% Add to active spans
         SpanId = generate_span_id(),
@@ -555,7 +569,8 @@ end_span(SpanCtx, Status) ->
             ok ->
                 otel_span:end_span(SpanCtx);
             {Class, Reason, Stacktrace} ->
-                otel_span:set_status(SpanCtx, opentelemetry:status(error, format_error({Class, Reason}))),
+                otel_span:set_status(SpanCtx,
+                                     opentelemetry:status(error, format_error({Class, Reason}))),
                 otel_span:set_attribute(SpanCtx, <<"error.stack">>, format_stacktrace(Stacktrace)),
                 otel_span:end_span(SpanCtx)
         end
@@ -580,10 +595,9 @@ link_spans(ParentSpanCtx, ChildSpanCtx) ->
 extract_trace_context(Headers) ->
     try
         %% Extract W3C trace context
-        TraceContext = #{
-            <<"traceparent">> => maps:get(<<"traceparent">>, Headers, undefined),
-            <<"tracestate">> => maps:get(<<"tracestate">>, Headers, undefined)
-        },
+        TraceContext =
+            #{<<"traceparent">> => maps:get(<<"traceparent">>, Headers, undefined),
+              <<"tracestate">> => maps:get(<<"tracestate">>, Headers, undefined)},
 
         %% Convert to OTEL context
         otel_context:new(TraceContext)
@@ -621,11 +635,14 @@ set_nested_config(Key, Value, Config) ->
 -spec set_nested_config_parts([binary()], term(), map()) -> map().
 set_nested_config_parts([Part], Value, Map) ->
     maps:put(Part, Value, Map);
-set_nested_config_parts([Part|Rest], Value, Map) ->
-    SubMap = case maps:get(Part, Map, undefined) of
-                 undefined -> #{};
-                 Existing when is_map(Existing) -> Existing
-             end,
+set_nested_config_parts([Part | Rest], Value, Map) ->
+    SubMap =
+        case maps:get(Part, Map, undefined) of
+            undefined ->
+                #{};
+            Existing when is_map(Existing) ->
+                Existing
+        end,
     NewSubMap = set_nested_config_parts(Rest, Value, SubMap),
     maps:put(Part, NewSubMap, Map).
 
@@ -654,12 +671,14 @@ get_hostname() ->
 %% @doc Get architecture
 -spec get_arch() -> binary().
 get_arch() ->
-    list_to_binary(string:to_lower(erlang:system_info(system_architecture))).
+    list_to_binary(string:to_lower(
+                       erlang:system_info(system_architecture))).
 
 %% @doc Get OS
 -spec get_os() -> binary().
 get_os() ->
-    list_to_binary(string:to_lower(os:type())).
+    list_to_binary(string:to_lower(
+                       os:type())).
 
 %% @doc Get executable path
 -spec get_executable_path() -> binary().

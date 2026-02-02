@@ -113,10 +113,10 @@ reset_metrics() ->
 
 %% @doc Initialize the metrics system
 -spec init(list()) -> {ok, #metrics_state{}}.
-init( _Opts ) -> SpanCtx = erlmcp_otel : with_span( "cli.metrics.init" , #{ << "metrics.init" >> => true } , fun ( ) -> ok end ) , State = #metrics_state{ metrics = ?DEFAULT_METRICS , aggregators = #{ } , exporters = init_exporters( ) , config = ?DEFAULT_CONFIG } , AggregationTimer = erlang : start_timer( State #metrics_state . config #{ aggregation_interval } , self( ) , aggregate_metrics ) , erlmcp_metrics : record( "cli.metrics.initialized" , 1 ) , { ok , State #metrics_state{ aggregators = #{ aggregation_timer => AggregationTimer } } } .
+init( _Opts ) -> SpanCtx = erlmcp_otel : with_span( "cli.metrics.init" , #{ << "metrics.init" >> => true } , fun ( ) -> ok end ) , State = #metrics_state{ metrics = ?DEFAULT_METRICS , aggregators = #{ } , exporters = init_exporters( ) , config = ?DEFAULT_CONFIG } , AggregationTimer = erlang : start_timer( State #metrics_state .
+config #{ aggregation_interval } , self( ) , aggregate_metrics ) , erlmcp_metrics : record( "cli.metrics.initialized" , 1 ) , { ok , State #metrics_state{ aggregators = #{ aggregation_timer => AggregationTimer } } } .
     %% Create OTEL span for metrics initialization
-    %% Initialize state
-
+                                                                                                                                                                                                                              %% Initialize state
     %% Start aggregation timer
 
     %% Record initialization
@@ -227,7 +227,13 @@ handle_cast(_Msg, State) ->
 
 %% @doc Handle messages
 -spec handle_info(term(), #metrics_state{}) -> {noreply, #metrics_state{}}.
-handle_info( { timeout , Timer , aggregate_metrics } , State ) -> case Timer of State #metrics_state . aggregators #{ aggregation_timer } -> Aggregated = aggregate_metrics( State #metrics_state . aggregators ) , UpdatedMetrics = maps : merge( State #metrics_state . metrics , Aggregated ) , ResetAggregators = maps : map( fun ( _ , _ ) -> [ ] end , State #metrics_state . aggregators ) , NewTimer = erlang : start_timer( State #metrics_state . config #{ aggregation_interval } , self( ) , aggregate_metrics ) , erlmcp_metrics : record( "cli.metrics.aggregated" , 1 ) , NewState = State #metrics_state{ metrics = UpdatedMetrics , aggregators = maps : remove( aggregation_timer , ResetAggregators ) , aggregators = maps : put( aggregation_timer , NewTimer , NewState #metrics_state . aggregators ) } , { noreply , NewState } ; _ -> { noreply , State } end ; handle_info( _Info , State ) -> { noreply , State } .
+handle_info( { timeout , Timer , aggregate_metrics } , State ) -> case Timer of State #metrics_state .
+aggregators #{ aggregation_timer } -> Aggregated = aggregate_metrics( State #metrics_state .
+aggregators ) , UpdatedMetrics = maps : merge( State #metrics_state .
+metrics , Aggregated ) , ResetAggregators = maps : map( fun ( _ , _ ) -> [ ] end , State #metrics_state .
+aggregators ) , NewTimer = erlang : start_timer( State #metrics_state .
+config #{ aggregation_interval } , self( ) , aggregate_metrics ) , erlmcp_metrics : record( "cli.metrics.aggregated" , 1 ) , NewState = State #metrics_state{ metrics = UpdatedMetrics , aggregators = maps : remove( aggregation_timer , ResetAggregators ) , aggregators = maps : put( aggregation_timer , NewTimer , NewState #metrics_state .
+aggregators ) } , { noreply , NewState } ; _ -> { noreply , State } end ; handle_info( _Info , State ) -> { noreply , State } .
     %% Aggregation timer expired
             %% Aggregate metrics
 

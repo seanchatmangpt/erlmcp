@@ -4,7 +4,7 @@
 %% and includes support for different OTP installations.
 
 -module(bench_runner).
--export([run_all_benchmarks/0, run_benchmark_for_otp_version/1, setup_otp_environment/1]).
+-export([run_all_benchmarks/0, run_benchmark_for_otp_version/1, setup_otp_version/1]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -33,7 +33,7 @@ run_all_benchmarks() ->
 run_benchmark_for_otp_version(Version) ->
     io:format("Running benchmark for OTP version ~p~n", [Version]),
 
-    case setup_otp_environment(Version) of
+    case setup_otp_version(Version) of
         success ->
             otp_bench:main();
         {error, Reason} ->

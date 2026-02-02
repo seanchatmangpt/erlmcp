@@ -256,6 +256,7 @@ execute_json_rpc_method(Method, Params, Headers, SessionId, RequestId, SpanCtx) 
 %% @doc Execute CLI method
 -spec execute_cli_method(binary(), list(), binary(), binary(), term()) -> ok.
 execute_cli_method( Method , Args , SessionId , RequestId , SpanCtx ) -> case erlmcp_cli_registry : lookup_command( Method ) of { ok , CommandInfo } -> Result = CommandInfo #command_info .
+
 module : execute( Args ) , Response = make_success_response( RequestId , Result ) , gen_server : cast( ?SERVER , { send_response , RequestId , Response } ) , erlmcp_metrics : record( "cli.json_rpc.requests.success" , 1 ) ; { error , not_found } -> Response = make_error_response( { method_not_found , Method } ) , gen_server : cast( ?SERVER , { send_response , RequestId , Response } ) , erlmcp_otel : record_error( SpanCtx , { method_not_found , Method } ) , erlmcp_metrics : record( "cli.json_rpc.errors.method_not_found" , 1 ) ; { error , Reason } -> Response = make_error_response( { internal_error , Reason } ) , gen_server : cast( ?SERVER , { send_response , RequestId , Response } ) , erlmcp_otel : record_error( SpanCtx , { internal_error , Reason } ) , erlmcp_metrics : record( "cli.json_rpc.errors.internal" , 1 ) end .
     %% Look up command in registry
             %% Execute command

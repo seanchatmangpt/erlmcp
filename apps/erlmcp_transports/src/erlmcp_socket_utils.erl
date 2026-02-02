@@ -88,7 +88,8 @@ enable_backpressure(Socket) ->
             case socket:setopts(Socket, [{active, false}]) of
                 ok ->
                     %% Request notification for next receive (OTP 26 backpressure)
-                    case socket:notify(Socket, {select, receive, once}) of
+                    %% Note: 'receive' is a reserved word, use 'recv' instead
+                    case socket:notify(Socket, {select, recv, once}) of
                         {ok, _} ->
                             ok;
                         {error, Reason} ->
@@ -217,3 +218,5 @@ validate_options(Options) ->
         false ->
             {error, invalid_rcvbuf}
     end.
+
+-compile({nowarn_unused_function, validate_options/1}).  %% Reserved for future use

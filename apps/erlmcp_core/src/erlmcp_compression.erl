@@ -223,7 +223,7 @@ handle_call(get_stats, _From, #state{stats = Stats} = State) ->
     %% Calculate average ratio
     AvgRatio = case maps:get(total_compress_ops, Stats, 0) of
         0 -> 0.0;
-        Count -> maps:get(total_compressed_bytes, Stats, 0) / maps:get(total_original_bytes, Stats, 1)
+        _Count -> maps:get(total_compressed_bytes, Stats, 0) / maps:get(total_original_bytes, Stats, 1)
     end,
     StatsWithAvg = Stats#{avg_ratio => AvgRatio},
     {reply, {ok, StatsWithAvg}, State};

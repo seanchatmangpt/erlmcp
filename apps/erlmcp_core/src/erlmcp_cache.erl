@@ -185,10 +185,13 @@ warm_cache(Key, ValueFun) ->
 init(Config) ->
     process_flag(trap_exit, true),
 
-    %% Create L1 ETS table (in-memory, read-optimized)
+    %% Create L1 ETS table (in-memory, read-optimized with OTP 28 features)
     L1Table =
         ets:new(erlmcp_cache_l1,
-                [set, public, named_table, {read_concurrency, true}, {write_concurrency, true}]),
+                [set, public, named_table,
+                 {read_concurrency, true},
+                 {write_concurrency, true},
+                 {decentralized_counters, true}]),
 
     %% Check if Mnesia is available (L2)
     L2Enabled = ensure_mnesia_started(),

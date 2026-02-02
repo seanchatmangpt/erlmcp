@@ -6,8 +6,9 @@
 %%%          with safe fallbacks for missing features.
 %%%
 %%% Supported Versions:
-%%%   - OTP 28.3.1+ (primary target, full feature support)
-%%%   - OTP 27 (fallback, degraded feature set)
+%%%   - OTP 28.3.1+ (modern, full feature support)
+%%%   - OTP 27 (stable, partial feature set)
+%%%   - OTP 26 (legacy, minimal feature set)
 %%%
 %%% Features Detected:
 %%%   - Native JSON module (json:encode/decode)
@@ -18,10 +19,12 @@
 %%%   -include("otp_compat.hrl").
 %%%
 %%%   %% Use version-specific code
-%%%   -ifdef(OTP_28_PLUS).
-%%%       % OTP 28+ optimized code
-%%%   -else.
-%%%       % Fallback for OTP 27
+%%%   -ifdef(OTP_LEGACY).
+%%%       % OTP 26-27 legacy code
+%%%   -endif.
+%%%
+%%%   -ifdef(OTP_MODERN).
+%%%       % OTP 28+ modern code
 %%%   -endif.
 %%%
 %%%   %% Use safe macros
@@ -36,18 +39,22 @@
 %%====================================================================
 %% These macros are defined via platform_define in rebar.config:
 %%
-%% {platform_define, "^2[8-9]|^[3-9]", 'OTP_28_PLUS'}
+%% {platform_define, "^2[6-7]", 'OTP_LEGACY'}       % OTP 26-27
+%% {platform_define, "^2[8-9]|^[3-9]", 'OTP_MODERN'} % OTP 28+
 %%
 %% DO NOT define these manually - they are set by the build system.
 %%
 %% Available macros:
-%%   - OTP_28_PLUS: Defined for OTP 28.3.1+
+%%   - OTP_LEGACY: Defined for OTP 26-27
+%%   - OTP_MODERN: Defined for OTP 28.3.1+
 %%
 %% Usage:
-%%   -ifdef(OTP_28_PLUS).
-%%       % OTP 28+ code here
-%%   -else.
-%%       % OTP 27 fallback here
+%%   -ifdef(OTP_LEGACY).
+%%       % OTP 26-27 legacy code here
+%%   -endif.
+%%
+%%   -ifdef(OTP_MODERN).
+%%       % OTP 28+ modern code here
 %%   -endif.
 
 %%====================================================================

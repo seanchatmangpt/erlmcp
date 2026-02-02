@@ -91,7 +91,7 @@
 %% Use erlang:get_stacktrace/0 (deprecated) or try...catch with :stacktrace/1
 
 %% Get stacktrace in a version-compatible way
--define GET_STACKTRACE(Type, Error, Stacktrace) ->
+-define(GET_STACKTRACE(Type, Error, Stacktrace),
         case ?IS_OTP_26() of
             true ->
                 %% OTP 26+: Stacktrace is in catch variable
@@ -106,7 +106,7 @@
 %%====================================================================
 
 %% Assert with custom error message (works across all versions)
--define assertMsg(Test, Message),
+-define(assertMsg(Test, Message),
         case (Test) of
             true -> ok;
             false -> erlang:error({assertMatch, [{module, ?MODULE},
@@ -116,7 +116,7 @@
         end).
 
 %% Assert not equal (works across all versions)
--define assertNotEqual(Unexpected, Expr),
+-define(assertNotEqual(Unexpected, Expr),
         begin
             ((fun () ->
                 case (Expr) of
@@ -134,7 +134,7 @@
         end).
 
 %% Assert match with custom message
--define assertMatchMsg(Guard, Expr, Message),
+-define(assertMatchMsg(Guard, Expr, Message),
         case (Expr) of
             Guard -> ok;
             _ -> erlang:error({assertMatch_failed,
@@ -150,7 +150,7 @@
 %%====================================================================
 
 %% Monitor with demonitor on flush (OTP 26+ optimization)
--define MONITOR_DEMONITOR_FLUSH(Type, Object) ->
+-define(MONITOR_DEMONITOR_FLUSH(Type, Object),
         case ?IS_OTP_26() of
             true ->
                 %% OTP 26+: Use flush option for atomic demonitor
@@ -195,7 +195,7 @@
 
 %% Assert that a function is documented
 %% (Requires edoc to be run first)
--define assertDocumented(Function, Arity) ->
+-define(assertDocumented(Function, Arity),
         begin
             {ok, _} = edoc:application(?MODULE, []),
             Docs = edoc:module_docs(?MODULE),
@@ -207,7 +207,7 @@
 %%====================================================================
 
 %% Check if feature is available at runtime
--define HAS_FEATURE(Feature) ->
+-define(HAS_FEATURE(Feature),
         case erlang:system_info(otp_release) of
             "28" -> true;
             "27" -> false;
@@ -220,10 +220,8 @@
 %%====================================================================
 
 %% Warn about deprecated usage (compile-time)
--define WARN_DEPRECATED(Old, New) ->
-        -compile({deprecated, [{Old, New}]})
-
-).
+-define(WARN_DEPRECATED(Old, New),
+        -compile({deprecated, [{Old, New}]})).
 
 %%====================================================================
 %% Examples

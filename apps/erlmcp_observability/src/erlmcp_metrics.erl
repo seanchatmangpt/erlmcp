@@ -2,7 +2,8 @@
 
 -export([start_link/0, record_transport_operation/4, record_server_operation/4,
          record_registry_operation/3, get_metrics/0, get_metrics/1, reset_metrics/0,
-         get_performance_summary/0, with_metrics/3]).
+         get_performance_summary/0, with_metrics/3,
+         record_metric_with_precision/4, encode_metric_value/2]).
 
 -behaviour(gen_server).
 
@@ -208,11 +209,17 @@ format_histograms(Histograms) ->
                                     <<"max">> => 0,
                                     <<"avg">> => 0}};
                      _ ->
+                         Count = length(Values),
+                         Min = lists:min(Values),
+                         Max = lists:max(Values),
+                         Avg = lists:sum(Values) / Count,
+                         %% Use precise rounding for average
+                         RoundedAvg = round_histogram_avg(Avg),
                          Acc#{Key =>
-                                  #{<<"count">> => length(Values),
-                                    <<"min">> => lists:min(Values),
-                                    <<"max">> => lists:max(Values),
-                                    <<"avg">> => lists:sum(Values) / length(Values)}}
+                                  #{<<"count">> => Count,
+                                    <<"min">> => Min,
+                                    <<"max">> => Max,
+                                    <<"avg">> => RoundedAvg}}
                  end
               end,
               #{},
@@ -227,8 +234,10 @@ calculate_rates(Counters, UptimeMs) when UptimeMs > 0 ->
     UptimeSeconds = UptimeMs / 1000,
     maps:fold(fun(Key, Count, Acc) ->
                  Rate = Count / UptimeSeconds,
+                 %% Use precise rounding for rate calculations
+                 RoundedRate = erlmcp_floats:round_to_precision(Rate, 4),
                  RateKey = <<Key/binary, "_per_second">>,
-                 Acc#{RateKey => Rate}
+                 Acc#{RateKey => RoundedRate}
               end,
               #{},
               Counters);
@@ -248,12 +257,13 @@ calculate_percentiles(Histograms) ->
                          P95 = percentile(SortedValues, 95),
                          P99 = percentile(SortedValues, 99),
 
+                         %% Use precise rounding for percentiles
                          PercentilesKey = <<Key/binary, "_percentiles">>,
                          Acc#{PercentilesKey =>
-                                  #{<<"p50">> => P50,
-                                    <<"p90">> => P90,
-                                    <<"p95">> => P95,
-                                    <<"p99">> => P99}}
+                                  #{<<"p50">> => erlmcp_floats:round_to_precision(P50, 2),
+                                    <<"p90">> => erlmcp_floats:round_to_precision(P90, 2),
+                                    <<"p95">> => erlmcp_floats:round_to_precision(P95, 2),
+                                    <<"p99">> => erlmcp_floats:round_to_precision(P99, 2)}}
                  end
               end,
               #{},
@@ -317,4 +327,56 @@ with_metrics(MetricName, Labels, Fun) ->
             ErrorLabels = Labels#{<<"error">> => true, <<"error_class">> => Class},
             gen_server:cast(?MODULE, {record_metric, MetricName, Duration2, ErrorLabels}),
             erlang:raise(Class, Reason, Stacktrace)
+    end.
+
+%%====================================================================
+%% Precision Metric Recording (OTP 28 Base-Prefixed Floats)
+%%====================================================================
+
+%% @doc Record metric with precise float encoding
+%% Uses OTP 28 base-prefixed float literals for exact representation
+-spec record_metric_with_precision(metric_name(), metric_value(), metric_labels(),
+                                   non_neg_integer()) -> ok.
+record_metric_with_precision(Name, Value, Labels, Precision) ->
+    %% Round value to specified precision
+    RoundedValue = erlmcp_floats:round_to_precision(Value, Precision),
+    gen_server:cast(?MODULE, {record_metric, Name, RoundedValue, Labels}).
+
+%% @doc Encode metric value for JSON serialization
+%% Uses fixed-point encoding for precision, handles special values
+-spec encode_metric_value(metric_value(), non_neg_integer()) -> binary() | null.
+encode_metric_value(Value, Scale) when is_float(Value) ->
+    %% Check for special values
+    case erlmcp_floats:encode_json_safe(Value) of
+        null -> null;
+        SafeValue when is_float(SafeValue) ->
+            erlmcp_floats:encode_fixed(SafeValue, Scale)
+    end;
+encode_metric_value(Value, _Scale) when is_integer(Value) ->
+    integer_to_binary(Value).
+
+%%====================================================================
+%% Internal Helper Functions
+%%====================================================================
+
+%% @doc Round histogram average to precise fraction
+%% Uses base-2 fractions where applicable for exact representation
+-spec round_histogram_avg(float()) -> float().
+round_histogram_avg(Avg) when is_float(Avg) ->
+    %% Find closest common fraction
+    Fractions = [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875],
+    case find_closest_fraction(Avg, Fractions, 0.01) of
+        {ok, Fraction} -> Fraction;
+        error -> erlmcp_floats:round_to_precision(Avg, 2)
+    end.
+
+%% @doc Find closest fraction within tolerance
+-spec find_closest_fraction(float(), [float()], float()) -> {ok, float()} | error.
+find_closest_fraction(_Value, [], _Tolerance) ->
+    error;
+find_closest_fraction(Value, [Fraction | Rest], Tolerance) ->
+    Diff = abs(Value - Fraction),
+    if
+        Diff < Tolerance -> {ok, Fraction};
+        true -> find_closest_fraction(Value, Rest, Tolerance)
     end.

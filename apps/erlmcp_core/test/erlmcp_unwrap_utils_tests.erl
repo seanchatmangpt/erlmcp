@@ -95,29 +95,29 @@ unwrap_binary_nested_empty_path_test() ->
                  erlmcp_unwrap_utils:unwrap_binary_nested(<<"abc">>, [])).
 
 %%--------------------------------------------------------------------
-%% extract_rpc_result/1 tests
+%% extract_rpc_response/1 tests
 %%--------------------------------------------------------------------
 
-extract_rpc_result_valid_test() ->
+extract_rpc_response_valid_test() ->
     Response = #{<<"result">> => #{<<"data">> => <<"value">>}, <<"id">> => 1},
     ?assertEqual({ok, #{<<"data">> => <<"value">>}},
-                 erlmcp_unwrap_utils:extract_rpc_result(Response)).
+                 erlmcp_unwrap_utils:extract_rpc_response(Response)).
 
-extract_rpc_result_atom_key_test() ->
+extract_rpc_response_atom_key_test() ->
     Response = #{result => #{data => <<"value">>}, id => 1},
     ?assertEqual({ok, #{data => <<"value">>}},
-                 erlmcp_unwrap_utils:extract_rpc_result(Response)).
+                 erlmcp_unwrap_utils:extract_rpc_response(Response)).
 
-extract_rpc_result_tuple_wrapper_test() ->
+extract_rpc_response_tuple_wrapper_test() ->
     Response = #{<<"result">> => <<"success">>},
     ?assertEqual({ok, <<"success">>},
-                 erlmcp_unwrap_utils:extract_rpc_result({ok, Response})).
+                 erlmcp_unwrap_utils:extract_rpc_response({ok, Response})).
 
-extract_rpc_result_invalid_test() ->
+extract_rpc_response_invalid_test() ->
     ?assertEqual({error, invalid_response},
-                 erlmcp_unwrap_utils:extract_rpc_result(not_a_map)),
+                 erlmcp_unwrap_utils:extract_rpc_response(not_a_map)),
     ?assertEqual({error, invalid_response},
-                 erlmcp_unwrap_utils:extract_rpc_result(#{<<"error">> => <<"oops">>})).
+                 erlmcp_unwrap_utils:extract_rpc_response(#{<<"error">> => <<"oops">>})).
 
 %%--------------------------------------------------------------------
 %% extract_rpc_error/1 tests

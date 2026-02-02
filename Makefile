@@ -2,7 +2,7 @@
         console observer deps info coverage \
         compile-core compile-transports compile-observability compile-tcps \
         test-core test-transports test-observability test-tcps test-smoke test-quick test-full \
-        dialyzer xref format release benchmark \
+        dialyzer dialyzer-fast dialyzer-full dialyzer-update-plt dialyzer-clean xref format release benchmark \
         validate validate-compile validate-test validate-coverage validate-quality validate-bench \
         test-strict benchmark-strict coverage-strict quality-strict \
         jidoka andon poka-yoke tcps-quality-gates release-validate \
@@ -675,10 +675,28 @@ check-full: compile xref dialyzer test coverage
 	@echo "$(GREEN)✓ Coverage:$(NC) Report generated"
 	@echo ""
 
-dialyzer:
-	@echo "$(BLUE)Running Dialyzer (type checking)...$(NC)"
+dialyzer: dialyzer-fast ## Default to incremental dialyzer (3-7x faster)
+
+dialyzer-fast: ## Incremental dialyzer (development) - 3-7x faster
+	@echo "$(BLUE)Running incremental Dialyzer (development mode)...$(NC)"
+	@rebar3 dialyzer --incremental
+	@echo "$(GREEN)✓ Incremental Dialyzer passed (15-30s)$(NC)"
+
+dialyzer-full: ## Full dialyzer (CI/CD) - complete analysis
+	@echo "$(BLUE)Running full Dialyzer analysis (CI/CD mode)...$(NC)"
 	@rebar3 dialyzer
-	@echo "$(GREEN)✓ Dialyzer passed$(NC)"
+	@echo "$(GREEN)✓ Full Dialyzer passed (60-90s)$(NC)"
+
+dialyzer-update-plt: ## Update PLT (after dependency changes)
+	@echo "$(BLUE)Updating Dialyzer PLT...$(NC)"
+	@rebar3 dialyzer --update_plt
+	@echo "$(GREEN)✓ PLT updated$(NC)"
+
+dialyzer-clean: ## Clean Dialyzer cache (force rebuild)
+	@echo "$(BLUE)Cleaning Dialyzer cache...$(NC)"
+	@rm -rf _build/default/*_plt*
+	@echo "$(GREEN)✓ Dialyzer cache cleaned$(NC)"
+	@echo "$(YELLOW)Next dialyzer run will rebuild PLT (slower)$(NC)"
 
 xref:
 	@echo "$(BLUE)Running xref (cross-reference analysis)...$(NC)"

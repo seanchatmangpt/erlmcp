@@ -2,7 +2,17 @@
 
 -include("erlmcp.hrl").
 
--include_lib("opentelemetry_api/include/otel_tracer.hrl").
+%% Temporarily disabled until opentelemetry_api is properly configured
+%% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
+
+%% Mock tracing macros for now
+-define(otel_tracer, undefined).
+-define(start_span(Name), undefined).
+-define(end_span(Ctx), ok).
+-define(set_attributes(Ctx, Attrs), ok).
+-define(set_status(Ctx, Status), ok).
+-define(record_exception(Ctx, Class, Reason, Stacktrace), ok).
+-define(record_error_details(Ctx, Reason, Data), ok).
 
 %% Note: This module does NOT implement erlmcp_transport_behavior
 %% It is a Cowboy WebSocket handler with its own init/2 interface
@@ -104,8 +114,9 @@ init(TransportId, Config) ->
                       {connection_timeout, ConnectTimeout}]};
                 SSLOpts ->
                     %% HTTPS with OTP 27-28 TLS 1.3 optimization
+                    OTPVersion = get_otp_version(),
                     TLSCiphers =
-                        case get_otp_version() of
+                        case OTPVersion of
                             V when V >= 27 ->
                                 %% TLS 1.3 cipher suites (optimized for OTP 27-28)
                                 ["TLS_AES_256_GCM_SHA384",
@@ -121,10 +132,10 @@ init(TransportId, Config) ->
                     TLSOptions =
                         SSLOpts ++
                         [{versions,
-                          case get_otp_version() of
-                              V when V >= 27 ->
+                          case OTPVersion >= 27 of
+                              true ->
                                   ['tlsv1.3', 'tlsv1.2'];  %% Prefer TLS 1.3
-                              _ ->
+                              false ->
                                   ['tlsv1.2', 'tlsv1.3']
                           end},
                          {ciphers, TLSCiphers},

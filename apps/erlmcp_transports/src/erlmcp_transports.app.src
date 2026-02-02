@@ -40,13 +40,27 @@
   {modules, []},
   {licenses, ["Apache-2.0"]},
   {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
+  %% OTP 27+ Runtime Dependencies
+  {runtime_dependencies, [
+    "erts-16.0.3",     % OTP 28 ERTS minimum
+    "kernel-10.4",     % OTP 28 Kernel minimum
+    "stdlib-6.0",      % OTP 28 STDLIB minimum
+    "ssl-11.0",        % SSL/TLS (OTP 28)
+    "inets-9.0",       % HTTP client (OTP 28)
+    "gun-2.0.1",       % HTTP client (external)
+    "ranch-2.1.0",     % TCP acceptor pool (external)
+    "cowboy-2.10.0",   % HTTP server (external)
+    "poolboy-1.5.2",   % Connection pooling (external)
+    "opentelemetry_api-1.5.0",  % OTEL API (external)
+    "erlmcp_core-2.1.0"  % Core application
+  ]},
   %% OTP Version Requirements
   {notes, [
-      "Supports Erlang/OTP 25-28",
-      "OTP 28+ features: priority message routing for critical transport events",
-      "OTP 26+ features: improved socket handling",
-      "Dependencies: gun 2.0+, ranch 2.1+, cowboy 2.10+",
-      "Minimum: OTP 25 (all transports functional)",
-      "Recommended: OTP 28+ for priority-based message delivery"
+      "Requires: Erlang/OTP 28+ (STRICT)",
+      "OTP 28+ features: priority message routing for critical transport events, hibernate/0",
+      "OTP 26+ features: concurrent startup, improved socket handling, persistent config",
+      "Dependencies: gun 2.0+, ranch 2.1+, cowboy 2.10+, poolboy 1.5.2+",
+      "Previous OTP 25 support deprecated - upgrade to OTP 28+ required",
+      "See docs/OTP_APPLICATION_CONFIG_RESEARCH.md for transport-specific features"
   ]}
  ]}.

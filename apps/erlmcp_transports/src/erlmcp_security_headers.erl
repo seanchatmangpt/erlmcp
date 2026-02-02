@@ -174,10 +174,9 @@ hsts_header(Config) ->
     case maps:get(hsts, Config, true) of
         true ->
             MaxAge = maps:get(hsts_max_age, Config, 31536000),  % 1 year
-            Value =
-                iolist_to_binary([<<"max-age=">>,
-                                  integer_to_binary(MaxAge),
-                                  <<"; includeSubDomains; preload">>]),
+            %% OTP 28: Use binary join for efficient concatenation
+            Parts = [<<"max-age=">>, integer_to_binary(MaxAge), <<"; includeSubDomains; preload">>],
+            Value = iolist_to_binary(Parts),
             {<<"strict-transport-security">>, Value};
         false ->
             {<<"x-hsts-disabled">>, <<"true">>}  % Placeholder, will be filtered

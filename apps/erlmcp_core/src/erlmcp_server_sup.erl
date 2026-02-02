@@ -24,12 +24,26 @@ start_child(ServerId, Config) ->
 %% supervisor callbacks
 %%====================================================================
 
+%% @doc OTP 28 Supervisor Auto-Hibernation - Disabled
+%%
+%% Dynamic supervisors with simple_one_for_one strategy should NOT
+%% auto-hibernate because:
+%%
+%% 1. Frequent child restarts: MCP servers start/stop frequently
+%% 2. Wake overhead: Hibernation wake adds latency to child operations
+%% 3. Minimal benefit: Dynamic supervisors are already memory-efficient
+%%
+%% Static supervisors (erlmcp_sup) DO hibernate after 1s idle.
+%%
+%% See: docs/SUPERVISOR_HIBERNATION_OTP28.md
 -spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
     SupFlags =
         #{strategy => simple_one_for_one,  % Dynamic server instances
           intensity => 5,
-          period => 60},
+          period => 60,
+          auto_hibernation => false  % Explicitly disable for dynamic supervisor
+         },
 
     % Template child spec for server instances
     % CRITICAL FIX: For simple_one_for_one, start args MUST be a list.

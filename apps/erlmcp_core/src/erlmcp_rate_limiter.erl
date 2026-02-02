@@ -262,8 +262,10 @@ init([]) ->
     Config = load_config(),
 
     % Create ETS tables for client tracking and violation tracking
-    Clients = ets:new(?ETS_CLIENTS, [set, public, {read_concurrency, true}]),
-    Violations = ets:new(?ETS_VIOLATIONS, [set, public, {read_concurrency, true}]),
+    Clients = ets:new(?ETS_CLIENTS, [set, public, {read_concurrency, true},
+                                     {write_concurrency, true}, {decentralized_counters, true}]),
+    Violations = ets:new(?ETS_VIOLATIONS, [set, public, {read_concurrency, true},
+                                           {write_concurrency, true}, {decentralized_counters, true}]),
 
     % Initialize global token bucket
     GlobalCapacity = maps:get(global_max_messages_per_sec, Config, 10000),

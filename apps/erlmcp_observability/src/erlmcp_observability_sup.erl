@@ -104,6 +104,14 @@ init(_Opts) ->
            shutdown => 5000,
            type => worker,
            modules => [erlmcp_recovery_manager]},
+         %% OTP 28 Native Debugger (optional, only if +D flag is set)
+         %% This is a transient worker - it may fail if +D flag is not set
+         #{id => erlmcp_otp_debugger,
+           start => {erlmcp_otp_debugger, start_link, []},
+           restart => transient,      % Don't restart if not supported
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_otp_debugger]},
          %% Chaos Engineering Framework - Resilience testing
          #{id => erlmcp_chaos,
            start => {erlmcp_chaos, start_link, []},
@@ -125,6 +133,14 @@ init(_Opts) ->
            shutdown => 5000,
            type => worker,
            modules => [erlmcp_process_monitor]},
+         %% OTP 28 Tracer - Distributed tracing with trace:system/3
+         %% Uses OTP 28 trace sessions for tool invocation chains
+         #{id => erlmcp_tracer,
+           start => {erlmcp_tracer, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_tracer]},
          %% Audit Log - Tamper-proof audit trail with hash chain
          %% Critical: Maintains compliance trail for GDPR, SOC2, HIPAA
          #{id => erlmcp_audit_log,

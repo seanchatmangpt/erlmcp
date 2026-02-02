@@ -536,10 +536,10 @@ analyze_results(Results) ->
     MemoryResults = extract_memory_results(Results),
 
     %% Analyze performance trends
-    analyze_trends(ProcessResults, message_passing_results, supervisor_results, memory_results),
+    analyze_trends(ProcessResults, MessageResults, SupervisorResults, MemoryResults),
 
     %% Generate optimization recommendations
-    generate_recommendations(ProcessResults, MessageResults, SupervisorResults, MemoryResults),
+    Recommendations = generate_recommendations(ProcessResults, MessageResults, SupervisorResults, MemoryResults),
 
     %% Return formatted results
     #{
@@ -547,7 +547,7 @@ analyze_results(Results) ->
         message_passing => MessageResults,
         supervisor_overhead => SupervisorResults,
         memory_usage => MemoryResults,
-        recommendations => generate_recommendations(ProcessResults, MessageResults, SupervisorResults, MemoryResults)
+        recommendations => Recommendations
     }.
 
 %% Helper functions for result extraction
@@ -625,4 +625,157 @@ server_loop(Expected, Received) ->
                 {From, {data, _Data}} ->
                     server_loop(Expected, [{received, From} | Received])
             end
+    end.
+
+%% =============================================================================
+%% ANALYSIS FUNCTIONS
+%% =============================================================================
+
+analyze_trends(ProcessResults, MessageResults, SupervisorResults, MemoryResults) ->
+    io:format("~n=== PERFORMANCE TRENDS ANALYSIS ===~n~n", []),
+
+    %% Process creation trends
+    io:format("Process Creation Trends:~n"),
+    lists:foreach(fun({Version, Results}) ->
+        DirectSpawn = maps:get(direct_spawn, Results),
+        io:format("  OTP ~p: ~.1fK spawns/s~n", [Version, maps:get(spawns_per_second, DirectSpawn) / 1000])
+    end, maps:to_list(ProcessResults)),
+
+    %% Message passing trends
+    io:format("~nMessage Passing Trends:~n"),
+    lists:foreach(fun({Version, Results}) ->
+        Local = maps:get(local, Results),
+        io:format("  OTP ~p: ~.1K messages/s (local)~n", [Version, maps:get(msg_per_second, Local) / 1000])
+    end, maps:to_list(MessageResults)),
+
+    %% Supervisor trends
+    io:format("~nSupervisor Trends:~n"),
+    lists:foreach(fun({Version, Results}) ->
+        Startup = maps:get(startup, Results),
+        io:format("  OTP ~p: ~.1K startups/s~n", [Version, maps:get(startups_per_second, Startup) / 1000])
+    end, maps:to_list(SupervisorResults)),
+
+    %% Memory trends
+    io:format("~nMemory Usage Trends:~n"),
+    lists:foreach(fun({Version, Results}) ->
+        SpawnMem = maps:get(spawn_memory, Results),
+        io:format("  OTP ~p: ~.1fMB per process~n", [Version, maps:get(avg_per_process, SpawnMem) / 1024 / 1024])
+    end, maps:to_list(MemoryResults)).
+
+generate_recommendations(ProcessResults, MessageResults, SupervisorResults, MemoryResults) ->
+    io:format("~n=== OPTIMIZATION RECOMMENDATIONS ===~n~n", []),
+
+    Recommendations = [],
+
+    %% Process creation analysis
+    lists:foreach(fun({Version, Results}) ->
+        DirectSpawn = maps:get(spawns_per_second, maps:get(direct_spawn, Results)),
+        if DirectSpawn < 50000 ->
+            io:format("OTP ~p: Consider process pooling (currently ~.0fK spawns/s)~n",
+                     [Version, DirectSpawn / 1000]);
+        true ->
+            ok
+        end
+    end, maps:to_list(ProcessResults)),
+
+    %% Message passing analysis
+    lists:foreach(fun({Version, Results}) ->
+        LocalMsg = maps:get(msg_per_second, maps:get(local, Results)),
+        if LocalMsg < 30000 ->
+            io:format("OTP ~p: Implement message batching (currently ~.0fK messages/s)~n",
+                     [Version, LocalMsg / 1000]);
+        true ->
+            ok
+        end
+    end, maps:to_list(MessageResults)),
+
+    %% Supervisor analysis
+    lists:foreach(fun({Version, Results}) ->
+        Startup = maps:get(startups_per_second, maps:get(startup, Results)),
+        Strategies = maps:get(strategies, Results),
+        OneForAll = maps:get(per_second, maps:get(one_for_all, Strategies)),
+        Simple = maps:get(per_second, maps:get(simple_one_for_one, Strategies)),
+
+        if Startup < 1000 ->
+            io:format("OTP ~p: Use simple_one_for_one supervisors (startup: ~.0f/s)~n",
+                     [Version, Startup]);
+        true ->
+            ok
+        end,
+
+        if OneForAll < Simple * 1.5 ->
+            io:format("OTP ~p: Prefer simple_one_for_one over one_for_all (~.0f vs ~.0f ops/s)~n",
+                     [Version, OneForAll, Simple]);
+        true ->
+            ok
+        end
+    end, maps:to_list(SupervisorResults)),
+
+    %% Memory analysis
+    lists:foreach(fun({Version, Results}) ->
+        SpawnMem = maps:get(avg_per_process, maps:get(spawn_memory, Results)),
+        GenMem = maps:get(avg_per_server, maps:get(gen_server_memory, Results)),
+
+        if SpawnMem > 50000000 ->
+            io:format("OTP ~p: Implement object pooling (spawn: ~.1fMB/pro)~n",
+                     [Version, SpawnMem / 1024 / 1024]);
+        true ->
+            ok
+        end,
+
+        if GenMem > 15000000 ->
+            io:format("OTP ~p: Optimize gen_server memory usage (server: ~.1fMB/server)~n",
+                     [Version, GenMem / 1024 / 1024]);
+        true ->
+            ok
+        end
+    end, maps:to_list(MemoryResults)),
+
+    %% Overall recommendations based on version
+    OverallScore = calculate_overall_performance_score(ProcessResults, MessageResults, SupervisorResults, MemoryResults),
+
+    io:format("~n=== OVERALL PERFORMANCE ASSESSMENT ===~n"),
+    io:format("Performance Score: ~.2f/100~n", [OverallScore]),
+
+    if OverallScore < 60 ->
+        io:format("Recommendation: Immediate performance optimization required~n");
+    OverallScore < 80 ->
+        io:format("Recommendation: Performance improvements recommended~n");
+    true ->
+        io:format("Recommendation: Performance is optimal~n")
+    end,
+
+    Recommendations.
+
+calculate_overall_performance_score(ProcessResults, MessageResults, SupervisorResults, MemoryResults) ->
+    %% Calculate average scores across all versions
+    ProcessScore = calculate_average_score(ProcessResults, fun(Results) ->
+        maps:get(spawns_per_second, maps:get(direct_spawn, Results))
+    end, 100000),
+
+    MessageScore = calculate_average_score(MessageResults, fun(Results) ->
+        maps:get(msg_per_second, maps:get(local, Results))
+    end, 50000),
+
+    SupervisorScore = calculate_average_score(SupervisorResults, fun(Results) ->
+        maps:get(startups_per_second, maps:get(startup, Results))
+    end, 2000),
+
+    MemoryScore = calculate_average_score(MemoryResults, fun(Results) ->
+        100 - (maps:get(avg_per_process, maps:get(spawn_memory, Results)) / 1000000) * 10
+    end, 100),
+
+    WeightedScore = ProcessScore * 0.4 + MessageScore * 0.3 + SupervisorScore * 0.2 + MemoryScore * 0.1,
+    max(0, min(100, WeightedScore)).
+
+calculate_average_score(ResultMap, Extractor, MaxValue) ->
+    Values = lists:map(fun(_Version, Results) ->
+        Value = Extractor(Results),
+        min(100, (Value / MaxValue) * 100)
+    end, maps:to_list(ResultMap)),
+
+    if Values =/= [] ->
+        lists:sum(Values) / length(Values);
+    true ->
+        0
     end.
