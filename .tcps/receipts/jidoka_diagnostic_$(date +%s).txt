@@ -1,0 +1,133 @@
+TCPS Jidoka Diagnostic Report (自働化診断レポート)
+================================================
+
+Work Order: 1770058369
+Timestamp:  2026-02-02T18:52:49Z
+Gate:       Gate 1: Schema Validation (Compilation)
+Status:     FAILED - LINE STOPPED
+
+ROOT CAUSE ANALYSIS (5 Whys)
+============================
+
+Why 1: Why did Gate 1 fail?
+→ Compilation failed with error: "OTP release 28 or later is required. Version in use: 25.3.2.8"
+
+Why 2: Why is OTP 25 being used instead of OTP 28?
+→ System PATH points to /usr/bin/erl (OTP 25) instead of cached OTP 28.3.1
+
+Why 3: Why is the cached OTP 28.3.1 not being used?
+→ The cached OTP at /home/user/erlmcp/.erlmcp/otp-28.3.1/ was a symlink created on macOS
+   pointing to /Users/sac/.erlmcp/otp-28.3.1/, which doesn't exist on Linux
+
+Why 4: Why was the SessionStart hook not successful?
+→ SessionStart.sh failed 7 times (logged), attempted to download OTP but network timeouts occurred
+   Pre-built binary download from GitHub releases timed out (2.5+ minutes per attempt)
+
+Why 5: Why can't OTP be installed from Erlang Solutions?
+→ Network connectivity issues in cloud environment - wget timeouts when downloading
+   from packages.erlang-solutions.com (3 attempts, each 2+ minutes)
+
+ROOT CAUSE: Cloud environment network limitations preventing OTP 28 installation
+
+ENVIRONMENTAL CONSTRAINTS
+=========================
+
+Current State:
+  - System OTP: 25.3.2.8 (at /usr/bin/erl)
+  - Required OTP: 28+ (strict requirement per rebar.config line 18)
+  - Cached OTP: Invalid (macOS symlink, not Linux-compatible)
+  - Network: Slow/timing out for large downloads (~100MB OTP archives)
+
+Project Requirements (from rebar.config):
+  {minimum_otp_vsn, "28"}
+
+  Required for:
+  - OTP 28: Priority messages, hibernate/0, PCRE2 regex
+  - OTP 27: json module, enhanced monitoring
+  - OTP 26: Concurrent application startup
+  - Performance: JIT improvements, Base64 3-4x faster
+  - Security: SSL verify_peer default
+
+JIDOKA DECISION: VALID STOP-THE-LINE
+=====================================
+
+This is a legitimate quality gate failure. The system correctly identified:
+1. Non-compliance with minimum OTP version requirement
+2. Environmental constraint preventing fix (network timeouts)
+3. Safety-critical nature of version requirement (not a soft warning)
+
+The Jidoka system is functioning as designed:
+✓ Detected defect at earliest possible stage (compilation)
+✓ Stopped production immediately
+✓ Generated evidence and diagnostic information
+✓ Prevented downstream issues (tests would fail anyway)
+
+RESOLUTION OPTIONS
+==================
+
+Option 1: Pre-install OTP 28 in Claude Code base image
+  - Benefit: All sessions start with correct OTP
+  - Effort: Requires Claude Code infrastructure change
+  - Timeline: Out of scope for current session
+
+Option 2: Use apt-get with erlang-solutions (RECOMMENDED if network improves)
+  - Command: bash .claude/skills/otp-manager/otp_fetch_build.sh
+  - Benefit: Clean package management
+  - Risk: Network timeouts (already observed)
+  - Timeline: 5-10 minutes if successful
+
+Option 3: Build from source with limited parallelism
+  - Benefit: No large downloads (streaming build)
+  - Risk: Very slow (~20-30 minutes in cloud)
+  - Command: SessionStart.sh will attempt this as fallback
+  - Timeline: 20-30 minutes
+
+Option 4: Use pre-compiled portable OTP binary
+  - Requires hosting a working Linux OTP 28.3.1 binary
+  - Faster than source build
+  - Timeline: 2-5 minutes if available
+
+Option 5: Accept OTP 25 and downgrade requirements
+  - NOT RECOMMENDED: Violates CLAUDE.md specification
+  - Would require rebar.config change: {minimum_otp_vsn, "25"}
+  - Would lose OTP 26-28 features and performance improvements
+  - CONFLICTS with project philosophy (strict OTP 28+ requirement)
+
+RECOMMENDED ACTION
+==================
+
+1. IMMEDIATE: Document this as a known cloud environment limitation
+2. SHORT-TERM: Retry OTP installation with longer timeout or smaller binary
+3. LONG-TERM: Request OTP 28+ in Claude Code base image
+
+ANDON STATUS
+============
+
+Signal Level: RED (🔴) - Production stopped
+Authority: Jidoka Gate 1 (Compilation)
+Required Action: Install OTP 28+ before resuming any development
+Estimated Resolution Time: 20-30 minutes (source build) or 5-10 minutes (if network improves)
+
+QUALITY GATE RECEIPT CHAIN
+===========================
+
+Previous: jidoka_failure_1770058369_1770058372.txt
+  Hash: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+
+This Report: jidoka_diagnostic_$(date +%s).txt
+  Status: Root cause analysis complete
+  Next Action: User decision required on resolution path
+
+JIDOKA PRINCIPLE UPHELD
+========================
+
+✓ Quality built into process (version check at compile time)
+✓ Stop-the-line on defect (blocked immediately)
+✓ Root cause analysis performed (5 Whys completed)
+✓ Clear action plan provided
+✓ No bypass or workaround suggested (maintained quality standards)
+
+The system is working as designed. This failure prevents more serious
+downstream issues and ensures compliance with project specifications.
+
+END OF DIAGNOSTIC REPORT

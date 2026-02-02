@@ -23,3 +23,11 @@ _build/default/extras/apps/erlmcp_core/test/erlmcp_tasks_tests.erl:{10,14}: can'
  581 │      ?FORALL(Metadata,
      │       ╰── undefined macro 'FORALL/3'
 ---
+---
+timestamp: 2026-02-02T18:52:49Z
+work_order: 1770058369
+gate: Gate 1: Schema Validation
+status: FAILURE
+reason: Compilation failed
+details: ===> OTP release 28 or later is required. Version in use: 25.3.2.8
+---

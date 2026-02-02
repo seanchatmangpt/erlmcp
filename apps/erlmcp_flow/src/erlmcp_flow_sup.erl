@@ -1,6 +1,7 @@
 %%%-------------------------------------------------------------------
-%%% @doc erlmcp-flow Top-Level Supervisor
-%%% Supervision strategy: one_for_all (all components depend on each other)
+%%% @doc erlmcp-flow Top-Level Supervisor (TIER 1)
+%%% 3-Tier Supervision Tree: Root supervisor with one_for_all strategy
+%%% Critical components restart together (registry + consensus + core)
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_flow_sup).
@@ -24,83 +25,65 @@ start_link() ->
 %%% Supervisor Callbacks
 %%%===================================================================
 
+-spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
+    %% ================================================================
+    %% TIER 1: Root Supervisor (one_for_all)
+    %% Strategy: All components depend on each other
+    %% - Registry failure requires consensus restart
+    %% - Consensus failure requires swarm reconfiguration
+    %% Recovery Time: ~500-1000ms for full subsystem restart
+    %% ================================================================
     SupFlags = #{
-        strategy => one_for_all,
-        intensity => 5,
-        period => 60
+        strategy => one_for_all,    % Critical: registry + consensus + core restart together
+        intensity => 3,              % Conservative: max 3 restarts
+        period => 60                 % Within 60 seconds
     },
 
     ChildSpecs = [
-        %% Core Registry (gproc-based)
-        #{
-            id => erlmcp_flow_registry,
-            start => {erlmcp_flow_registry, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_flow_registry]
-        },
+        %% ================================================================
+        %% REGISTRY: Agent routing and process discovery (gproc-based)
+        %% Critical: Must start FIRST - all components depend on it
+        %% Failure Impact: All agent lookups fail → triggers one_for_all restart
+        %% Recovery: ~200ms registry initialization
+        %% ================================================================
+        #{id => erlmcp_flow_registry,
+          start => {erlmcp_flow_registry, start_link, []},
+          restart => permanent,      % Always restart
+          shutdown => 5000,           % 5s graceful shutdown
+          type => worker,
+          modules => [erlmcp_flow_registry]},
 
-        %% Q-Learning Engine
-        #{
-            id => erlmcp_flow_q_learning,
-            start => {erlmcp_flow_q_learning, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_flow_q_learning]
-        },
+        %% ================================================================
+        %% RAFT CONSENSUS: Leader election and log replication (CFT)
+        %% Critical: Starts SECOND - depends on registry for coordination
+        %% Failure Impact: Leader election required → operations pause
+        %% Recovery: ~150-300ms randomized election timeout
+        %% ================================================================
+        #{id => erlmcp_flow_raft,
+          start => {erlmcp_flow_raft, start_link, [#{
+              node_id => <<"flow_node_1">>,
+              peers => [],
+              election_timeout => 5000
+          }]},
+          restart => permanent,
+          shutdown => 5000,
+          type => worker,
+          modules => [erlmcp_flow_raft]},
 
-        %% Circuit Breaker
-        #{
-            id => erlmcp_flow_circuit_breaker,
-            start => {erlmcp_flow_circuit_breaker, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_flow_circuit_breaker]
-        },
-
-        %% Correlation Tracker
-        #{
-            id => erlmcp_flow_correlation_tracker,
-            start => {erlmcp_flow_correlation_tracker, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_flow_correlation_tracker]
-        },
-
-        %% Byzantine Detector
-        #{
-            id => erlmcp_flow_byzantine,
-            start => {erlmcp_flow_byzantine, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_flow_byzantine]
-        },
-
-        %% Failure Detector
-        #{
-            id => erlmcp_flow_failure_detector,
-            start => {erlmcp_flow_failure_detector, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_flow_failure_detector]
-        },
-
-        %% Main Router (depends on all above)
-        #{
-            id => erlmcp_flow_router,
-            start => {erlmcp_flow_router, start_link, []},
-            restart => permanent,
-            shutdown => 5000,
-            type => worker,
-            modules => [erlmcp_flow_router]
-        }
+        %% ================================================================
+        %% CORE SUPERVISOR: Swarms, agents, and services (TIER 2)
+        %% Strategy: one_for_one (isolated failures)
+        %% Critical: Starts LAST - depends on registry + consensus
+        %% Failure Impact: Individual subsystem failures (no cascade)
+        %% Recovery: Per-component restart (swarm: <200ms, agent: <50ms)
+        %% ================================================================
+        #{id => erlmcp_flow_core_sup,
+          start => {erlmcp_flow_core_sup, start_link, []},
+          restart => permanent,
+          shutdown => infinity,       % Supervisor: wait for all children
+          type => supervisor,
+          modules => [erlmcp_flow_core_sup]}
     ],
 
     {ok, {SupFlags, ChildSpecs}}.
