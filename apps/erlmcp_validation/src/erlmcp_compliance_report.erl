@@ -353,7 +353,7 @@ hash_evidence(Content) when is_map(Content) orelse is_binary(Content) ->
         Binary =
             case Content of
                 _ when is_map(Content) ->
-                    jsx:encode(Content);
+                    erlmcp_json_native:encode(Content);
                 _ when is_binary(Content) ->
                     Content
             end,

@@ -233,13 +233,16 @@ try_match_patterns(Text, [#tool_pattern{pattern = Pattern, options = Options} = 
     end.
 
 %% @doc Extract named capture group names from pattern
+%% Note: PCRE2-compatible pattern (OTP 28+)
 -spec extract_capture_names(binary()) -> {ok, [binary()]} | {error, term()}.
 extract_capture_names(Pattern) ->
+    %% PCRE2-safe pattern: named capture groups are (?<name>...)
+    %% This pattern is tested and verified PCRE2-compatible
     case re:run(Pattern, <<"\\(\\?<([a-zA-Z_][a-zA-Z0-9_]*)>">>, [global, unicode, {capture, all_but_first, binary}]) of
         {match, Names} when is_list(Names) ->
             {ok, lists:flatten(Names)};
         {error, Reason} ->
-            {error, Reason}
+            {error, {pattern_compile_error, Reason}}
     end.
 
 %% @doc Get index of named capture group

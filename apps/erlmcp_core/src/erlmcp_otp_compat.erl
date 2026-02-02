@@ -85,7 +85,7 @@ json_encode(Data) ->
         true ->
             json:encode(Data);
         false ->
-            jsx:encode(Data)
+            erlmcp_json_native:encode(Data)
     end.
 
 %% @doc Decode JSON with automatic module selection
@@ -95,7 +95,7 @@ json_decode(Binary) ->
         true ->
             json:decode(Binary);
         false ->
-            jsx:decode(Binary, [return_maps])
+            erlmcp_json_native:decode(Binary)
     end.
 
 %%====================================================================

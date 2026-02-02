@@ -144,7 +144,7 @@ split_messages(Messages) ->
                 Messages).
 
 parse_anthropic_response(ResponseBody) ->
-    try jsx:decode(ResponseBody, [return_maps]) of
+    try erlmcp_json_native:decode(ResponseBody) of
         #{<<"content">> := [#{<<"type">> := <<"text">>, <<"text">> := Text} | _],
           <<"model">> := Model,
           <<"usage">> := Usage} ->
@@ -177,7 +177,7 @@ http_post(Url, Headers, BodyMap, Timeout) ->
       port := Port} =
         uri_string:parse(Url),
     Path = maps_get(path, uri_string:parse(Url), <<"/">>),
-    Body = jsx:encode(BodyMap),
+    Body = erlmcp_json_native:encode(BodyMap),
 
     Transport =
         case Scheme of

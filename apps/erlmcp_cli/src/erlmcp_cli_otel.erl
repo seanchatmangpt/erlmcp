@@ -442,7 +442,7 @@ load_file_config() ->
                 os:getenv("HOME", "."), ".erlmcp_otel.json"),
         case file:read_file(ConfigFile) of
             {ok, Content} ->
-                jsx:decode(Content, [{labels, binary}, return_maps]);
+                erlmcp_json_native:decode(Content);
             {error, enoent} ->
                 #{};
             {error, Reason} ->

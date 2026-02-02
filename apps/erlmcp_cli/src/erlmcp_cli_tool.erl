@@ -622,7 +622,7 @@ load_registry_tools() ->
                                      FilePath = filename:join(ToolsDir, File),
                                      case file:read_file(FilePath) of
                                          {ok, Content} ->
-                                             Tool = jsx:decode(Content, [{labels, binary}, return_maps]),
+                                             Tool = erlmcp_json_native:decode(Content),
                                              Name = maps:get(<<"name">>, Tool),
                                              maps:put(Name, Tool, Acc);
                                          {error, _} -> Acc
@@ -643,7 +643,7 @@ load_config_tools() ->
         false -> Tools;
         JsonData ->
             try
-                jsx:decode(list_to_binary(JsonData), [{labels, binary}, return_maps])
+                erlmcp_json_native:decode(list_to_binary(JsonData))
             catch
                 _ -> Tools
             end
