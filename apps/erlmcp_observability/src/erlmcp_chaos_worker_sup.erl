@@ -37,11 +37,19 @@ start_worker(Parent, ExperimentId, Type, Config) ->
 %% Supervisor callbacks
 %%====================================================================
 
+%% @doc OTP 28 Supervisor Auto-Hibernation - Disabled
+%%
+%% Dynamic supervisors with simple_one_for_one strategy should NOT
+%% auto-hibernate due to frequent child start/stop operations.
+%%
+%% See: docs/SUPERVISOR_HIBERNATION_OTP28.md
 init([]) ->
     SupFlags =
         #{strategy => simple_one_for_one,
           intensity => 10,
-          period => 60},
+          period => 60,
+          auto_hibernation => false  % Disable for dynamic supervisor
+         },
 
     ChildSpec =
         #{id => erlmcp_chaos_worker,

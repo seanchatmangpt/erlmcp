@@ -119,17 +119,42 @@
     erlmcp_sse_event_store,
     erlmcp_subscription,
     erlmcp_tool,
-    erlmcp_uri_validator
+    erlmcp_uri_validator,
+    %% OTP 28 Binary Utilities
+    erlmcp_binary_utils,
+    erlmcp_floats,
+    erlmcp_zip_utils,
+    erlmcp_unwrap_utils,
+    erlmcp_socket_utils,
+    erlmcp_map_utils,
+    erlmcp_supervisor_utils,
+    erlmcp_registry_utils,
+    erlmcp_atoms,
+    %% OTP 28 Process Introspection
+    erlmcp_inspector,
+    erlmcp_admin
 ]},
   {licenses, ["Apache-2.0"]},
   {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
+  %% OTP 27+ Runtime Dependencies (enforced at load time)
+  {runtime_dependencies, [
+    "erts-16.0.3",     % OTP 28 ERTS minimum
+    "kernel-10.4",     % OTP 28 Kernel minimum
+    "stdlib-6.0",      % OTP 28 STDLIB minimum
+    "crypto-5.3",      % Crypto library (OTP 27+)
+    "ssl-11.0",        % SSL/TLS support (OTP 28)
+    "public_key-1.5",  % Public key cryptography
+    "jsx-3.1.0",       % JSON encoding (external dep)
+    "jesse-1.8.1",     % JSON Schema validation (external dep)
+    "gproc-0.9.0"      % Process registry (external dep)
+  ]},
   %% OTP Version Requirements
   {notes, [
-      "Supports Erlang/OTP 25-28",
-      "OTP 28+ features: priority messages, improved process iteration, native JSON",
-      "OTP 27+ features: json module, improved monitoring",
-      "OTP 26+ features: process_info improvements",
-      "Minimum: OTP 25 (production ready)",
-      "Recommended: OTP 28+ for best performance"
+      "Requires: Erlang/OTP 28+ (STRICT)",
+      "OTP 28+ features: priority messages, improved process iteration, native JSON, hibernate/0",
+      "OTP 27+ features: runtime_dependencies enforcement, json module, improved monitoring",
+      "OTP 26+ features: concurrent application startup, persistent config, prep_stop/1",
+      "Previous OTP 25 support deprecated - upgrade to OTP 28+ required",
+      "See docs/OTP_APPLICATION_CONFIG_RESEARCH.md for version-specific features"
   ]}
  ]}.

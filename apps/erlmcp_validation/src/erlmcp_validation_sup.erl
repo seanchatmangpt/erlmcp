@@ -4,6 +4,8 @@
 %%% Supervises validation infrastructure processes:
 %%% - erlmcp_compliance_report: Compliance report generation and caching
 %%% - erlmcp_memory_manager: Memory management and optimization
+%%% - erlmcp_sbom: SBOM generation for supply chain security
+%%% - erlmcp_vulnerability_scanner: Vulnerability scanning for CVEs
 %%%
 %%% Uses one_for_one strategy - if one worker fails, only that worker
 %%% is restarted. Independent workers that don't depend on each other.
@@ -43,6 +45,8 @@ start_link() ->
 %% Children:
 %%   1. erlmcp_compliance_report - Report generation and caching
 %%   2. erlmcp_memory_manager - Memory management and optimization
+%%   3. erlmcp_sbom - SBOM generation for supply chain security
+%%   4. erlmcp_vulnerability_scanner - Vulnerability scanning for CVEs
 %%
 %% Note: erlmcp_test_client is not supervised here as it's started
 %% dynamically via start_test_client/2 API calls.
@@ -69,7 +73,21 @@ init([]) ->
            restart => permanent,
            shutdown => 5000,
            type => worker,
-           modules => [erlmcp_memory_manager]}],
+           modules => [erlmcp_memory_manager]},
+         %% SBOM generator - generates SPDX 2.3 SBOM for supply chain security
+         #{id => erlmcp_sbom,
+           start => {erlmcp_sbom, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_sbom]},
+         %% Vulnerability scanner - scans SBOM for CVEs and security issues
+         #{id => erlmcp_vulnerability_scanner,
+           start => {erlmcp_vulnerability_scanner, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_vulnerability_scanner]}],
 
     {ok, {SupFlags, ChildSpecs}}.
 

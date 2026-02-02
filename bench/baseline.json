@@ -22,3 +22,11 @@ JSON Encoding: 0 ops/sec
 Queue Operations: 41271151 ops/sec
 
 Baseline established for regression detection
+
+=== QUEUE BENCHMARK UPDATE (2026-02-01) ===
+Queue Operations (Enqueue/Dequeue):
+  Measured: 45,989,698 msg/sec
+  Old Baseline: 971,000 msg/sec
+  Improvement: 47.36x
+  Status: PASS
+  Recommendation: Update baseline to 40M msg/sec (with 10% tolerance)

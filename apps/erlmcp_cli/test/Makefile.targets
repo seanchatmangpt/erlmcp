@@ -1,0 +1,168 @@
+#=============================================================================
+# Makefile Targets for erlmcp_cli Testing
+#
+# Add this to your main Makefile or include as: include apps/erlmcp_cli/test/Makefile.targets
+#
+# Usage:
+#   make test-cli              # Run all CLI tests
+#   make test-cli-eunit        # Run EUnit tests only
+#   make test-cli-ct           # Run Common Test suites only
+#   make test-cli-proper       # Run Proper tests only
+#   make test-cli-coverage     # Run tests with coverage report
+#   make test-cli-verbose      # Run tests with verbose output
+#   make test-cli-all          # Run all tests with coverage (full pipeline)
+#=============================================================================
+
+# Colors
+BLUE:=\033[0;34m
+GREEN:=\033[0;32m
+NC:=\033[0m
+
+.PHONY: test-cli test-cli-eunit test-cli-ct test-cli-proper test-cli-coverage test-cli-verbose test-cli-all
+
+#=============================================================================
+# Main Targets
+#=============================================================================
+
+## @brief Run all CLI tests
+test-cli:
+	@echo -e "$(BLUE)[INFO]$(NC) Running all erlmcp_cli tests..."
+	@cd apps/erlmcp_cli && ./scripts/run_tests.sh
+
+## @brief Run EUnit tests only
+test-cli-eunit:
+	@echo -e "$(BLUE)[INFO]$(NC) Running erlmcp_cli EUnit tests..."
+	@cd apps/erlmcp_cli && ./scripts/run_tests.sh -eunit
+
+## @brief Run Common Test suites only
+test-cli-ct:
+	@echo -e "$(BLUE)[INFO]$(NC) Running erlmcp_cli Common Test suites..."
+	@cd apps/erlmcp_cli && ./scripts/run_tests.sh -ct
+
+## @brief Run Proper tests only
+test-cli-proper:
+	@echo -e "$(BLUE)[INFO]$(NC) Running erlmcp_cli Proper tests..."
+	@cd apps/erlmcp_cli && ./scripts/run_tests.sh -proper
+
+## @brief Run tests with coverage report
+test-cli-coverage:
+	@echo -e "$(BLUE)[INFO]$(NC) Running erlmcp_cli tests with coverage..."
+	@cd apps/erlmcp_cli && ./scripts/run_tests.sh -coverage
+
+## @brief Run tests with verbose output
+test-cli-verbose:
+	@echo -e "$(BLUE)[INFO]$(NC) Running erlmcp_cli tests (verbose)..."
+	@cd apps/erlmcp_cli && ./scripts/run_tests.sh -verbose
+
+## @brief Run all tests with coverage (full pipeline)
+test-cli-all:
+	@echo -e "$(BLUE)[INFO]$(NC) Running full erlmcp_cli test pipeline..."
+	@cd apps/erlmcp_cli && ./scripts/run_tests.sh -coverage -verbose
+	@echo ""
+	@echo -e "$(GREEN)[SUCCESS]$(NC) Full test pipeline complete!"
+	@echo "Coverage report: apps/erlmcp_cli/_build/test/cover/index.html"
+
+#=============================================================================
+# Coverage Targets
+#=============================================================================
+
+.PHONY: test-cli-coverage-html test-cli-coverage-text test-cli-coverage-modules
+
+## @brief Generate HTML coverage report
+test-cli-coverage-html:
+	@echo -e "$(BLUE)[INFO]$(NC) Generating HTML coverage report..."
+	@cd apps/erlmcp_cli && ./scripts/coverage_report.sh -html
+
+## @brief Generate text coverage report
+test-cli-coverage-text:
+	@echo -e "$(BLUE)[INFO]$(NC) Generating text coverage report..."
+	@cd apps/erlmcp_cli && ./scripts/coverage_report.sh -text
+
+## @brief Generate coverage report with module breakdown
+test-cli-coverage-modules:
+	@echo -e "$(BLUE)[INFO]$(NC) Generating coverage report (modules)..."
+	@cd apps/erlmcp_cli && ./scripts/coverage_report.sh -modules
+
+#=============================================================================
+# Quick Test Targets (for development)
+#=============================================================================
+
+.PHONY: test-cli-quick test-cli-smoke test-cli-unit
+
+## @brief Run quick subset of tests (for fast feedback)
+test-cli-quick:
+	@echo -e "$(BLUE)[INFO]$(NC) Running quick erlmcp_cli tests..."
+	@cd apps/erlmcp_cli && rebar3 eunit --module=erlmcp_cli_json_rpc_tests
+	@cd apps/erlmcp_cli && rebar3 eunit --module=erlmcp_cli_registry_tests
+	@cd apps/erlmcp_cli && rebar3 eunit --module=erlmcp_cli_session_tests
+
+## @brief Run smoke tests (basic functionality)
+test-cli-smoke:
+	@echo -e "$(BLUE)[INFO]$(NC) Running erlmcp_cli smoke tests..."
+	@cd apps/erlmcp_cli && rebar3 ct --suite=erlmcp_cli_integration_SUITE
+
+## @brief Run unit tests only (no integration tests)
+test-cli-unit:
+	@echo -e "$(BLUE)[INFO]$(NC) Running erlmcp_cli unit tests..."
+	@cd apps/erlmcp_cli && rebar3 eunit
+
+#=============================================================================
+# CI/CD Targets
+#=============================================================================
+
+.PHONY: test-cli-ci test-ci-cli
+
+## @brief Run tests in CI environment
+test-cli-ci:
+	@echo -e "$(BLUE)[INFO]$(NC) Running erlmcp_cli tests in CI mode..."
+	@cd apps/erlmcp_cli && ./scripts/run_tests.sh -coverage
+	@echo "Checking coverage threshold..."
+	@grep -E "^[0-9]+(\.[0-9]+)?%" apps/erlmcp_cli/coverage.log | \
+		awk '{ \
+			pct = $$1; \
+			gsub(/%/, "", pct); \
+			if (pct < 80) { \
+				print "Coverage " $$1 " below 80% threshold"; \
+				exit 1; \
+			} \
+		}'
+
+## @brief Alias for test-cli-ci
+test-ci-cli: test-cli-ci
+
+#=============================================================================
+# Help Target
+#=============================================================================
+
+.PHONY: help-test-cli
+
+## @brief Show help for CLI testing targets
+help-test-cli:
+	@echo "erlmcp_cli Testing Targets:"
+	@echo ""
+	@echo "Main Targets:"
+	@echo "  make test-cli              Run all CLI tests"
+	@echo "  make test-cli-eunit        Run EUnit tests only"
+	@echo "  make test-cli-ct           Run Common Test suites only"
+	@echo "  make test-cli-proper       Run Proper tests only"
+	@echo "  make test-cli-coverage     Run tests with coverage report"
+	@echo "  make test-cli-verbose      Run tests with verbose output"
+	@echo "  make test-cli-all          Run all tests with coverage (full pipeline)"
+	@echo ""
+	@echo "Coverage Targets:"
+	@echo "  make test-cli-coverage-html    Generate HTML coverage report"
+	@echo "  make test-cli-coverage-text    Generate text coverage report"
+	@echo "  make test-cli-coverage-modules Generate coverage report with module breakdown"
+	@echo ""
+	@echo "Quick Test Targets:"
+	@echo "  make test-cli-quick        Run quick subset of tests (for fast feedback)"
+	@echo "  make test-cli-smoke        Run smoke tests (basic functionality)"
+	@echo "  make test-cli-unit         Run unit tests only (no integration tests)"
+	@echo ""
+	@echo "CI/CD Targets:"
+	@echo "  make test-cli-ci           Run tests in CI environment (enforces 80% coverage)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make test-cli"
+	@echo "  make test-cli-eunit -coverage"
+	@echo "  make test-cli-all"

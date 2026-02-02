@@ -180,17 +180,17 @@ init([Config]) ->
     RateLimiterEnabled = maps:get(rate_limiter_enabled, Config, true),
 
     State =
-        #state{sessions = ets:new(auth_sessions, [set, protected]),
-               api_keys = ets:new(auth_api_keys, [set, protected]),
-               jwt_keys = ets:new(auth_jwt_keys, [set, protected]),
+        #state{sessions = ets:new(auth_sessions, [set, protected, {read_concurrency, true}]),
+               api_keys = ets:new(auth_api_keys, [set, protected, {read_concurrency, true}]),
+               jwt_keys = ets:new(auth_jwt_keys, [set, protected, {read_concurrency, true}]),
                jwt_config = maps:get(jwt, Config, #{}),
                oauth2_config = maps:get(oauth2, Config, #{}),
                mtls_config = maps:get(mtls, Config, #{}),
-               rbac_roles = ets:new(auth_rbac_roles, [set, protected]),
-               user_roles = ets:new(auth_user_roles, [set, protected]),
-               acls = ets:new(auth_acls, [bag, protected]),  % bag for multiple roles per resource
-               revoked_tokens = ets:new(auth_revoked_tokens, [set, protected]),
-               oauth2_cache = ets:new(auth_oauth2_cache, [set, protected]),
+               rbac_roles = ets:new(auth_rbac_roles, [set, protected, {read_concurrency, true}]),
+               user_roles = ets:new(auth_user_roles, [set, protected, {read_concurrency, true}]),
+               acls = ets:new(auth_acls, [bag, protected, {read_concurrency, true}]),  % bag for multiple roles per resource
+               revoked_tokens = ets:new(auth_revoked_tokens, [set, protected, {read_concurrency, true}]),
+               oauth2_cache = ets:new(auth_oauth2_cache, [set, protected, {read_concurrency, true}]),
                rate_limiter_enabled = RateLimiterEnabled},
 
     % Initialize default roles

@@ -4,7 +4,7 @@ CODE LIKE A JOE ARMSTRONG AGI SWARM!!!
 
 ## Σ : System Kernel
 
-**erlmcp** := Erlang/OTP MCP SDK | JSON-RPC 2.0 | Client⊕Server | OTP 28.3.1 (STRICT)
+**erlmcp** := Erlang/OTP MCP SDK | JSON-RPC 2.0 | Client⊕Server | OTP 26-28+ Cross-Version Distribution
 
 **Custom OTP** : `/Users/sac/.erlmcp/otp-28.3.1/` → `ERLMCP_OTP_BIN="/Users/sac/.erlmcp/otp-28.3.1/bin"`
 
@@ -15,7 +15,7 @@ CODE LIKE A JOE ARMSTRONG AGI SWARM!!!
 | observability | 31 | OTEL, chaos, metrics, tracing | CT |
 | validation | 13 | Compliance, spec parser | CT |
 
-**164 modules | 84+ test suites | 850+ docs | 40+ examples**
+**170+ modules | 85+ test suites | 900+ docs | 40+ examples**
 
 ---
 

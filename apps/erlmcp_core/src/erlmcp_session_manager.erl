@@ -257,13 +257,18 @@ handle_continue(initialize_storage, State) ->
     %% Create ETS table for session storage (in-memory cache)
     %% - ordered_set for efficient range queries
     %% - public for direct reads (optional optimization)
+    %% OTP 28 Optimizations:
     %% - {read_concurrency, true} for better read performance
+    %% - {write_concurrency, true} for concurrent session updates
+    %% - {decentralized_counters, true} for >2B entries support
     Table =
         ets:new(?TABLE_NAME,
                 [ordered_set,
                  public,
                  named_table,
                  {read_concurrency, true},
+                 {write_concurrency, true},
+                 {decentralized_counters, true},
                  {keypos,
                   2}]),  % Use session id as key (position 2 in tuple {session_data, id, ...})
 

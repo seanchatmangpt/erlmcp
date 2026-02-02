@@ -2,7 +2,17 @@
 
 -include("erlmcp.hrl").
 
--include_lib("opentelemetry_api/include/otel_tracer.hrl").
+%% Temporarily disabled until opentelemetry_api is properly configured
+%% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
+
+%% Mock tracing macros for now
+-define(otel_tracer, undefined).
+-define(start_span(Name), undefined).
+-define(end_span(Ctx), ok).
+-define(set_attributes(Ctx, Attrs), ok).
+-define(set_status(Ctx, Status), ok).
+-define(record_exception(Ctx, Class, Reason, Stacktrace), ok).
+-define(record_error_details(Ctx, Reason, Data), ok).
 
 %% Note: This module does NOT implement erlmcp_transport_behavior
 %% It is a Cowboy WebSocket handler with its own init/2 interface
@@ -91,15 +101,65 @@ init(TransportId, Config) ->
 
         Dispatch = cowboy_router:compile([{'_', [{Path, ?MODULE, [TransportId, Config]}]}]),
 
-        %% Cowboy listener configuration with connection limits
-        ListenerOpts =
-            [{port, Port},
-             {max_connections, MaxConnections},
-             {connection_type, supervisor},
-             {connection_timeout, ConnectTimeout}],
+        %% Cowboy listener configuration with TLS 1.3 optimization (OTP 27-28)
+        %% For HTTPS, use TLS 1.3 with optimized ciphers
+        {TransportType, ListenerOpts} =
+            case maps:get(ssl_options, Config, undefined) of
+                undefined ->
+                    %% Clear HTTP (no TLS)
+                    {clear,
+                     [{port, Port},
+                      {max_connections, MaxConnections},
+                      {connection_type, supervisor},
+                      {connection_timeout, ConnectTimeout}]};
+                SSLOpts ->
+                    %% HTTPS with OTP 27-28 TLS 1.3 optimization
+                    OTPVersion = get_otp_version(),
+                    TLSCiphers =
+                        case OTPVersion of
+                            V when V >= 27 ->
+                                %% TLS 1.3 cipher suites (optimized for OTP 27-28)
+                                ["TLS_AES_256_GCM_SHA384",
+                                 "TLS_AES_128_GCM_SHA256",
+                                 "TLS_CHACHA20_POLY1305_SHA256"];
+                            _ ->
+                                %% TLS 1.2 fallback
+                                ["ECDHE-RSA-AES256-GCM-SHA384",
+                                 "ECDHE-RSA-AES128-GCM-SHA256",
+                                 "ECDHE-RSA-CHACHA20-POLY1305"]
+                        end,
+
+                    TLSOptions =
+                        SSLOpts ++
+                        [{versions,
+                          case OTPVersion >= 27 of
+                              true ->
+                                  ['tlsv1.3', 'tlsv1.2'];  %% Prefer TLS 1.3
+                              false ->
+                                  ['tlsv1.2', 'tlsv1.3']
+                          end},
+                         {ciphers, TLSCiphers},
+                         {secure_renegotiate, true},
+                         {honor_cipher_order, true}],
+
+                    {ssl,
+                     [{port, Port},
+                      {max_connections, MaxConnections},
+                      {connection_type, supervisor},
+                      {connection_timeout, ConnectTimeout},
+                      {certfile, proplists:get_value(certfile, TLSOptions, undefined)},
+                      {keyfile, proplists:get_value(keyfile, TLSOptions, undefined)},
+                      {cacertfile, proplists:get_value(cacertfile, TLSOptions, undefined)},
+                      {verify, proplists:get_value(verify, TLSOptions, verify_peer)} | TLSOptions]}
+            end,
 
         {ok, _} =
-            cowboy:start_clear(erlmcp_ws_listener, ListenerOpts, #{env => #{dispatch => Dispatch}}),
+            case TransportType of
+                clear ->
+                    cowboy:start_clear(erlmcp_ws_listener, ListenerOpts, #{env => #{dispatch => Dispatch}});
+                ssl ->
+                    cowboy:start_tls(erlmcp_ws_listener, ListenerOpts, #{env => #{dispatch => Dispatch}})
+            end,
 
         erlmcp_tracing:set_status(SpanCtx, ok),
         {ok, self()}
@@ -593,6 +653,17 @@ generate_session_id() ->
         base64:encode(
             crypto:strong_rand_bytes(32)),
     Base64.
+
+%% @private Get OTP version as integer (OTP 27-28 TLS 1.3 optimization)
+get_otp_version() ->
+    try
+        VersionStr = erlang:system_info(otp_release),
+        [MajorStr | _] = string:split(VersionStr, "."),
+        list_to_integer(MajorStr)
+    catch
+        _:_ ->
+            0
+    end.
 
 %% Close connection with error code
 -spec close_with_error(atom(), #state{}) -> {reply, {close, integer(), binary()}, #state{}}.

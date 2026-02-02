@@ -11,8 +11,13 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_observer).
+-behaviour(gen_server).
 
+%% API
 -export([watch/0, watch/1, start_watch/1, stop_watch/0, get_snapshot/0]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %%====================================================================
 %% Types
@@ -23,6 +28,12 @@
       format => atom(),
       metrics => [atom()],
       output_file => string()}.
+
+-record(state,
+        {opts :: watch_opts(),
+         refresh_interval :: pos_integer(),
+         output_file => string() | undefined,
+         history :: [map()]}).
 
 %%====================================================================
 %% API Functions - Real-Time Watching
@@ -53,46 +64,79 @@ watch(Opts) ->
 %% @doc Start background watch process
 -spec start_watch(watch_opts()) -> {ok, pid()} | {error, term()}.
 start_watch(Opts) ->
-    try
-        RefreshInterval = maps:get(refresh_interval, Opts, 1000),
-        OutputFile = maps:get(output_file, Opts, undefined),
-
-        Pid = spawn(fun() -> watch_background_loop(Opts, RefreshInterval, OutputFile, []) end),
-
-        erlang:register(erlmcp_cli_watch, Pid),
-        {ok, Pid}
-    catch
-        Class:Error:Stack ->
-            {error,
-             #{class => Class,
-               error => Error,
-               stacktrace => Stack}}
-    end.
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
 
 %% @doc Stop background watch process
 -spec stop_watch() -> ok | {error, term()}.
 stop_watch() ->
-    case erlang:whereis(erlmcp_cli_watch) of
-        undefined ->
-            {error, not_watching};
-        Pid ->
-            Pid ! stop,
-            ok
-    end.
+    gen_server:stop(?MODULE).
 
 %% @doc Get current metrics snapshot
 -spec get_snapshot() -> {ok, map()} | {error, term()}.
 get_snapshot() ->
-    try
-        Snapshot = collect_metrics(),
-        {ok, Snapshot}
-    catch
-        Class:Error:Stack ->
-            {error,
-             #{class => Class,
-               error => Error,
-               stacktrace => Stack}}
-    end.
+    gen_server:call(?MODULE, get_snapshot).
+
+%%====================================================================
+%% gen_server Callbacks
+%%====================================================================
+
+%% @private
+init(Opts) ->
+    RefreshInterval = maps:get(refresh_interval, Opts, 1000),
+    OutputFile = maps:get(output_file, Opts, undefined),
+    State = #state{opts = Opts,
+                   refresh_interval = RefreshInterval,
+                   output_file = OutputFile,
+                   history = []},
+    %% Start the periodic metrics collection
+    erlang:send_after(RefreshInterval, self(), collect_metrics),
+    {ok, State}.
+
+%% @private
+handle_call(get_snapshot, _From, State) ->
+    Metrics = collect_metrics(),
+    {reply, {ok, Metrics}, State};
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+%% @private
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+%% @private
+handle_info(collect_metrics, #state{opts = Opts,
+                                    refresh_interval = RefreshInterval,
+                                    output_file = OutputFile,
+                                    history = History} = State) ->
+    %% Collect metrics
+    Metrics = collect_metrics(),
+
+    %% Add to history
+    NewHistory = [Metrics | lists:sublist(History, 99)],
+
+    %% Write to file if specified
+    case OutputFile of
+        undefined ->
+            ok;
+        _ ->
+            FormattedData = jsx:encode(NewHistory, [{space, 1}, {indent, 2}]),
+            file:write_file(OutputFile, FormattedData)
+    end,
+
+    %% Schedule next collection
+    erlang:send_after(RefreshInterval, self(), collect_metrics),
+
+    {noreply, State#state{history = NewHistory}};
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+%% @private
+terminate(_Reason, _State) ->
+    ok.
+
+%% @private
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
 
 %%====================================================================
 %% Internal Functions - Watch Loop
@@ -122,35 +166,6 @@ watch_loop(Opts, RefreshInterval, Format) ->
             false ->
                 watch_loop(Opts, RefreshInterval, Format)
         end
-    end.
-
-%% @private Background watch loop (writes to file)
--spec watch_background_loop(watch_opts(), pos_integer(), string() | undefined, [map()]) -> ok.
-watch_background_loop(Opts, RefreshInterval, OutputFile, History) ->
-    %% Collect metrics
-    Metrics = collect_metrics(),
-
-    %% Add to history
-    NewHistory = [Metrics | lists:sublist(History, 99)],
-
-    %% Write to file if specified
-    case OutputFile of
-        undefined ->
-            ok;
-        _ ->
-            FormattedData = jsx:encode(NewHistory, [{space, 1}, {indent, 2}]),
-            file:write_file(OutputFile, FormattedData)
-    end,
-
-    %% Wait for refresh or stop
-    receive
-        stop ->
-            ok;
-        {get_history, From} ->
-            From ! {history, lists:reverse(NewHistory)},
-            watch_background_loop(Opts, RefreshInterval, OutputFile, NewHistory)
-    after RefreshInterval ->
-        watch_background_loop(Opts, RefreshInterval, OutputFile, NewHistory)
     end.
 
 %%====================================================================

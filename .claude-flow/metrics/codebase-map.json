@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-02-02T03:40:31.036Z",
+  "projectRoot": "/Users/sac/erlmcp",
+  "structure": {
+    "hasPackageJson": false,
+    "hasTsConfig": false,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1770003631036
+}

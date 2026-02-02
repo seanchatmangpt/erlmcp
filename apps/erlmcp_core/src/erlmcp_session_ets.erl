@@ -26,7 +26,10 @@ init(Opts) ->
     case ets:whereis(TableName) of
         undefined ->
             Table =
-                ets:new(TableName, [ordered_set, public, named_table, {read_concurrency, true}]),
+                ets:new(TableName, [ordered_set, public, named_table,
+                                   {read_concurrency, true},
+                                   {write_concurrency, true},
+                                   {decentralized_counters, true}]),
             {ok, #{table => Table, table_name => TableName}};
         _Table ->
             %% Table already exists

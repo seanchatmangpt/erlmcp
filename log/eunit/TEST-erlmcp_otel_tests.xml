@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuite tests="8" failures="0" errors="8" skipped="0" time="0.033" name="module 'erlmcp_otel_tests'">
+  <testcase time="0.000" name="fixture setup [2,1]">
+    <error type="error">
+::in function erlmcp_otel:init/1
+  called as init(#{sampling =&gt; always_on,service_name =&gt; &lt;&lt;"test_service"&gt;&gt;,
+  service_version =&gt; &lt;&lt;"test_1.0.0"&gt;&gt;,
+  exporters =&gt; [console]})
+in call from erlmcp_otel_tests:setup_otel/0 (/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl, line 43)
+**error:undef
+    </error>
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.001" name="erlmcp_otel_tests:0 with_span_error_test">
+    <error type="error">
+::in function erlmcp_otel_tests:with_span_error_test/0 (/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl, line 217)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 285)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 83)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 554)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 379)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 537)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 479)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+**error:{assertException,
+    [{module,erlmcp_otel_tests},
+     {line,217},
+     {expression,
+         "erlmcp_otel : with_span ( &lt;&lt; \"error.span\" &gt;&gt; , # { } , ErrorFun )"},
+     {pattern,"{ throw , test_error , [...] }"},
+     {unexpected_exception,
+         {error,undef,
+             [{erlmcp_otel,with_span,
+                  [&lt;&lt;"error.span"&gt;&gt;,#{},#Fun&lt;erlmcp_otel_tests.13.33016220&gt;],
+                  []},
+              {erlmcp_otel_tests,with_span_error_test,0,
+                  [{file,
+                       "/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl"},
+                   {line,217}]},
+              {eunit_test,'-mf_wrapper/2-fun-0-',2,
+                  [{file,"eunit_test.erl"},{line,285}]},
+              {eunit_test,run_testfun,1,[{file,"eunit_test.erl"},{line,83}]},
+              {eunit_proc,run_test,1,[{file,"eunit_proc.erl"},{line,554}]},
+              {eunit_proc,with_timeout,3,[{file,"eunit_proc.erl"},{line,379}]},
+              {eunit_proc,handle_test,2,[{file,"eunit_proc.erl"},{line,537}]},
+              {eunit_proc,tests_inorder,3,
+                  [{file,"eunit_proc.erl"},{line,479}]}]}}]}
+    </error>
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.002" name="erlmcp_otel_tests:0 with_span_multiple_errors_test">
+    <error type="error">
+::in function erlmcp_otel_tests:with_span_multiple_errors_test/0 (/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl, line 222)
+in call from eunit_test:'-mf_wrapper/2-fun-0-'/2 (eunit_test.erl, line 285)
+in call from eunit_test:run_testfun/1 (eunit_test.erl, line 83)
+in call from eunit_proc:run_test/1 (eunit_proc.erl, line 554)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 379)
+in call from eunit_proc:handle_test/2 (eunit_proc.erl, line 537)
+in call from eunit_proc:tests_inorder/3 (eunit_proc.erl, line 479)
+in call from eunit_proc:with_timeout/3 (eunit_proc.erl, line 369)
+**error:{assertException,
+    [{module,erlmcp_otel_tests},
+     {line,222},
+     {expression,
+         "erlmcp_otel : with_span ( &lt;&lt; \"error.span\" &gt;&gt; , # { } , fun ( ) -&gt; erlang : error ( { test_error , reason } ) end )"},
+     {pattern,"{ throw , { test_error , reason } , [...] }"},
+     {unexpected_exception,
+         {error,undef,
+             [{erlmcp_otel,with_span,
+                  [&lt;&lt;"error.span"&gt;&gt;,#{},#Fun&lt;erlmcp_otel_tests.14.33016220&gt;],
+                  []},
+              {erlmcp_otel_tests,with_span_multiple_errors_test,0,
+                  [{file,
+                       "/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl"},
+                   {line,223}]},
+              {eunit_test,'-mf_wrapper/2-fun-0-',2,
+                  [{file,"eunit_test.erl"},{line,285}]},
+              {eunit_test,run_testfun,1,[{file,"eunit_test.erl"},{line,83}]},
+              {eunit_proc,run_test,1,[{file,"eunit_proc.erl"},{line,554}]},
+              {eunit_proc,with_timeout,3,[{file,"eunit_proc.erl"},{line,379}]},
+              {eunit_proc,handle_test,2,[{file,"eunit_proc.erl"},{line,537}]},
+              {eunit_proc,tests_inorder,3,
+                  [{file,"eunit_proc.erl"},{line,479}]}]}}]}
+    </error>
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.002" name="erlmcp_otel_tests:0 span_empty_attributes_test">
+    <error type="error">
+::in function erlmcp_otel:start_span/2
+  called as start_span(&lt;&lt;"empty.span"&gt;&gt;,#{})
+in call from erlmcp_otel_tests:span_empty_attributes_test/0 (/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl, line 232)
+in call from erlmcp_otel_tests:span_empty_attributes_test/0
+**error:undef
+    </error>
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.002" name="erlmcp_otel_tests:0 add_empty_attributes_test">
+    <error type="error">
+::in function erlmcp_otel:start_span/2
+  called as start_span(&lt;&lt;"test.span"&gt;&gt;,#{})
+in call from erlmcp_otel_tests:add_empty_attributes_test/0 (/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl, line 238)
+in call from erlmcp_otel_tests:add_empty_attributes_test/0
+**error:undef
+    </error>
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.002" name="erlmcp_otel_tests:0 multiple_sequential_spans_test">
+    <error type="error">
+::in function erlmcp_otel:start_span/2
+  called as start_span(&lt;&lt;"span.1"&gt;&gt;,#{})
+in call from erlmcp_otel_tests:'-multiple_sequential_spans_test/0-fun-1-'/1 (/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl, line 247)
+in call from lists:foreach_1/2 (lists.erl, line 2641)
+in call from erlmcp_otel_tests:multiple_sequential_spans_test/0
+**error:undef
+    </error>
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="fixture setup [2,7]">
+    <error type="error">
+::in function erlmcp_otel:init/1
+  called as init(#{sampling =&gt; always_on,service_name =&gt; &lt;&lt;"test_service"&gt;&gt;,
+  service_version =&gt; &lt;&lt;"test_1.0.0"&gt;&gt;,
+  exporters =&gt; [console]})
+in call from erlmcp_otel_tests:setup_otel/0 (/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl, line 43)
+**error:undef
+    </error>
+    <system-out>
+    </system-out>
+  </testcase>
+  <testcase time="0.000" name="fixture setup [2,8]">
+    <error type="error">
+::in function erlmcp_otel:init/1
+  called as init(#{sampling =&gt; always_on,service_name =&gt; &lt;&lt;"test_service"&gt;&gt;,
+  service_version =&gt; &lt;&lt;"test_1.0.0"&gt;&gt;,
+  exporters =&gt; [console]})
+in call from erlmcp_otel_tests:setup_otel/0 (/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test/erlmcp_otel_tests.erl, line 43)
+**error:undef
+    </error>
+    <system-out>
+    </system-out>
+  </testcase>
+</testsuite>

@@ -1,5 +1,17 @@
-{cases,"/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test",
-       erlmcp_observability_SUITE,
-       [test_metrics_integration,test_otel_integration,
-        test_health_integration,test_dashboard_server,
-        test_full_observability_stack]}.
+{cases,"/Users/sac/erlmcp/apps/erlmcp_core/test",erlmcp_spec_compliance_SUITE,
+       [lifecycle_tests,tools_api_tests,resources_api_tests,prompts_api_tests,
+        experimental_features_tests,error_handling_tests]}.
+{cases,"/Users/sac/erlmcp",erlmcp_authorization_SUITE,
+       [admin_role_full_access_test,user_role_limited_access_test,
+        guest_role_read_only_access_test,role_escalation_prevention_test,
+        resource_access_permissions_test,tool_execution_permissions_test,
+        prompt_template_permissions_test,
+        administrative_operation_permissions_test,
+        resource_uri_access_control_test,
+        resource_subscription_authorization_test,
+        resource_update_permissions_test,tool_call_authorization_test,
+        tool_parameter_validation_test,dangerous_tool_restrictions_test,
+        session_creation_permissions_test,session_termination_rights_test,
+        cross_session_access_prevention_test,invalid_permission_denied_test,
+        expired_session_authorization_test,
+        concurrent_permission_changes_test]}.

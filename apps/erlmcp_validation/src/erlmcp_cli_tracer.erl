@@ -214,8 +214,14 @@ parse_single_pattern(Pattern) ->
 start_trace_internal(TracePatterns, Opts) ->
     MaxEvents = maps:get(max_events, Opts, 10000),
 
-    %% Start trace collector process
-    CollectorPid = spawn(fun() -> trace_collector_loop([], MaxEvents) end),
+    %% Start trace collector process via supervisor
+    {ok, CollectorPid} =
+        case erlmcp_validation_sup:start_trace_collector(MaxEvents) of
+            {ok, Pid} ->
+                {ok, Pid};
+            {error, {already_started, Pid}} ->
+                {ok, Pid}
+        end,
 
     %% Register collector
     erlang:register(erlmcp_trace_collector, CollectorPid),

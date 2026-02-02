@@ -18,16 +18,46 @@
           timeout => 5000
       }}
   ]},
-  {modules, []},
+  {modules, [
+    erlmcp_validation_app,
+    erlmcp_validation_sup,
+    erlmcp_sbom,
+    erlmcp_vulnerability_scanner,
+    erlmcp_dependency_collector,
+    erlmcp_compliance_report,
+    erlmcp_compliance_report_json,
+    erlmcp_compliance_report_html,
+    erlmcp_mcp_security_analysis,
+    erlmcp_performance_validator,
+    erlmcp_protocol_validator,
+    erlmcp_security_validator,
+    erlmcp_spec_parser,
+    erlmcp_transport_validator,
+    erlmcp_uri_validator,
+    erlmcp_validate_cli,
+    erlmcp_validate_cli_fast,
+    erlmcp_validator_hooks
+ ]},
   {licenses, ["Apache-2.0"]},
   {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
+  %% OTP 27+ Runtime Dependencies
+  {runtime_dependencies, [
+    "erts-16.0.3",     % OTP 28 ERTS minimum
+    "kernel-10.4",     % OTP 28 Kernel minimum
+    "stdlib-6.0",      % OTP 28 STDLIB minimum
+    "jsx-3.1.0",       % JSON encoding (external)
+    "jesse-1.8.1",     % JSON Schema validation (external)
+    "erlmcp_core-2.1.0",       % Core application
+    "erlmcp_transports-2.1.0"  % Transports application
+  ]},
   %% OTP Version Requirements
   {notes, [
-      "Supports Erlang/OTP 25-28",
-      "OTP 28+ features: native JSON validation (faster schema checks)",
-      "OTP 27+ features: improved JSON parsing",
+      "Requires: Erlang/OTP 28+ (STRICT)",
+      "OTP 28+ features: native JSON validation (optional), improved regex (PCRE2)",
+      "OTP 27+ features: improved JSON parsing, better error messages",
+      "OTP 26+ features: persistent config, incremental Dialyzer",
       "Dependencies: jsx 3.1+, jesse 1.8+ (JSON Schema validation)",
-      "Minimum: OTP 25 (full compliance validation)",
-      "Recommended: OTP 28+ for fastest validation"
+      "Previous OTP 25 support deprecated - upgrade to OTP 28+ required",
+      "See docs/OTP_APPLICATION_CONFIG_RESEARCH.md for validation features"
   ]}
  ]}.
