@@ -335,15 +335,8 @@ execute_batch(#state{pending_requests = PendingRequests} = State) ->
 execute_batch_parallel(Requests, #state{executor = Executor, parallel_workers = Workers}) ->
     % Convert pending requests to simple requests for executor
     % OTP 28: Use strict generator for fail-fast validation
-    try
-        SimpleRequests = [{ReqId, Method, Params} || {ReqId, Method, Params, _, _} <:- Requests],
-        execute_batch_parallel_continue(SimpleRequests, Executor, Workers)
-    catch
-        error:{badmatch, _} ->
-            %% Fallback to non-strict for OTP < 28 compatibility
-            SimpleRequests = [{ReqId, Method, Params} || {ReqId, Method, Params, _, _} <- Requests],
-            execute_batch_parallel_continue(SimpleRequests, Executor, Workers)
-    end.
+    SimpleRequests = [{ReqId, Method, Params} || {ReqId, Method, Params, _, _} <- Requests],
+    execute_batch_parallel_continue(SimpleRequests, Executor, Workers).
 
 %% @private Continue batch execution
 execute_batch_parallel_continue(SimpleRequests, Executor, Workers) ->

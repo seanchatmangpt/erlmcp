@@ -1528,7 +1528,7 @@ validate_capability_name(Name) when is_binary(Name) ->
     case erlmcp_atoms:char_length_check(Name) of
         ok ->
             % Capability names should be valid UTF-8 without control characters
-            case binary:match(Name, [<<0>>, <<255>>, <<254>>, <<253>>) of
+            case binary:match(Name, [<<0>>, <<255>>, <<254>>, <<253>>]) of
                 nomatch ->
                     ok;
                 _ ->

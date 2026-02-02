@@ -222,14 +222,15 @@ handle_call({checkout, Timeout}, From, #state{available_tab = AvailableTab,
                             }}),
 
                             CheckoutTime = erlang:monotonic_time(microsecond) - StartTime,
-                            UpdatedMetrics = NewState#state.metrics#metrics{
-                                total_checkouts = NewState#state.metrics.total_checkouts + 1,
+                            CurrentMetrics = NewState#state.metrics,
+                            UpdatedMetrics = CurrentMetrics#metrics{
+                                total_checkouts = CurrentMetrics#metrics.total_checkouts + 1,
                                 avg_checkout_time_us = calculate_avg(
-                                    NewState#state.metrics.avg_checkout_time_us,
-                                    NewState#state.metrics.total_checkouts,
+                                    CurrentMetrics#metrics.avg_checkout_time_us,
+                                    CurrentMetrics#metrics.total_checkouts,
                                     CheckoutTime
                                 ),
-                                active_connections = NewState#state.metrics.active_connections + 1
+                                active_connections = CurrentMetrics#metrics.active_connections + 1
                             },
 
                             gen_server:reply(From, {ok, ConnPid}),

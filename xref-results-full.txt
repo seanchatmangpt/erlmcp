@@ -1,0 +1,203 @@
+===> Verifying dependencies...
+===> App ranch is a checkout dependency and cannot be locked.
+===> App poolboy is a checkout dependency and cannot be locked.
+===> App jose is a checkout dependency and cannot be locked.
+===> App jesse is a checkout dependency and cannot be locked.
+===> App gun is a checkout dependency and cannot be locked.
+===> App gproc is a checkout dependency and cannot be locked.
+===> App cowboy is a checkout dependency and cannot be locked.
+===> App bbmustache is a checkout dependency and cannot be locked.
+===> App base64url is a checkout dependency and cannot be locked.
+===> Analyzing applications...
+===> Compiling jesse
+===> Compiling bbmustache
+===> Compiling ranch
+===> Compiling poolboy
+===> Compiling jose
+===> Compiling cowlib
+===> Compiling gun
+===> Compiling gproc
+===> Compiling cowboy
+===> Compiling base64url
+===> Compiling jsx
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling apps/erlmcp_core/src/erlmcp_registry_optimized.erl failed
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 976 \x{2502}      Interval = ?METRICS_SAMPLE_INTERVAL,
+     \x{2502}                  \x{2570}\x{2500}\x{2500} undefined macro 'METRICS_SAMPLE_INTERVAL'
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 30 \x{2502}  -export([start_link/0, start_link/1, register_server/3, register_server/4,
+    \x{2502}   \x{2570}\x{2500}\x{2500} function route_to_transport/3 undefined, did you mean route_to_transport/2?
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 77 \x{2502}      transports :: #{transport_id() => transport_info()},
+    \x{2502}                      \x{2570}\x{2500}\x{2500} type transport_id() undefined
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 78 \x{2502}      server_transport_map :: #{transport_id() => server_id()},
+    \x{2502}                                \x{2570}\x{2500}\x{2500} type transport_id() undefined
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 79 \x{2502}      lru_cache :: gb_lru:lru(cache_entry()),
+    \x{2502}                              \x{2570}\x{2500}\x{2500} type cache_entry() undefined
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 80 \x{2502}      performance_metrics :: performance_metrics(),
+    \x{2502}                             \x{2570}\x{2500}\x{2500} type performance_metrics() undefined
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 81 \x{2502}      optimization_config :: optimization_config(),
+    \x{2502}                             \x{2570}\x{2500}\x{2500} type optimization_config() undefined
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 265 \x{2502}      NewState2 = start_metrics_collection(NewState1),
+     \x{2502}                  \x{2570}\x{2500}\x{2500} function start_metrics_collection/1 undefined, did you mean start_health_checks/1?
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 693 \x{2502}      NewState1 = start_metrics_collection(NewState),
+     \x{2502}                  \x{2570}\x{2500}\x{2500} function start_metrics_collection/1 undefined, did you mean start_health_checks/1?
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 834 \x{2502}  update_access_stats(TransportInfo) when is_map(TransportInfo) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} function update_access_stats/1 already defined
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 949 \x{2502}          _ -> (Metrics#performance_metrics.avg_unregistration_time * (NewUnregistrations - 1) + UnregistrationTime) / NewUnregistrations
+     \x{2502}                                            \x{2570}\x{2500}\x{2500} field avg_unregistration_time undefined in record performance_metrics, did you mean avg_registration_time?
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 954 \x{2502}          avg_unregistration_time = NewAvgUnregistrationTime
+     \x{2502}          \x{2570}\x{2500}\x{2500} field avg_unregistration_time undefined in record performance_metrics, did you mean avg_registration_time?
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+      \x{2502}
+ 1186 \x{2502}          Cache = cache_entry(ServerId, ServerInfo, UpdatedState#registry_state.lru_cache),
+      \x{2502}                                                    \x{2570}\x{2500}\x{2500} variable 'UpdatedState' is unbound, did you mean 'UpdatedServers'?
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+      \x{2502}
+ 1194 \x{2502}          Cache = cache_entry(TransportId, TransportInfo, UpdatedState#registry_state.lru_cache),
+      \x{2502}                                                          \x{2570}\x{2500}\x{2500} variable 'UpdatedState' is unbound, did you mean 'UpdatedTransports'?
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 27 \x{2502}  -behaviour(gen_server).
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: the callback gen_server:format_status(_,_) is deprecated; use format_status/1 instead
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 166 \x{2502}  route_to_transport(TransportId, Message) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function route_to_transport/2 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 333 \x{2502}          {ok, ServerInfo} ->
+     \x{2502}               \x{2570}\x{2500}\x{2500} Warning: variable 'ServerInfo' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 367 \x{2502}          {ok, TransportInfo} ->
+     \x{2502}               \x{2570}\x{2500}\x{2500} Warning: variable 'TransportInfo' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 413 \x{2502}  handle_call({find_server, ServerId, Options}, _From, State) ->
+     \x{2502}                                      \x{2570}\x{2500}\x{2500} Warning: variable 'Options' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 445 \x{2502}  handle_call({find_transport, TransportId, Options}, _From, State) ->
+     \x{2502}                                            \x{2570}\x{2500}\x{2500} Warning: variable 'Options' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 755 \x{2502}  create_server_info(ServerId, ServerPid, Config) ->
+     \x{2502}                     \x{2570}\x{2500}\x{2500} Warning: variable 'ServerId' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 765 \x{2502}  create_transport_info(TransportId, TransportPid, Config) ->
+     \x{2502}                        \x{2570}\x{2500}\x{2500} Warning: variable 'TransportId' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 807 \x{2502}                      Cache = cache_entry(ServerId, ServerInfo, State#registry_state.lru_cache),
+     \x{2502}                      \x{2570}\x{2500}\x{2500} Warning: variable 'Cache' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 821 \x{2502}                      Cache = cache_entry(TransportId, TransportInfo, State#registry_state.lru_cache),
+     \x{2502}                      \x{2570}\x{2500}\x{2500} Warning: variable 'Cache' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 846 \x{2502}  should_include_server(_ServerId, ServerInfo, Options) ->
+     \x{2502}                                   \x{2570}\x{2500}\x{2500} Warning: variable 'ServerInfo' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 864 \x{2502}  should_include_transport(_TransportId, TransportInfo, Options) ->
+     \x{2502}                                         \x{2570}\x{2500}\x{2500} Warning: variable 'TransportInfo' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 876 \x{2502}  route_message_to_server(ServerId, TransportId, Message, State) ->
+     \x{2502}                                    \x{2570}\x{2500}\x{2500} Warning: variable 'TransportId' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 947 \x{2502}      NewAvgUnregistrationTime = case NewUnregistrations of
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'NewAvgUnregistrationTime' is unused
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+      \x{2502}
+ 1041 \x{2502}  is_cache_entry_healthy(#cache_entry{key = Key, value = Value}, State) ->
+      \x{2502}                                                         \x{2570}\x{2500}\x{2500} Warning: variable 'Value' is unused
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+      \x{2502}
+ 1125 \x{2502}  batch_register_servers([], State) ->
+      \x{2502}                             \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+      \x{2502}
+ 1128 \x{2502}  batch_register_servers(Entries, State) ->
+      \x{2502}                                  \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+      \x{2502}
+ 1140 \x{2502}  batch_register_transports([], State) ->
+      \x{2502}                                \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+      \x{2502}
+ 1143 \x{2502}  batch_register_transports(Entries, State) ->
+      \x{2502}                                     \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+      \x{2502}
+ 1155 \x{2502}  batch_unregister_entries([], State) ->
+      \x{2502}                               \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+      \x{2502}
+ 1158 \x{2502}  batch_unregister_entries(Entries, State) ->
+      \x{2502}                                    \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+

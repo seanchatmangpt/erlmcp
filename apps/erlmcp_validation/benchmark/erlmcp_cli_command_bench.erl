@@ -27,41 +27,41 @@ run() ->
 -spec run(map()) -> ok.
 run(Opts) ->
     Iterations = maps:get(iterations, Opts, 10),
-    
+
     io:format("~n==============================================~n"),
     io:format("ERLMCP CLI COMMAND BENCHMARK~n"),
     io:format("Iterations: ~p per command~n", [Iterations]),
     io:format("==============================================~n~n"),
-    
+
     %% Ensure apps are started
     ensure_apps_started(),
-    
+
     %% Benchmark each command type
     SpecResults = bench_spec_validation(Iterations),
     ProtocolResults = bench_protocol_validation(Iterations),
     TransportResults = bench_transport_validation(Iterations),
     QuickCheckResults = bench_quick_check(Iterations),
-    
+
     %% Build report
     Report = build_report(SpecResults, ProtocolResults, TransportResults, QuickCheckResults),
-    
+
     %% Print and save
     print_results(Report),
     write_report(Report),
-    
+
     ok.
 
 %% Benchmark spec validation
 bench_spec_validation(Iterations) ->
     io:format("Benchmarking spec validation...~n"),
-    
+
     Times = lists:map(fun(_) ->
         StartTime = erlang:monotonic_time(millisecond),
         _ = erlmcp_validate_cli:validate_spec(),
         EndTime = erlang:monotonic_time(millisecond),
         EndTime - StartTime
     end, lists:seq(1, Iterations)),
-    
+
     #{
         command => <<"spec_validation">>,
         target_ms => 500,
@@ -79,7 +79,7 @@ bench_spec_validation(Iterations) ->
 %% Benchmark protocol validation
 bench_protocol_validation(Iterations) ->
     io:format("Benchmarking protocol validation...~n"),
-    
+
     %% Sample message
     Message = #{
         <<"jsonrpc">> => <<"2.0">>,
@@ -94,14 +94,14 @@ bench_protocol_validation(Iterations) ->
             }
         }
     },
-    
+
     Times = lists:map(fun(_) ->
         StartTime = erlang:monotonic_time(millisecond),
         _ = erlmcp_validate_cli:validate_protocol_message(Message),
         EndTime = erlang:monotonic_time(millisecond),
         EndTime - StartTime
     end, lists:seq(1, Iterations)),
-    
+
     #{
         command => <<"protocol_validation">>,
         target_ms => 100,
@@ -119,14 +119,14 @@ bench_protocol_validation(Iterations) ->
 %% Benchmark transport validation
 bench_transport_validation(Iterations) ->
     io:format("Benchmarking transport validation...~n"),
-    
+
     Times = lists:map(fun(_) ->
         StartTime = erlang:monotonic_time(millisecond),
         _ = erlmcp_validate_cli:validate_transport(stdio),
         EndTime = erlang:monotonic_time(millisecond),
         EndTime - StartTime
     end, lists:seq(1, Iterations)),
-    
+
     #{
         command => <<"transport_validation">>,
         target_ms => 1000,
@@ -144,14 +144,14 @@ bench_transport_validation(Iterations) ->
 %% Benchmark quick check
 bench_quick_check(Iterations) ->
     io:format("Benchmarking quick check...~n"),
-    
+
     Times = lists:map(fun(_) ->
         StartTime = erlang:monotonic_time(millisecond),
         _ = quick_check_impl(),
         EndTime = erlang:monotonic_time(millisecond),
         EndTime - StartTime
     end, lists:seq(1, Iterations)),
-    
+
     #{
         command => <<"quick_check">>,
         target_ms => 200,
@@ -174,10 +174,10 @@ quick_check_impl() ->
 %% Build report
 build_report(SpecResults, ProtocolResults, TransportResults, QuickCheckResults) ->
     AllResults = [SpecResults, ProtocolResults, TransportResults, QuickCheckResults],
-    
+
     TotalPassed = length([R || R <- AllResults, maps:get(status, R) =:= <<"passed">>]),
     TotalCommands = length(AllResults),
-    
+
     #{
         benchmark => <<"cli_commands">>,
         timestamp => erlang:system_time(second),
@@ -203,18 +203,18 @@ print_results(#{commands := Commands, summary := Summary}) ->
     io:format("~n==============================================~n"),
     io:format("COMMAND EXECUTION RESULTS~n"),
     io:format("==============================================~n~n"),
-    
+
     maps:foreach(fun(CmdName, CmdResults) ->
         MeanMs = maps:get(mean_ms, CmdResults),
         TargetMs = maps:get(target_ms, CmdResults),
         Status = maps:get(status, CmdResults),
-        
+
         StatusIcon = case Status of
             <<"passed">> -> "✓";
             <<"warning">> -> "⚠";
             _ -> "✗"
         end,
-        
+
         io:format("~s ~s:~n", [StatusIcon, CmdName]),
         io:format("  Mean:   ~.2f ms (target: ~p ms)~n", [MeanMs, TargetMs]),
         io:format("  Median: ~.2f ms~n", [maps:get(median_ms, CmdResults)]),
@@ -222,8 +222,8 @@ print_results(#{commands := Commands, summary := Summary}) ->
         io:format("  P99:    ~.2f ms~n", [maps:get(p99_ms, CmdResults)]),
         io:format("~n")
     end, Commands),
-    
-    io:format("Summary: ~p/~p commands passed~n", 
+
+    io:format("Summary: ~p/~p commands passed~n",
               [maps:get(passed, Summary), maps:get(total_commands, Summary)]),
     io:format("==============================================~n~n").
 
@@ -231,11 +231,11 @@ print_results(#{commands := Commands, summary := Summary}) ->
 write_report(Report) ->
     Timestamp = erlang:system_time(second),
     Filename = io_lib:format("bench/results/cli_commands_~p.json", [Timestamp]),
-    
+
     filelib:ensure_dir(Filename),
     JSON = jsx:encode(Report, [{space, 1}, {indent, 2}]),
     file:write_file(Filename, JSON),
-    
+
     io:format("Report written to: ~s~n", [Filename]).
 
 %% Helper functions

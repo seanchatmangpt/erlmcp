@@ -77,6 +77,7 @@
 -record(state,
         {monitored_processes = #{} :: #{pid => process_config()},
          check_interval_ms :: pos_integer(),
+         check_timer :: reference() | undefined,
          stats :: hibernate_stats()}).
 
 -record(process_stats,

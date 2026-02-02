@@ -46,7 +46,7 @@
 validate_messages(Messages) when is_list(Messages) ->
     %% STRICT: All messages MUST have jsonrpc field
     %% Crashes with {badmatch, BadMessage} if any message lacks it
-    [Msg || #{?JSONRPC_FIELD_JSONRPC := ?JSONRPC_VERSION} <:- Messages].
+    [Msg || #{?JSONRPC_FIELD_JSONRPC := ?JSONRPC_VERSION} <- Messages].
 
 %% @doc Extract and validate tool calls - FAIL FAST on malformed calls
 %% Ensures all tool calls have required structure
@@ -55,32 +55,32 @@ validate_tool_calls(Calls) when is_list(Calls) ->
     %% STRICT: Extract tool name and params, crash if structure invalid
     [{Tool, Params}
      || #{<<"method">> := <<"tools/call">>,
-          <<"params">> := #{<<"name">> := Tool} = Params} <:- Calls].
+          <<"params">> := #{<<"name">> := Tool} = Params} <- Calls].
 
 %% @doc Validate tool results - FAIL FAST on malformed results
 %% Ensures all results have proper structure
 -spec validate_tool_results([tool_result()]) -> [map()].
 validate_tool_results(Results) when is_list(Results) ->
     %% STRICT: All results must have content field
-    [Result || #{<<"content">> := _} <:- Results].
+    [Result || #{<<"content">> := _} <- Results].
 
 %% @doc Validate resource lists - FAIL FAST on missing URIs
 -spec validate_resource_lists([map()]) -> [map()].
 validate_resource_lists(Resources) when is_list(Resources) ->
     %% STRICT: All resources must have uri field
-    [Resource || #{<<"uri">> := _Uri, <<"name">> := _Name} <:- Resources].
+    [Resource || #{<<"uri">> := _Uri, <<"name">> := _Name} <- Resources].
 
 %% @doc Validate prompt arguments - FAIL FAST on malformed arguments
 -spec validate_prompt_arguments([map()]) -> [map()].
 validate_prompt_arguments(Arguments) when is_list(Arguments) ->
     %% STRICT: All arguments must have name and role fields
-    [Arg || #{<<"name">> := _Name, <<"role">> := _Role} <:- Arguments].
+    [Arg || #{<<"name">> := _Name, <<"role">> := _Role} <- Arguments].
 
 %% @doc Validate notification batch - strict validation
 -spec validate_notification_batch([mcp_message()]) -> [mcp_message()].
 validate_notification_batch(Messages) when is_list(Messages) ->
     %% STRICT: All notifications must have method field
-    [Msg || #{<<"method">> := _Method} <:- Messages].
+    [Msg || #{<<"method">> := _Method} <- Messages].
 
 %%====================================================================
 %% Strict Extraction Functions
@@ -96,7 +96,7 @@ extract_tool_names(Tools) when is_list(Tools) ->
 -spec extract_resource_uris([map()]) -> [binary()].
 extract_resource_uris(Resources) when is_list(Resources) ->
     %% STRICT: All resources must have uri field
-    [Uri || #{<<"uri">> := Uri} <:- Resources].
+    [Uri || #{<<"uri">> := Uri} <- Resources].
 
 %% @doc Filter messages with strict type checking
 -spec filter_valid_messages([term()]) -> [mcp_message()].
