@@ -14,11 +14,33 @@ readonly CYAN='\033[0;36m'
 readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
+#==============================================================================
+# WORKING DIRECTORY VALIDATION
+#==============================================================================
+
+# Validate we're in erlmcp root directory
+if [ ! -f "rebar.config" ] || [ ! -d "apps/erlmcp_core" ]; then
+    echo ""
+    echo "${BOLD}${RED}❌ ERROR: Not in erlmcp root directory${NC}"
+    echo ""
+    echo "${RED}This hook must be run from the erlmcp project root.${NC}"
+    echo "${YELLOW}Expected files/dirs:${NC}"
+    echo "  - rebar.config"
+    echo "  - apps/erlmcp_core/"
+    echo ""
+    echo "${YELLOW}Current directory:${NC} $(pwd)"
+    echo ""
+    exit 1
+fi
+
 echo ""
-echo "$(BOLD)$(CYAN)═══════════════════════════════════════════════════════════$(NC)"
-echo "$(BOLD)$(CYAN)🔍 PRE-COMPLETION QUALITY CHECK$(NC)"
-echo "$(BOLD)$(CYAN)═══════════════════════════════════════════════════════════$(NC)"
+echo "${BOLD}${CYAN}═══════════════════════════════════════════════════════════${NC}"
+echo "${BOLD}${CYAN}🔍 PRE-COMPLETION QUALITY CHECK${NC}"
+echo "${BOLD}${CYAN}═══════════════════════════════════════════════════════════${NC}"
 echo ""
+
+# Log file for debugging
+LOG_FILE="/tmp/erlmcp_pre_done_check_$$.log"
 
 # Source OTP environment if available
 if [ -f .erlmcp/env.sh ]; then
@@ -40,7 +62,9 @@ is_deps_fetched() {
 }
 
 is_build_compiled() {
-    [ -d "_build/default/lib/erlmcp_core/ebin" ] && [ -f "_build/default/lib/erlmcp_core/ebin/"*.beam ] 2>/dev/null && return 0
+    # Check if compilation has succeeded
+    # FIXED: Use ls with command substitution instead of glob with -f
+    [ -d "_build/default/lib/erlmcp_core/ebin" ] && [ -n "$(ls _build/default/lib/erlmcp_core/ebin/*.beam 2>/dev/null)" ] && return 0
     return 1
 }
 
@@ -62,25 +86,25 @@ else
     DESCRIPTION="Quick check (~1min)"
 fi
 
-echo "$(BLUE)Checking build system readiness...$(NC)"
+echo "${BLUE}Checking build system readiness...${NC}"
 echo ""
 
 # Detect setup phase
 if is_fresh_setup; then
-    echo "$(YELLOW)⚠️  Fresh setup detected:$(NC)"
+    echo "${YELLOW}⚠️  Fresh setup detected:${NC}"
     echo "  - No _build directory (compilation not yet attempted)"
     echo ""
 
     if ! is_deps_fetched; then
-        echo "$(YELLOW)  - Dependencies not fetched$(NC)"
+        echo "${YELLOW}  - Dependencies not fetched${NC}"
         echo ""
-        echo "$(YELLOW)Next steps to get build operational:$(NC)"
+        echo "${YELLOW}Next steps to get build operational:${NC}"
         echo "  1. source .erlmcp/env.sh"
         echo "  2. cp rebar.config.git rebar.config  # Use git fallback (hex.pm unreachable)"
         echo "  3. ./rebar3 get-deps"
         echo "  4. TERM=dumb ./rebar3 compile"
         echo ""
-        echo "$(GREEN)✓ Skipping quality gates for fresh setup$(NC)"
+        echo "${GREEN}✓ Skipping quality gates for fresh setup${NC}"
         echo ""
         exit 0
     fi
@@ -88,34 +112,34 @@ fi
 
 # Build system operational - check compilation status
 if ! is_build_compiled; then
-    echo "$(YELLOW)⚠️  Build not yet compiled:$(NC)"
+    echo "${YELLOW}⚠️  Build not yet compiled:${NC}"
     echo "  - _build/default/lib/erlmcp_core/ebin has no .beam files"
     echo ""
-    echo "$(YELLOW)Required before quality gates:$(NC)"
+    echo "${YELLOW}Required before quality gates:${NC}"
     echo "  TERM=dumb ./rebar3 compile"
     echo ""
-    echo "$(GREEN)✓ Skipping quality gates (build not compiled)$(NC)"
+    echo "${GREEN}✓ Skipping quality gates (build not compiled)${NC}"
     echo ""
     exit 0
 fi
 
 # Build system is operational - run quality gates
-echo "$(BLUE)Mode:$(NC) $DESCRIPTION"
-echo "$(BLUE)Command:$(NC) make $TARGET"
+echo "${BLUE}Mode:${NC} $DESCRIPTION"
+echo "${BLUE}Command:${NC} make $TARGET"
 echo ""
-echo "$(BLUE)Running quality gates...$(NC)"
+echo "${BLUE}Running quality gates...${NC}"
 echo ""
 
 # Run the quality check
-if make $TARGET; then
+if make $TARGET > "$LOG_FILE" 2>&1; then
     echo ""
-    echo "$(BOLD)$(GREEN)═══════════════════════════════════════════════════════════$(NC)"
-    echo "$(BOLD)$(GREEN)✅ ALL QUALITY GATES PASSED$(NC)"
-    echo "$(BOLD)$(GREEN)═══════════════════════════════════════════════════════════$(NC)"
+    echo "${BOLD}${GREEN}═══════════════════════════════════════════════════════════${NC}"
+    echo "${BOLD}${GREEN}✅ ALL QUALITY GATES PASSED${NC}"
+    echo "${BOLD}${GREEN}═══════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo "$(GREEN)✓ SAFE TO SAY 'DONE'$(NC)"
+    echo "${GREEN}✓ SAFE TO SAY 'DONE'${NC}"
     echo ""
-    echo "$(CYAN)Quality gates verified:$(NC)"
+    echo "${CYAN}Quality gates verified:${NC}"
     echo "  ✓ Compilation: 0 errors"
     echo "  ✓ Tests: 0 failures"
 
@@ -126,20 +150,37 @@ if make $TARGET; then
     fi
 
     echo ""
+    rm -f "$LOG_FILE"
     exit 0
 else
     EXIT_CODE=$?
     echo ""
-    echo "$(BOLD)$(RED)═══════════════════════════════════════════════════════════$(NC)"
-    echo "$(BOLD)$(RED)❌ QUALITY GATES FAILED$(NC)"
-    echo "$(BOLD)$(RED)═══════════════════════════════════════════════════════════$(NC)"
+    echo "${BOLD}${RED}═══════════════════════════════════════════════════════════${NC}"
+    echo "${BOLD}${RED}❌ QUALITY GATES FAILED${NC}"
+    echo "${BOLD}${RED}═══════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo "$(RED)✗ NOT SAFE TO SAY 'DONE'$(NC)"
+    echo "${RED}✗ NOT SAFE TO SAY 'DONE'${NC}"
     echo ""
-    echo "$(YELLOW)Action required:$(NC)"
+    echo "${YELLOW}Failed gates summary:${NC}"
+
+    # Extract and display relevant error lines (like Stop.sh)
+    if [ -f "$LOG_FILE" ]; then
+        grep -E "(FAIL|ERROR|❌|failed|error:|undefined)" "$LOG_FILE" 2>/dev/null | head -20 || true
+    fi
+
+    echo ""
+    echo "${YELLOW}Full log:${NC} $LOG_FILE"
+    echo ""
+    echo "${YELLOW}Action required:${NC}"
     echo "  1. Fix the issues shown above"
     echo "  2. Re-run: ./.claude/hooks/pre-done-check.sh $MODE"
     echo "  3. Only say 'done' when all gates pass"
     echo ""
+    echo "${YELLOW}Tip: Run 'make $TARGET' directly to see full output${NC}"
+    echo ""
+
+    # Clean up old logs (keep only recent)
+    find /tmp -name "erlmcp_pre_done_check_*.log" -mtime +1 -delete 2>/dev/null || true
+
     exit 1
 fi
