@@ -48,7 +48,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, stop/0, init/1, inject_network_failure/1, inject_latency_spike/2,
+-export([start_link/0, stop/0, inject_network_failure/1, inject_latency_spike/2,
          inject_memory_pressure/1, inject_cpu_spike/2, inject_process_crash/0,
          inject_timeout/1, inject_cascading_failure/2, get_chaos_status/0,
          set_chaos_probability/1, enable_chaos/1, disable_chaos/0]).
@@ -167,9 +167,8 @@ start_link() ->
 stop() ->
     gen_server:stop(?SERVER).
 
-%% @doc Initialize chaos injector with custom configuration
--spec init(map()) -> ok | {error, term()}.
-init(Config) ->
+%% @doc Initialize chaos injector with custom configuration (private API function)
+initialize_chaos(Config) ->
     MergedConfig = maps:merge(?DEFAULT_CHAOS_CONFIG, Config),
 
     %% Validate configuration
@@ -311,7 +310,7 @@ handle_cast({enable_chaos, Enabled}, State) ->
     {noreply, State#state{chaos_enabled = Enabled}};
 
 handle_cast(disable_chaos, State) ->
-    log_chaos(info, "Disabling chaos injection"),
+    log_chaos(info, "Disabling chaos injection", []),
     {noreply, State#state{chaos_enabled = false}};
 
 handle_cast(_Msg, State) ->
@@ -348,7 +347,7 @@ terminate(_Reason, State) ->
     end,
     case State#state.recovery_timer of
         undefined -> ok;
-        Timer -> erlang:cancel_timer(Timer)
+        Timer2 -> erlang:cancel_timer(Timer2)
     end,
 
     %% Clean up all active events
@@ -526,7 +525,7 @@ inject_process_crash_internal() ->
 
     gen_server:cast(?SERVER, {register_chaos_event, ChaosEvent}),
 
-    log_chaos(info, "Process crash injected"),
+    log_chaos(info, "Process crash injected", []),
     ok.
 
 %% @private Inject timeout internally
@@ -606,7 +605,7 @@ network_failure_loop(EndTime) ->
         %% Simulate network issues
         case rand:uniform() of
             X when X < 0.1 ->  % 10% packet loss
-                log_chaos(warn, "Simulating packet loss");
+                log_chaos(warn, "Simulating packet loss", []);
             X when X < 0.3 ->  % 20% increased latency
                 timer:sleep(50);
             _ ->
@@ -869,6 +868,6 @@ perform_recovery_action("memory_monitor") ->
     log_chaos(info, "Memory recovery: ~p", [MemoryInfo]);
 perform_recovery_action("restart") ->
     %% Trigger process restart logic
-    log_chaos(info, "Process restart recovery");
+    log_chaos(info, "Process restart recovery", []);
 perform_recovery_action(_) ->
     ok.

@@ -1,0 +1,63 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling jesse
+===> Compiling bbmustache
+===> Compiling ranch
+===> Compiling poolboy
+===> Compiling jose
+===> Compiling cowlib
+===> Compiling gun
+===> Compiling gproc
+===> Compiling cowboy
+===> Compiling base64url
+===> Compiling jsx
+===> Compiling proper
+===> Compiling meck
+===> Analyzing applications...
+===> Compiling erlmcp_core
+===> Compiling erlmcp_transports
+===> Compiling erlmcp_validation
+===> Compiling erlmcp_observability
+===> Compiling apps/erlmcp_observability/src/erlmcp_profiler.erl failed
+     \x{250C}\x{2500} apps/erlmcp_observability/src/erlmcp_profiler.erl:
+     \x{2502}
+ 137 \x{2502}              EndTime = erlang:system_time(microsecond),
+     \x{2502}              \x{2570}\x{2500}\x{2500} variable 'EndTime' unsafe in 'try' (line 126, column 5)
+
+     \x{250C}\x{2500} apps/erlmcp_observability/src/erlmcp_profiler.erl:
+     \x{2502}
+ 141 \x{2502}              Events = [],
+     \x{2502}              \x{2570}\x{2500}\x{2500} variable 'Events' unsafe in 'try' (line 126, column 5)
+
+     \x{250C}\x{2500} apps/erlmcp_observability/src/erlmcp_profiler.erl:
+     \x{2502}
+ 142 \x{2502}              Timeline = build_timeline(ProfileId, Label, StartTime, EndTime, Events),
+     \x{2502}              \x{2570}\x{2500}\x{2500} variable 'Timeline' unsafe in 'try' (line 126, column 5)
+
+     \x{250C}\x{2500} apps/erlmcp_observability/src/erlmcp_profiler.erl:
+     \x{2502}
+ 533 \x{2502}  -spec format_mfa({module(), Function, Arity} | {module(), Function, Arity, term()}) -> binary().
+     \x{2502}                              \x{2570}\x{2500}\x{2500} type variable 'Function' is only used once (is unbound)
+
+     \x{250C}\x{2500} apps/erlmcp_observability/src/erlmcp_profiler.erl:
+     \x{2502}
+ 533 \x{2502}  -spec format_mfa({module(), Function, Arity} | {module(), Function, Arity, term()}) -> binary().
+     \x{2502}                                        \x{2570}\x{2500}\x{2500} type variable 'Arity' is only used once (is unbound)
+
+
+     \x{250C}\x{2500} apps/erlmcp_observability/src/erlmcp_profiler.erl:
+     \x{2502}
+ 143 \x{2502}              ErrorTimeline = Timeline#{error => #{class => Class,
+     \x{2502}              \x{2570}\x{2500}\x{2500} Warning: variable 'ErrorTimeline' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_observability/src/erlmcp_profiler.erl:
+     \x{2502}
+ 189 \x{2502}      TestData = crypto:strong_rand_bytes(MessageSize),
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'TestData' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_observability/src/erlmcp_profiler.erl:
+     \x{2502}
+ 543 \x{2502}  percent_change(Old, New) when Old =:= 0 ->
+     \x{2502}                      \x{2570}\x{2500}\x{2500} Warning: variable 'New' is unused
+
+

@@ -188,9 +188,9 @@ handle_call({monitor_process_tagged, Pid, Tag}, _From, State) ->
     catch
         error:badarg ->
             %% Fallback for older OTP versions
-            Ref = erlang:monitor(process, Pid),
-            NewMonitors = maps:put(Tag, Ref, State#state.tagged_monitors),
-            {reply, {ok, Ref}, State#state{tagged_monitors = NewMonitors}}
+            Ref2 = erlang:monitor(process, Pid),
+            NewMonitors2 = maps:put(Tag, Ref2, State#state.tagged_monitors),
+            {reply, {ok, Ref2}, State#state{tagged_monitors = NewMonitors2}}
     end;
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.

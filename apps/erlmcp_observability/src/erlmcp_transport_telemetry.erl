@@ -25,6 +25,7 @@
 
 -type transport_type() :: stdio | tcp | http | websocket | sse.
 -type metric_value() :: number().
+-type health_status() :: healthy | unhealthy | degraded | unknown.
 
 %%%===================================================================
 %%% API

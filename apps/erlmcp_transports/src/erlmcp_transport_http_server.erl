@@ -460,7 +460,7 @@ build_strict_tls_options(Hostname) ->
     %% OTP 27-28: TLS 1.3 optimized cipher suites
     Ciphers =
         case OTPVersion of
-            V when V >= 27 ->
+            Ver when Ver >= 27 ->
                 %% TLS 1.3 ciphers (AES_256_GCM first for hardware acceleration)
                 ["TLS_AES_256_GCM_SHA384",
                  "TLS_AES_128_GCM_SHA256",

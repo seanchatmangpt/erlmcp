@@ -61,6 +61,8 @@
         metadata :: map(),
         metrics :: #{atom() => number()}}).
 
+-type connection() :: #connection{}.
+
 -record(pool_state,
         {pool_id :: atom(),
          config :: #pool_config{},
@@ -82,6 +84,8 @@
          avg_health_check_time :: number(),
          avg_resize_time :: number()}).
 
+-type pool_metrics() :: #pool_metrics{}.
+
 -record(pool_stats,
         {current_size :: non_neg_integer(),
          min_size :: non_neg_integer(),
@@ -89,6 +93,8 @@
          avg_usage_rate :: number(),
          peak_usage :: non_neg_integer(),
          resize_count :: non_neg_integer()}).
+
+-type pool_stats() :: #pool_stats{}.
 
 -define(DEFAULT_CONFIG, #pool_config{
     max_connections = 50,
@@ -265,7 +271,7 @@ handle_cast({release, PoolId, ConnectionPid}, State) ->
             NewState1 = wake_next_waiting(NewState),
 
             %% Check if pool needs resizing
-            NewState2 = check_pool_resize(NewState1),
+            NewState2 = trigger_pool_resize(NewState1),
 
             {noreply, NewState2};
         error ->
@@ -302,7 +308,7 @@ handle_cast({release_with_health, PoolId, ConnectionPid}, State) ->
             NewState1 = wake_next_waiting(NewState),
 
             %% Check if pool needs resizing
-            NewState2 = check_pool_resize(NewState1),
+            NewState2 = trigger_pool_resize(NewState1),
 
             {noreply, NewState2};
         error ->
@@ -634,16 +640,17 @@ handle_connection_crash(Pid, Reason, State) ->
 remove_from_available(Pid, Queue) ->
     remove_from_available(Pid, Queue, queue:new()).
 
-remove_from_available(Pid, queue:out({value, #connection{pid = Pid} = Conn} = Queue), Acc) ->
-    NewAcc = queue:in(Conn, Acc),
-    remove_from_available(Pid, queue:out(Queue), NewAcc);
-
-remove_from_available(Pid, queue:out({value, OtherConn} = Queue), Acc) ->
-    NewAcc = queue:in(OtherConn, Acc),
-    remove_from_available(Pid, queue:out(Queue), NewAcc);
-
-remove_from_available(_Pid, queue:out(empty), Acc) ->
-    Acc.
+remove_from_available(Pid, Queue, Acc) ->
+    case queue:out(Queue) of
+        {{value, #connection{pid = Pid} = Conn}, RestQueue} ->
+            NewAcc = queue:in(Conn, Acc),
+            remove_from_available(Pid, RestQueue, NewAcc);
+        {{value, OtherConn}, RestQueue} ->
+            NewAcc = queue:in(OtherConn, Acc),
+            remove_from_available(Pid, RestQueue, NewAcc);
+        {empty, _} ->
+            Acc
+    end.
 
 should_replace_connection(State) ->
     Stats = State#pool_state.stats,
@@ -683,28 +690,37 @@ cleanup_idle_connections(State) ->
             State#pool_state.metrics#pool_metrics.total_checks + RemovedCount}
     }.
 
-cleanup_idle_connections_queue(queue:out({value, #connection{last_used = LastUsed} = Conn} = Queue),
-                             CurrentTime, IdleTimeout, RemovedCount) ->
-    IdleTime = CurrentTime - LastUsed,
-    case IdleTime > IdleTimeout of
-        true ->
-            %% Connection is idle, remove it
-            _ = exit(Conn#connection.pid, idle),
-            cleanup_idle_connections_queue(queue:out(Queue), CurrentTime, IdleTimeout, RemovedCount + 1);
-        false ->
-            %% Keep the connection
-            NewAcc = queue:in(Conn, queue:new()),
-            cleanup_idle_connections_queue(queue:out(Queue), CurrentTime, IdleTimeout, RemovedCount)
-    end;
-
-cleanup_idle_connections_queue(queue:out(empty), _, _, RemovedCount) ->
-    {queue:new(), RemovedCount}.
+cleanup_idle_connections_queue(Queue, CurrentTime, IdleTimeout, RemovedCount) ->
+    case queue:out(Queue) of
+        {{value, #connection{last_used = LastUsed} = Conn}, RestQueue} ->
+            IdleTime = CurrentTime - LastUsed,
+            case IdleTime > IdleTimeout of
+                true ->
+                    %% Connection is idle, remove it
+                    _ = exit(Conn#connection.pid, idle),
+                    cleanup_idle_connections_queue(RestQueue, CurrentTime, IdleTimeout, RemovedCount + 1);
+                false ->
+                    %% Keep the connection
+                    {CleanedRest, FinalCount} = cleanup_idle_connections_queue(RestQueue, CurrentTime, IdleTimeout, RemovedCount),
+                    {queue:in(Conn, CleanedRest), FinalCount}
+            end;
+        {empty, _} ->
+            {queue:new(), RemovedCount}
+    end.
 
 start_maintenance(State) ->
     %% Start periodic maintenance timer
     MaintenanceInterval = State#pool_state.config#pool_config.health_check_interval,
     Ref = erlang:start_timer(MaintenanceInterval, self(), cleanup_connections),
     State#pool_state{resize_timer = Ref}.
+
+start_metrics_collection(State) ->
+    %% Stub: metrics collection not yet implemented
+    State.
+
+handle_health_check_timeout(State) ->
+    %% Stub: health check timeout handling not yet implemented
+    State.
 
 cancel_timers(State) ->
     State#pool_state{resize_timer = undefined}.
@@ -884,13 +900,10 @@ calculate_usage_rate(State) ->
     end.
 
 collect_and_store_metrics(State) ->
-    %% Collect and store current metrics
-    CurrentTime = erlang:system_time(millisecond),
-
-    %% Schedule next metrics collection
-    Ref = erlang:start_timer(?METRICS_SAMPLE_INTERVAL, self(), collect_metrics),
-
-    State#state{metrics_timer = Ref}.
+    %% Stub: metrics collection not yet fully implemented
+    _CurrentTime = erlang:system_time(millisecond),
+    %% TODO: Schedule next metrics collection when metrics_timer field is added to pool_state
+    State.
 
 shutdown_all_connections(State) ->
     %% Shutdown all connections in available pool
@@ -910,9 +923,11 @@ shutdown_all_connections(State) ->
         pending_connections = 0
     }.
 
-shutdown_connections_in_queue(queue:out({value, #connection{pid = Pid}} = Queue)) ->
-    exit(Pid, shutdown),
-    shutdown_connections_in_queue(queue:out(Queue));
-
-shutdown_connections_in_queue(queue:out(empty)) ->
-    ok.
+shutdown_connections_in_queue(Queue) ->
+    case queue:out(Queue) of
+        {{value, #connection{pid = Pid}}, RestQueue} ->
+            exit(Pid, shutdown),
+            shutdown_connections_in_queue(RestQueue);
+        {empty, _} ->
+            ok
+    end.

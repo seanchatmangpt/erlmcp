@@ -71,6 +71,26 @@
     connection_errors = 0 :: non_neg_integer()
 }).
 
+-type stream_info() :: #stream_info{
+    stream_ref :: gun:stream_ref(),
+    from :: {pid(), reference()} | undefined,
+    start_time :: integer(),
+    response_headers :: term() | undefined,
+    response_body :: iodata() | undefined,
+    bytes_received :: non_neg_integer()
+}.
+
+-type metrics() :: #metrics{
+    total_requests :: non_neg_integer(),
+    successful_responses :: non_neg_integer(),
+    failed_responses :: non_neg_integer(),
+    total_bytes_sent :: non_neg_integer(),
+    total_bytes_received :: non_neg_integer(),
+    avg_latency_us :: float(),
+    stream_resets :: non_neg_integer(),
+    connection_errors :: non_neg_integer()
+}.
+
 -type http2_opts() :: #{
     host := inet:hostname(),
     port => inet:port_number(),
@@ -86,7 +106,7 @@
 -type request_result() :: {ok, integer(), [{binary(), binary()} | {string(), binary()}], binary()} |
                           {error, term()}.
 
--export_type([http2_opts/0, request_result/0]).
+-export_type([http2_opts/0, request_result/0, stream_info/0, metrics/0]).
 
 %% Defaults
 -define(DEFAULT_PORT, 80).
@@ -317,7 +337,7 @@ handle_info({gun_response, GunPid, StreamRef, fin, Status, Headers},
 handle_info({gun_data, GunPid, StreamRef, fin, Data},
             #state{gun_pid = GunPid, streams = Streams} = State) ->
     case maps:get(StreamRef, Streams, undefined) of
-        #stream_info{from = From, response_body = PrevBody, start_time = StartTime} = StreamInfo ->
+        #stream_info{from = From, response_body = PrevBody, start_time = StartTime} = _StreamInfo ->
             %% Update response body
             Body = case PrevBody of
                 undefined -> Data;
@@ -354,15 +374,16 @@ handle_info({gun_data, GunPid, StreamRef, fin, Data},
 handle_info({gun_error, GunPid, StreamRef, Reason},
             #state{gun_pid = GunPid, streams = Streams} = State) ->
     case maps:get(StreamRef, Streams, undefined) of
-        #stream_info{from = From} = StreamInfo ->
+        #stream_info{from = From} = _StreamInfo ->
             %% Reply with error
             gen_server:reply(From, {error, {gun_error, Reason}}),
 
             %% Remove stream
             NewStreams = maps:remove(StreamRef, Streams),
-            UpdatedMetrics = State#state.metrics#metrics{
-                failed_responses = State#state.metrics.failed_responses + 1,
-                stream_resets = State#metrics.stream_resets + 1
+            CurrentMetrics = State#state.metrics,
+            UpdatedMetrics = CurrentMetrics#metrics{
+                failed_responses = CurrentMetrics#metrics.failed_responses + 1,
+                stream_resets = CurrentMetrics#metrics.stream_resets + 1
             },
             NewState = State#state{
                 streams = NewStreams,
@@ -422,7 +443,7 @@ build_tls_options(SSLOpts) ->
 
     %% OTP 27-28: TLS 1.3 optimized cipher suites
     Ciphers = case OTPVersion of
-        V when V >= 27 ->
+        Ver when Ver >= 27 ->
             ["TLS_AES_256_GCM_SHA384",
              "TLS_AES_128_GCM_SHA256",
              "TLS_CHACHA20_POLY1305_SHA256"];
