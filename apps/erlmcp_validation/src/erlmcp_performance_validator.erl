@@ -358,7 +358,7 @@ measure_throughput(Transport, TotalRequests) when is_integer(TotalRequests), Tot
         %% Measure sustained throughput
         StartTime = erlang:monotonic_time(microsecond),
 
-        %% Send requests as fast as possible
+        %% Send requests as fast as possible using supervised worker pool
         SendFun =
             fun() ->
                Request = #{<<"method">> => <<"ping">>, <<"params">> => #{}},
@@ -366,10 +366,13 @@ measure_throughput(Transport, TotalRequests) when is_integer(TotalRequests), Tot
                              lists:seq(1, TotalRequests div 10)) % Divide across workers
             end,
 
-        %% Spawn concurrent workers
-        Workers = [spawn_link(SendFun) || _ <- lists:seq(1, 10)],
+        %% Start a temporary supervisor for workers
+        {ok, WorkerSup} = supervisor:start_link(erlmcp_temp_worker_sup, []),
 
-        %% Wait for all workers
+        %% Start supervised workers via supervisor
+        Workers = [start_supervised_worker(WorkerSup, SendFun) || _ <- lists:seq(1, 10)],
+
+        %% Wait for all workers using monitors (not links)
         lists:foreach(fun(W) ->
                          Ref = monitor(process, W),
                          receive
@@ -378,6 +381,9 @@ measure_throughput(Transport, TotalRequests) when is_integer(TotalRequests), Tot
                          end
                       end,
                       Workers),
+
+        %% Stop supervisor and all children
+        supervisor:stop(WorkerSup),
 
         EndTime = erlang:monotonic_time(microsecond),
 
@@ -528,12 +534,16 @@ test_concurrent_connections(Transport, NumConnections) ->
         %% Start test server
         {ok, ServerPid} = start_test_server(Transport),
 
-        %% Start all connections concurrently
+        %% Start all connections concurrently using supervised workers
         StartTime = erlang:monotonic_time(millisecond),
+
+        %% Start temporary supervisor for connection workers
+        {ok, ConnSup} = supervisor:start_link(erlmcp_temp_worker_sup, []),
 
         Clients =
             lists:map(fun(_) ->
-                         spawn(fun() ->
+                         start_supervised_worker(ConnSup,
+                             fun() ->
                                   case erlmcp_test_client:start_test_client(Transport,
                                                                             #{owner => self(),
                                                                               test_mode => true})
@@ -543,7 +553,7 @@ test_concurrent_connections(Transport, NumConnections) ->
                                       {error, Reason} ->
                                           self() ! {result, {error, Reason}}
                                   end
-                               end)
+                             end)
                       end,
                       lists:seq(1, NumConnections)),
 
@@ -579,6 +589,9 @@ test_concurrent_connections(Transport, NumConnections) ->
         lists:foreach(fun({ok, Pid}) -> catch erlmcp_test_client:stop_test_server(Pid) end,
                       Successes),
         stop_test_server(Transport, ServerPid),
+
+        %% Stop connection supervisor
+        supervisor:stop(ConnSup),
 
         Result =
             #{success_count => SuccessCount,
@@ -1162,8 +1175,22 @@ get_threshold_value(CanonicalKeyName, LegacyKey, Thresholds, Default) ->
     end.
 
 %%%===================================================================
-%%% Internal Validation Checks for validate_all/1
+%%% Temporary Worker Supervisor for Safe Process Spawning
 %%%===================================================================
+
+%% @doc Start a supervised temporary worker
+-spec start_supervised_worker(pid(), function()) -> pid().
+start_supervised_worker(Supervisor, WorkerFun) when is_pid(Supervisor), is_function(WorkerFun, 0) ->
+    ChildSpec = #{
+        id => make_ref(),
+        start => {erlang, apply, [WorkerFun, []]},
+        restart => temporary,
+        shutdown => brutal_kill,
+        type => worker,
+        modules => []
+    },
+    {ok, Pid} = supervisor:start_child(Supervisor, ChildSpec),
+    Pid.
 
 %% @private Check latency meets threshold (lightweight check)
 check_latency_threshold(Transport) ->

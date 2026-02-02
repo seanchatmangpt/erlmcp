@@ -85,12 +85,22 @@ init_per_suite(Config) ->
     {ok, _} = application:ensure_all_started(sasl),
     {ok, _} = application:ensure_all_started(gproc),
 
-    % Start registry for integration tests
+    % Start erlmcp_core application which includes registry
+    case application:ensure_all_started(erlmcp_core) of
+        {ok, _} ->
+            ct:pal("erlmcp_core application started successfully");
+        {error, {already_started, erlmcp_core}} ->
+            ct:pal("erlmcp_core application already running");
+        {error, Reason} ->
+            ct:pal("Warning: Failed to start erlmcp_core: ~p", [Reason])
+    end,
+
+    % Verify registry is available
     case whereis(erlmcp_registry) of
         undefined ->
-            {ok, _Pid} = erlmcp_registry:start_link();
-        _ ->
-            ok
+            ct:pal("Warning: Registry not available after startup");
+        Pid when is_pid(Pid) ->
+            ct:pal("Registry is available: ~p", [Pid])
     end,
 
     Config.

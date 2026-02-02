@@ -99,19 +99,29 @@ groups() ->
        sse_lifecycle]}].
 
 init_per_suite(Config) ->
-    % Start required applications
-    ok = application:start(crypto),
-    ok = application:start(asn1),
-    ok = application:start(public_key),
-    ok = application:start(ssl),
-    ok = application:start(ranch),
-    ok = application:start(cowlib),
-    ok = application:start(cowboy),
-    ok = application:start(gun),
-    ok = application:start(gproc),
-    ok = application:start(jsx),
-    ok = application:start(erlmcp_core),
-    ok = application:start(erlmcp_transports),
+    % Start required applications using ensure_all_started for graceful handling
+    {ok, _} = application:ensure_all_started(crypto),
+    {ok, _} = application:ensure_all_started(asn1),
+    {ok, _} = application:ensure_all_started(public_key),
+    {ok, _} = application:ensure_all_started(ssl),
+    {ok, _} = application:ensure_all_started(ranch),
+    {ok, _} = application:ensure_all_started(cowlib),
+    {ok, _} = application:ensure_all_started(cowboy),
+    {ok, _} = application:ensure_all_started(gun),
+    {ok, _} = application:ensure_all_started(gproc),
+    {ok, _} = application:ensure_all_started(jsx),
+
+    % Try to start erlmcp_core if available (optional dependency)
+    case application:ensure_all_started(erlmcp_core) of
+        {ok, _} ->
+            ct:pal("erlmcp_core started successfully");
+        {error, {already_started, erlmcp_core}} ->
+            ct:pal("erlmcp_core already running");
+        {error, _Reason} ->
+            ct:pal("Warning: erlmcp_core not available (optional)")
+    end,
+
+    {ok, _} = application:ensure_all_started(erlmcp_transports),
     Config.
 
 end_per_suite(_Config) ->

@@ -39,10 +39,10 @@ release(PoolId, Connection) ->
     gen_server:cast(?MODULE, {release, PoolId, Connection}).
 
 get_pool_stats(PoolId) ->
-    gen_server:call(?MODULE, {get_stats, PoolId}).
+    gen_server:call(?MODULE, {get_stats, PoolId}, 5000).
 
 close_pool(PoolId) ->
-    gen_server:call(?MODULE, {close, PoolId}).
+    gen_server:call(?MODULE, {close, PoolId}, 5000).
 
 %%%===================================================================
 %%% gen_server callbacks

@@ -621,11 +621,21 @@ get_listener_port(Retries) when Retries > 0 ->
     case ranch:get_addr(mock_http_server) of
         {ok, {_, Port}} when is_integer(Port) andalso Port > 0 ->
             {ok, Port};
-        _ ->
+        {ok, {_, Port}} when Port =:= undefined ->
+            %% Port not yet assigned, retry
+            timer:sleep(100),
+            get_listener_port(Retries - 1);
+        {error, Reason} ->
+            ct:pal("Error getting listener address: ~p", [Reason]),
+            timer:sleep(100),
+            get_listener_port(Retries - 1);
+        Other ->
+            ct:pal("Unexpected result from ranch:get_addr: ~p", [Other]),
             timer:sleep(100),
             get_listener_port(Retries - 1)
     end;
 get_listener_port(0) ->
+    ct:pal("Failed to get listener port after all retries"),
     {error, port_not_assigned}.
 
 stop_mock_http_server() ->

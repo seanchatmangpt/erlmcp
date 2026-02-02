@@ -1,5 +1,12 @@
-{cases,"/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_observability/test",
-       erlmcp_observability_SUITE,
-       [test_metrics_integration,test_otel_integration,
-        test_health_integration,test_dashboard_server,
-        test_full_observability_stack]}.
+{cases,"/Users/sac/erlmcp/_build/test/extras/apps/erlmcp_transports/test",
+       erlmcp_transport_compliance_SUITE,
+       [stdio_capability_negotiation,stdio_16mb_limit,stdio_utf8_only,
+        stdio_json_rpc_framing,stdio_backpressure,stdio_lifecycle,
+        tcp_capability_negotiation,tcp_16mb_limit,tcp_utf8_only,
+        tcp_json_rpc_framing,tcp_backpressure,tcp_lifecycle,
+        http_capability_negotiation,http_16mb_limit,http_utf8_only,
+        http_json_rpc_framing,http_backpressure,http_lifecycle,
+        ws_capability_negotiation,ws_16mb_limit,ws_utf8_only,
+        ws_json_rpc_framing,ws_backpressure,ws_lifecycle,
+        sse_capability_negotiation,sse_16mb_limit,sse_utf8_only,
+        sse_json_rpc_framing,sse_backpressure,sse_lifecycle]}.
