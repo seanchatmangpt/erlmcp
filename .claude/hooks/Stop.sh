@@ -20,10 +20,29 @@ readonly BLUE='\033[0;34m'
 readonly BOLD='\033[1m'
 readonly NC='\033[0m' # No Color
 
+#==============================================================================
+# WORKING DIRECTORY VALIDATION
+#==============================================================================
+
+# Validate we're in erlmcp root directory
+if [ ! -f "rebar.config" ] || [ ! -d "apps/erlmcp_core" ]; then
+    echo ""
+    echo "${BOLD}${RED}❌ ERROR: Not in erlmcp root directory${NC}"
+    echo ""
+    echo "${RED}This hook must be run from the erlmcp project root.${NC}"
+    echo "${YELLOW}Expected files/dirs:${NC}"
+    echo "  - rebar.config"
+    echo "  - apps/erlmcp_core/"
+    echo ""
+    echo "${YELLOW}Current directory:${NC} $(pwd)"
+    echo ""
+    exit 2
+fi
+
 echo ""
-echo "$(BOLD)$(BLUE)════════════════════════════════════════════════════════════$(NC)"
-echo "$(BOLD)$(BLUE)🔍 PRE-COMPLETION QUALITY GATE$(NC)"
-echo "$(BOLD)$(BLUE)════════════════════════════════════════════════════════════$(NC)"
+echo "${BOLD}${BLUE}════════════════════════════════════════════════════════════${NC}"
+echo "${BOLD}${BLUE}🔍 PRE-COMPLETION QUALITY GATE${NC}"
+echo "${BOLD}${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
 # Log file for debugging
@@ -59,7 +78,8 @@ is_deps_fetched() {
 is_build_compiled() {
     # Check if compilation has succeeded
     # indicator: _build/default/lib/erlmcp_core/ebin should have .beam files
-    [ -d "_build/default/lib/erlmcp_core/ebin" ] && [ -f "_build/default/lib/erlmcp_core/ebin/"*.beam ] 2>/dev/null && return 0
+    # FIXED: Use ls with command substitution instead of glob with -f
+    [ -d "_build/default/lib/erlmcp_core/ebin" ] && [ -n "$(ls _build/default/lib/erlmcp_core/ebin/*.beam 2>/dev/null)" ] && return 0
     return 1
 }
 
@@ -67,26 +87,26 @@ is_build_compiled() {
 # MAIN LOGIC
 #==============================================================================
 
-echo "$(BLUE)Checking build system readiness...$(NC)"
+echo "${BLUE}Checking build system readiness...${NC}"
 echo ""
 
 # Detect setup phase
 if is_fresh_setup; then
-    echo "$(YELLOW)⚠️  Fresh setup detected:$(NC)"
+    echo "${YELLOW}⚠️  Fresh setup detected:${NC}"
     echo "  - No _build directory (compilation not yet attempted)"
     echo ""
 
     if ! is_deps_fetched; then
-        echo "$(YELLOW)  - Dependencies not fetched$(NC)"
+        echo "${YELLOW}  - Dependencies not fetched${NC}"
         echo ""
-        echo "$(YELLOW)Next steps to get build operational:$(NC)"
+        echo "${YELLOW}Next steps to get build operational:${NC}"
         echo "  1. source .erlmcp/env.sh"
         echo "  2. cp rebar.config.git rebar.config  # Use git fallback (hex.pm unreachable)"
         echo "  3. ./rebar3 get-deps"
         echo "  4. TERM=dumb ./rebar3 compile"
         echo ""
-        echo "$(GREEN)✓ Skipping quality gates for fresh setup$(NC)"
-        echo "$(GREEN)✓ Completion allowed (infrastructure setup)$(NC)"
+        echo "${GREEN}✓ Skipping quality gates for fresh setup${NC}"
+        echo "${GREEN}✓ Completion allowed (infrastructure setup)${NC}"
         echo ""
         exit 0
     fi
@@ -94,20 +114,20 @@ fi
 
 # Build system operational - check compilation status
 if ! is_build_compiled; then
-    echo "$(YELLOW)⚠️  Build not yet compiled:$(NC)"
+    echo "${YELLOW}⚠️  Build not yet compiled:${NC}"
     echo "  - _build/default/lib/erlmcp_core/ebin has no .beam files"
     echo ""
-    echo "$(YELLOW)Required before quality gates:$(NC)"
+    echo "${YELLOW}Required before quality gates:${NC}"
     echo "  TERM=dumb ./rebar3 compile"
     echo ""
-    echo "$(GREEN)✓ Skipping quality gates (build not compiled)$(NC)"
-    echo "$(GREEN)✓ Completion allowed (infrastructure work)$(NC)"
+    echo "${GREEN}✓ Skipping quality gates (build not compiled)${NC}"
+    echo "${GREEN}✓ Completion allowed (infrastructure work)${NC}"
     echo ""
     exit 0
 fi
 
 # Build system is operational - run quality gates
-echo "$(BLUE)Build system operational - running quality gates...$(NC)"
+echo "${BLUE}Build system operational - running quality gates...${NC}"
 echo ""
 
 # Check which mode we're in (quick vs full)
@@ -120,40 +140,42 @@ else
     DESCRIPTION="Quick check (~1min)"
 fi
 
-echo "$(BLUE)Mode:$(NC) $DESCRIPTION"
-echo "$(BLUE)Command:$(NC) $TARGET"
+echo "${BLUE}Mode:${NC} $DESCRIPTION"
+echo "${BLUE}Command:${NC} $TARGET"
 echo ""
-echo "$(BLUE)Running quality gates...$(NC)"
+echo "${BLUE}Running quality gates...${NC}"
 
 # Run the quality check
 if $TARGET > "$LOG_FILE" 2>&1; then
     echo ""
-    echo "$(BOLD)$(GREEN)✅ ALL QUALITY GATES PASSED$(NC)"
-    echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+    echo "${BOLD}${GREEN}✅ ALL QUALITY GATES PASSED${NC}"
+    echo "${BOLD}${GREEN}════════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo "$(GREEN)✓ Completion allowed$(NC)"
+    echo "${GREEN}✓ Completion allowed${NC}"
     echo ""
     rm -f "$LOG_FILE"
     exit 0
 else
     EXIT_CODE=$?
     echo ""
-    echo "$(BOLD)$(RED)❌ QUALITY GATES FAILED$(NC)"
-    echo "$(BOLD)$(RED)════════════════════════════════════════════════════════════$(NC)"
+    echo "${BOLD}${RED}❌ QUALITY GATES FAILED${NC}"
+    echo "${BOLD}${RED}════════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo "$(RED)✗ Completion BLOCKED$(NC)"
+    echo "${RED}✗ Completion BLOCKED${NC}"
     echo ""
-    echo "$(YELLOW)Failed gates summary:$(NC)"
+    echo "${YELLOW}Failed gates summary:${NC}"
 
     # Extract and display relevant error lines
-    grep -E "(FAIL|ERROR|❌|failed|error:|undefined)" "$LOG_FILE" 2>/dev/null | head -20 || true
+    if [ -f "$LOG_FILE" ]; then
+        grep -E "(FAIL|ERROR|❌|failed|error:|undefined)" "$LOG_FILE" 2>/dev/null | head -20 || true
+    fi
 
     echo ""
-    echo "$(YELLOW)Full log:$(NC) $LOG_FILE"
+    echo "${YELLOW}Full log:${NC} $LOG_FILE"
     echo ""
-    echo "$(RED)Action required: Fix the issues above before completion.$(NC)"
+    echo "${RED}Action required: Fix the issues above before completion.${NC}"
     echo ""
-    echo "$(YELLOW)Tip: Run '$TARGET' directly to see full output$(NC)"
+    echo "${YELLOW}Tip: Run '$TARGET' directly to see full output${NC}"
     echo ""
 
     # Clean up old logs (keep only recent)

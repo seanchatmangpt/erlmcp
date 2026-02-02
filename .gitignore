@@ -115,3 +115,15 @@ reports/bench/latest/
 #   - reports/bench/archive/: Timestamped benchmark results
 #   - reports/bench/baselines/: Reference performance baselines
 # These directories should NEVER be added to .gitignore
+
+# Diagnostic artifacts and temporary files
+APPLY_HOOK_FIXES.sh
+FILE_INDEX_DIAGNOSTICS.txt
+HOOK_FIXES_SUMMARY.md
+HOOK_FIXES_VISUAL_COMPARISON.md
+PACKAGE_DIAGNOSTICS_SUMMARY.md
+REBAR3_HEX_DIAGNOSTIC_REPORT.md
+STOP_HOOK_DIAGNOSTIC_REPORT.md
+.rebar-backup/
+log/diagnostics/
+tools/rebar3-diagnostics/
