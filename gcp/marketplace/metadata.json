@@ -1,0 +1,313 @@
+{
+  "$schema": "https://cloud.google.com/marketplace/schema/v2",
+  "name": "erlmcp",
+  "version": "0.1.0",
+  "partnerId": "seanchatmangpt",
+  "solutionId": "erlmcp-mcp-sdk",
+  "title": "erlmcp - Model Context Protocol SDK",
+  "tagline": "Enterprise-grade Erlang/OTP implementation of the Model Context Protocol",
+  "description": "erlmcp is a production-ready Erlang/OTP implementation of the Model Context Protocol (MCP) SDK, enabling seamless integration between AI models and enterprise systems. Built with the BEAM VM's legendary reliability, erlmcp provides fault-tolerant, distributed MCP servers and clients with support for multiple transport protocols.",
+  "icon": "icons/erlmcp-logo.png",
+  "categories": [
+    "AI & Machine Learning",
+    "Developer Tools",
+    "APIs & Services"
+  ],
+  "keywords": [
+    "MCP",
+    "Model Context Protocol",
+    "Erlang",
+    "OTP",
+    "AI",
+    "LLM",
+    "Claude",
+    "JSON-RPC",
+    "Distributed Systems",
+    "Fault Tolerant"
+  ],
+  "documentationUrl": "https://github.com/seanchatmangpt/erlmcp/blob/main/README.md",
+  "supportUrl": "https://github.com/seanchatmangpt/erlmcp/issues",
+  "eulaUrl": "https://github.com/seanchatmangpt/erlmcp/blob/main/LICENSE",
+  "privacyPolicyUrl": "https://github.com/seanchatmangpt/erlmcp/blob/main/PRIVACY.md",
+  "pricing": {
+    "type": "FREE",
+    "description": "Free and open source under Apache 2.0 license"
+  },
+  "support": {
+    "description": "Community support via GitHub Issues. Enterprise support available upon request.",
+    "url": "https://github.com/seanchatmangpt/erlmcp/issues"
+  },
+  "softwareGroups": [
+    {
+      "type": "SOFTWARE_GROUP_OS",
+      "software": [
+        {
+          "title": "Debian",
+          "version": "12"
+        }
+      ]
+    },
+    {
+      "type": "SOFTWARE_GROUP_RUNTIME",
+      "software": [
+        {
+          "title": "Erlang/OTP",
+          "version": "28.3.1",
+          "url": "https://www.erlang.org/"
+        }
+      ]
+    }
+  ],
+  "deploymentTypes": [
+    {
+      "type": "COMPUTE_ENGINE",
+      "machineType": {
+        "defaultMachineType": "e2-standard-4",
+        "minimumCpu": 2,
+        "minimumMemoryGb": 4
+      },
+      "diskType": {
+        "defaultDiskType": "pd-ssd",
+        "defaultDiskSizeGb": 50
+      },
+      "bootDiskImage": {
+        "project": "marketplace-images",
+        "name": "erlmcp"
+      },
+      "networkInterfaces": [
+        {
+          "name": "nic0",
+          "accessConfigs": [
+            {
+              "type": "ONE_TO_ONE_NAT"
+            }
+          ]
+        }
+      ],
+      "firewallRules": [
+        {
+          "name": "erlmcp-http",
+          "protocol": "TCP",
+          "port": "8080",
+          "sourceRanges": ["0.0.0.0/0"]
+        },
+        {
+          "name": "erlmcp-metrics",
+          "protocol": "TCP",
+          "port": "9568",
+          "sourceRanges": ["10.0.0.0/8"]
+        }
+      ],
+      "startupScript": {
+        "bashScriptContent": "#!/bin/bash\nsystemctl start erlmcp"
+      }
+    },
+    {
+      "type": "GKE",
+      "gkeOptions": {
+        "supportedClusterVersions": ["1.28+"],
+        "autopilotSupport": true
+      },
+      "containerImage": {
+        "repository": "gcr.io/marketplace-images/seanchatmangpt/erlmcp",
+        "tag": "0.1.0"
+      },
+      "helmChart": {
+        "chartName": "erlmcp",
+        "chartVersion": "0.1.0",
+        "repository": "https://seanchatmangpt.github.io/erlmcp/charts"
+      },
+      "resources": {
+        "requests": {
+          "cpu": "500m",
+          "memory": "512Mi"
+        },
+        "limits": {
+          "cpu": "2000m",
+          "memory": "2Gi"
+        }
+      }
+    },
+    {
+      "type": "CLOUD_RUN",
+      "containerImage": {
+        "repository": "gcr.io/marketplace-images/seanchatmangpt/erlmcp",
+        "tag": "0.1.0"
+      },
+      "resources": {
+        "cpu": "2",
+        "memory": "2Gi"
+      },
+      "scaling": {
+        "minInstances": 0,
+        "maxInstances": 100
+      }
+    }
+  ],
+  "inputs": [
+    {
+      "name": "environment",
+      "title": "Environment",
+      "description": "Deployment environment name",
+      "type": "STRING",
+      "default": "production",
+      "required": true,
+      "validation": {
+        "regex": "^(dev|staging|production)$"
+      }
+    },
+    {
+      "name": "http_port",
+      "title": "HTTP Port",
+      "description": "Port for HTTP/WebSocket connections",
+      "type": "INTEGER",
+      "default": 8080,
+      "required": true,
+      "validation": {
+        "min": 1024,
+        "max": 65535
+      }
+    },
+    {
+      "name": "tcp_port",
+      "title": "TCP Port",
+      "description": "Port for raw TCP connections",
+      "type": "INTEGER",
+      "default": 9090,
+      "required": false,
+      "validation": {
+        "min": 1024,
+        "max": 65535
+      }
+    },
+    {
+      "name": "enable_tls",
+      "title": "Enable TLS",
+      "description": "Enable TLS encryption for all transports",
+      "type": "BOOLEAN",
+      "default": true,
+      "required": false
+    },
+    {
+      "name": "log_level",
+      "title": "Log Level",
+      "description": "Application logging level",
+      "type": "STRING",
+      "default": "info",
+      "required": false,
+      "validation": {
+        "regex": "^(debug|info|notice|warning|error|critical|alert|emergency)$"
+      }
+    },
+    {
+      "name": "max_sessions",
+      "title": "Max Sessions",
+      "description": "Maximum concurrent MCP sessions",
+      "type": "INTEGER",
+      "default": 10000,
+      "required": false,
+      "validation": {
+        "min": 100,
+        "max": 1000000
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "service_url",
+      "title": "Service URL",
+      "description": "URL to access the erlmcp service"
+    },
+    {
+      "name": "health_endpoint",
+      "title": "Health Endpoint",
+      "description": "URL for health check endpoint"
+    },
+    {
+      "name": "metrics_endpoint",
+      "title": "Metrics Endpoint",
+      "description": "URL for Prometheus metrics"
+    },
+    {
+      "name": "admin_password",
+      "title": "Admin Password",
+      "description": "Generated admin password (stored in Secret Manager)",
+      "sensitive": true
+    }
+  ],
+  "testConfig": {
+    "preDeployValidation": {
+      "checks": [
+        {
+          "name": "api_version_check",
+          "description": "Verify API version compatibility"
+        }
+      ]
+    },
+    "postDeployValidation": {
+      "checks": [
+        {
+          "name": "health_check",
+          "description": "Verify service health endpoint responds",
+          "endpoint": "/health",
+          "expectedStatus": 200
+        },
+        {
+          "name": "mcp_initialize",
+          "description": "Verify MCP initialize handshake",
+          "endpoint": "/mcp",
+          "method": "POST",
+          "body": {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+              "protocolVersion": "2024-11-05",
+              "capabilities": {},
+              "clientInfo": {
+                "name": "marketplace-test",
+                "version": "1.0.0"
+              }
+            }
+          },
+          "expectedStatus": 200
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "name": "erlmcp-core",
+      "title": "erlmcp Core",
+      "description": "Core MCP protocol implementation with JSON-RPC 2.0"
+    },
+    {
+      "name": "erlmcp-transports",
+      "title": "Transport Layer",
+      "description": "Multi-transport support: STDIO, TCP, HTTP, WebSocket, SSE"
+    },
+    {
+      "name": "erlmcp-validation",
+      "title": "Validation Layer",
+      "description": "MCP specification validation with JSON schema"
+    },
+    {
+      "name": "erlmcp-observability",
+      "title": "Observability",
+      "description": "Prometheus metrics, OpenTelemetry tracing, structured logging"
+    }
+  ],
+  "architecture": {
+    "description": "erlmcp is built on Erlang/OTP's actor model with supervision trees for fault tolerance. The architecture follows these principles:\n\n1. **Process-per-connection**: Each MCP session runs in an isolated Erlang process\n2. **Supervision trees**: Automatic restart on failure with configurable strategies\n3. **Registry routing**: gproc-based service discovery for distributed deployments\n4. **Transport polymorphism**: Pluggable transport backends with unified API\n5. **Backpressure**: Built-in flow control to prevent overload",
+    "diagram": "diagrams/architecture.png"
+  },
+  "compliance": {
+    "certifications": [],
+    "dataResidency": {
+      "supported": true,
+      "regions": ["us", "eu", "asia"]
+    },
+    "encryptionAtRest": true,
+    "encryptionInTransit": true
+  }
+}
