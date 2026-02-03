@@ -1466,7 +1466,7 @@ evaluate_rule(Rule, UserId, Context, State) ->
                     case lists:member(maps:get(action, Context), Rule#{actions}) of
                         true ->
                             % Evaluate conditions
-                            evaluate_conditions(Rule#{conditions}, Context, State);
+                            evaluate_conditions(maps:get(conditions, Rule), Context, State);
                         false ->
                             false
                     end;
@@ -1629,7 +1629,7 @@ should_auto_approve(Request, State) ->
         read ->
             true; % Read access often auto-approved
         write ->
-            case Request#{user_id} of
+            case maps:get(user_id, Request) of
                 <<"admin">> -> true;
                 _ -> false
             end;
