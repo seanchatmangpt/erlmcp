@@ -1,0 +1,72 @@
+# Dev Container Docker Compose Override
+# Extends docker-compose.yml for VS Code Dev Containers
+#
+# DOCKER-ONLY CONSTITUTION: All development happens in this container.
+# No host execution of rebar3, erl, or other Erlang tools.
+
+version: '3.8'
+
+services:
+  erlmcp-devcontainer:
+    build:
+      context: ..
+      dockerfile: Dockerfile.dev
+    image: erlmcp:dev
+    container_name: erlmcp-devcontainer
+    hostname: erlmcp-devcontainer
+
+    # Keep container running for VS Code
+    stdin_open: true
+    tty: true
+    command: sleep infinity
+
+    networks:
+      - erlmcp-network
+
+    environment:
+      ERLMCP_ENV: development
+      ERLMCP_PROFILE: dev
+      ERLANG_COOKIE: erlmcp_dev_cookie
+      ERLMCP_NODE_NAME: erlmcp-dev@erlmcp-devcontainer
+      TERM: xterm-256color
+      LANG: C.UTF-8
+      LC_ALL: C.UTF-8
+      # Disable color output for cleaner logs
+      REBAR_COLOR: none
+      ERL_COMPILER_OPTIONS: deterministic
+      REBAR_NO_USER_CONFIG: "true"
+
+    volumes:
+      # Source code (bind mount for live editing)
+      - ..:/workspace:cached
+      # Build cache (named volume for persistence)
+      - erlmcp-build-cache:/workspace/_build
+      # Hex package cache
+      - hex-cache:/home/dev/.cache/rebar3
+      # Git config passthrough
+      - ~/.gitconfig:/home/dev/.gitconfig:ro
+
+    working_dir: /workspace
+
+    # Resource limits for development
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: '8G'
+        reservations:
+          cpus: '1.0'
+          memory: '2G'
+
+    # No profiles - always available for dev container
+    # profiles: []
+
+networks:
+  erlmcp-network:
+    external: true
+
+volumes:
+  erlmcp-build-cache:
+    external: true
+  hex-cache:
+    external: true

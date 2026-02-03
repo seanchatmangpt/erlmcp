@@ -1,0 +1,14 @@
+# Development Environment Configuration
+# Copy to dev.tfvars and fill in values
+
+project_id      = "erlmcp-dev-project"
+region          = "us-central1"
+environment     = "dev"
+billing_account = "XXXXXX-XXXXXX-XXXXXX"
+app_name        = "erlmcp"
+
+# Service Account
+service_account_name = "erlmcp-deploy-dev"
+
+# KMS Key Rotation (90 days)
+kms_key_rotation_period = "7776000s"

@@ -1,0 +1,62 @@
+{
+  "name": "erlmcp v3 Development",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.devcontainer.yml"],
+  "service": "erlmcp-devcontainer",
+  "workspaceFolder": "/workspace",
+
+  "shutdownAction": "stopCompose",
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true,
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4,
+        "editor.insertSpaces": true,
+        "erlang.codeLensEnabled": true,
+        "erlang.inlayHintsEnabled": true
+      },
+      "extensions": [
+        "erlang-ls.erlang-ls",
+        "pgourlain.erlang",
+        "hashicorp.terraform",
+        "ms-azuretools.vscode-docker",
+        "redhat.vscode-yaml",
+        "github.copilot",
+        "github.vscode-github-actions",
+        "editorconfig.editorconfig"
+      ]
+    }
+  },
+
+  "forwardPorts": [8080, 9090, 9100],
+
+  "postCreateCommand": "rebar3 get-deps && rebar3 compile",
+  "postStartCommand": "echo 'erlmcp dev container ready. Run: docker compose run --rm erlmcp-build make compile'",
+
+  "remoteUser": "dev",
+
+  "containerEnv": {
+    "ERLMCP_ENV": "development",
+    "ERLMCP_PROFILE": "dev",
+    "TERM": "xterm-256color",
+    "LANG": "C.UTF-8"
+  },
+
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    "source=erlmcp-build-cache,target=/workspace/_build,type=volume",
+    "source=hex-cache,target=/home/dev/.cache/rebar3,type=volume"
+  ],
+
+  "runArgs": [
+    "--network=erlmcp-network"
+  ]
+}

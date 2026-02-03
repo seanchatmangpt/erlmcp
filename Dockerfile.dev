@@ -1,17 +1,32 @@
-# === DOCKERFILE.dev: Development Image ===
+# === DOCKERFILE.dev: Development Image for erlmcp v3 ===
 # Full-featured Erlang development environment with debugging tools
 # Includes: rebar3, dialyzer, observer, recon, proper testing
+#
+# Build: docker build -f Dockerfile.dev -t erlmcp:dev .
+# Run:   docker run -it -v $(pwd):/workspace erlmcp:dev
+#
+# DOCKER-ONLY CONSTITUTION: This image is the approved development environment.
+# All compilation and testing MUST use this container.
 
-FROM erlang:26-alpine
+FROM erlang:28.3.1-alpine
 
-LABEL maintainer="TAI Autonomics <engineering@taiea.dev>"
-LABEL description="TAIEA Erlang/OTP development environment with full toolchain"
+LABEL maintainer="erlmcp contributors"
+LABEL description="erlmcp v3 Erlang/OTP development environment with full toolchain"
+LABEL org.opencontainers.image.title="erlmcp-dev"
+LABEL org.opencontainers.image.version="3.0.0"
+LABEL org.opencontainers.image.description="Development container for erlmcp Erlang MCP SDK"
 
 # Development environment setup
-ENV ERLANG_COOKIE=taiea_dev_cookie
-ENV ERL_COMPILER_OPTIONS=deterministic
-ENV REBAR_NO_USER_CONFIG=true
-ENV TAIEA_ENV=development
+ENV ERLANG_COOKIE=erlmcp_dev_cookie \
+    ERL_COMPILER_OPTIONS=deterministic \
+    REBAR_NO_USER_CONFIG=true \
+    ERLMCP_ENV=development \
+    ERLMCP_PROFILE=dev \
+    TERM=dumb \
+    REBAR_COLOR=none \
+    HOME=/home/dev \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
 
 # Install development dependencies
 RUN apk add --no-cache \
@@ -20,6 +35,9 @@ RUN apk add --no-cache \
     make \
     g++ \
     gcc \
+    musl-dev \
+    pkgconfig \
+    openssl-dev \
     openssh-client \
     curl \
     wget \
@@ -29,36 +47,52 @@ RUN apk add --no-cache \
     procps \
     lsof \
     netcat-openbsd \
-    postgresql-client \
-    && update-ca-certificates
+    strace \
+    bind-tools \
+    ncurses-dev \
+    zlib-dev \
+    bash \
+    jq \
+    tzdata \
+    tini \
+    && update-ca-certificates \
+    && rm -rf /var/cache/apk/*
 
-# Create application directory
+# Verify OTP version meets requirement (OTP 28+)
+RUN erl -noshell -eval 'io:format("OTP Version: ~s~n", [erlang:system_info(otp_release)]), halt().'
+
+# Create development user (uid 1000 for host compatibility)
+RUN addgroup -S -g 1000 dev && \
+    adduser -S -u 1000 -G dev -h /home/dev -s /bin/bash dev
+
+# Create application directories
+RUN mkdir -p /workspace /home/dev/.cache/rebar3 && \
+    chown -R dev:dev /workspace /home/dev
+
 WORKDIR /workspace
 
 # Volume mount point for source code
 VOLUME ["/workspace"]
 
-# Expose development ports
-# 8080: TAIEA HTTP endpoint
-# 4369: Erlang port mapper daemon
-# 9100: Custom monitoring/metrics
-# 9200: Debug console
-EXPOSE 8080 4369 9100 9200
-
-# Create development user
-RUN addgroup -S dev && \
-    adduser -S -G dev -h /workspace dev && \
-    chown -R dev:dev /workspace
-
+# Switch to dev user for rebar3 setup
 USER dev
 
-# Install rebar3 plugins for development
-RUN rebar3 local install-deps && \
-    rebar3 plugin install rebar3_format rebar3_lint rebar3_hex || true
+# Install rebar3 and plugins
+RUN mkdir -p /home/dev/.config/rebar3 && \
+    echo '{plugins, [rebar3_hex, rebar3_lint]}.' > /home/dev/.config/rebar3/rebar.config
 
-# Development shell entry point
-CMD ["/bin/sh"]
+# Expose development ports:
+#   8080:  HTTP API (JSON-RPC over HTTP)
+#   9100:  Metrics (Prometheus) + EPMD-less distribution port
+#   9090:  Health checks
+#   9200:  Debug console / remote shell
+# Note: EPMD port 4369 is NOT exposed - using EPMD-less clustering
+EXPOSE 8080 9100 9090 9200
 
-# Healthcare check for dev environment
+# Development shell entry point with tini for signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["/bin/bash"]
+
+# Health check for dev environment
 HEALTHCHECK --interval=60s --timeout=15s --start-period=30s --retries=3 \
-    CMD echo "Development container running" || exit 1
+    CMD pgrep -f "beam.smp" > /dev/null 2>&1 || echo "Development container running"

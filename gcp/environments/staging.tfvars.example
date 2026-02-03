@@ -1,0 +1,14 @@
+# Staging Environment Configuration
+# Copy to staging.tfvars and fill in values
+
+project_id      = "erlmcp-staging-project"
+region          = "us-central1"
+environment     = "staging"
+billing_account = "XXXXXX-XXXXXX-XXXXXX"
+app_name        = "erlmcp"
+
+# Service Account
+service_account_name = "erlmcp-deploy-staging"
+
+# KMS Key Rotation (90 days)
+kms_key_rotation_period = "7776000s"
