@@ -3,6 +3,11 @@
 # Usage: ./tools/benchmark-runner.sh
 # Exit codes: 0 = success, 1 = regression detected
 
+# ==============================================================================
+# DOCKER-ONLY CONSTITUTION: Host execution FORBIDDEN
+# ==============================================================================
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../scripts/dev/docker_guard.sh"
+
 set -euo pipefail
 
 # Color codes

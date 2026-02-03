@@ -2,6 +2,11 @@
 # scripts/test/full.sh - Full test tier (no time limit)
 # Comprehensive test suite: all EUnit + all CT + property-based + chaos
 
+# ==============================================================================
+# DOCKER-ONLY CONSTITUTION: Host execution FORBIDDEN
+# ==============================================================================
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../dev/docker_guard.sh"
+
 set -euo pipefail
 
 # Colors

@@ -6,6 +6,11 @@
 # Environment:
 #   ERLMCP_PROFILE  Profile to use (dev|test|staging|prod), defaults to 'test'
 
+# ==============================================================================
+# DOCKER-ONLY CONSTITUTION: Host execution FORBIDDEN
+# ==============================================================================
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../scripts/dev/docker_guard.sh"
+
 set -euo pipefail
 
 # ==============================================================================

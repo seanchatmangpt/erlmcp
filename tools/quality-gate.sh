@@ -14,6 +14,11 @@
 # - Security scans (TODO: add security scanning)
 # ============================================================================
 
+# ==============================================================================
+# DOCKER-ONLY CONSTITUTION: Host execution FORBIDDEN
+# ==============================================================================
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../scripts/dev/docker_guard.sh"
+
 set -e
 
 # Colors for output

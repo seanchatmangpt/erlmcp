@@ -11,6 +11,11 @@
 #   0 - OTP 28.3.1 detected, ready to proceed
 #   1 - OTP version incorrect or Erlang not found
 
+# ==============================================================================
+# DOCKER-ONLY CONSTITUTION: Host execution FORBIDDEN
+# ==============================================================================
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dev/docker_guard.sh"
+
 set -euo pipefail
 
 # Colors for output

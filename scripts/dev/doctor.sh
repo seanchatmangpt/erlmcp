@@ -2,6 +2,11 @@
 # Environment health check for erlmcp development
 # Validates: Erlang/OTP, rebar3, dependencies, project structure
 
+# ==============================================================================
+# DOCKER-ONLY CONSTITUTION: Host execution FORBIDDEN
+# ==============================================================================
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/docker_guard.sh"
+
 set -euo pipefail
 
 # Colors
