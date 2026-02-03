@@ -1678,3 +1678,242 @@ test-cli-regression: test-cli-performance ## Check for performance regressions i
 		echo "$(YELLOW)⚠ No baseline found, creating baseline...$(NC)"; \
 		./scripts/save_cli_performance_baseline.sh; \
 	fi
+
+# ============================================================================
+# DOCKER RECEIPT BUNDLE SYSTEM
+# ============================================================================
+# CONSTITUTION: DOCKER-ONLY CONSTITUTION
+#
+# Invariant: run => (receipt ^ mermaid)
+#
+# Every gate run generates:
+#   1. Command execution logs
+#   2. Mermaid topology diagram (proof of Docker execution)
+#   3. Receipt hash (SHA256)
+#   4. Image digest (if available)
+#   5. Cluster topology (if distributed)
+#
+# Usage:
+#   make receipt-compile     - Compile with receipt generation
+#   make receipt-test        - Test with receipt generation
+#   make receipt-validate    - Full validation with receipts
+#   make receipt-cluster     - Cluster proof diagram
+#   make receipt-list        - List all receipts
+#   make receipt-verify      - Verify receipt integrity
+# ============================================================================
+
+.PHONY: receipt-compile receipt-test receipt-eunit receipt-ct receipt-dialyzer \
+        receipt-xref receipt-validate receipt-cluster receipt-infrastructure \
+        receipt-list receipt-verify receipt-clean receipt-bundle
+
+# Receipt generation directory
+RECEIPT_DIR ?= /workspace/receipts
+
+# ============================================================================
+# RECEIPT-GENERATING GATE TARGETS (Docker-only)
+# ============================================================================
+
+receipt-compile-inner: ## Compile with receipt bundle generation
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)RECEIPT GATE: compile$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@./scripts/receipts/run_gate.sh compile TERM=dumb rebar3 compile
+
+receipt-eunit-inner: ## EUnit tests with receipt bundle generation
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)RECEIPT GATE: eunit$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@./scripts/receipts/run_gate.sh eunit rebar3 eunit
+
+receipt-ct-inner: ## Common Test with receipt bundle generation
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)RECEIPT GATE: ct$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@./scripts/receipts/run_gate.sh ct rebar3 ct --dir=test/integration --cover
+
+receipt-dialyzer-inner: ## Dialyzer with receipt bundle generation
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)RECEIPT GATE: dialyzer$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@./scripts/receipts/run_gate.sh dialyzer rebar3 dialyzer
+
+receipt-xref-inner: ## Xref with receipt bundle generation
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)RECEIPT GATE: xref$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@./scripts/receipts/run_gate.sh xref rebar3 xref
+
+receipt-test-inner: receipt-eunit-inner receipt-ct-inner ## All tests with receipts
+	@echo "$(GREEN)✓ All tests passed with receipts$(NC)"
+
+receipt-validate-inner: receipt-compile-inner receipt-test-inner receipt-dialyzer-inner receipt-xref-inner ## Full validation with receipts
+	@echo ""
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(GREEN)✅ ALL GATES PASSED WITH RECEIPTS$(NC)"
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "Receipt bundles in: $(RECEIPT_DIR)/"
+	@ls -la $(RECEIPT_DIR)/ 2>/dev/null || echo "No receipts found"
+	@echo ""
+
+# ============================================================================
+# TOPOLOGY PROOF TARGETS (Docker-only)
+# ============================================================================
+
+receipt-topology-inner: ## Generate runtime topology Mermaid diagram
+	@echo "$(BOLD)$(CYAN)Generating runtime topology proof...$(NC)"
+	@./scripts/receipts/emit_mermaid.sh
+
+receipt-cluster-inner: ## Generate Erlang cluster topology proof
+	@echo "$(BOLD)$(CYAN)Generating Erlang cluster topology proof...$(NC)"
+	@EXPECTED_NODES=$${EXPECTED_NODES:-1} ./scripts/receipts/emit_cluster_mermaid.sh
+
+receipt-infrastructure-inner: ## Generate infrastructure topology (Swarm/K8s/Compose)
+	@echo "$(BOLD)$(CYAN)Generating infrastructure topology proof...$(NC)"
+	@./scripts/receipts/emit_swarm_k8s_mermaid.sh
+
+receipt-bundle-inner: receipt-topology-inner receipt-cluster-inner receipt-infrastructure-inner ## Generate all topology proofs
+	@echo ""
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(GREEN)✅ ALL TOPOLOGY PROOFS GENERATED$(NC)"
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+
+# ============================================================================
+# RECEIPT MANAGEMENT TARGETS (Can run on host)
+# ============================================================================
+
+receipt-list: ## List all receipt bundles
+	@echo "$(BOLD)$(CYAN)Receipt Bundles:$(NC)"
+	@echo ""
+	@if [ -d "receipts" ]; then \
+		for dir in receipts/*/; do \
+			if [ -d "$$dir" ]; then \
+				RUN_ID=$$(basename "$$dir"); \
+				GATE=$$(grep "^GATE=" "$$dir/meta.txt" 2>/dev/null | cut -d= -f2 || echo "unknown"); \
+				EXIT=$$(grep "^EXIT_CODE=" "$$dir/meta.txt" 2>/dev/null | cut -d= -f2 || echo "?"); \
+				HASH=$$(cat "$$dir/receipt.sha256" 2>/dev/null | head -c 16 || echo "none"); \
+				if [ "$$EXIT" = "0" ]; then \
+					echo "  $(GREEN)✓$(NC) $$RUN_ID | $$GATE | exit=$$EXIT | sha256=$$HASH..."; \
+				else \
+					echo "  $(RED)✗$(NC) $$RUN_ID | $$GATE | exit=$$EXIT | sha256=$$HASH..."; \
+				fi; \
+			fi; \
+		done; \
+	else \
+		echo "  No receipts found (receipts/ directory does not exist)"; \
+	fi
+	@echo ""
+
+receipt-verify: ## Verify receipt integrity (recompute hashes)
+	@echo "$(BOLD)$(CYAN)Verifying receipt integrity...$(NC)"
+	@echo ""
+	@ERRORS=0; \
+	if [ -d "receipts" ]; then \
+		for dir in receipts/*/; do \
+			if [ -d "$$dir" ] && [ -f "$$dir/receipt.sha256" ]; then \
+				RUN_ID=$$(basename "$$dir"); \
+				STORED_HASH=$$(cat "$$dir/receipt.sha256"); \
+				COMPUTED_HASH=$$(cat "$$dir/meta.txt" "$$dir"/*.log "$$dir/topology.mmd" "$$dir/topology_meta.json" "$$dir/image_digest.txt" 2>/dev/null | sha256sum | awk '{print $$1}'); \
+				if [ "$$STORED_HASH" = "$$COMPUTED_HASH" ]; then \
+					echo "  $(GREEN)✓$(NC) $$RUN_ID: integrity verified"; \
+				else \
+					echo "  $(RED)✗$(NC) $$RUN_ID: HASH MISMATCH"; \
+					echo "      Stored:   $$STORED_HASH"; \
+					echo "      Computed: $$COMPUTED_HASH"; \
+					ERRORS=$$((ERRORS + 1)); \
+				fi; \
+			fi; \
+		done; \
+		if [ $$ERRORS -gt 0 ]; then \
+			echo ""; \
+			echo "$(RED)❌ $$ERRORS receipts failed integrity check$(NC)"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "  No receipts found"; \
+	fi
+	@echo ""
+	@echo "$(GREEN)✓ All receipts verified$(NC)"
+
+receipt-clean: ## Clean all receipt bundles
+	@echo "$(BOLD)$(YELLOW)Cleaning receipt bundles...$(NC)"
+	@rm -rf receipts/
+	@echo "$(GREEN)✓ Receipt bundles cleaned$(NC)"
+
+receipt-show: ## Show latest receipt details
+	@echo "$(BOLD)$(CYAN)Latest Receipt:$(NC)"
+	@echo ""
+	@LATEST=$$(ls -td receipts/*/ 2>/dev/null | head -1); \
+	if [ -n "$$LATEST" ] && [ -d "$$LATEST" ]; then \
+		echo "Directory: $$LATEST"; \
+		echo ""; \
+		echo "$(BOLD)meta.txt:$(NC)"; \
+		cat "$$LATEST/meta.txt" 2>/dev/null || echo "  (not found)"; \
+		echo ""; \
+		echo "$(BOLD)receipt.sha256:$(NC)"; \
+		cat "$$LATEST/receipt.sha256" 2>/dev/null || echo "  (not found)"; \
+		echo ""; \
+		echo "$(BOLD)topology.mmd (first 30 lines):$(NC)"; \
+		head -30 "$$LATEST/topology.mmd" 2>/dev/null || echo "  (not found)"; \
+		echo ""; \
+	else \
+		echo "  No receipts found"; \
+	fi
+
+# ============================================================================
+# HOST-TO-DOCKER DISPATCH FOR RECEIPT TARGETS
+# ============================================================================
+
+receipt-compile receipt-eunit receipt-ct receipt-dialyzer receipt-xref receipt-test receipt-validate \
+receipt-topology receipt-cluster receipt-infrastructure receipt-bundle:
+ifeq ($(DOCKER_ENV),host)
+	$(DOCKER_REFUSE)
+else
+	@$(MAKE) $(@)-inner
+endif
+
+# ============================================================================
+# RECEIPT HELP
+# ============================================================================
+
+receipt-help: ## Show receipt system help
+	@echo "$(BOLD)$(BLUE)Docker Receipt Bundle System$(NC)"
+	@echo ""
+	@echo "$(BOLD)Invariant:$(NC) run => (receipt ^ mermaid)"
+	@echo ""
+	@echo "$(BOLD)Gate Targets (Docker-only):$(NC)"
+	@echo "  make receipt-compile      - Compile with receipt generation"
+	@echo "  make receipt-eunit        - EUnit tests with receipt"
+	@echo "  make receipt-ct           - Common Test with receipt"
+	@echo "  make receipt-dialyzer     - Dialyzer with receipt"
+	@echo "  make receipt-xref         - Xref with receipt"
+	@echo "  make receipt-test         - All tests with receipts"
+	@echo "  make receipt-validate     - Full validation with receipts"
+	@echo ""
+	@echo "$(BOLD)Topology Proof Targets (Docker-only):$(NC)"
+	@echo "  make receipt-topology     - Generate runtime topology diagram"
+	@echo "  make receipt-cluster      - Generate Erlang cluster topology"
+	@echo "  make receipt-infrastructure - Generate Swarm/K8s/Compose topology"
+	@echo "  make receipt-bundle       - Generate all topology proofs"
+	@echo ""
+	@echo "$(BOLD)Management Targets (Host OK):$(NC)"
+	@echo "  make receipt-list         - List all receipt bundles"
+	@echo "  make receipt-verify       - Verify receipt integrity"
+	@echo "  make receipt-show         - Show latest receipt details"
+	@echo "  make receipt-clean        - Clean all receipt bundles"
+	@echo ""
+	@echo "$(BOLD)Receipt Bundle Contents:$(NC)"
+	@echo "  meta.txt              - Gate metadata (RUN_ID, GATE, EXIT_CODE, etc.)"
+	@echo "  <gate>.log            - Command stdout/stderr"
+	@echo "  topology.mmd          - Mermaid diagram (runtime proof)"
+	@echo "  topology_meta.json    - JSON metadata"
+	@echo "  receipt.sha256        - SHA256 hash of bundle"
+	@echo "  image_digest.txt      - Docker image digest"
+	@echo "  cluster_topology.mmd  - Erlang cluster diagram (if cluster gate)"
+	@echo "  infrastructure_topology.mmd - Swarm/K8s/Compose diagram"
+	@echo ""
+	@echo "$(BOLD)Docker Usage:$(NC)"
+	@echo "  docker compose run --rm erlmcp-check make receipt-validate"
+	@echo "  docker compose run --rm erlmcp-check make receipt-bundle"
+	@echo ""
