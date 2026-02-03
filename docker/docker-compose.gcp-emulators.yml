@@ -1,0 +1,281 @@
+# ==============================================================================
+# GCP Emulators for Local Development
+# ==============================================================================
+# Provides local emulation of GCP services for development and testing.
+# Allows erlmcp to be developed without a real GCP project.
+#
+# Usage:
+#   docker compose -f docker/docker-compose.gcp-emulators.yml up -d
+#
+# Services emulated:
+# - Cloud Pub/Sub (for async messaging)
+# - Cloud Firestore (for NoSQL storage)
+# - Cloud Storage (for object storage)
+# - Cloud Spanner (for distributed SQL)
+# - Datastore (for NoSQL)
+#
+# Note: Cloud Run and Cloud SQL don't have official emulators.
+# Use the main docker-compose.yml for PostgreSQL simulation.
+# ==============================================================================
+
+services:
+  # ==========================================================================
+  # Google Cloud Pub/Sub Emulator
+  # ==========================================================================
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=erlmcp-local
+    ports:
+      - "8085:8085"
+    environment:
+      - PUBSUB_PROJECT_ID=erlmcp-local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gcp-emulator
+
+  # Pub/Sub topic/subscription setup
+  pubsub-setup:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    depends_on:
+      pubsub-emulator:
+        condition: service_healthy
+    environment:
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+      - PUBSUB_PROJECT_ID=erlmcp-local
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        # Wait for emulator
+        sleep 5
+
+        # Create topics
+        curl -X PUT "http://pubsub-emulator:8085/v1/projects/erlmcp-local/topics/erlmcp-events"
+        curl -X PUT "http://pubsub-emulator:8085/v1/projects/erlmcp-local/topics/erlmcp-notifications"
+        curl -X PUT "http://pubsub-emulator:8085/v1/projects/erlmcp-local/topics/erlmcp-dead-letter"
+
+        # Create subscriptions
+        curl -X PUT "http://pubsub-emulator:8085/v1/projects/erlmcp-local/subscriptions/erlmcp-events-sub" \
+          -H "Content-Type: application/json" \
+          -d '{"topic": "projects/erlmcp-local/topics/erlmcp-events"}'
+
+        curl -X PUT "http://pubsub-emulator:8085/v1/projects/erlmcp-local/subscriptions/erlmcp-notifications-sub" \
+          -H "Content-Type: application/json" \
+          -d '{"topic": "projects/erlmcp-local/topics/erlmcp-notifications"}'
+
+        echo "Pub/Sub setup complete"
+    networks:
+      - gcp-emulator
+
+  # ==========================================================================
+  # Google Cloud Storage Emulator (fake-gcs-server)
+  # ==========================================================================
+  gcs-emulator:
+    image: fsouza/fake-gcs-server:latest
+    command: -scheme http -port 4443 -external-url http://localhost:4443
+    ports:
+      - "4443:4443"
+    volumes:
+      - gcs-data:/data
+    environment:
+      - STORAGE_EMULATOR_HOST=http://localhost:4443
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4443/storage/v1/b"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gcp-emulator
+
+  # GCS bucket setup
+  gcs-setup:
+    image: curlimages/curl:latest
+    depends_on:
+      gcs-emulator:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        sleep 3
+        # Create buckets
+        curl -X POST "http://gcs-emulator:4443/storage/v1/b?project=erlmcp-local" \
+          -H "Content-Type: application/json" \
+          -d '{"name": "erlmcp-artifacts"}'
+
+        curl -X POST "http://gcs-emulator:4443/storage/v1/b?project=erlmcp-local" \
+          -H "Content-Type: application/json" \
+          -d '{"name": "erlmcp-backups"}'
+
+        curl -X POST "http://gcs-emulator:4443/storage/v1/b?project=erlmcp-local" \
+          -H "Content-Type: application/json" \
+          -d '{"name": "erlmcp-terraform-state"}'
+
+        echo "GCS setup complete"
+    networks:
+      - gcp-emulator
+
+  # ==========================================================================
+  # Google Cloud Firestore Emulator
+  # ==========================================================================
+  firestore-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud emulators firestore start --host-port=0.0.0.0:8086 --project=erlmcp-local
+    ports:
+      - "8086:8086"
+    environment:
+      - FIRESTORE_EMULATOR_HOST=localhost:8086
+      - FIRESTORE_PROJECT_ID=erlmcp-local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gcp-emulator
+
+  # ==========================================================================
+  # Google Cloud Datastore Emulator
+  # ==========================================================================
+  datastore-emulator:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud beta emulators datastore start --host-port=0.0.0.0:8087 --project=erlmcp-local --no-store-on-disk
+    ports:
+      - "8087:8087"
+    environment:
+      - DATASTORE_EMULATOR_HOST=localhost:8087
+      - DATASTORE_PROJECT_ID=erlmcp-local
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8087"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gcp-emulator
+
+  # ==========================================================================
+  # Google Cloud Spanner Emulator
+  # ==========================================================================
+  spanner-emulator:
+    image: gcr.io/cloud-spanner-emulator/emulator:latest
+    ports:
+      - "9010:9010"  # gRPC
+      - "9020:9020"  # REST
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9020/v1/projects/erlmcp-local/instances"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gcp-emulator
+
+  # ==========================================================================
+  # Google Cloud Secret Manager Mock
+  # ==========================================================================
+  # Note: No official emulator. Using berglas or custom mock.
+  secretmanager-mock:
+    build:
+      context: .
+      dockerfile: Dockerfile.secretmanager-mock
+    ports:
+      - "8089:8089"
+    environment:
+      - PORT=8089
+      - PROJECT_ID=erlmcp-local
+    volumes:
+      - ./secrets-mock:/secrets
+    networks:
+      - gcp-emulator
+
+  # ==========================================================================
+  # Cloud SQL Proxy Simulator (just PostgreSQL)
+  # ==========================================================================
+  # Cloud SQL doesn't have an emulator - use regular PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: erlmcp
+      POSTGRES_PASSWORD: erlmcp_local
+      POSTGRES_DB: erlmcp
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erlmcp"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gcp-emulator
+
+  # ==========================================================================
+  # Redis (for Cloud Memorystore simulation)
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gcp-emulator
+
+  # ==========================================================================
+  # erlmcp Application (configured for emulators)
+  # ==========================================================================
+  erlmcp:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+    environment:
+      - ERLMCP_PROFILE=dev
+      - ERLMCP_PORT=8080
+      - ERLMCP_METRICS_PORT=9090
+      - GCP_PROJECT=erlmcp-local
+      - PUBSUB_EMULATOR_HOST=pubsub-emulator:8085
+      - STORAGE_EMULATOR_HOST=http://gcs-emulator:4443
+      - FIRESTORE_EMULATOR_HOST=firestore-emulator:8086
+      - DATASTORE_EMULATOR_HOST=datastore-emulator:8087
+      - SPANNER_EMULATOR_HOST=spanner-emulator:9010
+      - DATABASE_URL=postgresql://erlmcp:erlmcp_local@postgres:5432/erlmcp
+      - REDIS_URL=redis://redis:6379
+      - ERLANG_COOKIE=erlmcp_local_dev_cookie
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      pubsub-emulator:
+        condition: service_healthy
+      gcs-emulator:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - gcp-emulator
+
+networks:
+  gcp-emulator:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  gcs-data:

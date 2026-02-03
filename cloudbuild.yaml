@@ -1,0 +1,364 @@
+# ==============================================================================
+# Google Cloud Build Configuration
+# ==============================================================================
+# CI/CD pipeline for erlmcp on Google Cloud Platform.
+#
+# Triggers:
+# - Push to main: Full CI + deploy to staging
+# - Push to release/*: Full CI + deploy to production
+# - Pull request: CI only (no deploy)
+#
+# Pipeline stages:
+# 1. Compile and test (in Docker - DOCKER-ONLY CONSTITUTION)
+# 2. Build container image
+# 3. Push to Artifact Registry
+# 4. Deploy to Cloud Run
+# 5. Run smoke tests
+# 6. Traffic migration (canary -> production)
+# ==============================================================================
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE_NAME: erlmcp-service
+  _ARTIFACT_REGISTRY: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/erlmcp-repo
+  _IMAGE_TAG: ${SHORT_SHA}
+  _DEPLOY_ENVIRONMENT: staging
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+  dynamicSubstitutions: true
+
+# Available secrets from Secret Manager
+availableSecrets:
+  secretManager:
+    - versionName: projects/${PROJECT_ID}/secrets/erlmcp-erlang-cookie/versions/latest
+      env: ERLANG_COOKIE
+    - versionName: projects/${PROJECT_ID}/secrets/erlmcp-database-url/versions/latest
+      env: DATABASE_URL
+
+steps:
+  # ==========================================================================
+  # Stage 1: Build and Test (DOCKER-ONLY)
+  # ==========================================================================
+
+  # 1.1 - Build test image
+  - id: 'build-test-image'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--target=builder'
+      - '--cache-from=${_ARTIFACT_REGISTRY}/erlmcp:cache'
+      - '-t=erlmcp-test:${SHORT_SHA}'
+      - '-f=Dockerfile'
+      - '.'
+    waitFor: ['-']
+
+  # 1.2 - Run EUnit tests (inside container)
+  - id: 'test-eunit'
+    name: 'erlmcp-test:${SHORT_SHA}'
+    entrypoint: '/bin/sh'
+    args:
+      - '-c'
+      - |
+        cd /app
+        rebar3 eunit --cover
+        echo "EUnit tests completed"
+    waitFor: ['build-test-image']
+
+  # 1.3 - Run Common Test (inside container)
+  - id: 'test-ct'
+    name: 'erlmcp-test:${SHORT_SHA}'
+    entrypoint: '/bin/sh'
+    args:
+      - '-c'
+      - |
+        cd /app
+        rebar3 ct --cover
+        echo "Common Test completed"
+    waitFor: ['build-test-image']
+
+  # 1.4 - Run Dialyzer (inside container)
+  - id: 'test-dialyzer'
+    name: 'erlmcp-test:${SHORT_SHA}'
+    entrypoint: '/bin/sh'
+    args:
+      - '-c'
+      - |
+        cd /app
+        rebar3 dialyzer
+        echo "Dialyzer completed"
+    waitFor: ['build-test-image']
+
+  # 1.5 - Run Xref (inside container)
+  - id: 'test-xref'
+    name: 'erlmcp-test:${SHORT_SHA}'
+    entrypoint: '/bin/sh'
+    args:
+      - '-c'
+      - |
+        cd /app
+        rebar3 xref
+        echo "Xref completed"
+    waitFor: ['build-test-image']
+
+  # 1.6 - Generate coverage report
+  - id: 'coverage-report'
+    name: 'erlmcp-test:${SHORT_SHA}'
+    entrypoint: '/bin/sh'
+    args:
+      - '-c'
+      - |
+        cd /app
+        rebar3 cover --verbose
+        # Check coverage threshold (80%)
+        COVERAGE=$(rebar3 cover --verbose | grep -oP 'Total:\s+\K[0-9]+' | head -1)
+        if [ "$COVERAGE" -lt 80 ]; then
+          echo "ERROR: Coverage $COVERAGE% is below 80% threshold"
+          exit 1
+        fi
+        echo "Coverage: $COVERAGE% (threshold: 80%)"
+    waitFor: ['test-eunit', 'test-ct']
+
+  # ==========================================================================
+  # Stage 2: Build Production Image
+  # ==========================================================================
+
+  # 2.1 - Build production image
+  - id: 'build-production-image'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--target=runtime'
+      - '--cache-from=${_ARTIFACT_REGISTRY}/erlmcp:cache'
+      - '--cache-from=${_ARTIFACT_REGISTRY}/erlmcp:latest'
+      - '-t=${_ARTIFACT_REGISTRY}/erlmcp:${_IMAGE_TAG}'
+      - '-t=${_ARTIFACT_REGISTRY}/erlmcp:${BRANCH_NAME}'
+      - '-t=${_ARTIFACT_REGISTRY}/erlmcp:latest'
+      - '--build-arg=BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)'
+      - '--build-arg=GIT_SHA=${COMMIT_SHA}'
+      - '--build-arg=GIT_BRANCH=${BRANCH_NAME}'
+      - '-f=Dockerfile'
+      - '.'
+    waitFor: ['test-eunit', 'test-ct', 'test-dialyzer', 'test-xref', 'coverage-report']
+
+  # 2.2 - Scan image for vulnerabilities
+  - id: 'security-scan'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Enable Container Analysis API scanning
+        gcloud artifacts docker images scan ${_ARTIFACT_REGISTRY}/erlmcp:${_IMAGE_TAG} \
+          --format='value(response.scan)' > /workspace/scan_id.txt
+
+        # Wait for scan to complete
+        gcloud artifacts docker images list-vulnerabilities \
+          $(cat /workspace/scan_id.txt) \
+          --format='table(vulnerability.effectiveSeverity, vulnerability.cvssScore, vulnerability.packageIssue.affectedPackage, vulnerability.packageIssue.fixedPackage)' \
+          > /workspace/vulnerabilities.txt
+
+        # Check for CRITICAL vulnerabilities
+        CRITICAL=$(grep -c "CRITICAL" /workspace/vulnerabilities.txt || true)
+        if [ "$CRITICAL" -gt 0 ]; then
+          echo "ERROR: Found $CRITICAL CRITICAL vulnerabilities"
+          cat /workspace/vulnerabilities.txt
+          exit 1
+        fi
+
+        echo "Security scan passed"
+    waitFor: ['build-production-image']
+
+  # ==========================================================================
+  # Stage 3: Push to Artifact Registry
+  # ==========================================================================
+
+  - id: 'push-image'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '--all-tags'
+      - '${_ARTIFACT_REGISTRY}/erlmcp'
+    waitFor: ['security-scan']
+
+  # Push cache image for faster subsequent builds
+  - id: 'push-cache'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'tag'
+      - 'erlmcp-test:${SHORT_SHA}'
+      - '${_ARTIFACT_REGISTRY}/erlmcp:cache'
+    waitFor: ['push-image']
+
+  - id: 'push-cache-image'
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - '${_ARTIFACT_REGISTRY}/erlmcp:cache'
+    waitFor: ['push-cache']
+
+  # ==========================================================================
+  # Stage 4: Deploy to Cloud Run (Canary)
+  # ==========================================================================
+
+  - id: 'deploy-canary'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        gcloud run deploy ${_SERVICE_NAME} \
+          --image=${_ARTIFACT_REGISTRY}/erlmcp:${_IMAGE_TAG} \
+          --region=${_REGION} \
+          --platform=managed \
+          --no-traffic \
+          --tag=canary-${SHORT_SHA} \
+          --set-env-vars="ERLMCP_PROFILE=${_DEPLOY_ENVIRONMENT}" \
+          --set-env-vars="GCP_PROJECT=${PROJECT_ID}" \
+          --set-env-vars="GCP_REGION=${_REGION}" \
+          --set-secrets="ERLANG_COOKIE=erlmcp-erlang-cookie:latest" \
+          --set-secrets="DATABASE_URL=erlmcp-database-url:latest"
+
+        echo "Canary deployment complete"
+    waitFor: ['push-image']
+
+  # ==========================================================================
+  # Stage 5: Smoke Tests against Canary
+  # ==========================================================================
+
+  - id: 'smoke-test'
+    name: 'gcr.io/cloud-builders/curl'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Get canary URL
+        CANARY_URL=$(gcloud run services describe ${_SERVICE_NAME} \
+          --region=${_REGION} \
+          --format='value(status.traffic[1].url)')
+
+        echo "Testing canary at: $CANARY_URL"
+
+        # Health check
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$CANARY_URL/health")
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "ERROR: Health check failed with HTTP $HTTP_CODE"
+          exit 1
+        fi
+        echo "Health check passed"
+
+        # Readiness check
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$CANARY_URL/ready")
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "ERROR: Readiness check failed with HTTP $HTTP_CODE"
+          exit 1
+        fi
+        echo "Readiness check passed"
+
+        # MCP initialize test
+        RESPONSE=$(curl -s -X POST "$CANARY_URL/mcp" \
+          -H "Content-Type: application/json" \
+          -d '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"cloudbuild-test","version":"1.0.0"}},"id":1}')
+
+        if echo "$RESPONSE" | grep -q '"result"'; then
+          echo "MCP initialize test passed"
+        else
+          echo "ERROR: MCP initialize test failed"
+          echo "Response: $RESPONSE"
+          exit 1
+        fi
+
+        echo "All smoke tests passed"
+    waitFor: ['deploy-canary']
+
+  # ==========================================================================
+  # Stage 6: Traffic Migration (Production only)
+  # ==========================================================================
+
+  - id: 'migrate-traffic'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Only migrate traffic for main/release branches
+        if [ "${BRANCH_NAME}" != "main" ] && [[ ! "${BRANCH_NAME}" =~ ^release/ ]]; then
+          echo "Skipping traffic migration for branch: ${BRANCH_NAME}"
+          exit 0
+        fi
+
+        # Gradual traffic migration: 10% -> 50% -> 100%
+        echo "Migrating 10% traffic to canary..."
+        gcloud run services update-traffic ${_SERVICE_NAME} \
+          --region=${_REGION} \
+          --to-tags=canary-${SHORT_SHA}=10
+
+        sleep 30
+
+        # Check error rate before proceeding
+        # (In production, you'd query Cloud Monitoring here)
+
+        echo "Migrating 50% traffic to canary..."
+        gcloud run services update-traffic ${_SERVICE_NAME} \
+          --region=${_REGION} \
+          --to-tags=canary-${SHORT_SHA}=50
+
+        sleep 60
+
+        echo "Migrating 100% traffic to new version..."
+        gcloud run services update-traffic ${_SERVICE_NAME} \
+          --region=${_REGION} \
+          --to-latest
+
+        echo "Traffic migration complete"
+    waitFor: ['smoke-test']
+
+  # ==========================================================================
+  # Stage 7: Run Database Migrations (if needed)
+  # ==========================================================================
+
+  - id: 'run-migrations'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Only run migrations for main/release branches
+        if [ "${BRANCH_NAME}" != "main" ] && [[ ! "${BRANCH_NAME}" =~ ^release/ ]]; then
+          echo "Skipping migrations for branch: ${BRANCH_NAME}"
+          exit 0
+        fi
+
+        echo "Running database migrations..."
+        gcloud run jobs execute erlmcp-migration \
+          --region=${_REGION} \
+          --wait
+
+        echo "Migrations complete"
+    waitFor: ['migrate-traffic']
+
+# ==========================================================================
+# Artifacts
+# ==========================================================================
+
+artifacts:
+  objects:
+    location: 'gs://${PROJECT_ID}-build-artifacts/erlmcp/${BUILD_ID}'
+    paths:
+      - '/workspace/vulnerabilities.txt'
+
+# ==========================================================================
+# Build timeout
+# ==========================================================================
+
+timeout: '1800s'  # 30 minutes
+
+# ==========================================================================
+# Images to be pushed
+# ==========================================================================
+
+images:
+  - '${_ARTIFACT_REGISTRY}/erlmcp:${_IMAGE_TAG}'
+  - '${_ARTIFACT_REGISTRY}/erlmcp:${BRANCH_NAME}'
+  - '${_ARTIFACT_REGISTRY}/erlmcp:latest'
