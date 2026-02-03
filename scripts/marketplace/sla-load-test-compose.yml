@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  # SLA Load Testing Service
+  sla-loadtest:
+    image: williamyeh/wrk:latest
+    container_name: erlmcp-sla-loadtest
+    networks:
+      - erlmcp-network
+    volumes:
+      - ./scripts/marketplace:/scripts
+    command: >
+      -t4
+      -c100
+      -d300s
+      --latency
+      ${HEALTH_ENDPOINT:-http://erlmcp-api:8080/health}
+    depends_on:
+      - erlmcp-api
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+  # SLA Monitoring Dashboard
+  sla-dashboard:
+    image: prom/prometheus:latest
+    container_name: erlmcp-sla-prometheus
+    ports:
+      - "9091:9090"
+    volumes:
+      - ./marketplace/gcp/terraform/modules/observability/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - erlmcp-network
+
+  # Grafana for SLA Visualization
+  sla-grafana:
+    image: grafana/grafana:latest
+    container_name: erlmcp-sla-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./marketplace/gcp/terraform/modules/observability/grafana/dashboards:/etc/grafana/provisioning/dashboards
+    networks:
+      - erlmcp-network
+
+  # erlmcp API (target for load testing)
+  erlmcp-api:
+    image: erlmcp/marketplace:latest
+    container_name: erlmcp-api-sla-test
+    ports:
+      - "8080:8080"
+    environment:
+      - ERLMCP_ENVIRONMENT=test
+      - ERLMCP_LOG_LEVEL=info
+    networks:
+      - erlmcp-network
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '2.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  erlmcp-network:
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:

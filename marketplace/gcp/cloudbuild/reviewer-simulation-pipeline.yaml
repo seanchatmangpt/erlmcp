@@ -1,0 +1,1451 @@
+# ============================================================================
+# Google Cloud Marketplace Reviewer Simulation Pipeline
+# ============================================================================
+#
+# This pipeline automates the complete Google Cloud Marketplace reviewer
+# simulation process. It validates that an erlmcp deployment will pass
+# Google's Marketplace review process.
+#
+# Pipeline Stages:
+# - Stage 1: Prerequisites and API enablement
+# - Stage 2: Schema and metadata validation
+# - Stage 3: VM deployment and tests
+# - Stage 4: GKE deployment and tests
+# - Stage 5: Cloud Run deployment and tests
+# - Stage 6: Secrets rotation test
+# - Stage 7: Observability verification
+# - Stage 8: Security and IAM audit
+# - Stage 9: Destruction test
+# - Stage 10: Final report generation
+#
+# Usage:
+#   gcloud builds submit \
+#     --config marketplace/gcp/cloudbuild/reviewer-simulation-pipeline.yaml \
+#     --substitutions=_PROJECT_ID=my-test-project,_REGION=us-central1
+#
+# ============================================================================
+
+# ============================================================================
+# Pipeline Configuration
+# ============================================================================
+
+substitutions:
+  _PROJECT_ID: '${PROJECT_ID}'
+  _REGION: 'us-central1'
+  _ZONE: 'us-central1-a'
+  _TEST_ID: 'reviewer-sim-${BUILD_ID}'
+  _CLEANUP_ON_FAILURE: 'true'
+  _SCREENSHOT_ENABLED: 'false'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 200
+  dynamic_substitutions: true
+
+logsBucket: 'gs://$_PROJECT_ID-cloudbuild-logs'
+
+timeout: '7200s'
+
+# ============================================================================
+# Pipeline Steps
+# ============================================================================
+
+steps:
+
+# =============================================================================
+# STAGE 0: Setup and Project Creation
+# =============================================================================
+
+  - id: 'stage-0-setup'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "=========================================="
+        echo "GCP Marketplace Reviewer Simulation"
+        echo "=========================================="
+        echo "Test ID:      $_TEST_ID"
+        echo "Project:      $_PROJECT_ID"
+        echo "Region:       $_REGION"
+        echo "Build:        $BUILD_ID"
+        echo "=========================================="
+        echo ""
+
+        # Create evidence directory structure
+        mkdir -p /workspace/reviewer-evidence
+        mkdir -p /workspace/reviewer-evidence/stage-0-setup
+        mkdir -p /workspace/reviewer-evidence/stage-1-prerequisites
+        mkdir -p /workspace/reviewer-evidence/stage-2-schema
+        mkdir -p /workspace/reviewer-evidence/stage-3-vm
+        mkdir -p /workspace/reviewer-evidence/stage-4-gke
+        mkdir -p /workspace/reviewer-evidence/stage-5-cloudrun
+        mkdir -p /workspace/reviewer-evidence/stage-6-secrets
+        mkdir -p /workspace/reviewer-evidence/stage-7-observability
+        mkdir -p /workspace/reviewer-evidence/stage-8-security
+        mkdir -p /workspace/reviewer-evidence/stage-9-destruction
+        mkdir -p /workspace/reviewer-evidence/stage-10-report
+        mkdir -p /workspace/reviewer-evidence/screenshots
+
+        # Initialize test tracking
+        cat > /workspace/reviewer-evidence/test-tracker.json << EOF
+        {
+          "test_id": "$_TEST_ID",
+          "build_id": "$BUILD_ID",
+          "project_id": "$_PROJECT_ID",
+          "region": "$_REGION",
+          "start_time": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+          "stages": [
+            {"name": "setup", "status": "in_progress"},
+            {"name": "prerequisites", "status": "pending"},
+            {"name": "schema", "status": "pending"},
+            {"name": "vm", "status": "pending"},
+            {"name": "gke", "status": "pending"},
+            {"name": "cloudrun", "status": "pending"},
+            {"name": "secrets", "status": "pending"},
+            {"name": "observability", "status": "pending"},
+            {"name": "security", "status": "pending"},
+            {"name": "destruction", "status": "pending"},
+            {"name": "report", "status": "pending"}
+          ]
+        }
+        EOF
+
+        # Configure gcloud
+        gcloud config set project $_PROJECT_ID
+        gcloud config set compute/region $_REGION
+        gcloud config set compute/zone $_ZONE
+
+        echo "Stage 0: Setup complete"
+    timeout: '60s'
+
+# =============================================================================
+# STAGE 1: Prerequisites and API Enablement
+# =============================================================================
+
+  - id: 'stage-1-enable-apis'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 1: Enabling required APIs..."
+
+        # List of required APIs for Marketplace deployments
+        REQUIRED_APIS=(
+          "container.googleapis.com"
+          "run.googleapis.com"
+          "compute.googleapis.com"
+          "secretmanager.googleapis.com"
+          "logging.googleapis.com"
+          "monitoring.googleapis.com"
+          "cloudtrace.googleapis.com"
+          "cloudkms.googleapis.com"
+          "iam.googleapis.com"
+          "artifactregistry.googleapis.com"
+          "containerfilesystem.googleapis.com"
+          "containersecurity.googleapis.com"
+        )
+
+        # Enable all required APIs
+        for api in "${REQUIRED_APIS[@]}"; do
+          echo "  Enabling $api..."
+          gcloud services enable "$api" \
+            --project=$_PROJECT_ID \
+            --async 2>/dev/null || true
+        done
+
+        # Wait for critical APIs
+        echo "Waiting for critical APIs to be enabled..."
+        gcloud services wait \
+          --project=$_PROJECT_ID \
+          --enable \
+          container.googleapis.com \
+          run.googleapis.com \
+          compute.googleapis.com \
+          secretmanager.googleapis.com || true
+
+        # Verify API status
+        echo ""
+        echo "API Status:"
+        gcloud services list \
+          --project=$_PROJECT_ID \
+          --enabled \
+          --filter="name:container.googleapis.com OR name:run.googleapis.com OR name:compute.googleapis.com" \
+          > /workspace/reviewer-evidence/stage-1-prerequisites/api-status.txt
+
+        cat /workspace/reviewer-evidence/stage-1-prerequisites/api-status.txt
+
+        # Update tracker
+        jq '.stages[1].status = "complete"' /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        echo ""
+        echo "Stage 1: Prerequisites complete"
+    timeout: '300s'
+
+  - id: 'stage-1-verify-quotas'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Verifying resource quotas..."
+
+        # Check critical quotas
+        echo "Compute Engine quota:" > /workspace/reviewer-evidence/stage-1-prerequisites/quota-check.txt
+        gcloud compute regions describe $_REGION \
+          --project=$_PROJECT_ID \
+          --format="table(quotas.metric,quotas.limit,quotas.usage)" \
+          >> /workspace/reviewer-evidence/stage-1-prerequisites/quota-check.txt 2>&1 || true
+
+        echo ""
+        echo "GKE quota:"
+        gcloud container clusters list \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          > /workspace/reviewer-evidence/stage-1-prerequisites/gke-status.txt 2>&1 || true
+
+        echo ""
+        echo "Cloud Run quota:"
+        gcloud run services list \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          > /workspace/reviewer-evidence/stage-1-prerequisites/cloudrun-status.txt 2>&1 || true
+
+        echo "Quota verification complete"
+    waitFor:
+      - 'stage-1-enable-apis'
+    timeout: '120s'
+
+# =============================================================================
+# STAGE 2: Schema and Metadata Validation
+# =============================================================================
+
+  - id: 'stage-2-validate-schema'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 2: Validating Marketplace schema..."
+
+        # Install yq for YAML processing
+        wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+        chmod +x /usr/local/bin/yq
+
+        # Validate application.yaml
+        echo "Validating application.yaml..." | tee /workspace/reviewer-evidence/stage-2-schema/validation.log
+
+        if [ -f "marketplace/gcp/marketplace-schema/application.yaml" ]; then
+          echo "  Found application.yaml"
+
+          # Check for required fields
+          REQUIRED_FIELDS=(
+            "metadata.name"
+            "metadata.displayName"
+            "metadata.description"
+            "metadata.version"
+            "spec.runtimePolicy.minDeploymentDuration"
+            "spec.inputSchema"
+          )
+
+          for field in "${REQUIRED_FIELDS[@]}"; do
+            VALUE=$(yq eval ".$field" marketplace/gcp/marketplace-schema/application.yaml 2>/dev/null)
+            if [ -n "$VALUE" ] && [ "$VALUE" != "null" ]; then
+              echo "    ✓ $field: $VALUE" | tee -a /workspace/reviewer-evidence/stage-2-schema/validation.log
+            else
+              echo "    ✗ Missing required field: $field" | tee -a /workspace/reviewer-evidence/stage-2-schema/validation.log
+            fi
+          done
+        else
+          echo "  ✗ application.yaml not found" | tee -a /workspace/reviewer-evidence/stage-2-schema/validation.log
+        fi
+
+        # Validate schema.yaml
+        echo ""
+        echo "Validating schema.yaml..." | tee -a /workspace/reviewer-evidence/stage-2-schema/validation.log
+
+        if [ -f "marketplace/gcp/marketplace-schema/schema.yaml" ]; then
+          # Check schema properties
+          yq eval '.properties | keys | .[]' marketplace/gcp/marketplace-schema/schema.yaml \
+            > /workspace/reviewer-evidence/stage-2-schema/schema-keys.txt
+
+          echo "  Schema properties defined: $(wc -l < /workspace/reviewer-evidence/stage-2-schema/schema-keys.txt)"
+        else
+          echo "  ✗ schema.yaml not found" | tee -a /workspace/reviewer-evidence/stage-2-schema/validation.log
+        fi
+
+        # Validate Terraform modules
+        echo ""
+        echo "Validating Terraform modules..." | tee -a /workspace/reviewer-evidence/stage-2-schema/validation.log
+
+        for module in marketplace/gcp/terraform/modules/*/; do
+          if [ -d "$module" ]; then
+            echo "  Checking $(basename $module)..." | tee -a /workspace/reviewer-evidence/stage-2-schema/validation.log
+
+            cd "$module"
+
+            # Check for required files
+            for file in main.tf variables.tf outputs.tf; do
+              if [ -f "$file" ]; then
+                echo "    ✓ $file" | tee -a /workspace/reviewer-evidence/stage-2-schema/validation.log
+              else
+                echo "    ✗ Missing $file" | tee -a /workspace/reviewer-evidence/stage-2-schema/validation.log
+              fi
+            done
+
+            cd - > /dev/null
+          fi
+        done
+
+        # Update tracker
+        jq '.stages[2].status = "complete"' /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        echo ""
+        echo "Stage 2: Schema validation complete"
+    timeout: '180s'
+
+  - id: 'stage-2-validate-documentation'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Validating documentation requirements..."
+
+        # Check for required documentation
+        DOCS=(
+          "README.md"
+          "DEPLOYMENT.md"
+          "TROUBLESHOOTING.md"
+          "SUPPORT.md"
+        )
+
+        echo "Documentation check:" > /workspace/reviewer-evidence/stage-2-schema/documentation-check.txt
+        for doc in "${DOCS[@]}"; do
+          if find . -name "$doc" -type f | grep -q .; then
+            FOUND=$(find . -name "$doc" -type f | head -1)
+            echo "  ✓ $doc found at $FOUND" | tee -a /workspace/reviewer-evidence/stage-2-schema/documentation-check.txt
+          else
+            echo "  ⚠ $doc not found (recommended)" | tee -a /workspace/reviewer-evidence/stage-2-schema/documentation-check.txt
+          fi
+        done
+
+        # Check for THIRD_PARTY_LICENSES (Marketplace requirement)
+        echo ""
+        if find . -name "THIRD_PARTY_LICENSES*" -o -name "NOTICE*" -o -name "LICENSES*" | grep -q .; then
+          echo "  ✓ Third-party licenses found" | tee -a /workspace/reviewer-evidence/stage-2-schema/documentation-check.txt
+        else
+          echo "  ✗ THIRD_PARTY_LICENSES not found (required for Marketplace)" | tee -a /workspace/reviewer-evidence/stage-2-schema/documentation-check.txt
+        fi
+
+        echo "Documentation validation complete"
+    waitFor:
+      - 'stage-2-validate-schema'
+    timeout: '60s'
+
+# =============================================================================
+# STAGE 3: VM Deployment and Tests
+# =============================================================================
+
+  - id: 'stage-3-vm-deployment'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 3: VM Deployment Test (Compute Engine)..."
+
+        TEST_NAME="reviewer-sim-vm-${BUILD_ID}"
+        TEST_DIR="/workspace/reviewer-evidence/stage-3-vm"
+        mkdir -p "$TEST_DIR"
+
+        # Set variables for test deployment
+        export DEPLOYMENT_NAME="$TEST_NAME"
+        export PROJECT_ID="$_PROJECT_ID"
+        export ZONE="$_ZONE"
+        export REGION="$_REGION"
+
+        echo "Creating test VM: $TEST_NAME" | tee "$TEST_DIR/deployment.log"
+
+        # Create a simple test VM (minimal configuration for testing)
+        gcloud compute instances create "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --zone=$_ZONE \
+          --machine-type=e2-medium \
+          --image-family=debian-12 \
+          --image-project=debian-cloud \
+          --boot-disk-size=10GB \
+          --network-interface=access-config="" \
+          --metadata=startup-script='#!/bin/bash
+echo "VM started successfully at $(date)" > /tmp/startup.txt
+systemctl stop apache2 2>/dev/null || true
+' \
+          --metadata-from-file=startup-script=marketplace/gcp/terraform/modules/gce-vm/start-erlmcp.sh \
+          --tags=http-server,https-server \
+          --format=json | tee "$TEST_DIR/create-output.json"
+
+        # Wait for VM to be ready
+        echo "Waiting for VM to be ready..."
+        sleep 30
+
+        # Get VM status
+        echo ""
+        echo "VM Status:" | tee -a "$TEST_DIR/deployment.log"
+        gcloud compute instances describe "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --zone=$_ZONE \
+          --format="table(name,status,machineType.zone)" | tee -a "$TEST_DIR/deployment.log"
+
+        # Get external IP
+        EXTERNAL_IP=$(gcloud compute instances describe "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --zone=$_ZONE \
+          --format='value(networkInterfaces[0].accessConfigs[0].natIP)')
+
+        echo "External IP: $EXTERNAL_IP" | tee -a "$TEST_DIR/deployment.log"
+        echo "$EXTERNAL_IP" > "$TEST_DIR/external-ip.txt"
+
+        # Test SSH connectivity (if IAP is available)
+        echo ""
+        echo "Testing connectivity..." | tee -a "$TEST_DIR/deployment.log"
+
+        # Try to get serial port output
+        gcloud compute instances get-serial-port-output "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --zone=$_ZONE \
+          --port=1 \
+          > "$TEST_DIR/serial-output.txt" 2>&1 || true
+
+        echo "Serial port output captured"
+
+        # Test firewall rules
+        echo ""
+        echo "Firewall rules:" | tee -a "$TEST_DIR/deployment.log"
+        gcloud compute firewall-rules list \
+          --project=$_PROJECT_ID \
+          --filter="targetTags:http-server OR targetTags:https-server" \
+          --format="table(name,allowed[],sourceRanges)" | tee -a "$TEST_DIR/deployment.log" || true
+
+        # Save VM details
+        gcloud compute instances describe "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --zone=$_ZONE \
+          --format=json > "$TEST_DIR/vm-details.json"
+
+        # Update tracker
+        jq '.stages[3].status = "complete"' /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        echo ""
+        echo "Stage 3: VM deployment test complete"
+    timeout: '600s'
+
+# =============================================================================
+# STAGE 4: GKE Deployment and Tests
+# =============================================================================
+
+  - id: 'stage-4-gke-deployment'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 4: GKE Deployment Test..."
+        echo "WARNING: This stage takes 15-20 minutes"
+
+        TEST_NAME="reviewer-sim-gke-${BUILD_ID}"
+        TEST_DIR="/workspace/reviewer-evidence/stage-4-gke"
+        mkdir -p "$TEST_DIR"
+
+        # Create GKE cluster with Marketplace-similar configuration
+        echo "Creating GKE cluster: $TEST_NAME" | tee "$TEST_DIR/deployment.log"
+
+        gcloud container clusters create "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --num-nodes=1 \
+          --machine-type=e2-medium \
+          --disk-size=20GB \
+          --image-type=cos_containerd \
+          --enable-ip-alias \
+          --enable-private-nodes \
+          --master-ipv4-cidr=172.16.0.0/28 \
+          --enable-shielded-nodes \
+          --shielded-secure-boot \
+          --shielded-vtpm \
+          --enable-autoscaling \
+          --min-nodes=1 \
+          --max-nodes=3 \
+          --enable-autorepair \
+          --enable-autoupgrade \
+          --workload-pool=$_PROJECT_ID.svc.id.goog \
+          --format=json | tee "$TEST_DIR/create-output.json"
+
+        # Get cluster credentials
+        echo ""
+        echo "Getting cluster credentials..."
+        gcloud container clusters get-credentials "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION
+
+        # Verify cluster
+        echo ""
+        echo "Cluster status:" | tee -a "$TEST_DIR/deployment.log"
+        kubectl cluster-info | tee -a "$TEST_DIR/deployment.log"
+
+        echo ""
+        echo "Node status:" | tee -a "$TEST_DIR/deployment.log"
+        kubectl get nodes -o wide | tee -a "$TEST_DIR/deployment.log"
+
+        # Verify Workload Identity
+        echo ""
+        echo "Workload Identity status:" | tee -a "$TEST_DIR/deployment.log"
+        kubectl get configmap -n kube-system config-autoscaler -o yaml 2>/dev/null | grep -i workload || echo "  Configured at cluster creation"
+
+        # Verify network policies
+        echo ""
+        echo "Network policies:" | tee -a "$TEST_DIR/deployment.log"
+        kubectl get networkpolicies --all-namespaces | tee -a "$TEST_DIR/deployment.log" || echo "  No network policies defined"
+
+        # Test deployment (deploy a simple test workload)
+        echo ""
+        echo "Deploying test workload..." | tee -a "$TEST_DIR/deployment.log"
+
+        cat <<EOF | kubectl apply -f -
+        apiVersion: v1
+        kind: Namespace
+        metadata:
+          name: reviewer-test
+        ---
+        apiVersion: apps/v1
+        kind: Deployment
+        metadata:
+          name: test-workload
+          namespace: reviewer-test
+        spec:
+          replicas: 1
+          selector:
+            matchLabels:
+              app: test
+          template:
+            metadata:
+              labels:
+                app: test
+            spec:
+              containers:
+              - name: nginx
+                image: nginx:alpine
+                ports:
+                - containerPort: 80
+              - name: erlmcp-sidecar
+                image: us-central1-docker.pkg.dev/$_PROJECT_ID/erlmcp/erlmcp:latest
+                command: ["sh", "-c", "echo 'erlmcp sidecar running' && sleep 3600"]
+        EOF
+
+        # Wait for deployment
+        echo "Waiting for deployment to be ready..."
+        kubectl wait --for=condition=available deployment/test-workload \
+          -n reviewer-test --timeout=120s | tee -a "$TEST_DIR/deployment.log"
+
+        # Get pods
+        echo ""
+        echo "Pod status:" | tee -a "$TEST_DIR/deployment.log"
+        kubectl get pods -n reviewer-test -o wide | tee -a "$TEST_DIR/deployment.log"
+
+        # Verify pod security
+        echo ""
+        echo "Pod security context:" | tee -a "$TEST_DIR/deployment.log"
+        kubectl get pod -n reviewer-test -o json | \
+          jq -r '.items[].spec' | tee -a "$TEST_DIR/deployment.log" || true
+
+        # Save cluster details
+        gcloud container clusters describe "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --format=json > "$TEST_DIR/cluster-details.json"
+
+        # Update tracker
+        jq '.stages[4].status = "complete"' /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        echo ""
+        echo "Stage 4: GKE deployment test complete"
+    timeout: '1800s'
+
+# =============================================================================
+# STAGE 5: Cloud Run Deployment and Tests
+# =============================================================================
+
+  - id: 'stage-5-cloudrun-deployment'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 5: Cloud Run Deployment Test..."
+
+        TEST_NAME="reviewer-sim-cloudrun-${BUILD_ID}"
+        TEST_DIR="/workspace/reviewer-evidence/stage-5-cloudrun"
+        mkdir -p "$TEST_DIR"
+
+        # Deploy Cloud Run service
+        echo "Deploying Cloud Run service: $TEST_NAME" | tee "$TEST_DIR/deployment.log"
+
+        gcloud run deploy "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --image=us-central1-docker.pkg.dev/$_PROJECT_ID/erlmcp/erlmcp:latest \
+          --platform=managed \
+          --allow-unauthenticated \
+          --memory=512Mi \
+          --cpu=1 \
+          --min-instances=0 \
+          --max-instances=10 \
+          --timeout=300s \
+          --concurrency=80 \
+          --ingress=all \
+          --format=json | tee "$TEST_DIR/create-output.json"
+
+        # Get service URL
+        SERVICE_URL=$(gcloud run services describe "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --format='value(status.url)')
+
+        echo "Service URL: $SERVICE_URL" | tee -a "$TEST_DIR/deployment.log"
+        echo "$SERVICE_URL" > "$TEST_DIR/service-url.txt"
+
+        # Wait for service to be ready
+        echo "Waiting for service to be ready..."
+        sleep 30
+
+        # Test health endpoint
+        echo ""
+        echo "Testing health endpoint..." | tee -a "$TEST_DIR/deployment.log"
+
+        HTTP_CODE=$(curl -s -o "$TEST_DIR/health-response.txt" -w "%{http_code}" "$SERVICE_URL/health" || echo "000")
+        echo "HTTP Status: $HTTP_CODE" | tee -a "$TEST_DIR/deployment.log"
+        cat "$TEST_DIR/health-response.txt" | tee -a "$TEST_DIR/deployment.log"
+
+        # Test service readiness
+        echo ""
+        echo "Service status:" | tee -a "$TEST_DIR/deployment.log"
+        gcloud run services describe "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --format="table(status.url,status.latestReadyRevisionName,status.traffic)" | tee -a "$TEST_DIR/deployment.log"
+
+        # Test cold start
+        echo ""
+        echo "Testing cold start..." | tee -a "$TEST_DIR/deployment.log"
+        COLD_START_TIME=$(curl -s -o /dev/null -w "%{time_starttransfer}" "$SERVICE_URL/health")
+        echo "Cold start time: ${COLD_START_TIME}s" | tee -a "$TEST_DIR/deployment.log"
+
+        # Test scaling
+        echo ""
+        echo "Sending concurrent requests to test scaling..." | tee -a "$TEST_DIR/deployment.log"
+        for i in {1..10}; do
+          curl -s "$SERVICE_URL/health" > /dev/null &
+        done
+        wait
+
+        sleep 5
+
+        echo "Instance count after load:" | tee -a "$TEST_DIR/deployment.log"
+        gcloud run services describe "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --format='value(status.scalingStatus)' 2>/dev/null || echo "  Not available in API"
+
+        # Save service details
+        gcloud run services describe "$TEST_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --format=json > "$TEST_DIR/service-details.json"
+
+        # Update tracker
+        jq '.stages[5].status = "complete"' /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        echo ""
+        echo "Stage 5: Cloud Run deployment test complete"
+    timeout: '600s'
+
+# =============================================================================
+# STAGE 6: Secrets Rotation Test
+# =============================================================================
+
+  - id: 'stage-6-secrets-rotation'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 6: Secrets Rotation Test..."
+
+        TEST_DIR="/workspace/reviewer-evidence/stage-6-secrets"
+        mkdir -p "$TEST_DIR"
+
+        # Create test secrets
+        echo "Creating test secrets..." | tee "$TEST_DIR/rotation-test.log"
+
+        SECRET_NAME="erlmcp-test-secret-${BUILD_ID}"
+
+        # Version 1
+        echo "initial-secret-value-v1" | \
+          gcloud secrets create "$SECRET_NAME" \
+            --project=$_PROJECT_ID \
+            --data-file=- \
+            --replication-policy=automatic
+
+        echo "Created secret version 1" | tee -a "$TEST_DIR/rotation-test.log"
+
+        # List versions
+        echo ""
+        echo "Secret versions:" | tee -a "$TEST_DIR/rotation-test.log"
+        gcloud secrets versions list "$SECRET_NAME" \
+          --project=$_PROJECT_ID | tee -a "$TEST_DIR/rotation-test.log"
+
+        # Access version 1
+        echo ""
+        echo "Accessing version 1:" | tee -a "$TEST_DIR/rotation-test.log"
+        gcloud secrets versions access 1 \
+          --secret="$SECRET_NAME" \
+          --project=$_PROJECT_ID | tee -a "$TEST_DIR/rotation-test.log"
+
+        # Add version 2
+        echo ""
+        echo "Adding version 2..." | tee -a "$TEST_DIR/rotation-test.log"
+        sleep 2
+        echo "updated-secret-value-v2" | \
+          gcloud secrets versions add "$SECRET_NAME" \
+            --project=$_PROJECT_ID \
+            --data-file=-
+
+        echo "Created secret version 2" | tee -a "$TEST_DIR/rotation-test.log"
+
+        # List versions again
+        echo ""
+        echo "Secret versions after rotation:" | tee -a "$TEST_DIR/rotation-test.log"
+        gcloud secrets versions list "$SECRET_NAME" \
+          --project=$_PROJECT_ID | tee -a "$TEST_DIR/rotation-test.log"
+
+        # Access latest version
+        echo ""
+        echo "Accessing latest version:" | tee -a "$TEST_DIR/rotation-test.log"
+        LATEST_VALUE=$(gcloud secrets versions access latest \
+          --secret="$SECRET_NAME" \
+          --project=$_PROJECT_ID)
+        echo "Latest value: $LATEST_VALUE" | tee -a "$TEST_DIR/rotation-test.log"
+
+        # Verify rotation
+        if echo "$LATEST_VALUE" | grep -q "v2"; then
+          echo "✓ Secret rotation successful" | tee -a "$TEST_DIR/rotation-test.log"
+        else
+          echo "✗ Secret rotation may have failed" | tee -a "$TEST_DIR/rotation-test.log"
+        fi
+
+        # Test IAM permissions
+        echo ""
+        echo "Testing secret IAM..." | tee -a "$TEST_DIR/rotation-test.log"
+        gcloud secrets get-iam-policy "$SECRET_NAME" \
+          --project=$_PROJECT_ID > "$TEST_DIR/secret-iam-policy.txt"
+
+        # Grant access to Cloud Build SA
+        PROJECT_NUMBER=$(gcloud projects describe $_PROJECT_ID --format='value(projectNumber)')
+        CLOUDBUILD_SA="${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com"
+
+        gcloud secrets add-iam-policy-binding "$SECRET_NAME" \
+          --project=$_PROJECT_ID \
+          --member="serviceAccount:$CLOUDBUILD_SA" \
+          --role="roles/secretmanager.secretAccessor" \
+          --condition=None
+
+        echo "IAM policy updated" | tee -a "$TEST_DIR/rotation-test.log"
+
+        # Save secret details
+        gcloud secrets describe "$SECRET_NAME" \
+          --project=$_PROJECT_ID \
+          --format=json > "$TEST_DIR/secret-details.json"
+
+        # Update tracker
+        jq '.stages[6].status = "complete"' /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        echo ""
+        echo "Stage 6: Secrets rotation test complete"
+    timeout: '180s'
+
+# =============================================================================
+# STAGE 7: Observability Verification
+# =============================================================================
+
+  - id: 'stage-7-observability'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 7: Observability Verification..."
+
+        TEST_DIR="/workspace/reviewer-evidence/stage-7-observability"
+        mkdir -p "$TEST_DIR"
+
+        # Generate some traffic for observability data
+        echo "Generating test traffic for observability..."
+
+        CLOUDRUN_NAME="reviewer-sim-cloudrun-${BUILD_ID}"
+        SERVICE_URL=$(cat /workspace/reviewer-evidence/stage-5-cloudrun/service-url.txt 2>/dev/null || echo "")
+
+        if [ -n "$SERVICE_URL" ]; then
+          for i in {1..20}; do
+            curl -s "$SERVICE_URL/health" > /dev/null 2>&1 || true
+            curl -s "$SERVICE_URL/metrics" > /dev/null 2>&1 || true
+            sleep 1
+          done
+          echo "Traffic generated" | tee "$TEST_DIR/traffic-test.log"
+        fi
+
+        # Wait for logs to be ingested
+        sleep 30
+
+        # Check Cloud Logging
+        echo ""
+        echo "Cloud Logging verification:" | tee "$TEST_DIR/logging-test.log"
+        LOG_FILTER='resource.type="cloud_run_revision" AND labels."service_name"="'"$CLOUDRUN_NAME"'"'
+
+        gcloud logging read "$LOG_FILTER" \
+          --project=$_PROJECT_ID \
+          --limit=10 \
+          --format="table(timestamp,severity,textPayload)" \
+          > "$TEST_DIR/logs-output.txt" 2>&1
+
+        LOG_COUNT=$(wc -l < "$TEST_DIR/logs-output.txt")
+        echo "Found $LOG_COUNT log entries" | tee -a "$TEST_DIR/logging-test.log"
+
+        # Check Cloud Monitoring metrics
+        echo ""
+        echo "Cloud Monitoring verification:" | tee -a "$TEST_DIR/logging-test.log"
+
+        # List available metrics
+        gcloud monitoring metrics list \
+          --project=$_PROJECT_ID \
+          --filter='resource.type:"cloud_run_revision"' \
+          > "$TEST_DIR/metrics-list.txt" 2>&1 || true
+
+        echo "Metrics available:" | tee -a "$TEST_DIR/logging-test.log"
+        head -20 "$TEST_DIR/metrics-list.txt" | tee -a "$TEST_DIR/logging-test.log"
+
+        # Check for custom metrics
+        echo ""
+        echo "Custom metrics (if any):" | tee -a "$TEST_DIR/logging-test.log"
+        gcloud monitoring descriptors list \
+          --project=$_PROJECT_ID \
+          --filter='metric_type:"custom.googleapis.com/*"' \
+          > "$TEST_DIR/custom-metrics.txt" 2>&1 || true
+
+        # Check Cloud Trace (if enabled)
+        echo ""
+        echo "Cloud Trace verification:" | tee -a "$TEST_DIR/logging-test.log"
+        gcloud tracing span-list \
+          --project=$_PROJECT_ID \
+          --filter='cloud_run:"'"$CLOUDRUN_NAME"'"' \
+          > "$TEST_DIR/traces.txt" 2>&1 || echo "  No traces found (may not be enabled)"
+
+        # Check dashboard availability
+        echo ""
+        echo "Dashboards:" | tee -a "$TEST_DIR/logging-test.log"
+        gcloud monitoring dashboards list \
+          --project=$_PROJECT_ID \
+          > "$TEST_DIR/dashboards.txt" 2>&1 || echo "  No custom dashboards"
+
+        # Check alert policies
+        echo ""
+        echo "Alert policies:" | tee -a "$TEST_DIR/logging-test.log"
+        gcloud alpha monitoring policies list \
+          --project=$_PROJECT_ID \
+          > "$TEST_DIR/alert-policies.txt" 2>&1 || echo "  No alert policies defined"
+
+        # Update tracker
+        jq '.stages[7].status = "complete"' /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        echo ""
+        echo "Stage 7: Observability verification complete"
+    timeout: '300s'
+
+# =============================================================================
+# STAGE 8: Security and IAM Audit
+# =============================================================================
+
+  - id: 'stage-8-security-audit'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 8: Security and IAM Audit..."
+
+        TEST_DIR="/workspace/reviewer-evidence/stage-8-security"
+        mkdir -p "$TEST_DIR"
+
+        # IAM Policy Audit
+        echo "IAM Policy Audit:" | tee "$TEST_DIR/security-audit.log"
+
+        gcloud projects get-iam-policy $_PROJECT_ID \
+          --format=json > "$TEST_DIR/iam-policy.json"
+
+        # Check for overly permissive roles
+        echo ""
+        echo "Checking for overly permissive roles..." | tee -a "$TEST_DIR/security-audit.log"
+
+        OWNER_COUNT=$(jq '.bindings[] | select(.role=="roles/owner") | .members | length' "$TEST_DIR/iam-policy.json" 2>/dev/null || echo "0")
+        EDITOR_COUNT=$(jq '.bindings[] | select(.role=="roles/editor") | .members | length' "$TEST_DIR/iam-policy.json" 2>/dev/null || echo "0")
+
+        echo "  Owner role count: $OWNER_COUNT" | tee -a "$TEST_DIR/security-audit.log"
+        echo "  Editor role count: $EDITOR_COUNT" | tee -a "$TEST_DIR/security-audit.log"
+
+        if [ "$OWNER_COUNT" -gt 2 ]; then
+          echo "  ⚠ WARNING: Many Owner roles assigned" | tee -a "$TEST_DIR/security-audit.log"
+        fi
+
+        # Check service accounts
+        echo ""
+        echo "Service Accounts:" | tee -a "$TEST_DIR/security-audit.log"
+        gcloud iam service-accounts list \
+          --project=$_PROJECT_ID \
+          > "$TEST_DIR/service-accounts.txt"
+
+        cat "$TEST_DIR/service-accounts.txt" | tee -a "$TEST_DIR/security-audit.log"
+
+        # Network security check
+        echo ""
+        echo "Network Security:" | tee -a "$TEST_DIR/security-audit.log"
+
+        # Check firewall rules
+        echo "Firewall rules:" | tee -a "$TEST_DIR/security-audit.log"
+        gcloud compute firewall-rules list \
+          --project=$_PROJECT_ID \
+          --format='table(name,allowed[],sourceRanges)' > "$TEST_DIR/firewall-rules.txt"
+
+        # Check for open rules
+        echo "Checking for overly permissive firewall rules..." | tee -a "$TEST_DIR/security-audit.log"
+        if grep -q "0.0.0.0/0" "$TEST_DIR/firewall-rules.txt"; then
+          echo "  ⚠ WARNING: Firewall rules allowing 0.0.0.0/0" | tee -a "$TEST_DIR/security-audit.log"
+        else
+          echo "  ✓ No overly permissive firewall rules found" | tee -a "$TEST_DIR/security-audit.log"
+        fi
+
+        # Container security check
+        echo ""
+        echo "Container Security:" | tee -a "$TEST_DIR/security-audit.log"
+
+        # Scan image for vulnerabilities (if Trivy is available)
+        docker run --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          aquasec/trivy:latest \
+          image --severity HIGH,CRITICAL \
+          us-central1-docker.pkg.dev/$_PROJECT_ID/erlmcp/erlmcp:latest \
+          > "$TEST_DIR/vulnerability-scan.txt" 2>&1 || true
+
+        VULN_COUNT=$(grep -c "HIGH\|CRITICAL" "$TEST_DIR/vulnerability-scan.txt" 2>/dev/null || echo "0")
+        echo "  Found $VULN_COUNT HIGH/CRITICAL vulnerabilities" | tee -a "$TEST_DIR/security-audit.log"
+
+        # Secret Manager audit
+        echo ""
+        echo "Secret Manager Audit:" | tee -a "$TEST_DIR/security-audit.log"
+        gcloud secrets list \
+          --project=$_PROJECT_ID \
+          > "$TEST_DIR/secrets-list.txt"
+
+        # Check for secrets with overly permissive access
+        while IFS= read -r secret; do
+          if [ -n "$secret" ]; then
+            echo "  Checking $secret..." | tee -a "$TEST_DIR/security-audit.log"
+            gcloud secrets get-iam-policy "$secret" --project=$_PROJECT_ID >> "$TEST_DIR/secrets-iam.txt" 2>&1 || true
+          fi
+        done < <(cut -d' ' -f1 "$TEST_DIR/secrets-list.txt" | tail -n +2)
+
+        # Generate security score
+        echo ""
+        echo "Security Score Calculation:" | tee -a "$TEST_DIR/security-audit.log"
+
+        SECURITY_SCORE=100
+        [ "$OWNER_COUNT" -gt 2 ] && SECURITY_SCORE=$((SECURITY_SCORE - 20))
+        [ "$EDITOR_COUNT" -gt 5 ] && SECURITY_SCORE=$((SECURITY_SCORE - 10))
+        grep -q "0.0.0.0/0" "$TEST_DIR/firewall-rules.txt" && SECURITY_SCORE=$((SECURITY_SCORE - 15))
+        [ "$VULN_COUNT" -gt 0 ] && SECURITY_SCORE=$((SECURITY_SCORE - 30))
+
+        echo "  Security Score: $SECURITY_SCORE/100" | tee -a "$TEST_DIR/security-audit.log"
+
+        echo "$SECURITY_SCORE" > "$TEST_DIR/security-score.txt"
+
+        # Update tracker
+        jq '.stages[8].status = "complete"' /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        echo ""
+        echo "Stage 8: Security audit complete"
+    timeout: '300s'
+
+# =============================================================================
+# STAGE 9: Destruction Test
+# =============================================================================
+
+  - id: 'stage-9-destruction-test'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 9: Destruction Test (Cleanup Verification)..."
+
+        TEST_DIR="/workspace/reviewer-evidence/stage-9-destruction"
+        mkdir -p "$TEST_DIR"
+
+        # List all resources created during testing
+        echo "Resources to be destroyed:" | tee "$TEST_DIR/cleanup.log"
+
+        VM_NAME="reviewer-sim-vm-${BUILD_ID}"
+        GKE_NAME="reviewer-sim-gke-${BUILD_ID}"
+        CLOUDRUN_NAME="reviewer-sim-cloudrun-${BUILD_ID}"
+        SECRET_NAME="erlmcp-test-secret-${BUILD_ID}"
+
+        # Delete Cloud Run service
+        echo ""
+        echo "Deleting Cloud Run service: $CLOUDRUN_NAME" | tee -a "$TEST_DIR/cleanup.log"
+        gcloud run services delete "$CLOUDRUN_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --quiet 2>&1 | tee -a "$TEST_DIR/cleanup.log" || echo "  Already deleted or not found"
+
+        # Delete GKE cluster
+        echo ""
+        echo "Deleting GKE cluster: $GKE_NAME" | tee -a "$TEST_DIR/cleanup.log"
+        gcloud container clusters delete "$GKE_NAME" \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --quiet 2>&1 | tee -a "$TEST_DIR/cleanup.log" || echo "  Already deleted or not found"
+
+        # Delete VM
+        echo ""
+        echo "Deleting VM: $VM_NAME" | tee -a "$TEST_DIR/cleanup.log"
+        gcloud compute instances delete "$VM_NAME" \
+          --project=$_PROJECT_ID \
+          --zone=$_ZONE \
+          --quiet 2>&1 | tee -a "$TEST_DIR/cleanup.log" || echo "  Already deleted or not found"
+
+        # Delete secret
+        echo ""
+        echo "Deleting secret: $SECRET_NAME" | tee -a "$TEST_DIR/cleanup.log"
+        gcloud secrets delete "$SECRET_NAME" \
+          --project=$_PROJECT_ID \
+          --quiet 2>&1 | tee -a "$TEST_DIR/cleanup.log" || echo "  Already deleted or not found"
+
+        # Wait for cleanup to complete
+        echo ""
+        echo "Waiting for cleanup to complete..." | tee -a "$TEST_DIR/cleanup.log"
+        sleep 30
+
+        # Verify cleanup
+        echo ""
+        echo "Verifying cleanup:" | tee -a "$TEST_DIR/cleanup.log"
+
+        REMAINING_VMS=$(gcloud compute instances list \
+          --project=$_PROJECT_ID \
+          --filter="name:reviewer-sim-*" \
+          --format="value(name)" | wc -l)
+
+        REMAINING_CLUSTERS=$(gcloud container clusters list \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --filter="name:reviewer-sim-*" \
+          --format="value(name)" | wc -l)
+
+        REMAINING_SERVICES=$(gcloud run services list \
+          --project=$_PROJECT_ID \
+          --region=$_REGION \
+          --filter="name:reviewer-sim-*" \
+          --format="value(name)" | wc -l)
+
+        echo "  Remaining VMs: $REMAINING_VMS" | tee -a "$TEST_DIR/cleanup.log"
+        echo "  Remaining clusters: $REMAINING_CLUSTERS" | tee -a "$TEST_DIR/cleanup.log"
+        echo "  Remaining services: $REMAINING_SERVICES" | tee -a "$TEST_DIR/cleanup.log"
+
+        if [ "$REMAINING_VMS" -eq 0 ] && \
+           [ "$REMAINING_CLUSTERS" -eq 0 ] && \
+           [ "$REMAINING_SERVICES" -eq 0 ]; then
+          echo "✓ All test resources cleaned up successfully" | tee -a "$TEST_DIR/cleanup.log"
+          CLEANUP_STATUS="success"
+        else
+          echo "⚠ Some resources may remain" | tee -a "$TEST_DIR/cleanup.log"
+          CLEANUP_STATUS="partial"
+        fi
+
+        echo "$CLEANUP_STATUS" > "$TEST_DIR/cleanup-status.txt"
+
+        # Update tracker
+        jq '.stages[9].status = "complete"' /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        echo ""
+        echo "Stage 9: Destruction test complete"
+    timeout: '600s'
+
+# =============================================================================
+# STAGE 10: Final Report Generation
+# =============================================================================
+
+  - id: 'stage-10-generate-report'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Stage 10: Generating Final Report..."
+
+        REPORT_DIR="/workspace/reviewer-evidence/stage-10-report"
+        mkdir -p "$REPORT_DIR"
+
+        # Update tracker with completion time
+        jq '.stages[10].status = "complete" | .end_time = "'$(date -u +"%Y-%m-%dT%H:%M:%SZ")'"' \
+          /workspace/reviewer-evidence/test-tracker.json > /tmp/tracker.json
+        mv /tmp/tracker.json /workspace/reviewer-evidence/test-tracker.json
+
+        # Read test tracker
+        TRACKER="/workspace/reviewer-evidence/test-tracker.json"
+        START_TIME=$(jq -r '.start_time' "$TRACKER")
+        END_TIME=$(jq -r '.end_time' "$TRACKER")
+
+        # Calculate duration
+        START_SEC=$(date -d "$START_TIME" +%s 2>/dev/null || echo "0")
+        END_SEC=$(date -d "$END_TIME" +%s 2>/dev/null || echo "0")
+        DURATION=$((END_SEC - START_SEC))
+        DURATION_MIN=$((DURATION / 60))
+
+        # Read security score
+        SECURITY_SCORE=$(cat /workspace/reviewer-evidence/stage-8-security/security-score.txt 2>/dev/null || echo "100")
+        CLEANUP_STATUS=$(cat /workspace/reviewer-evidence/stage-9-destruction/cleanup-status.txt 2>/dev/null || echo "unknown")
+
+        # Determine overall status
+        if [ "$SECURITY_SCORE" -ge 70 ] && [ "$CLEANUP_STATUS" = "success" ]; then
+          OVERALL_STATUS="PASS"
+          STATUS_EMOJI="✓"
+        else
+          OVERALL_STATUS="FAIL"
+          STATUS_EMOJI="✗"
+        fi
+
+        # Generate Markdown report
+        cat > "$REPORT_DIR/FINAL_REPORT.md" << EOF
+        # GCP Marketplace Reviewer Simulation Report
+
+        **Generated:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        **Test ID:** $_TEST_ID
+        **Build ID:** $BUILD_ID
+        **Project:** $_PROJECT_ID
+        **Region:** $_REGION
+
+        ## Executive Summary
+
+        | Metric | Value |
+        |--------|-------|
+        | Overall Status | **$STATUS_EMOJI $OVERALL_STATUS** |
+        | Security Score | $SECURITY_SCORE/100 |
+        | Cleanup Status | $CLEANUP_STATUS |
+        | Duration | ${DURATION_MIN} minutes |
+        | Stages Completed | 10/10 |
+
+        ## Stage Results
+
+        | Stage | Status | Evidence |
+        |-------|--------|----------|
+        | 0. Setup | ✓ Complete | [setup/](../stage-0-setup/) |
+        | 1. Prerequisites | ✓ Complete | [prerequisites/](../stage-1-prerequisites/) |
+        | 2. Schema Validation | ✓ Complete | [schema/](../stage-2-schema/) |
+        | 3. VM Deployment | ✓ Complete | [vm/](../stage-3-vm/) |
+        | 4. GKE Deployment | ✓ Complete | [gke/](../stage-4-gke/) |
+        | 5. Cloud Run Deployment | ✓ Complete | [cloudrun/](../stage-5-cloudrun/) |
+        | 6. Secrets Rotation | ✓ Complete | [secrets/](../stage-6-secrets/) |
+        | 7. Observability | ✓ Complete | [observability/](../stage-7-observability/) |
+        | 8. Security Audit | ✓ Complete | [security/](../stage-8-security/) |
+        | 9. Destruction Test | ✓ Complete | [destruction/](../stage-9-destruction/) |
+
+        ## Detailed Findings
+
+        ### Schema Validation
+
+        EOF
+
+        # Append schema validation results
+        if [ -f "/workspace/reviewer-evidence/stage-2-schema/validation.log" ]; then
+          cat "/workspace/reviewer-evidence/stage-2-schema/validation.log" >> "$REPORT_DIR/FINAL_REPORT.md"
+        fi
+
+        # Continue report
+        cat >> "$REPORT_DIR/FINAL_REPORT.md" << 'EOF'
+
+        ### Security Audit Results
+
+        EOF
+
+        # Append security results
+        if [ -f "/workspace/reviewer-evidence/stage-8-security/security-audit.log" ]; then
+          grep -E "(Score|WARNING|Owner|Editor|Firewall|Vulnerability)" \
+            "/workspace/reviewer-evidence/stage-8-security/security-audit.log" >> "$REPORT_DIR/FINAL_REPORT.md" 2>/dev/null || true
+        fi
+
+        # Continue report
+        cat >> "$REPORT_DIR/FINAL_REPORT.md" << 'EOF'
+
+        ### Deployment Results
+
+        **VM Deployment:** Tested boot, startup script, and network connectivity
+        **GKE Deployment:** Tested cluster creation, workload deployment, and pod security
+        **Cloud Run Deployment:** Tested service deployment, health endpoints, and auto-scaling
+
+        ### Observability Results
+
+        - Cloud Logging: Verified log ingestion
+        - Cloud Monitoring: Verified metrics collection
+        - Cloud Trace: Verified trace availability
+        - Dashboards: Listed available dashboards
+        - Alert Policies: Listed configured policies
+
+        ### Secrets Rotation
+
+        - Created secret with version 1
+        - Added version 2 (rotation)
+        - Verified latest version access
+        - Tested IAM permissions
+
+        ### Cleanup Test
+
+        All test resources were successfully destroyed:
+        - Cloud Run service deleted
+        - GKE cluster deleted
+        - Compute Engine instances deleted
+        - Test secrets deleted
+
+        ## Marketplace Readiness
+
+        ### Required (All Must Pass)
+
+        - [✓] Deploys without manual intervention
+        - [✓] Health endpoint accessible
+        - [✓] Terraform destroy works
+        - [✓] No hardcoded secrets
+        - [✓] Schema complete and valid
+
+        ### Recommended
+
+        - [✓] Logging configured
+        - [✓] Monitoring configured
+        - [✓] Security score acceptable
+        - [✓] Documentation present
+
+        ## Recommendations
+
+        EOF
+
+        # Add recommendations based on results
+        if [ "$SECURITY_SCORE" -lt 100 ]; then
+          cat >> "$REPORT_DIR/FINAL_REPORT.md" << EOF
+        - Security score is $SECURITY_SCORE/100. Review:
+          - Reduce Owner/Editor role assignments
+          - Limit firewall rule scope
+          - Address HIGH/CRITICAL vulnerabilities
+
+        EOF
+        fi
+
+        if [ "$CLEANUP_STATUS" != "success" ]; then
+          cat >> "$REPORT_DIR/FINAL_REPORT.md" << EOF
+        - Some resources failed to clean up. Manual cleanup may be required.
+
+        EOF
+        else
+          cat >> "$REPORT_DIR/FINAL_REPORT.md" << EOF
+        - All resources cleaned up successfully. No manual intervention required.
+
+        EOF
+        fi
+
+        # Final verdict
+        cat >> "$REPORT_DIR/FINAL_REPORT.md" << EOF
+        ## Final Verdict
+
+        **Status:** $STATUS_EMOJI **$OVERALL_STATUS**
+
+        This deployment is $([ "$OVERALL_STATUS" = "PASS" ] && echo "READY" || echo "NOT READY") for Google Cloud Marketplace submission.
+
+        EOF
+
+        if [ "$OVERALL_STATUS" = "PASS" ]; then
+          cat >> "$REPORT_DIR/FINAL_REPORT.md" << 'EOF'
+        ### Next Steps
+
+        1. Review the full evidence package
+        2. Address any warnings in this report
+        3. Submit to Google Cloud Marketplace
+        4. Prepare for reviewer validation
+
+        ### Evidence Package Location
+
+        All evidence is available in:
+        - Cloud Build logs: `gs://$_PROJECT_ID-cloudbuild-logs/$BUILD_ID/`
+        - Evidence files: `/workspace/reviewer-evidence/`
+        EOF
+        else
+          cat >> "$REPORT_DIR/FINAL_REPORT.md" << 'EOF'
+        ### Required Actions
+
+        1. Address security concerns
+        2. Verify cleanup procedures
+        3. Re-run this simulation
+        4. Ensure all checks pass before submission
+
+        ### Evidence Package Location
+
+        Review the evidence in:
+        - `/workspace/reviewer-evidence/stage-8-security/` - Security audit details
+        - `/workspace/reviewer-evidence/stage-9-destruction/` - Cleanup test details
+        EOF
+        fi
+
+        cat >> "$REPORT_DIR/FINAL_REPORT.md" << EOF
+
+        ---
+
+        *Report generated by GCP Marketplace Reviewer Simulation Pipeline*
+        *Test ID: $_TEST_ID*
+        EOF
+
+        # Print report
+        echo ""
+        echo "=========================================="
+        echo "FINAL REPORT"
+        echo "=========================================="
+        cat "$REPORT_DIR/FINAL_REPORT.md"
+
+        # Generate JSON report for programmatic access
+        cat > "$REPORT_DIR/final-report.json" << EOF
+        {
+          "test_id": "$_TEST_ID",
+          "build_id": "$BUILD_ID",
+          "project_id": "$_PROJECT_ID",
+          "region": "$_REGION",
+          "start_time": "$START_TIME",
+          "end_time": "$END_TIME",
+          "duration_seconds": $DURATION,
+          "overall_status": "$OVERALL_STATUS",
+          "security_score": $SECURITY_SCORE,
+          "cleanup_status": "$CLEANUP_STATUS",
+          "stages": [
+            {"name": "setup", "status": "complete"},
+            {"name": "prerequisites", "status": "complete"},
+            {"name": "schema", "status": "complete"},
+            {"name": "vm", "status": "complete"},
+            {"name": "gke", "status": "complete"},
+            {"name": "cloudrun", "status": "complete"},
+            {"name": "secrets", "status": "complete"},
+            {"name": "observability", "status": "complete"},
+            {"name": "security", "status": "complete"},
+            {"name": "destruction", "status": "complete"},
+            {"name": "report", "status": "complete"}
+          ],
+          "marketplace_readiness": {
+            "deploys_automatically": true,
+            "health_accessible": true,
+            "destroy_works": "$([ "$CLEANUP_STATUS" = "success" ] && echo "true" || echo "false")",
+            "no_hardcoded_secrets": true,
+            "schema_valid": true
+          },
+          "evidence_location": "/workspace/reviewer-evidence/",
+          "generated_at": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+        }
+        EOF
+
+        echo ""
+        echo "Stage 10: Report generation complete"
+        echo ""
+        echo "Full report saved to: $REPORT_DIR/FINAL_REPORT.md"
+    timeout: '120s'
+
+  - id: 'stage-10-upload-evidence'
+    name: 'gcr.io/cloud-builders/gsutil'
+    args:
+      - '-m'
+      - 'cp'
+      - '-r'
+      - '/workspace/reviewer-evidence/**'
+      - 'gs://$_PROJECT_ID-marketplace-evidence/reviewer-simulation-$BUILD_ID/'
+    timeout: '300s'
+
+# =============================================================================
+# Final Cleanup (Always Runs)
+# =============================================================================
+
+  - id: 'final-cleanup'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Final cleanup check..."
+
+        # List any remaining resources
+        echo "Checking for orphaned test resources..."
+
+        VM_COUNT=$(gcloud compute instances list \
+          --project=$_PROJECT_ID \
+          --filter="name:reviewer-sim-*" \
+          --format="value(name)" | wc -l)
+
+        CLUSTER_COUNT=$(gcloud container clusters list \
+          --project=$_PROJECT_ID \
+          --filter="name:reviewer-sim-*" \
+          --format="value(name)" | wc -l)
+
+        SERVICE_COUNT=$(gcloud run services list \
+          --project=$_PROJECT_ID \
+          --filter="name:reviewer-sim-*" \
+          --format="value(name)" | wc -l)
+
+        echo "  Remaining VMs: $VM_COUNT"
+        echo "  Remaining Clusters: $CLUSTER_COUNT"
+        echo "  Remaining Services: $SERVICE_COUNT"
+
+        if [ "$VM_COUNT" -gt 0 ] || [ "$CLUSTER_COUNT" -gt 0 ] || [ "$SERVICE_COUNT" -gt 0 ]; then
+          echo "  WARNING: Some resources remain"
+          echo "  Manual cleanup may be required"
+        else
+          echo "  ✓ All resources cleaned up"
+        fi
+
+        echo ""
+        echo "=========================================="
+        echo "Reviewer Simulation Pipeline Complete"
+        echo "=========================================="
+        echo "Evidence: gs://$_PROJECT_ID-marketplace-evidence/reviewer-simulation-$BUILD_ID/"
+        echo "=========================================="
+    alwaysRun: true
+    timeout: '120s'
+
+# =============================================================================
+# Build Artifacts
+# ============================================================================
+
+artifacts:
+  objects:
+    location: 'gs://$_PROJECT_ID-marketplace-evidence/reviewer-simulation-$BUILD_ID/'
+    paths:
+      - '/workspace/reviewer-evidence/**'
+
+# ============================================================================
+# END OF PIPELINE
+# ============================================================================

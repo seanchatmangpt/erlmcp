@@ -106,7 +106,6 @@
 %% Types
 -type user_id() :: binary().
 -type role() :: binary().
--type permission() :: binary().
 -type resource() :: binary().
 -type action() :: read | write | execute | delete | manage | any.
 
@@ -115,6 +114,7 @@
 -type attribute_context() :: map().
 
 -type policy_id() :: binary().
+-type policy_set_id() :: binary().
 -type policy_rule() :: #{id := binary(),
                        name := binary(),
                        description := binary(),
@@ -183,7 +183,7 @@
                  config => map(),               % configuration
                  optimization_cache => ets:tid()}. % policy evaluation cache
 
--export_type([user_id/0, role/0, permission/0, resource/0, action/0,
+-export_type([user_id/0, role/0, resource/0, action/0,
               attribute_name/0, attribute_value/0, attribute_context/0,
               policy_id/0, policy_rule/0, policy_set/0, role_hierarchy/0,
               context/0, access_request/0, access_decision/0, audit_event/0,
@@ -1116,8 +1116,8 @@ do_update_policy_rule(PolicyId, RuleName, Description, Updates, State) ->
                                                     description => Description,
                                                     conditions => maps:get(conditions, Updates, maps:get(conditions, R)),
                                                     actions => maps:get(actions, Updates, maps:get(actions, R)),
-                                                    resources => maps:get(resources, Updates, R#{resources}),
-                                                    subjects => maps:get(subjects, Updates, R#{subjects})
+                                                    resources => maps:get(resources, Updates, maps:get(resources, R)),
+                                                    subjects => maps:get(subjects, Updates, maps:get(subjects, R))
                                                 }),
                                                 UpdatedRule;
                                             _ ->
@@ -1463,7 +1463,7 @@ evaluate_rule(Rule, UserId, Context, State) ->
             case lists:member(maps:get(resource, Context), maps:get(resources, Rule)) of
                 true ->
                     % Check action
-                    case lists:member(maps:get(action, Context), Rule#{actions}) of
+                    case lists:member(maps:get(action, Context), maps:get(actions, Rule)) of
                         true ->
                             % Evaluate conditions
                             evaluate_conditions(maps:get(conditions, Rule), Context, State);
@@ -1516,7 +1516,7 @@ evaluate_time_condition(Operator, Value, Context, State) ->
     Time = maps:get(time, Context, erlang:system_time(second)),
     case Operator of
         before -> Time < Value;
-        after -> Time > Value;
+        'after' -> Time > Value;
         between -> Value =< Time andalso Time =< Value;
         not_between -> Time < Value orelse Time > Value
     end.
@@ -1645,9 +1645,9 @@ apply_evaluation_rule(Rule, Context, State) ->
         {remove, Key} ->
             maps:remove(Key, Context);
         {update, Key, Fun} ->
-            maps:update(Key, Fun(Context#{Key}), Context);
+            maps:update(Key, Fun(maps:get(Key, Context)), Context);
         {validate, Key, Predicate} ->
-            case Predicate(Context#{Key}) of
+            case Predicate(maps:get(Key, Context)) of
                 true -> Context;
                 false -> throw({validation_failed, Key})
             end
@@ -1657,7 +1657,7 @@ apply_filter(AuditEvent, Filter) ->
     % Apply filter criteria to audit event
     case maps:get(user_id, Filter, undefined) of
         undefined -> true;
-        UserId -> AuditEvent#{user_id} =:= UserId
+        UserId -> maps:get(user_id, AuditEvent) =:= UserId
     end.
 
 validate_policy_structure(PolicySet) ->
@@ -1674,7 +1674,7 @@ validate_policy_rules(Rules, State) ->
     InvalidRules = lists:foldl(fun(Rule, Acc) ->
                                     case validate_rule(Rule, State) of
                                         ok -> Acc;
-                                        {error, Reason} -> [Rule#{id} | Acc]
+                                        {error, Reason} -> [maps:get(id, Rule) | Acc]
                                     end
                                 end, [], Rules),
     {ok, InvalidRules}.
