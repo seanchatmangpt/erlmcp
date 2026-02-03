@@ -10,24 +10,21 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
-%% Import nominal types for type safety
--import(erlmcp_mcp_types, [mcp_session_id/0]).
-
 %% Behavior callbacks that implementations must export
 -callback init(map()) -> {ok, State :: term()} | {error, term()}.
--callback store(mcp_session_id(), session(), State :: term()) ->
+-callback store(erlmcp_mcp_types:mcp_session_id(), session(), State :: term()) ->
                    {ok, NewState :: term()} | {error, term()}.
--callback fetch(mcp_session_id(), State :: term()) ->
+-callback fetch(erlmcp_mcp_types:mcp_session_id(), State :: term()) ->
                    {ok, session(), State :: term()} | {error, not_found | term(), State :: term()}.
--callback delete(mcp_session_id(), State :: term()) ->
+-callback delete(erlmcp_mcp_types:mcp_session_id(), State :: term()) ->
                     {ok, NewState :: term()} | {error, term(), State :: term()}.
--callback list(State :: term()) -> {ok, [mcp_session_id()], NewState :: term()}.
+-callback list(State :: term()) -> {ok, [erlmcp_mcp_types:mcp_session_id()], NewState :: term()}.
 -callback cleanup_expired(State :: term()) -> {ok, Count :: non_neg_integer(), NewState :: term()}.
 
 %% Types
 %% Note: session_id() is now a nominal type from erlmcp_mcp_types
 %% This prevents accidental confusion with other binary types like request IDs
--type session_id() :: mcp_session_id().
+-type session_id() :: erlmcp_mcp_types:mcp_session_id().
 -type session() ::
     #{id := session_id(),
       created_at := integer(),
@@ -516,7 +513,7 @@ create_fallback_iterator(_State) ->
 validate_utf8_ids(SessionIds) ->
     lists:filter(fun(SessionId) ->
                    %% Validate UTF-8 encoding
-                   case binary:match(SessionId, [<<0>>) of
+                   case binary:match(SessionId, [<<0>>]) of
                        nomatch ->
                            %% Check for valid UTF-8 sequences
                            try

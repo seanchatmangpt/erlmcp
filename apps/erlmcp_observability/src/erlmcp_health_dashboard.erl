@@ -68,7 +68,8 @@ subscribe() ->
     gen_server:cast(?MODULE, {subscribe, self()}).
 
 %% @doc Unsubscribe from health updates
--spec unsubscribe() ->
+-spec unsubscribe() -> ok.
+unsubscribe() ->
     gen_server:cast(?MODULE, {unsubscribe, self()}).
 
 %%%===================================================================
@@ -229,8 +230,8 @@ handle_overall_health(Req, State) ->
         {ok, Req1, State}
     catch
         _:_ ->
-            Req1 = cowboy_req:reply(500, #{}, <<"Internal error">>, Req),
-            {ok, Req1, State}
+            Req2 = cowboy_req:reply(500, #{}, <<"Internal error">>, Req),
+            {ok, Req2, State}
     end.
 
 handle_transport_health(Req, Transport, State) ->
@@ -242,11 +243,11 @@ handle_transport_health(Req, Transport, State) ->
         {ok, Req1, State}
     catch
         error:badarg ->
-            Req1 = cowboy_req:reply(404, #{}, <<"Transport not found">>, Req),
-            {ok, Req1, State};
+            Req2 = cowboy_req:reply(404, #{}, <<"Transport not found">>, Req),
+            {ok, Req2, State};
         _:_ ->
-            Req1 = cowboy_req:reply(500, #{}, <<"Internal error">>, Req),
-            {ok, Req1, State}
+            Req3 = cowboy_req:reply(500, #{}, <<"Internal error">>, Req),
+            {ok, Req3, State}
     end.
 
 handle_websocket_upgrade(Req, State) ->
@@ -261,8 +262,8 @@ handle_prometheus_metrics(Req, State) ->
         {ok, Req1, State}
     catch
         _:_ ->
-            Req1 = cowboy_req:reply(500, #{}, <<"Internal error">>, Req),
-            {ok, Req1, State}
+            Req2 = cowboy_req:reply(500, #{}, <<"Internal error">>, Req),
+            {ok, Req2, State}
     end.
 
 handle_dashboard_html(Req, State) ->

@@ -1,0 +1,866 @@
+===> Verifying dependencies...
+===> Analyzing applications...
+===> Compiling jesse
+===> Compiling bbmustache
+===> Compiling ranch
+===> Compiling poolboy
+===> Compiling jose
+===> Compiling cowlib
+===> Compiling gun
+===> Compiling gproc
+===> Compiling cowboy
+===> Compiling base64url
+===> Compiling jsx
+===> Compiling proper
+===> Compiling meck
+===> Analyzing applications...
+===> Compiling erlmcp_core
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_session_backend.erl:
+     \x{2502}
+ 504 \x{2502}                  [Pid | Rest] ->
+     \x{2502}                         \x{2570}\x{2500}\x{2500} Warning: variable 'Rest' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_session_backend.erl:
+     \x{2502}
+ 520 \x{2502}                                 unicode:characters_to_list(SessionId, utf8) =/= {error, <<>>},
+     \x{2502}                                                                             \x{2570}\x{2500}\x{2500} Warning: use of operator '=/=' has no effect
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_cpu_guard.erl:
+    \x{2502}
+ 31 \x{2502}          Class:Reason ->
+    \x{2502}          \x{2570}\x{2500}\x{2500} Warning: variable 'Class' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_json_fallback.erl:
+    \x{2502}
+ 30 \x{2502}  -type json_error() :: {error, term()}.
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type json_error() is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_json_fallback.erl:
+    \x{2502}
+ 78 \x{2502}  has_native_json() ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function has_native_json/0 is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_otp28_upgrade.erl:
+    \x{2502}
+ 34 \x{2502}  -type process_info_opt() :: process_info_item() |
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type process_info_opt() is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_llm_provider_openai.erl:
+     \x{2502}
+ 128 \x{2502}  do_create_message(Messages, Params, #state{api_key = undefined}) ->
+     \x{2502}                    \x{2570}\x{2500}\x{2500} Warning: variable 'Messages' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_llm_provider_openai.erl:
+     \x{2502}
+ 128 \x{2502}  do_create_message(Messages, Params, #state{api_key = undefined}) ->
+     \x{2502}                              \x{2570}\x{2500}\x{2500} Warning: variable 'Params' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_pcre2_compat.erl:
+    \x{2502}
+ 80 \x{2502}  -type compile_result() :: {ok, re:mp()} | {error, term()}.
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type compile_result() is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_test_helpers.erl:
+    \x{2502}
+ 63 \x{2502}  -type state() :: #state{}.
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type state() is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_test_helpers.erl:
+     \x{2502}
+ 155 \x{2502}  start_test_server(ServerId, Capabilities, Options) ->
+     \x{2502}                                            \x{2570}\x{2500}\x{2500} Warning: variable 'Options' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_test_helpers.erl:
+     \x{2502}
+ 476 \x{2502}  handle_cast({register_process, Pid, Type, Id}, #state{test_processes = Processes} = State) ->
+     \x{2502}                                      \x{2570}\x{2500}\x{2500} Warning: variable 'Type' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_test_helpers.erl:
+     \x{2502}
+ 476 \x{2502}  handle_cast({register_process, Pid, Type, Id}, #state{test_processes = Processes} = State) ->
+     \x{2502}                                            \x{2570}\x{2500}\x{2500} Warning: variable 'Id' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_test_helpers.erl:
+     \x{2502}
+ 478 \x{2502}      MonitorRef = monitor(process, Pid),
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'MonitorRef' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_test_helpers.erl:
+     \x{2502}
+ 492 \x{2502}  handle_info({'DOWN', MonitorRef, process, Pid, _Reason},
+     \x{2502}                       \x{2570}\x{2500}\x{2500} Warning: variable 'MonitorRef' is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_llm_provider_anthropic.erl:
+     \x{2502}
+ 101 \x{2502}  do_create_message(Messages, Params, #state{api_key = undefined}) ->
+     \x{2502}                    \x{2570}\x{2500}\x{2500} Warning: variable 'Messages' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_llm_provider_anthropic.erl:
+     \x{2502}
+ 101 \x{2502}  do_create_message(Messages, Params, #state{api_key = undefined}) ->
+     \x{2502}                              \x{2570}\x{2500}\x{2500} Warning: variable 'Params' is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_session_failover.erl:
+     \x{2502}
+ 500 \x{2502}  notify_failover_local(SessionId, NewPrimary) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function notify_failover_local/2 is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_server_fsm.erl:
+    \x{2502}
+ 11 \x{2502}  -behaviour(gen_statem).
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: the callback gen_statem:format_status(_,_) is deprecated; use format_status/1 instead
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_connection_limiter.erl:
+    \x{2502}
+ 98 \x{2502}                  {ok, Count} ->
+    \x{2502}                       \x{2570}\x{2500}\x{2500} Warning: variable 'Count' is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_plugin_manager.erl:
+     \x{2502}
+ 319 \x{2502}  do_execute_pre_hooks(Request, State) ->
+     \x{2502}                                \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_plugin_manager.erl:
+     \x{2502}
+ 324 \x{2502}              lists:foldl(fun (#{module := Module, pid := Pid}, {ok, Req}) ->
+     \x{2502}                                           \x{2570}\x{2500}\x{2500} Warning: variable 'Module' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_plugin_manager.erl:
+     \x{2502}
+ 348 \x{2502}  do_execute_post_hooks(_Request, Response, State) ->
+     \x{2502}                                            \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_plugin_manager.erl:
+     \x{2502}
+ 353 \x{2502}              lists:foldl(fun (#{module := Module, pid := Pid}, {ok, Resp}) ->
+     \x{2502}                                           \x{2570}\x{2500}\x{2500} Warning: variable 'Module' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_session_fsm.erl:
+    \x{2502}
+ 12 \x{2502}  -behaviour(gen_statem).
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: the callback gen_statem:format_status(_,_) is deprecated; use format_status/1 instead
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_session_fsm.erl:
+     \x{2502}
+ 263 \x{2502}  handle_event(info, {'DOWN', MonRef, process, ConnPid, Reason}, State, Data) when State =/= closed ->
+     \x{2502}                              \x{2570}\x{2500}\x{2500} Warning: variable 'MonRef' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_resources.erl:
+    \x{2502}
+ 67 \x{2502}  list_roots_with_state(_ServerState) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function list_roots_with_state/1 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_resources.erl:
+    \x{2502}
+ 72 \x{2502}  read_resource_with_roots(Uri, _ServerState) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function read_resource_with_roots/2 is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/poc/erlmcp_pool_poc.erl:
+     \x{2502}
+ 312 \x{2502}                      WaitRef = make_ref(),
+     \x{2502}                      \x{2570}\x{2500}\x{2500} Warning: variable 'WaitRef' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/poc/erlmcp_pool_poc.erl:
+     \x{2502}
+ 312 \x{2502}                      WaitRef = make_ref(),
+     \x{2502}                                \x{2570}\x{2500}\x{2500} Warning: the call to make_ref/0 has no effect
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/poc/erlmcp_streaming_poc.erl:
+    \x{2502}
+ 67 \x{2502}  -type state() :: #state{}.
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type state() is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/poc/erlmcp_streaming_poc.erl:
+     \x{2502}
+ 343 \x{2502}  execute_tool_async(Server, ExecutionId, ToolName, Params) ->
+     \x{2502}                                          \x{2570}\x{2500}\x{2500} Warning: variable 'ToolName' is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_tool_registry.erl:
+     \x{2502}
+ 278 \x{2502}          [{Name, {Version, LastChecked}}] ->
+     \x{2502}                            \x{2570}\x{2500}\x{2500} Warning: variable 'LastChecked' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/pricing/erlmcp_pricing.erl:
+    \x{2502}
+ 17 \x{2502}  -type user_id() :: binary().
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type user_id() is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_circuit_breaker.erl:
+    \x{2502}
+ 24 \x{2502}  -type breaker_name() :: atom() | {global, term()} | {via, module(), term()}.
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type breaker_name() is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_circuit_breaker.erl:
+     \x{2502}
+ 101 \x{2502}      PriorityAlias = try
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'PriorityAlias' is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     \x{2502}
+ 371 \x{2502}              {error, CreateReason}
+     \x{2502}              \x{2570}\x{2500}\x{2500} Warning: a term is constructed, but never used
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_session_replicator.erl:
+     \x{2502}
+ 528 \x{2502}  is_fully_replicated(ReplicaState, State) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function is_fully_replicated/2 is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_client_fsm.erl:
+    \x{2502}
+ 11 \x{2502}  -behaviour(gen_statem).
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: the callback gen_statem:format_status(_,_) is deprecated; use format_status/1 instead
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_message_handler.erl:
+    \x{2502}
+ 46 \x{2502}  handle_priority_message({cancel_request, RequestId}, _From, State) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function handle_priority_message/3 is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_secrets.erl:
+     \x{2502}
+ 576 \x{2502}                         State) ->
+     \x{2502}                         \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+      \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_secrets.erl:
+      \x{2502}
+ 1098 \x{2502}                              {response, nofin, Status, RespHeaders}
+      \x{2502}                                                        \x{2570}\x{2500}\x{2500} Warning: variable 'RespHeaders' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_request_signer.erl:
+    \x{2502}
+ 75 \x{2502}  -type nonce_state() :: #{
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type nonce_state() is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_request_signer.erl:
+     \x{2502}
+ 163 \x{2502}              {error, signature_expired}
+     \x{2502}              \x{2570}\x{2500}\x{2500} Warning: a term is constructed, but never used
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_request_signer.erl:
+     \x{2502}
+ 171 \x{2502}              {error, nonce_reused}
+     \x{2502}              \x{2570}\x{2500}\x{2500} Warning: a term is constructed, but never used
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_request_signer.erl:
+     \x{2502}
+ 249 \x{2502}              {error, signature_expired}
+     \x{2502}              \x{2570}\x{2500}\x{2500} Warning: a term is constructed, but never used
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_code_reload.erl:
+    \x{2502}
+ 99 \x{2502}  get_all_modules() ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function get_all_modules/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_code_reload.erl:
+     \x{2502}
+ 114 \x{2502}  is_valid_module(Module) when is_atom(Module) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function is_valid_module/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_code_reload.erl:
+     \x{2502}
+ 126 \x{2502}  get_module_info(Module) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function get_module_info/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_code_reload.erl:
+     \x{2502}
+ 149 \x{2502}  registered_modules() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function registered_modules/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_code_reload.erl:
+     \x{2502}
+ 221 \x{2502}  code_change(OldVsn, State, Extra) ->
+     \x{2502}                             \x{2570}\x{2500}\x{2500} Warning: variable 'Extra' is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_session_mnesia.erl:
+     \x{2502}
+ 223 \x{2502}          {aborted, Reason} ->
+     \x{2502}                    \x{2570}\x{2500}\x{2500} Warning: variable 'Reason' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_message_normal.erl:
+    \x{2502}
+ 99 \x{2502}              {error, timeout}
+    \x{2502}              \x{2570}\x{2500}\x{2500} Warning: a term is constructed, but never used
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_message_normal.erl:
+     \x{2502}
+ 246 \x{2502}  monitor_message_queues() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function monitor_message_queues/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_message_normal.erl:
+     \x{2502}
+ 263 \x{2502}  get_performance_statistics() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function get_performance_statistics/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_message_normal.erl:
+     \x{2502}
+ 282 \x{2502}  log_performance_statistics() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function log_performance_statistics/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_message_normal.erl:
+     \x{2502}
+ 289 \x{2502}  test_message_delivery() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function test_message_delivery/0 is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_tool_router.erl:
+     \x{2502}
+ 278 \x{2502}  init() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function init/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_tool_router.erl:
+     \x{2502}
+ 289 \x{2502}  stop() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function stop/0 is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_runtime_adapter.erl:
+    \x{2502}
+ 34 \x{2502}  adapt_to_otp_version(OtpVersion) ->
+    \x{2502}                       \x{2570}\x{2500}\x{2500} Warning: variable 'OtpVersion' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_circuit_breaker_poc.erl:
+    \x{2502}
+ 65 \x{2502}  handle_call({call, Fun}, _From, State = #state{circuit_state = open}) ->
+    \x{2502}                     \x{2570}\x{2500}\x{2500} Warning: variable 'Fun' is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_circuit_breaker_poc.erl:
+    \x{2502}
+ 67 \x{2502}  handle_call({call, Fun}, _From, State = #state{circuit_state = CircuitState}) ->
+    \x{2502}                                                                 \x{2570}\x{2500}\x{2500} Warning: variable 'CircuitState' is unused
+
+
+   \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry.erl:
+   \x{2502}
+ 3 \x{2502}  -behaviour(gen_server).
+   \x{2502}   \x{2570}\x{2500}\x{2500} Warning: the callback gen_server:format_status(_,_) is deprecated; use format_status/1 instead
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry.erl:
+     \x{2502}
+ 482 \x{2502}  handle_continue(ensure_dependencies, State) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function handle_continue/2 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry.erl:
+     \x{2502}
+ 525 \x{2502}  format_status(Opt, [PDict, State]) ->
+     \x{2502}                      \x{2570}\x{2500}\x{2500} Warning: variable 'PDict' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_auth_mtls.erl:
+    \x{2502}
+ 35 \x{2502}  extract_certificate_der(_CertInfo, _Config) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function extract_certificate_der/2 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_auth_mtls.erl:
+    \x{2502}
+ 39 \x{2502}  validate_certificate(_CertDer, _ValidatorConfig) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function validate_certificate/2 is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+    \x{2502}
+ 98 \x{2502}  handle_call({connect_node, Node}, _From, State) ->
+    \x{2502}                             \x{2570}\x{2500}\x{2500} Warning: variable 'Node' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_manager.erl:
+     \x{2502}
+ 100 \x{2502}  handle_call({disconnect_node, Node}, _From, State) ->
+     \x{2502}                                \x{2570}\x{2500}\x{2500} Warning: variable 'Node' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_tasks.erl:
+    \x{2502}
+ 55 \x{2502}  -type task_status() :: pending | processing | completed | failed | cancelled.
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type task_status() is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_tasks.erl:
+    \x{2502}
+ 58 \x{2502}  -type update_function() :: fun((map()) -> map()).
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type update_function() is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_tasks.erl:
+     \x{2502}
+ 124 \x{2502}  list_tasks(ClientPid) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function list_tasks/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_tasks.erl:
+     \x{2502}
+ 174 \x{2502}          Token ->
+     \x{2502}          \x{2570}\x{2500}\x{2500} Warning: variable 'Token' is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_map_utils.erl:
+     \x{2502}
+ 297 \x{2502}  get_otp_version() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function get_otp_version/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_map_utils.erl:
+     \x{2502}
+ 307 \x{2502}  has_otp28_put_optimization() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function has_otp28_put_optimization/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_map_utils.erl:
+     \x{2502}
+ 314 \x{2502}  has_otp27_filter_optimization() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function has_otp27_filter_optimization/0 is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_cluster_monitor.erl:
+     \x{2502}
+ 334 \x{2502}      Threshold = State#state.alert_threshold,
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'Threshold' is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_control_plane.erl:
+     \x{2502}
+ 255 \x{2502}              Result =
+     \x{2502}              \x{2570}\x{2500}\x{2500} Warning: variable 'Result' is unused
+
+
+   \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+   \x{2502}
+ 6 \x{2502}  -behaviour(gen_server).
+   \x{2502}   \x{2570}\x{2500}\x{2500} Warning: the callback gen_server:format_status(_,_) is deprecated; use format_status/1 instead
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 28 \x{2502}  -record(cache_entry, {
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: record cache_entry is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 92 \x{2502}  register_server(global, ServerId, ServerPid, Config) when is_pid(ServerPid) ->
+    \x{2502}                          \x{2570}\x{2500}\x{2500} Warning: variable 'ServerId' is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+    \x{2502}
+ 92 \x{2502}  register_server(global, ServerId, ServerPid, Config) when is_pid(ServerPid) ->
+    \x{2502}                                               \x{2570}\x{2500}\x{2500} Warning: variable 'Config' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 100 \x{2502}  register_transport(global, TransportId, TransportPid, Config) when is_pid(TransportPid) ->
+     \x{2502}                             \x{2570}\x{2500}\x{2500} Warning: variable 'TransportId' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 100 \x{2502}  register_transport(global, TransportId, TransportPid, Config) when is_pid(TransportPid) ->
+     \x{2502}                                                        \x{2570}\x{2500}\x{2500} Warning: variable 'Config' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 108 \x{2502}  unregister_server(global, ServerId) ->
+     \x{2502}                            \x{2570}\x{2500}\x{2500} Warning: variable 'ServerId' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 116 \x{2502}  unregister_transport(global, TransportId) ->
+     \x{2502}                               \x{2570}\x{2500}\x{2500} Warning: variable 'TransportId' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 133 \x{2502}  find_server(global, ServerId) ->
+     \x{2502}                      \x{2570}\x{2500}\x{2500} Warning: variable 'ServerId' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_registry_optimized.erl:
+     \x{2502}
+ 141 \x{2502}  find_transport(global, TransportId) ->
+     \x{2502}                         \x{2570}\x{2500}\x{2500} Warning: variable 'TransportId' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_process_legacy.erl:
+    \x{2502}
+ 31 \x{2502}  -type process_info() :: pid() | {pid(), map()}.
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type process_info() is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_process_legacy.erl:
+     \x{2502}
+ 208 \x{2502}  monitor_process_count_changes() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function monitor_process_count_changes/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_process_legacy.erl:
+     \x{2502}
+ 232 \x{2502}  log_performance_metrics(Metrics) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function log_performance_metrics/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_process_legacy.erl:
+     \x{2502}
+ 237 \x{2502}  get_memory_trend() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function get_memory_trend/0 is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+    \x{2502}
+ 83 \x{2502}  new_request_id(Id) when is_binary(Id), byte_size(Id) > 0 ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function new_request_id/1 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+    \x{2502}
+ 90 \x{2502}  new_tool_name(Name) when is_binary(Name), byte_size(Name) > 0 ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function new_tool_name/1 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+    \x{2502}
+ 97 \x{2502}  new_resource_uri(Uri) when is_binary(Uri), byte_size(Uri) > 0 ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function new_resource_uri/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 104 \x{2502}  new_session_id(Id) when is_binary(Id), byte_size(Id) > 0 ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function new_session_id/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 111 \x{2502}  new_prompt_name(Name) when is_binary(Name), byte_size(Name) > 0 ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function new_prompt_name/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 118 \x{2502}  new_task_id(Id) when is_binary(Id), byte_size(Id) > 0 ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function new_task_id/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 125 \x{2502}  new_progress_token(Token) when is_binary(Token), byte_size(Token) > 0 ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function new_progress_token/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 134 \x{2502}  new_cursor_token(Token) when is_binary(Token), byte_size(Token) > 0 ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function new_cursor_token/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 146 \x{2502}  validate_request_id(Id) when is_binary(Id), byte_size(Id) > 0 ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function validate_request_id/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 153 \x{2502}  validate_tool_name(Name) when is_binary(Name), byte_size(Name) > 0 ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function validate_tool_name/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 160 \x{2502}  validate_resource_uri(Uri) when is_binary(Uri), byte_size(Uri) > 0 ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function validate_resource_uri/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 167 \x{2502}  validate_session_id(Id) when is_binary(Id), byte_size(Id) > 0 ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function validate_session_id/1 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 178 \x{2502}  generate_request_id() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function generate_request_id/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 183 \x{2502}  generate_session_id() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function generate_session_id/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 188 \x{2502}  generate_task_id() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function generate_task_id/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 193 \x{2502}  generate_progress_token() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function generate_progress_token/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 198 \x{2502}  generate_cursor_token() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function generate_cursor_token/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_mcp_types.erl:
+     \x{2502}
+ 208 \x{2502}  uuid4() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function uuid4/0 is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+    \x{2502}
+ 35 \x{2502}  -type transport_id() :: atom() | binary().
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type transport_id() is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 225 \x{2502}  handle_cast({remove_monitor, Ref, Type, Id}, State = #state{monitors = Monitors}) ->
+     \x{2502}                               \x{2570}\x{2500}\x{2500} Warning: variable 'Ref' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 562 \x{2502}          {ok, {_Node, Pid, _OldConfig}} ->
+     \x{2502}                       \x{2570}\x{2500}\x{2500} Warning: variable 'Pid' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 592 \x{2502}  pg_optimized_join(Scope, Group, Pid, State = #state{otp_version = Version}) ->
+     \x{2502}                                       \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 636 \x{2502}  pg_optimized_leave(Scope, Group, Pid, State = #state{otp_version = Version}) ->
+     \x{2502}                                        \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 680 \x{2502}  get_members_with_iterator(Group, State) ->
+     \x{2502}                                   \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 865 \x{2502}  cleanup_process(Pid, _State) ->
+     \x{2502}                  \x{2570}\x{2500}\x{2500} Warning: variable 'Pid' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 871 \x{2502}  apply_advanced_optimizations(Data, State) ->
+     \x{2502}                               \x{2570}\x{2500}\x{2500} Warning: variable 'Data' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 871 \x{2502}  apply_advanced_optimizations(Data, State) ->
+     \x{2502}                                     \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 878 \x{2502}  apply_standard_optimizations(Data, State) ->
+     \x{2502}                               \x{2570}\x{2500}\x{2500} Warning: variable 'Data' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 878 \x{2502}  apply_standard_optimizations(Data, State) ->
+     \x{2502}                                     \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 885 \x{2502}  apply_basic_optimizations(Data, State) ->
+     \x{2502}                            \x{2570}\x{2500}\x{2500} Warning: variable 'Data' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_distribution_registry.erl:
+     \x{2502}
+ 885 \x{2502}  apply_basic_optimizations(Data, State) ->
+     \x{2502}                                  \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_completion.erl:
+    \x{2502}
+ 39 \x{2502}  -type stream_chunk() :: {chunk, binary()} | {done, completion_result()}.
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type stream_chunk() is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/poc/erlmcp_consensus_poc.erl:
+     \x{2502}
+ 151 \x{2502}  handle_call({execute_tool, ToolName, Args}, From, State = #state{role = leader}) ->
+     \x{2502}                                              \x{2570}\x{2500}\x{2500} Warning: variable 'From' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/poc/erlmcp_consensus_poc.erl:
+     \x{2502}
+ 166 \x{2502}  handle_call({execute_tool, ToolName, Args}, From, State = #state{role = follower}) ->
+     \x{2502}                                              \x{2570}\x{2500}\x{2500} Warning: variable 'From' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/poc/erlmcp_consensus_poc.erl:
+     \x{2502}
+ 233 \x{2502}  terminate(_Reason, State = #state{role = leader}) ->
+     \x{2502}                     \x{2570}\x{2500}\x{2500} Warning: variable 'State' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_core_sup.erl:
+    \x{2502}
+ 91 \x{2502}          [#{id => erlmcp_plugin_sup,
+    \x{2502}          \x{2570}\x{2500}\x{2500} Warning: a term is constructed, but never used
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/poc/erlmcp_poc_demo.erl:
+     \x{2502}
+ 439 \x{2502}      AgentId = Agent#agent_state.id,
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'AgentId' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/poc/erlmcp_poc_demo.erl:
+     \x{2502}
+ 642 \x{2502}              {N, 0} ->
+     \x{2502}               \x{2570}\x{2500}\x{2500} Warning: variable 'N' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_code_loader.erl:
+    \x{2502}
+ 30 \x{2502}  -type reload_state() :: prepared | committed | rolled_back.
+    \x{2502}   \x{2570}\x{2500}\x{2500} Warning: type reload_state() is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_icon_cache.erl:
+     \x{2502}
+ 142 \x{2502}          [{Key, #icon_entry{data = Data, last_access = LastAccess} = Entry}] ->
+     \x{2502}                                                        \x{2570}\x{2500}\x{2500} Warning: variable 'LastAccess' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_icon_cache.erl:
+     \x{2502}
+ 158 \x{2502}  handle_call({put, Type, Uri, Size, Data, TTLMs}, _From, State) ->
+     \x{2502}                                           \x{2570}\x{2500}\x{2500} Warning: variable 'TTLMs' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_sup.erl:
+    \x{2502}
+ 36 \x{2502}          {error, Reason} = Error ->
+    \x{2502}                  \x{2570}\x{2500}\x{2500} Warning: variable 'Reason' is unused
+
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_task_runner.erl:
+     \x{2502}
+ 450 \x{2502}  notify_task_timeout(#{task_id := TaskId, timeout := Timeout} = State) ->
+     \x{2502}                                   \x{2570}\x{2500}\x{2500} Warning: variable 'TaskId' is unused
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_nominal_types_test.erl:
+    \x{2502}
+ 14 \x{2502}  bad_use_tool_as_id(ToolName) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function bad_use_tool_as_id/1 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_nominal_types_test.erl:
+    \x{2502}
+ 21 \x{2502}  bad_use_id_as_tool(RequestId) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function bad_use_id_as_tool/1 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_nominal_types_test.erl:
+    \x{2502}
+ 27 \x{2502}  bad_swap_tool_and_resource(ToolName, ResourceUri) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function bad_swap_tool_and_resource/2 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_nominal_types_test.erl:
+    \x{2502}
+ 33 \x{2502}  correct_type_usage(ToolName) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function correct_type_usage/1 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_nominal_types_test.erl:
+    \x{2502}
+ 40 \x{2502}  process_types(RequestId, ToolName, ResourceUri) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function process_types/3 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_nominal_types_test.erl:
+    \x{2502}
+ 47 \x{2502}  nominal_to_binary(ToolName) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function nominal_to_binary/1 is unused
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_nominal_types_test.erl:
+    \x{2502}
+ 54 \x{2502}  binary_to_nominal(Bin) ->
+    \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function binary_to_nominal/1 is unused
+
+
+===> Compiling apps/erlmcp_core/src/erlmcp_stream_fallback.erl failed
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 109 \x{2502}                      false -> stream_filter(Stream, Predicate)()
+     \x{2502}                                                               \x{2570}\x{2500}\x{2500} syntax error before: '('
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+    \x{2502}
+ 19 \x{2502}  -export([
+    \x{2502}   \x{2570}\x{2500}\x{2500} function stream_filter/2 undefined, did you mean stream_take/2?
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 101 \x{2502}  -spec stream_filter(stream(), predicate()) -> stream().
+     \x{2502}   \x{2570}\x{2500}\x{2500} spec for undefined function stream_filter/2
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 250 \x{2502}          memory_usage := Memory,
+     \x{2502}                          \x{2570}\x{2500}\x{2500} variable 'Memory' is unbound
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 251 \x{2502}          chunks_processed := Chunks
+     \x{2502}                              \x{2570}\x{2500}\x{2500} variable 'Chunks' is unbound
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 296 \x{2502}      Filtered = stream_filter(Stream, fun(X) -> X rem 2 =:= 0 end),
+     \x{2502}                 \x{2570}\x{2500}\x{2500} function stream_filter/2 undefined, did you mean stream_take/2?
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 302 \x{2502}          list_processing_time => End1 - Start1,
+     \x{2502}                                         \x{2570}\x{2500}\x{2500} variable 'Start1' is unbound, did you mean 'Start'?
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 321 \x{2502}      Even = stream_filter(Doubled, fun(X) -> X rem 4 =:= 0 end),
+     \x{2502}             \x{2570}\x{2500}\x{2500} function stream_filter/2 undefined, did you mean stream_take/2?
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 354 \x{2502}          _Filtered = stream_to_list(stream_filter(Stream, fun(X) -> X rem 2 =:= 0 end)),
+     \x{2502}                                     \x{2570}\x{2500}\x{2500} function stream_filter/2 undefined, did you mean stream_take/2?
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 366 \x{2502}      is_list(Results) andalso lists:all(fun is_element/1, Results).
+     \x{2502}                                         \x{2570}\x{2500}\x{2500} function is_element/1 undefined
+
+
+    \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+    \x{2502}
+ 80 \x{2502}              [Head | Tail] -> Head;
+    \x{2502}                      \x{2570}\x{2500}\x{2500} Warning: variable 'Tail' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 286 \x{2502}  test_stream_performance() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function test_stream_performance/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 291 \x{2502}      Start = erlang:monotonic_time(microsecond),
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'Start' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 310 \x{2502}  example_stream_processing() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function example_stream_processing/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 333 \x{2502}      Result2 = process_large_stream(LargeStream, fun(Chunk) ->
+     \x{2502}      \x{2570}\x{2500}\x{2500} Warning: variable 'Result2' is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 341 \x{2502}  benchmark_stream_operations() ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function benchmark_stream_operations/0 is unused
+
+     \x{250C}\x{2500} apps/erlmcp_core/src/erlmcp_stream_fallback.erl:
+     \x{2502}
+ 364 \x{2502}  validate_stream_results(Results) ->
+     \x{2502}  \x{2570}\x{2500}\x{2500} Warning: function validate_stream_results/1 is unused
+
+

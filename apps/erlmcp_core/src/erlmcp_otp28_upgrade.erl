@@ -30,6 +30,7 @@
 
 -type child_info() :: #{id => term(), pid => pid() | undefined,
                         type => worker | supervisor, modules => [module()]}.
+-type process_info_item() :: atom().  %% OTP 28 process info options (e.g., messages, memory, etc.)
 -type process_info_opt() :: process_info_item() |
                             {dictionary, [atom()]} |
                             {meta, term()}.

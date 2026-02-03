@@ -470,12 +470,11 @@ parse_and_route(Message, State) ->
                            [Message, Reason]),
             {error, parse_error};
         ParsedMessage when is_map(ParsedMessage) ->
-                    %% Route to registry
-                    State#state.registry_pid
-                    ! {transport_data, State#state.transport_id, ParsedMessage},
-                    {ok, State}
-            end;
-        false ->
+            %% Route to registry
+            State#state.registry_pid
+            ! {transport_data, State#state.transport_id, ParsedMessage},
+            {ok, State};
+        _ ->
             logger:warning("Invalid JSON in WebSocket message: ~p", [Message]),
             {error, parse_error}
     end.

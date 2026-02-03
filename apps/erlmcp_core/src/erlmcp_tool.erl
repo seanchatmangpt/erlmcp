@@ -7,13 +7,10 @@
          validate_input_schema/1, validate_tool_metadata/1, encode_tool/1, decode_tool/1,
          send_priority_cancel/3, send_urgent_tool_alert/2]).
 
-%% Import nominal type for tool names
--import(erlmcp_mcp_types, [mcp_tool_name/0]).
-
 %% Types
 %% Note: tool_name() is now a nominal type from erlmcp_mcp_types
 %% This prevents accidental confusion with other binary types like resource URIs
--type tool_name() :: mcp_tool_name().
+-type tool_name() :: erlmcp_mcp_types:mcp_tool_name().
 
 -export_type([tool_name/0]).
 

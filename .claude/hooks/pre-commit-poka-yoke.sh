@@ -37,9 +37,19 @@ echo ""
 # Check 1: Behavior Callback Definitions
 ###############################################################################
 
+# Get the project root directory (works on macOS and Linux)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+APPS_DIR="${PROJECT_ROOT}/apps"
+
+# Validate we're in the right directory
+if [ ! -d "$APPS_DIR" ]; then
+    echo -e "${RED}Error: apps directory not found at $APPS_DIR${NC}"
+    exit 1
+fi
+
 echo "📋 Check 1: Behavior Callback Definitions"
 
-BEHAVIOR_COUNT=$(find /Users/sac/erlmcp/apps -name "*.erl" -path "*/src/*" -type f -exec grep -h "-callback" {} \; 2>/dev/null | wc -l | xargs)
+BEHAVIOR_COUNT=$(find "$APPS_DIR" -name "*.erl" -path "*/src/*" -type f -exec grep -h "-callback" {} \; 2>/dev/null | wc -l | xargs)
 
 if [ "$BEHAVIOR_COUNT" -lt 50 ]; then
     echo -e "${RED}❌ BEHAVIOR: Only $BEHAVIOR_COUNT callback definitions found (expected 50+)${NC}"
@@ -56,7 +66,7 @@ echo ""
 
 echo "⏱️  Check 2: Explicit Timeouts on gen_server:call"
 
-MISSING_TIMEOUTS=$(find /Users/sac/erlmcp/apps -name "*.erl" -path "*/src/*" -type f -exec grep -h "gen_server:call" {} \; 2>/dev/null | grep -vE ",\s*[0-9]+|,\s*infinity|,\s*[_a-zA-Z_]+_TIMEOUT" | wc -l | xargs)
+MISSING_TIMEOUTS=$(find "$APPS_DIR" -name "*.erl" -path "*/src/*" -type f -exec grep -h "gen_server:call" {} \; 2>/dev/null | grep -vE ",\s*[0-9]+|,\s*infinity|,\s*[_a-zA-Z_]+_TIMEOUT" | wc -l | xargs)
 
 if [ "$MISSING_TIMEOUTS" -gt 0 ]; then
     echo -e "${RED}❌ TIMEOUT: $MISSING_TIMEOUTS gen_server:call operations without explicit timeout${NC}"
@@ -74,7 +84,7 @@ echo ""
 
 echo "🔒 Check 3: Safe Process Registration"
 
-UNSAFE_REGISTER=$(find /Users/sac/erlmcp/apps -name "*.erl" -path "*/src/*" -type f -exec grep -h "register(" {} \; 2>/dev/null | grep -v "gproc:register\|gproc:reg\|%%" | wc -l | xargs)
+UNSAFE_REGISTER=$(find "$APPS_DIR" -name "*.erl" -path "*/src/*" -type f -exec grep -h "register(" {} \; 2>/dev/null | grep -v "gproc:register\|gproc:reg\|%%" | wc -l | xargs)
 
 if [ "$UNSAFE_REGISTER" -gt 0 ]; then
     echo -e "${RED}❌ REGISTER: $UNSAFE_REGISTER unsafe register/2 calls found${NC}"
@@ -92,7 +102,7 @@ echo ""
 
 echo "🏭 Check 4: Supervised Processes Only"
 
-RAW_SPAWN=$(find /Users/sac/erlmcp/apps -name "*.erl" -path "*/src/*" -type f -exec grep -hE "erlang:spawn\(|proc_lib:spawn\(|spawn\(fun|spawn\(Module" {} \; 2>/dev/null | grep -v "%%\|supervisor:start_child\|proc_lib:start_link" | wc -l | xargs)
+RAW_SPAWN=$(find "$APPS_DIR" -name "*.erl" -path "*/src/*" -type f -exec grep -hE "erlang:spawn\(|proc_lib:spawn\(|spawn\(fun|spawn\(Module" {} \; 2>/dev/null | grep -v "%%\|supervisor:start_child\|proc_lib:start_link" | wc -l | xargs)
 
 if [ "$RAW_SPAWN" -gt 0 ]; then
     echo -e "${YELLOW}⚠️  SPAWN: $RAW_SPAWN raw spawn operations found (may be supervised)${NC}"
@@ -109,7 +119,7 @@ echo ""
 
 echo "📊 Check 5: Named ETS Tables"
 
-UNNAMED_ETS=$(find /Users/sac/erlmcp/apps -name "*.erl" -path "*/src/*" -type f -exec grep -hE "ets:new\s*\(" {} \; 2>/dev/null | grep -v "named_table" | wc -l | xargs)
+UNNAMED_ETS=$(find "$APPS_DIR" -name "*.erl" -path "*/src/*" -type f -exec grep -hE "ets:new\s*\(" {} \; 2>/dev/null | grep -v "named_table" | wc -l | xargs)
 
 if [ "$UNNAMED_ETS" -gt 0 ]; then
     echo -e "${YELLOW}⚠️  ETS: $UNNAMED_ETS unnamed ETS tables found (memory leak risk)${NC}"
@@ -126,8 +136,8 @@ echo ""
 
 echo "📝 Check 6: Type Specifications Coverage"
 
-TOTAL_FILES=$(find /Users/sac/erlmcp/apps -name "*.erl" -path "*/src/*" -type f | wc -l | xargs)
-SPECS_COUNT=$(find /Users/sac/erlmcp/apps -name "*.erl" -path "*/src/*" -type f -exec grep -l "-spec " {} \; 2>/dev/null | wc -l | xargs)
+TOTAL_FILES=$(find "$APPS_DIR" -name "*.erl" -path "*/src/*" -type f | wc -l | xargs)
+SPECS_COUNT=$(find "$APPS_DIR" -name "*.erl" -path "*/src/*" -type f -exec grep -l "-spec " {} \; 2>/dev/null | wc -l | xargs)
 
 if [ "$SPECS_COUNT" -lt "$TOTAL_FILES" ]; then
     MISSING=$((TOTAL_FILES - SPECS_COUNT))

@@ -32,13 +32,6 @@
          %% UTF-8 support
          validate_utf8/1, ensure_utf8_encoding/1]).
 
-%% Import nominal types for type safety
--import(erlmcp_mcp_types, [
-    mcp_request_id/0,
-    mcp_tool_name/0,
-    mcp_resource_uri/0,
-    mcp_prompt_name/0
-]).
 
 %% Types
 -type json_rpc_message() :: #json_rpc_request{} | #json_rpc_response{} | #json_rpc_notification{}.
@@ -142,17 +135,8 @@ decode_batch(Json) when is_binary(Json) ->
 
 -spec encode_batch([json_rpc_message()]) -> binary().
 encode_batch(Messages) when is_list(Messages) ->
-    %% OTP 28: Use strict generator for fail-fast validation
-    %% Crashes if any message is not a valid json_rpc_message record
-    try
-        Maps = [build_message_map(Msg) || Msg <:- Messages],
-        erlmcp_json_native:encode(Maps)
-    catch
-        error:{badmatch, _} ->
-            %% Fallback to non-strict for OTP < 28 compatibility
-            Maps = [build_message_map(Msg) || Msg <- Messages],
-            erlmcp_json_native:encode(Maps)
-    end.
+    Maps = [build_message_map(Msg) || Msg <- Messages],
+    erlmcp_json_native:encode(Maps).
 
 -spec is_batch_request(binary()) -> boolean().
 is_batch_request(Json) when is_binary(Json) ->
@@ -431,19 +415,19 @@ error_invalid_params(Id, Details) when is_binary(Details) ->
     encode_error_response(Id, ?JSONRPC_INVALID_PARAMS, ?JSONRPC_MSG_INVALID_PARAMS, Data).
 
 %% Resource not found error
--spec error_resource_not_found(json_rpc_id(), mcp_resource_uri()) -> binary().
+-spec error_resource_not_found(json_rpc_id(), erlmcp_mcp_types:mcp_resource_uri()) -> binary().
 error_resource_not_found(Id, Uri) when is_binary(Uri) ->
     Data = #{<<"uri">> => Uri},
     encode_error_response(Id, ?MCP_ERROR_RESOURCE_NOT_FOUND, ?MCP_MSG_RESOURCE_NOT_FOUND, Data).
 
 %% Tool not found error
--spec error_tool_not_found(json_rpc_id(), mcp_tool_name()) -> binary().
+-spec error_tool_not_found(json_rpc_id(), erlmcp_mcp_types:mcp_tool_name()) -> binary().
 error_tool_not_found(Id, ToolName) when is_binary(ToolName) ->
     Data = #{<<"tool">> => ToolName},
     encode_error_response(Id, ?MCP_ERROR_TOOL_NOT_FOUND, ?MCP_MSG_TOOL_NOT_FOUND, Data).
 
 %% Prompt not found error
--spec error_prompt_not_found(json_rpc_id(), mcp_prompt_name()) -> binary().
+-spec error_prompt_not_found(json_rpc_id(), erlmcp_mcp_types:mcp_prompt_name()) -> binary().
 error_prompt_not_found(Id, PromptName) when is_binary(PromptName) ->
     Data = #{<<"prompt">> => PromptName},
     encode_error_response(Id, ?MCP_ERROR_PROMPT_NOT_FOUND, ?MCP_MSG_PROMPT_NOT_FOUND, Data).
