@@ -142,3 +142,4 @@ tools/rebar3-diagnostics/
 # CT runtime cache
 log/ct/ct_log_cache
 log/ct/*.log
+.erlmcp/env.sh
