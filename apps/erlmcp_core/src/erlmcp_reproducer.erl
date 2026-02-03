@@ -94,8 +94,8 @@ capture_protocol_failure(RuleId, Input, Expected, Actual) ->
               try
                   throw(capture_stacktrace)
               catch
-                  _:_ ->
-                      erlang:get_stacktrace()
+                  _:_:Stacktrace ->
+                      Stacktrace
               end,
           system_state => capture_system_state()},
     capture(Scenario).
@@ -115,8 +115,8 @@ capture_transport_failure(RuleId, Input, Expected, Actual) ->
               try
                   throw(capture_stacktrace)
               catch
-                  _:_ ->
-                      erlang:get_stacktrace()
+                  _:_:Stacktrace ->
+                      Stacktrace
               end,
           system_state => capture_system_state()},
     capture(Scenario).
@@ -135,8 +135,8 @@ capture_sse_failure(RuleId, Input, Expected, Actual) ->
               try
                   throw(capture_stacktrace)
               catch
-                  _:_ ->
-                      erlang:get_stacktrace()
+                  _:_:Stacktrace ->
+                      Stacktrace
               end,
           system_state => capture_system_state()},
     capture(Scenario).
