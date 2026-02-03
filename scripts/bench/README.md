@@ -2,6 +2,60 @@
 
 Performance benchmarking and validation scripts for erlmcp.
 
+## Production Benchmark Suite
+
+### production-bench.sh
+
+**Purpose:** Docker-only production benchmarking with baseline comparison.
+
+**Per DOCKER-ONLY CONSTITUTION:** All execution via Docker containers.
+
+**Metrics:**
+1. Cold start time (container start to first BEAM response)
+2. Request throughput (requests/second)
+3. Memory usage (Docker stats + BEAM memory)
+4. Response time percentiles (p50, p95, p99)
+
+**Usage:**
+```bash
+# Run with default settings (10,000 requests, 10 concurrent)
+./scripts/bench/production-bench.sh
+
+# Save results as new baseline
+./scripts/bench/production-bench.sh --save-baseline
+
+# Run with custom load level
+./scripts/bench/production-bench.sh -r 50000 -c 50
+
+# Compare against specific baseline
+./scripts/bench/production-bench.sh -b .baseline/baseline-2024-01-01T00:00:00Z.json
+
+# Save output to file
+./scripts/bench/production-bench.sh -o benchmark-results.json
+```
+
+**Options:**
+| Option | Default | Description |
+|--------|---------|-------------|
+| `-r, --requests N` | 10000 | Number of requests |
+| `-c, --concurrency N` | 10 | Concurrent connections |
+| `-d, --duration SEC` | 30 | Duration in seconds |
+| `-b, --baseline FILE` | - | Custom baseline file |
+| `-s, --save-baseline` | false | Save as new baseline |
+| `-o, --output FILE` | stdout | Output file |
+| `-v, --verbose` | false | Verbose output |
+
+**Exit Codes:**
+- `0` - All benchmarks passed
+- `1` - One or more benchmarks failed
+- `2` - Regression detected vs baseline
+- `3` - Docker execution error
+
+**Receipt Generation:**
+Each run generates a receipt at `scripts/bench/.receipts/receipt-<timestamp>.json` containing git_sha, image_digest, and results hash for proof verification.
+
+## Validation Benchmark Suite
+
 ## Overview
 
 These scripts automate performance regression testing by comparing current benchmark results against established baselines. They enforce quality gates to prevent performance degradation.

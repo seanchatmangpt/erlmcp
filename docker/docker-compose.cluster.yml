@@ -56,7 +56,7 @@ services:
     environment:
       # Node Configuration
       NODE_NAME: node1@node1.erlmcp.local
-      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_cluster_secret}
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
       EPMD_PORT: 4369
 
       # Clustering
@@ -124,7 +124,7 @@ services:
       - "9002:9001"
     environment:
       NODE_NAME: node2@node2.erlmcp.local
-      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_cluster_secret}
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
       EPMD_PORT: 4369
       CLUSTER_NODES: 'node1@node1.erlmcp.local,node3@node3.erlmcp.local,node4@node4.erlmcp.local'
       ERL_MAX_PORTS: 65536
@@ -180,7 +180,7 @@ services:
       - "9003:9001"
     environment:
       NODE_NAME: node3@node3.erlmcp.local
-      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_cluster_secret}
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
       EPMD_PORT: 4369
       CLUSTER_NODES: 'node1@node1.erlmcp.local,node2@node2.erlmcp.local,node4@node4.erlmcp.local'
       ERL_MAX_PORTS: 65536
@@ -236,7 +236,7 @@ services:
       - "9004:9001"
     environment:
       NODE_NAME: node4@node4.erlmcp.local
-      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_cluster_secret}
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
       EPMD_PORT: 4369
       CLUSTER_NODES: 'node1@node1.erlmcp.local,node2@node2.erlmcp.local,node3@node3.erlmcp.local'
       ERL_MAX_PORTS: 65536

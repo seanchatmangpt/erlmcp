@@ -2,7 +2,7 @@
 
 -behaviour(supervisor).
 
--export([start_link/0, start_child/3]).
+-export([start_link/0, start_child/3, stop_accepting/0]).
 -export([init/1]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -45,6 +45,41 @@ start_child(TransportId, Type, Config) ->
                          transport_type => Type,
                          reason => Reason}),
             Error
+    end.
+
+%% @doc Stop accepting new connections (graceful shutdown preparation)
+-spec stop_accepting() -> ok.
+stop_accepting() ->
+    ?LOG_INFO(#{what => transport_supervisor_stop_accepting}),
+    try
+        % Get all child transports
+        Children = supervisor:which_children(?MODULE),
+
+        % Tell each transport to stop accepting new connections
+        lists:foreach(fun({Id, Pid, Type, Modules}) ->
+            case Type of
+                worker when is_pid(Pid) ->
+                    ?LOG_DEBUG(#{what => telling_transport_to_stop_accepting,
+                                  transport_id => Id,
+                                  pid => Pid}),
+                    try
+                        Pid ! stop_accepting,
+                        ok
+                    catch
+                        _:_ -> ok
+                    end;
+                _ ->
+                    ok
+            end
+        end, Children),
+
+        ?LOG_INFO(#{what => transport_supervisor_stop_accepting_complete}),
+        ok
+    catch
+        _:Error ->
+            ?LOG_ERROR(#{what => transport_supervisor_stop_accepting_failed,
+                         error => Error}),
+            ok
     end.
 
 %%====================================================================

@@ -84,7 +84,7 @@ tolerations: []
 # Environment configuration
 env:
   ERLMCP_ENV: "production"
-  ERLANG_COOKIE: "erlmcp_prod_secret"
+  ERLANG_COOKIE: ""
   LANG: "C.UTF-8"
   LC_ALL: "C.UTF-8"
 

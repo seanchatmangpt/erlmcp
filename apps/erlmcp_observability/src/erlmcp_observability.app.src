@@ -1,5 +1,5 @@
 {application, erlmcp_observability,
- [{description, "Observability layer for erlmcp - Metrics, Tracing, Monitoring"},
+ [{description, "Observability layer for erlmcp - Metrics, Tracing, Monitoring, Adaptive Learning, JSON Logging"},
   {vsn, "2.1.0"},
   {registered, []},
   {mod, {erlmcp_observability_app, []}},
@@ -15,7 +15,41 @@
     cowboy,
     erlmcp_core
    ]},
-  {env,[]},
+  {env,[
+    %% Environment Configuration (development | testing | staging | production)
+    {environment, development},
+
+    %% Logging Configuration
+    {log_level, info},  % Override with ERLMCP_LOG_LEVEL env var
+
+    %% JSON Log Handler Configuration
+    {json_log_handler, [
+      {enabled, true},
+      {file, "log/development/erlmcp.json.log"},
+      {max_no_bytes, 104857600},  % 100MB
+      {max_no_files, 10},
+      {pretty_print, false}  % Set to true for human-readable JSON
+    ]},
+
+    %% Log Aggregation Configuration (Loki/ELK)
+    {log_aggregation, [
+      {enabled, false},
+      {type, loki},  % loki | elk | fluentd
+      {endpoint, "http://localhost:3100"},
+      {batch_size, 100},
+      {flush_interval, 5000}
+    ]},
+
+    %% Adaptive Learning Configuration
+    {adaptive_learning, [
+      {embedding_dim, 256},
+      {distance_metric, cosine},
+      {replay_buffer_size, 10000},
+      {consolidation_interval_ms, 300000},
+      {optimization_interval_ms, 60000},
+      {anomaly_sigma_threshold, 3.0}
+    ]}
+  ]},
   {modules, []},
   {licenses, ["Apache-2.0"]},
   {links, []},
@@ -36,10 +70,13 @@
   %% OTP Version Requirements
   {notes, [
       "Requires: Erlang/OTP 28+ (STRICT)",
-      "OTP 28+ features: improved process iteration for monitoring, native JSON metrics, hibernate/0",
+      "OTP 28+ features: improved process iteration for monitoring, native JSON module, hibernate/0",
+      "OTP 27+ features: logger_formatter enhancements, json:encode/decode",
       "OTP 26+ features: persistent config, prep_stop/1 for cleanup",
       "Dependencies: opentelemetry_api 1.5+, opentelemetry 1.7+, opentelemetry_exporter 1.10+",
       "Previous OTP 25 support deprecated - upgrade to OTP 28+ required",
+      "JSON Logging: erlmcp_json_log_formatter provides structured JSON output",
+      "Log Aggregation: Supports Loki, ELK, FluentD via erlmcp_log_aggregator",
       "See docs/OTP_APPLICATION_CONFIG_RESEARCH.md for observability features"
   ]}
  ]}.

@@ -56,6 +56,49 @@ This guide validates erlmcp deployment in Docker containers with a 4-node distri
 - **Max Processes**: 2,000,000
 - **Connections target**: 25,000 per node (100K total)
 
+### Resource Constraints (P0-008)
+
+**Main Service (erlmcp):**
+```yaml
+deploy:
+  resources:
+    limits:
+      cpus: '2.0'          # CPU limit (2 cores)
+      memory: '4G'         # Memory limit (4GB)
+      pids: 4096           # Process limit (prevents fork bombs)
+    reservations:
+      cpus: '0.5'          # CPU reservation (0.5 cores guaranteed)
+      memory: '1G'         # Memory reservation (1GB guaranteed)
+  restart_policy:
+    condition: on-failure  # Restart only on failure
+    max_attempts: 3        # Max restart attempts
+    window: 120s           # Time window for restart counting
+```
+
+**Dev Service (erlmcp-dev):**
+```yaml
+deploy:
+  resources:
+    limits:
+      cpus: '1.0'          # CPU limit (1 core)
+      memory: '2G'         # Memory limit (2GB)
+      pids: 2048           # Process limit (reduced for dev)
+    reservations:
+      cpus: '0.5'          # CPU reservation (0.5 cores guaranteed)
+      memory: '1G'         # Memory reservation (1GB guaranteed)
+  restart_policy:
+    condition: on-failure
+    max_attempts: 3
+    window: 120s
+```
+
+**Environment Variable Overrides:**
+- `ERLMCP_CPU_LIMIT`: Override CPU limit (default: 2.0)
+- `ERLMCP_MEMORY_LIMIT`: Override memory limit (default: 4G)
+- `ERLMCP_PIDS_LIMIT`: Override PIDs limit (default: 4096)
+- `ERLMCP_CPU_RESERVATION`: Override CPU reservation (default: 0.5)
+- `ERLMCP_MEMORY_RESERVATION`: Override memory reservation (default: 1G)
+
 ### Erlang Clustering
 
 - **Distribution Model**: Distributed Erlang with EPMD

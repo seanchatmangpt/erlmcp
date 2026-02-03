@@ -1,27 +1,30 @@
-# 📊 COVERAGE ANALYSIS REPORT - erlmcp v2.1.0
+# ErlMCP v3 Enterprise Coverage Analysis Report
 
-Generated: 2026-02-01
-Status: ❌ **BELOW THRESHOLD** (80% minimum required)
+Generated: 2026-02-02
+**Status**: ❌ **BELOW ENTERPRISE STANDARDS**
 
----
-
-## 🎯 Executive Summary
-
-**Overall Coverage Estimate**: ~65% (Below 80% threshold)
-**Critical Gap**: 35 modules with 0% test coverage
-**Priority Issues**: Missing tests for core MCP protocol components
+### Key Findings
+- **Overall Coverage**: Unknown (coverage generation failed)
+- **Apps with Adequate Test Coverage**: 2/14 (14%)
+- **Critical Path Coverage**: Partial (Core: ✓, Transports: ✗, Observability: ⚠, Validation: ⚠)
+- **Enterprise Compliance**: ❌ **FAILING**
 
 ---
 
-## 📈 Coverage by Application
+## Coverage by Application
 
-| Application | Source Files | Test Files | Test Ratio | Coverage Estimate |
-|-------------|-------------|------------|------------|------------------|
-| **erlmcp_core** | 144 | 332 | 2.30:1 | **70%** |
-| **erlmcp_transports** | 26 | 38 | 1.46:1 | **55%** |
-| **erlmcp_observability** | 40 | 39 | 0.98:1 | **60%** |
-| **erlmcp_validation** | 28 | 48 | 1.71:1 | **75%** |
-| **TOTAL** | **238** | **457** | **1.92:1** | **65%** |
+| Application | Total Modules | Test Modules | Coverage Ratio | Status |
+|-------------|---------------|--------------|----------------|---------|
+| **erlmcp_core** | 210 | 178 | 84.8% | ✅ MEETS STANDARDS |
+| **erlmcp_transports** | 32 | 34 | 106.3% | ✅ EXCEEDS STANDARDS |
+| **erlmcp_observability** | 69 | 38 | 55.1% | ❌ BELOW THRESHOLD |
+| **erlmcp_validation** | 39 | 28 | 71.8% | ❌ BELOW THRESHOLD |
+| **erlmcp_cli** | 23 | 21 | 91.3% | ✅ EXCEEDS STANDARDS |
+| **erlmcp_api_gateway** | 28 | 0 | 0% | ❌ NO TESTS |
+| **erlmcp_compliance** | 11 | 0 | 0% | ❌ NO TESTS |
+| **erlmcp_enterprise** | 20 | 0 | 0% | ❌ NO TESTS |
+| **erlmcp_zero_trust** | 16 | 0 | 0% | ❌ NO TESTS |
+| **Others** | 531+ | 0 | 0% | ❌ NO TESTS |
 
 ---
 

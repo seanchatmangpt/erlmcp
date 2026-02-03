@@ -8,9 +8,80 @@
         jidoka andon poka-yoke tcps-quality-gates release-validate \
         doctor quick verify ci-local \
         example-mcp-complete example-help andon-clear andon-watch \
-        setup-profile check-erlang-version
+        setup-profile check-erlang-version \
+        test-shutdown shutdown-load-test validate-shutdown
+.PHONY: all-inner compile-inner test-inner ct-inner eunit-inner check-inner clean-inner distclean-inner help-inner
+.PHONY: compile-core-inner compile-transports-inner compile-observability-inner compile-tcps-inner
+.PHONY: test-core-inner test-transports-inner test-observability-inner test-tcps-inner test-smoke-inner test-quick-inner test-full-inner
+.PHONY: dialyzer-inner dialyzer-fast-inner dialyzer-full-inner dialyzer-update-plt-inner dialyzer-clean-inner xref-inner
+.PHONY: validate-inner validate-compile-inner validate-test-inner validate-coverage-inner validate-quality-inner validate-bench-inner
+.PHONY: jidoka-inner andon-inner poka-yoke-inner release-validate-inner
+.PHONY: doctor-inner quick-inner verify-inner ci-local-inner
+.PHONY: setup-profile-inner check-erlang-version-inner
 
 SHELL := /bin/bash
+
+# ============================================================================
+# DOCKER-ONLY CONSTITUTION (ANDON ENFORCEMENT)
+# ============================================================================
+# CRITICAL: This project REQUIRES Docker for ALL execution.
+# Host execution is FORBIDDEN and will trigger ANDON stop.
+#
+# Architecture:
+#   Host Makefile → refuses, prints docker command
+#   Container Makefile → runs actual work (*-inner targets)
+#
+# Gate mapping:
+#   compile  → erlmcp-build
+#   eunit    → erlmcp-unit
+#   ct       → erlmcp-ct
+#   check/*  → erlmcp-check
+#   bench    → erlmcp-bench
+#   cluster  → erlmcp-node*
+# ============================================================================
+
+# Detect execution environment
+DOCKER_ENV := $(shell ./scripts/dev/is_docker.sh >/dev/null 2>&1 && echo docker || echo host)
+
+# Targets that MUST NOT run on host (ALL quality gates)
+DOCKER_REQUIRED_TARGETS := all compile test ct eunit check clean distclean \
+        compile-core compile-transports compile-observability compile-tcps \
+        test-core test-transports test-observability test-tcps test-smoke test-quick test-full \
+        dialyzer dialyzer-fast dialyzer-full dialyzer-update-plt dialyzer-clean xref \
+        validate validate-compile validate-test validate-coverage validate-quality validate-bench \
+        test-strict benchmark-strict coverage-strict quality-strict \
+        jidoka andon poka-yoke tcps-quality-gates release-validate \
+        doctor quick verify ci-local setup-profile check-erlang-version \
+        test-shutdown shutdown-load-test validate-shutdown
+
+# Docker service mapping for each target
+define DOCKER_SERVICE
+$(shell ./scripts/dev/docker_service_map.sh $(1) 2>/dev/null || echo erlmcp-check)
+endef
+
+# ANDON refusal message
+define DOCKER_REFUSE
+	@echo ""
+	@echo "╔════════════════════════════════════════════════════════════════════╗"
+	@echo "║                                                                    ║"
+	@echo "║   🚨 ANDON: FORBIDDEN_HOST_EXECUTION 🚨                           ║"
+	@echo "║                                                                    ║"
+	@echo "╚════════════════════════════════════════════════════════════════════╝"
+	@echo ""
+	@echo "Refusal Code: FORBIDDEN_HOST_EXECUTION"
+	@echo "Constitution: DOCKER-ONLY CONSTITUTION"
+	@echo ""
+	@echo "Target: $(@)"
+	@echo "Detected: HOST (forbidden)"
+	@echo ""
+	@echo "✅ CORRECT EXECUTION:"
+	@echo "   docker compose run --rm $(call DOCKER_SERVICE,$(@)) make $(@)"
+	@echo ""
+	@exit 1
+endef
+
+# Host-only targets (allowed to run on host for dispatch)
+HOST_ONLY_TARGETS := help help-extra
 
 # Colors for output
 BLUE := \033[0;34m
@@ -22,14 +93,30 @@ BOLD := \033[1m
 NC := \033[0m # No Color
 
 # ============================================================================
-# MAIN TARGETS
+# DOCKER WRAPPER RULES
+# ============================================================================
+# This pattern creates wrappers for all DOCKER_REQUIRED_TARGETS.
+# On host: refuses with ANDON message
+# In Docker: runs the *-inner target (actual implementation)
 # ============================================================================
 
-all: compile test
+# Generic wrapper pattern applied to all DOCKER_REQUIRED_TARGETS
+$(DOCKER_REQUIRED_TARGETS):
+ifeq ($(DOCKER_ENV),host)
+	$(DOCKER_REFUSE)
+else
+	@$(MAKE) $(@)-inner
+endif
+
+# ============================================================================
+# MAIN TARGETS (INNER - Docker-only implementations)
+# ============================================================================
+
+all-inner: compile-inner test-inner
 	@echo "$(GREEN)✓ Build complete: compile + test passed$(NC)"
 
 # ============================================================================
-# CANONICAL WORKFLOW TARGETS
+# CANONICAL WORKFLOW TARGETS (INNER - Docker-only implementations)
 # ============================================================================
 # Fast, focused targets for daily development workflow:
 #   doctor   : Check environment health before starting work
@@ -38,13 +125,13 @@ all: compile test
 #   ci-local : Reproduce exact CI workflow locally
 # ============================================================================
 
-doctor: ## Check environment health (OTP, rebar3, deps, structure, profile)
+doctor-inner: ## Check environment health (OTP, rebar3, deps, structure, profile)
 	@./scripts/dev/doctor.sh
 	@echo ""
 	@echo "$(BLUE)Validating ERLMCP_PROFILE...$(NC)"
 	@./scripts/validate_profile.sh $${ERLMCP_PROFILE:-dev} || exit 1
 
-quick: doctor ## Fast quality check: compile + smoke tests + validator (< 5min)
+quick-inner: doctor-inner ## Fast quality check: compile + smoke tests + validator (< 5min)
 	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
 	@echo "$(BOLD)$(CYAN)⚡ Quick Quality Check (<5min)$(NC)"
 	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
@@ -65,7 +152,7 @@ quick: doctor ## Fast quality check: compile + smoke tests + validator (< 5min)
 	@echo "$(BOLD)$(GREEN)✅ Quick check PASSED - Ready to commit$(NC)"
 	@echo ""
 
-verify: compile ## Full validation: spec + transport + dialyzer + xref (< 15min)
+verify-inner: compile-inner ## Full validation: spec + transport + dialyzer + xref (< 15min)
 	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
 	@echo "$(BOLD)$(CYAN)🔍 Full Validation (<15min)$(NC)"
 	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
@@ -96,7 +183,7 @@ verify: compile ## Full validation: spec + transport + dialyzer + xref (< 15min)
 	@echo "$(BOLD)$(GREEN)✅ Full validation PASSED - Ready for PR$(NC)"
 	@echo ""
 
-ci-local: ## Reproduce exact CI workflow locally (matches .github/workflows/ci.yml)
+ci-local-inner: ## Reproduce exact CI workflow locally (matches .github/workflows/ci.yml)
 	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
 	@echo "$(BOLD)$(CYAN)🔬 CI Workflow (Local Reproduction)$(NC)"
 	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
@@ -227,16 +314,16 @@ help:
 # This gate runs BEFORE any compilation to provide immediate feedback.
 # ============================================================================
 
-check-erlang-version: ## Enforce Erlang/OTP 28+ requirement (BLOCKING)
+check-erlang-version-inner: ## Enforce Erlang/OTP 28+ requirement (BLOCKING)
 	@./scripts/check_erlang_version.sh
 
 # ============================================================================
-# COMPILATION
+# COMPILATION (INNER - Docker-only implementations)
 # ============================================================================
 
 # Profile setup - creates symlink for rebar3 sys.config selection
 # Controlled by ERLMCP_PROFILE environment variable (dev|test|staging|prod)
-setup-profile:
+setup-profile-inner:
 	@ERLMCP_PROFILE=$${ERLMCP_PROFILE:-dev}; \
 	CONFIG_SOURCE="config/sys.config.$$ERLMCP_PROFILE"; \
 	CONFIG_TARGET="config/sys.config"; \
@@ -249,106 +336,106 @@ setup-profile:
 	ln -sf "sys.config.$$ERLMCP_PROFILE" "$$CONFIG_TARGET"; \
 	echo "$(GREEN)✓ Config symlink: $$CONFIG_TARGET -> sys.config.$$ERLMCP_PROFILE$(NC)"
 
-compile: check-erlang-version setup-profile
+compile-inner: check-erlang-version-inner setup-profile-inner
 	@echo "$(BLUE)Compiling all apps...$(NC)"
 	@TERM=dumb rebar3 compile
 	@echo "$(GREEN)✓ Compilation complete$(NC)"
 
-compile-core:
+compile-core-inner:
 	@echo "$(BLUE)Compiling erlmcp_core...$(NC)"
 	@cd apps/erlmcp_core && rebar3 compile
 	@echo "$(GREEN)✓ erlmcp_core compiled$(NC)"
 
-compile-transports:
+compile-transports-inner:
 	@echo "$(BLUE)Compiling erlmcp_transports...$(NC)"
 	@cd apps/erlmcp_transports && rebar3 compile
 	@echo "$(GREEN)✓ erlmcp_transports compiled$(NC)"
 
-compile-observability:
+compile-observability-inner:
 	@echo "$(BLUE)Compiling erlmcp_observability...$(NC)"
 	@cd apps/erlmcp_observability && rebar3 compile
 	@echo "$(GREEN)✓ erlmcp_observability compiled$(NC)"
 
-compile-tcps:
+compile-tcps-inner:
 	@echo "$(BLUE)Compiling tcps_erlmcp...$(NC)"
 	@cd apps/tcps_erlmcp && rebar3 compile
 	@echo "$(GREEN)✓ tcps_erlmcp compiled$(NC)"
 
 # ============================================================================
-# TESTING
+# TESTING (INNER - Docker-only implementations)
 # ============================================================================
 
-test: eunit ct
+test-inner: eunit-inner ct-inner
 	@echo "$(GREEN)✓ All tests passed$(NC)"
 
 # Test tier system (Chicago School TDD - real processes, no mocks)
-test-smoke:
+test-smoke-inner:
 	@echo "$(BLUE)Running smoke tests (target: ≤2 min)...$(NC)"
 	@./scripts/test/smoke.sh
 
-test-quick:
+test-quick-inner:
 	@echo "$(BLUE)Running quick tests (target: ≤10 min)...$(NC)"
 	@./scripts/test/quick.sh
 
-test-full:
+test-full-inner:
 	@echo "$(BLUE)Running full test suite...$(NC)"
 	@./scripts/test/full.sh
 
 # Automated test runners (BLOCKING on failures)
-test-strict:
+test-strict-inner:
 	@echo "$(BLUE)🧪 Strict Test Runner - BLOCKING on failures$(NC)"
 	@./tools/test-runner.sh || exit 1
 
-benchmark-strict:
+benchmark-strict-inner:
 	@echo "$(BLUE)⚡ Strict Benchmark Runner - BLOCKING on regression$(NC)"
 	@./tools/benchmark-runner.sh || exit 1
 
-coverage-strict:
+coverage-strict-inner:
 	@echo "$(BLUE)📊 Strict Coverage Checker - BLOCKING if <80%$(NC)"
 	@./tools/coverage-checker.sh || exit 1
 
-quality-strict:
+quality-strict-inner:
 	@echo "$(BLUE)🔍 Master Quality Checker - ALL checks MUST pass$(NC)"
 	@./tools/quality-checker.sh || exit 1
 
-eunit: setup-profile
+eunit-inner: setup-profile-inner
 	@echo "$(BLUE)Running EUnit tests...$(NC)"
 	@rebar3 eunit
 	@echo "$(GREEN)✓ EUnit tests passed$(NC)"
 
-ct: setup-profile
+ct-inner: setup-profile-inner
 	@echo "$(BLUE)Running Common Test...$(NC)"
 	@rebar3 ct || echo "$(YELLOW)⚠ Some CT tests skipped (expected if no CT suites)$(NC)"
 	@echo "$(GREEN)✓ Common Test complete$(NC)"
 
-test-core:
+test-core-inner:
 	@echo "$(BLUE)Testing erlmcp_core...$(NC)"
 	@cd apps/erlmcp_core && rebar3 eunit
 	@echo "$(GREEN)✓ erlmcp_core tests passed$(NC)"
 
-test-transports:
+test-transports-inner:
 	@echo "$(BLUE)Testing erlmcp_transports...$(NC)"
 	@cd apps/erlmcp_transports && rebar3 eunit
 	@echo "$(GREEN)✓ erlmcp_transports tests passed$(NC)"
 
-test-observability:
+test-observability-inner:
 	@echo "$(BLUE)Testing erlmcp_observability...$(NC)"
 	@cd apps/erlmcp_observability && rebar3 eunit
 	@echo "$(GREEN)✓ erlmcp_observability tests passed$(NC)"
 
-test-tcps:
+test-tcps-inner:
 	@echo "$(BLUE)Testing tcps_erlmcp...$(NC)"
 	@cd apps/tcps_erlmcp && rebar3 eunit
 	@echo "$(GREEN)✓ tcps_erlmcp tests passed$(NC)"
 
-coverage:
+coverage-inner:
 	@echo "$(BLUE)Generating coverage report...$(NC)"
 	@rebar3 cover
 	@echo "$(GREEN)✓ Coverage report generated$(NC)"
 	@echo "$(BLUE)See _build/test/cover/*.html for detailed reports$(NC)"
 
 # ============================================================================
-# QUALITY GATES (BLOCKING) - Lean Six Sigma 99.99966% Defect-Free
+# QUALITY GATES (BLOCKING) - Lean Six Sigma 99.99966% Defect-Free (INNER - Docker-only)
 # ============================================================================
 # CRITICAL: All validate-* targets are BLOCKING and exit with code 1 on failure.
 # These gates enforce zero-defect quality standards:
@@ -368,7 +455,7 @@ coverage:
 # NO COMPROMISES. Stop the line on failure (自働化 Jidoka).
 # ============================================================================
 
-validate: validate-profile validate-compile validate-test validate-coverage validate-quality validate-bench
+validate-inner: validate-profile-inner validate-compile-inner validate-test-inner validate-coverage-inner validate-quality-inner validate-bench-inner
 	@echo ""
 	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
 	@echo "$(BOLD)$(GREEN)✅ ALL QUALITY GATES PASSED - READY FOR PRODUCTION$(NC)"
@@ -382,7 +469,7 @@ validate: validate-profile validate-compile validate-test validate-coverage vali
 	@echo "$(GREEN)✓ Benchmarks:$(NC) No performance regression (<10%)"
 	@echo ""
 
-validate-profile:
+validate-profile-inner:
 	@echo "$(BLUE)🔧 Quality Gate: Profile Validation$(NC)"
 	@echo "  Target: Valid ERLMCP_PROFILE configuration"
 	@echo "  Action: Checking profile $${ERLMCP_PROFILE:-dev}..."
@@ -400,7 +487,7 @@ validate-profile:
 		exit 1; \
 	fi
 
-validate-compile:
+validate-compile-inner:
 	@echo "$(BLUE)🔨 Quality Gate: Compilation$(NC)"
 	@echo "  Target: 0 compilation errors"
 	@echo "  Action: Compiling all apps with TERM=dumb..."
@@ -419,7 +506,7 @@ validate-compile:
 		exit 1; \
 	fi
 
-validate-test:
+validate-test-inner:
 	@echo "$(BLUE)🧪 Quality Gate: Tests$(NC)"
 	@echo "  Target: 0 test failures (EUnit + CT)"
 	@echo "  Action: Running EUnit + CT..."
@@ -456,7 +543,7 @@ validate-test:
 		exit 1; \
 	fi
 
-validate-coverage:
+validate-coverage-inner:
 	@echo "$(BLUE)📊 Quality Gate: Coverage$(NC)"
 	@echo "  Target: ≥80% code coverage"
 	@echo "  Action: Generating coverage report..."
@@ -488,7 +575,7 @@ validate-coverage:
 		exit 1; \
 	fi
 
-validate-quality:
+validate-quality-inner:
 	@echo "$(BLUE)🔍 Quality Gate: Static Analysis$(NC)"
 	@echo "  Target: 0 dialyzer warnings + 0 xref undefined calls"
 	@echo "  Action: Running dialyzer + xref..."
@@ -522,7 +609,7 @@ validate-quality:
 		exit 1; \
 	fi
 
-validate-bench:
+validate-bench-inner:
 	@echo "$(BLUE)⚡ Quality Gate: Performance$(NC)"
 	@echo "  Target: <10% regression vs baseline"
 	@echo "  Action: Running quick benchmarks..."
@@ -552,7 +639,7 @@ validate-bench:
 	fi
 
 # ============================================================================
-# TCPS MANUFACTURING TARGETS (自働化 Jidoka - Stop-the-Line Authority)
+# TCPS MANUFACTURING TARGETS (INNER - Docker-only) (自働化 Jidoka - Stop-the-Line Authority)
 # ============================================================================
 # TCPS (Toyota Code Production System) applies manufacturing principles to code:
 #   - 自働化 (Jidoka): Built-in quality, stop production on defects
@@ -563,7 +650,7 @@ validate-bench:
 # See: .claude/TCPS_SYSTEM_COMPLETE.md for full manufacturing system
 # ============================================================================
 
-jidoka:
+jidoka-inner:
 	@echo ""
 	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
 	@echo "$(BOLD)$(GREEN)🏭 自働化 (JIDOKA) QUALITY GATE$(NC)"
@@ -575,10 +662,10 @@ jidoka:
 		echo "$(YELLOW)⚠ TCPS jidoka script not found (expected: tools/tcps/jidoka_quality_gate.sh)$(NC)"; \
 		echo "$(YELLOW)Running standard quality gates instead$(NC)"; \
 		echo ""; \
-		$(MAKE) validate; \
+		$(MAKE) validate-inner; \
 	fi
 
-andon:
+andon-inner:
 	@echo ""
 	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
 	@echo "$(BOLD)$(CYAN)🚨 行灯 (ANDON) BOARD STATUS$(NC)"
@@ -592,7 +679,7 @@ andon:
 		echo ""; \
 	fi
 
-poka-yoke:
+poka-yoke-inner:
 	@echo ""
 	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
 	@echo "$(BOLD)$(CYAN)🛡️ ポカヨケ (POKA-YOKE) ERROR-PROOFING$(NC)"
@@ -604,11 +691,54 @@ poka-yoke:
 		echo "$(YELLOW)⚠ TCPS poka-yoke script not found (expected: tools/tcps/poka_yoke_validator.sh)$(NC)"; \
 		echo "$(YELLOW)Running standard quality checks instead$(NC)"; \
 		echo ""; \
-		$(MAKE) validate-compile validate-test validate-quality; \
+		$(MAKE) validate-compile-inner validate-test-inner validate-quality-inner; \
 	fi
 	@echo ""
 
-release-validate: validate jidoka
+release-validate-inner: validate-inner jidoka-inner
+	@echo ""
+
+# ============================================================================
+# GRACEFUL SHUTDOWN TEST TARGETS (INNER - Docker-only)
+# ============================================================================
+# Test graceful shutdown behavior under load to ensure zero-dropped requests
+# during deployment and proper connection draining.
+# ============================================================================
+
+test-shutdown-inner: shutdown-load-test-inner
+
+shutdown-load-test-inner:
+	@echo "$(BLUE)⚡ Graceful Shutdown Load Test$(NC)"
+	@echo "  Testing: Connection draining, zero-dropped requests, shutdown hooks"
+	@echo ""
+	@if [ -f scripts/test_graceful_shutdown_load.sh ]; then \
+		chmod +x scripts/test_graceful_shutdown_load.sh; \
+		scripts/test_graceful_shutdown_load.sh; \
+	else \
+		echo "$(RED)❌ GRACEFUL SHUTDOWN TEST SCRIPT MISSING$(NC)"; \
+		exit 1; \
+	fi
+
+validate-shutdown-inner:
+	@echo "$(BLUE)⚡ Quality Gate: Graceful Shutdown$(NC)"
+	@echo "  Validating: prep_stop/1 implementations, connection draining, timeout enforcement"
+	@echo ""
+	@if [ -f scripts/validate_graceful_shutdown.sh ]; then \
+		chmod +x scripts/validate_graceful_shutdown.sh; \
+		scripts/validate_graceful_shutdown.sh; \
+	else \
+		echo "$(RED)❌ GRACEFUL SHUTDOWN VALIDATION SCRIPT MISSING$(NC)"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "$(GREEN)✅ Graceful shutdown validation passed$(NC)"
+	@echo ""
+
+# ============================================================================
+# TCPS MANUFACTURING TARGETS (INNER - Docker-only) (自働化 Jidoka - Stop-the-Line Authority)
+# ============================================================================
+
+tcps-quality-gates-inner: validate-shutdown-inner validate-compile-inner validate-test-inner validate-quality-inner
 	@echo ""
 	@echo "$(BOLD)$(BLUE)════════════════════════════════════════════════════════════$(NC)"
 	@echo "$(BOLD)$(BLUE)📋 GENERATING QUALITY RECEIPT (レシート)$(NC)"
@@ -649,7 +779,7 @@ release-validate: validate jidoka
 # Use validate-* targets for strict enforcement.
 # ============================================================================
 
-check: compile test
+check-inner: compile-inner test-inner
 	@echo ""
 	@echo "$(GREEN)════════════════════════════════════════$(NC)"
 	@echo "$(GREEN)✓ BASIC QUALITY GATES PASSED$(NC)"
@@ -662,7 +792,7 @@ check: compile test
 	@echo "$(YELLOW)⚠ Use 'make validate' for BLOCKING quality enforcement$(NC)"
 	@echo ""
 
-check-full: compile xref dialyzer test coverage
+check-full-inner: compile-inner xref-inner dialyzer-inner test-inner coverage-inner
 	@echo ""
 	@echo "$(GREEN)════════════════════════════════════════$(NC)"
 	@echo "$(GREEN)✓ ALL QUALITY GATES PASSED$(NC)"
@@ -675,39 +805,57 @@ check-full: compile xref dialyzer test coverage
 	@echo "$(GREEN)✓ Coverage:$(NC) Report generated"
 	@echo ""
 
-dialyzer: dialyzer-fast ## Default to incremental dialyzer (3-7x faster)
+dialyzer-inner: dialyzer-fast-inner ## Default to incremental dialyzer (3-7x faster)
 
-dialyzer-fast: ## Incremental dialyzer (development) - 3-7x faster
+dialyzer-fast-inner: ## Incremental dialyzer (development) - 3-7x faster
 	@echo "$(BLUE)Running incremental Dialyzer (development mode)...$(NC)"
 	@rebar3 dialyzer --incremental
 	@echo "$(GREEN)✓ Incremental Dialyzer passed (15-30s)$(NC)"
 
-dialyzer-full: ## Full dialyzer (CI/CD) - complete analysis
+dialyzer-full-inner: ## Full dialyzer (CI/CD) - complete analysis
 	@echo "$(BLUE)Running full Dialyzer analysis (CI/CD mode)...$(NC)"
 	@rebar3 dialyzer
 	@echo "$(GREEN)✓ Full Dialyzer passed (60-90s)$(NC)"
 
-dialyzer-update-plt: ## Update PLT (after dependency changes)
+dialyzer-update-plt-inner: ## Update PLT (after dependency changes)
 	@echo "$(BLUE)Updating Dialyzer PLT...$(NC)"
 	@rebar3 dialyzer --update_plt
 	@echo "$(GREEN)✓ PLT updated$(NC)"
 
-dialyzer-clean: ## Clean Dialyzer cache (force rebuild)
+dialyzer-clean-inner: ## Clean Dialyzer cache (force rebuild)
 	@echo "$(BLUE)Cleaning Dialyzer cache...$(NC)"
 	@rm -rf _build/default/*_plt*
 	@echo "$(GREEN)✓ Dialyzer cache cleaned$(NC)"
 	@echo "$(YELLOW)Next dialyzer run will rebuild PLT (slower)$(NC)"
 
-xref:
+xref-inner:
 	@echo "$(BLUE)Running xref (cross-reference analysis)...$(NC)"
 	@rebar3 xref || echo "$(YELLOW)⚠ Xref encountered issues (see above warnings)$(NC)"
 	@echo "$(GREEN)✓ Xref complete (with warnings)$(NC)"
 
 # ============================================================================
-# DEVELOPMENT
+# CLEANUP (INNER - Docker-only implementations)
 # ============================================================================
 
-console: setup-profile
+clean-inner:
+	@echo "$(BLUE)Cleaning build artifacts...$(NC)"
+	@rebar3 clean
+	@echo "$(GREEN)✓ Clean complete$(NC)"
+
+distclean-inner: clean-inner
+	@echo "$(BLUE)Deep cleaning (includes deps)...$(NC)"
+	@rm -rf _build rebar.lock
+	@cd apps/erlmcp_core && rm -rf _build
+	@cd apps/erlmcp_transports && rm -rf _build
+	@cd apps/erlmcp_observability && rm -rf _build
+	@cd apps/tcps_erlmcp && rm -rf _build
+	@echo "$(GREEN)✓ Distclean complete$(NC)"
+
+# ============================================================================
+# DEVELOPMENT (INNER - Docker-only implementations)
+# ============================================================================
+
+console-inner: setup-profile-inner
 	@echo "$(BLUE)Starting Erlang shell...$(NC)"
 	@rebar3 shell
 
@@ -758,23 +906,38 @@ release: setup-profile
 	@rebar3 as prod release
 	@echo "$(GREEN)✓ Release built: _build/prod/rel/erlmcp$(NC)"
 
-# ============================================================================
-# CLEANUP
-# ============================================================================
-
-clean:
-	@echo "$(BLUE)Cleaning build artifacts...$(NC)"
-	@rebar3 clean
-	@echo "$(GREEN)✓ Clean complete$(NC)"
-
-distclean: clean
-	@echo "$(BLUE)Deep cleaning (includes deps)...$(NC)"
-	@rm -rf _build rebar.lock
-	@cd apps/erlmcp_core && rm -rf _build
-	@cd apps/erlmcp_transports && rm -rf _build
-	@cd apps/erlmcp_observability && rm -rf _build
-	@cd apps/tcps_erlmcp && rm -rf _build
-	@echo "$(GREEN)✓ Distclean complete$(NC)"
+release-validate: release ## Validate production release via Docker (build + smoke test + digest verification)
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)🐳 PRODUCTION RELEASE VALIDATION (Docker-Only)$(NC)"
+	@echo "$(BOLD)$(CYAN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "$(BLUE)[1/3] Building Docker image...$(NC)"
+	@docker build -t erlmcp:3.0.0-prod . > /tmp/docker-release-build.log 2>&1 || { \
+		echo "$(RED)✗ Docker build failed$(NC)"; \
+		cat /tmp/docker-release-build.log; \
+		exit 1; \
+	}
+	@echo "$(GREEN)✓ Docker image built$(NC)"
+	@echo ""
+	@echo "$(BLUE)[2/3] Running smoke tests...$(NC)"
+	@./scripts/release/smoke-test.sh erlmcp:3.0.0-prod || { \
+		echo "$(RED)✗ Smoke tests failed$(NC)"; \
+		exit 1; \
+	}
+	@echo "$(GREEN)✓ Smoke tests passed$(NC)"
+	@echo ""
+	@echo "$(BLUE)[3/3] Verifying image digest...$(NC)"
+	@./scripts/release/verify-digest.sh erlmcp:3.0.0-prod
+	@echo "$(GREEN)✓ Digest verified$(NC)"
+	@echo ""
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(GREEN)🎉 RELEASE VALIDATION COMPLETE - CERTIFIED$(NC)"
+	@echo "$(BOLD)$(GREEN)════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@docker images | grep erlmcp | grep 3.0.0-prod
+	@echo ""
+	@echo "$(GREEN)✓ Ready for production deployment$(NC)"
+	@echo ""
 
 # ============================================================================
 # TCPS ADDITIONAL TARGETS (Enhanced automation)
@@ -789,12 +952,12 @@ andon-watch:
 	@echo "$(BOLD)$(CYAN)Starting Andon Monitor...$(NC)"
 	@./tools/tcps/andon_cord.sh watch
 
-tcps-quality-gates: validate
+tcps-quality-gates-inner: validate-inner
 	@echo ""
 	@echo "$(GREEN)╔═══════════════════════════════════════════════════════════╗$(NC)"
 	@echo "$(GREEN)║  ✓ TCPS QUALITY SYSTEM COMPLETE                           ║$(NC)"
-	@echo "$(GREEN)║  自働化 (Jidoka) + ポカヨケ (Poka-Yoke)                   ║$(NC}"
-	@echo "$(GREEN)╚═══════════════════════════════════════════════════════════╝$(NC}"
+	@echo "$(GREEN)║  自働化 (Jidoka) + ポカヨケ (Poka-Yoke)                   ║$(NC)"
+	@echo "$(GREEN)╚═══════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
 	@if [ -f tools/tcps/jidoka_quality_gate.sh ]; then \
 		./tools/tcps/jidoka_quality_gate.sh; \
@@ -804,7 +967,7 @@ tcps-quality-gates: validate
 # BUILD SYSTEM VERIFICATION (for agent compliance)
 # ============================================================================
 
-build: compile
+build-inner: compile-inner
 	@echo "$(GREEN)✓ Build target complete (alias for compile)$(NC)"
 
 ##

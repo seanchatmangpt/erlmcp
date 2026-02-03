@@ -516,6 +516,160 @@
       "createdAt": "2026-02-02T03:46:14.432Z",
       "model": "sonnet",
       "modelRoutedBy": "default"
+    },
+    "agent-1770062347175-xmruf6": {
+      "agentId": "agent-1770062347175-xmruf6",
+      "agentType": "production-validator",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-02-02T19:59:07.175Z",
+      "domain": "deployment-readiness",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347232-bqp7ez": {
+      "agentId": "agent-1770062347232-bqp7ez",
+      "agentType": "code-analyzer",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-02-02T19:59:07.232Z",
+      "domain": "code-quality",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347294-pwcy25": {
+      "agentId": "agent-1770062347294-pwcy25",
+      "agentType": "system-architect",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-02-02T19:59:07.294Z",
+      "domain": "architecture",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347361-ujgxrl": {
+      "agentId": "agent-1770062347361-ujgxrl",
+      "agentType": "performance-benchmarker",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-02-02T19:59:07.361Z",
+      "domain": "performance",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347428-llejci": {
+      "agentId": "agent-1770062347428-llejci",
+      "agentType": "security-analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-02-02T19:59:07.428Z",
+      "domain": "security",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347495-xnbfyd": {
+      "agentId": "agent-1770062347495-xnbfyd",
+      "agentType": "testing-specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-02-02T19:59:07.495Z",
+      "domain": "quality-assurance",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347571-l1j3oj": {
+      "agentId": "agent-1770062347571-l1j3oj",
+      "agentType": "documentation-specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-02-02T19:59:07.571Z",
+      "domain": "docs",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347720-mcajfo": {
+      "agentId": "agent-1770062347720-mcajfo",
+      "agentType": "compliance-auditor",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "opus"
+      },
+      "createdAt": "2026-02-02T19:59:07.720Z",
+      "domain": "compliance",
+      "model": "opus",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347786-hf3l4y": {
+      "agentId": "agent-1770062347786-hf3l4y",
+      "agentType": "operations-engineer",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-02-02T19:59:07.786Z",
+      "domain": "devops",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347871-otjlsb": {
+      "agentId": "agent-1770062347871-otjlsb",
+      "agentType": "api-specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-02-02T19:59:07.871Z",
+      "domain": "api-design",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "agent-1770062347983-vra476": {
+      "agentId": "agent-1770062347983-vra476",
+      "agentType": "database-specialist",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-02-02T19:59:07.983Z",
+      "domain": "data-persistence",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
     }
   },
   "version": "3.0.0"

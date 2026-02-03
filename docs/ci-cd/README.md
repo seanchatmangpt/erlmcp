@@ -1,285 +1,425 @@
-# CI/CD Quality Gates Documentation
+# ErlMCP v3 Enterprise CI/CD Pipeline
+
+This document provides a comprehensive overview of the enterprise-grade CI/CD pipeline for ErlMCP v3, including deployment strategies, quality gates, security scanning, and production release automation.
 
 ## Overview
 
-This directory contains documentation for erlmcp's blocking quality gate system that enforces Lean Six Sigma standards through automated CI/CD.
+The ErlMCP v3 CI/CD pipeline is designed to support enterprise requirements for:
 
----
+- **Multi-environment deployment** (dev, staging, prod)
+- **Automated testing** (unit, integration, E2E, performance)
+- **Security scanning** and compliance checks
+- **Canary and blue-green deployments**
+- **Rollback mechanisms**
+- **Feature flag management**
+- **Release automation**
+- **Infrastructure as Code**
+- **Compliance automation**
 
-## Quick Links
+## Pipeline Architecture
 
-### For Developers
-- **[BLOCKING_QUALITY_GATES.md](BLOCKING_QUALITY_GATES.md)** - How quality gates work and how to fix failures
-- **[Local Development Workflow](BLOCKING_QUALITY_GATES.md#local-development-workflow)** - Commands to run before pushing
+### 1. GitHub Actions Workflows
 
-### For Repository Admins
-- **[BRANCH_PROTECTION_SETUP.md](BRANCH_PROTECTION_SETUP.md)** - How to configure GitHub branch protection
-- **[Emergency Bypass Process](BLOCKING_QUALITY_GATES.md#emergency-bypass-process)** - For production hotfixes
+#### CI Pipeline (`.github/workflows/ci-pipeline.yml`)
 
----
+The main CI pipeline runs on every push to `main` and `develop` branches, and weekly at 2 AM UTC.
 
-## Quality Gate Summary
+**Stages:**
+1. **Quality Gate**: Code analysis, static scanning, complexity metrics
+2. **Test Matrix**: Unit tests, integration tests, property tests, cross-OTP version testing
+3. **Performance Benchmark**: Regression testing against baseline
+4. **Container Build & Scan**: Docker image building and vulnerability scanning
+5. **Compliance Check**: Automated compliance verification
+6. **Deployment**: Multi-environment deployment with validation
 
-| # | Gate | Threshold | Blocks Merge? |
-|---|------|-----------|---------------|
-| 1 | Compilation | 0 errors | ✅ YES |
-| 2 | Xref | 0 undefined functions | ✅ YES |
-| 3 | Dialyzer | 0 type errors | ✅ YES |
-| 4 | Unit Tests | ≥90% pass rate | ✅ YES |
-| 5 | Coverage | ≥80% overall | ✅ YES |
-| 6 | Performance | <10% regression | ✅ YES |
-| 7 | Integration Tests | All pass | ⚠️ WARNING |
-| 8 | Documentation | No legacy refs | ⚠️ WARNING |
-| 9 | Umbrella Structure | All apps | ✅ YES |
+#### Release Pipeline (`.github/workflows/release.yml`)
 
----
-
-## Workflow Files
-
-### `.github/workflows/ci.yml`
-**Main CI pipeline** - Runs on all pushes and PRs
+Handles versioned releases with comprehensive validation and deployment.
 
 **Features:**
-- Tests on Erlang/OTP 25, 26, 27, 28
-- Blocks merge on gate failures
-- Generates coverage reports
-- Runs quick benchmark smoke test
+- Pre-release validation
+- Artifact building and scanning
+- GitHub release creation
+- Production deployment
+- Documentation updates
 
-**Required status checks:**
-- `test (25)`, `test (26)`, `test (27)`, `test (28)`
-- `Quality Gates Summary`
+#### Manual Deployment (`.github/workflows/manual-deployment.yml`)
 
-### `.github/workflows/quality-gate.yml`
-**Comprehensive quality check** - Single-job canonical gate
+Provides manual deployment options with multiple strategies and validation.
+
+### 2. Jenkins Pipelines
+
+#### Main CD Pipeline (`jenkins-pipelines/erlmcp-cd-pipeline.groovy`)
+
+Jenkins orchestrates complex deployment scenarios with advanced features:
+
+- **Progressive deployment** strategies
+- **Canary deployment** with gradual traffic shift
+- **Blue-green deployment** for zero-downtime releases
+- **Feature branch deployments**
+- **Environment-specific policies**
+
+#### Feature Deployment Pipeline (`jenkins-pipelines/erlmcp-feature-deployment.groovy`)
+
+Dedicated pipeline for feature deployments with:
+
+- Feature flag validation
+- Business rule checking
+- Progressive rollout
+- A/B testing capabilities
+- Feature monitoring
+
+### 3. Infrastructure as Code
+
+#### Terraform Configuration
+
+The `infrastructure/terraform` directory contains:
+
+- **VPC and networking setup**
+- **EKS cluster provisioning**
+- **RDS database cluster**
+- **ElastiCache for Redis**
+- **S3 for artifact storage**
+- **IAM roles and policies**
+
+Key resources:
+- `main.tf`: Core infrastructure
+- `variables.tf`: Configuration variables
+- Outputs: Cluster endpoints, database connections, load balancer DNS
+
+#### Helm Chart
+
+The `infrastructure/helm/erlmcp` directory provides:
+
+- **Application deployment** configuration
+- **Service networking** setup
+- **Resource management** settings
+- **Security policies**
+- **Monitoring configurations**
+
+### 4. Quality Gates
+
+#### Quality Policy (`ci-cd-policies/quality-gate.yml`)
+
+Defines strict quality requirements:
+
+- **Compile**: Zero errors and warnings
+- **Unit Tests**: 100% pass rate, 80% coverage minimum
+- **Integration Tests**: 100% pass rate
+- **Dialyzer**: Zero type errors
+- **Xref**: No undefined functions
+- **Security Scan**: Zero critical/high vulnerabilities
+- **Performance**: <5% regression
+
+#### Security Policy (`ci-cd-policies/security-policy.yml`)
+
+Comprehensive security requirements:
+
+- **SAST**: Static analysis with multiple tools
+- **SCA**: Software composition analysis
+- **Container Security**: Image scanning
+- **Secrets Management**: No secrets in code
+- **Compliance**: ISO 27001, SOC 2, PCI-DSS, HIPAA
+
+## Deployment Strategies
+
+### 1. Canary Deployment
+
+The canary deployment strategy allows gradual rollout of new versions with automatic validation.
 
 **Features:**
-- Runs on OTP 26 (canonical version)
-- 6 gates in sequence (5 blocking, 1 warning)
-- Detailed GITHUB_STEP_SUMMARY report
-- Sets commit status API
+- Progressive traffic shift (10% increments)
+- Health monitoring and automatic rollback
+- Performance metrics validation
+- Error rate detection
 
-**Required status check:**
-- `Comprehensive Quality Gate (Blocking)`
+**Usage:**
+```bash
+./scripts/deploy/deploy-canary.sh staging 10
+```
 
-### `.github/workflows/block-on-regression.yml`
-**Performance regression blocker** - Compares PR vs base branch
+### 2. Blue-Green Deployment
+
+Zero-downtime deployment strategy with parallel environments.
 
 **Features:**
-- Runs `core_ops_100k` benchmark on both branches
-- Blocks if >10% throughput degradation
-- Comments on PR with results table
-- Upload benchmark logs
+- Active and inactive environments
+- Traffic switching with validation
+- Data consistency checks
+- Fast rollback capability
 
-**Required status check:**
-- `Benchmark Regression Analysis (Blocking)`
+**Usage:**
+```bash
+./scripts/deploy/deploy-blue-green.sh prod v3.1.0 v3.0.0
+```
 
----
+### 3. Feature Flag Management
 
-## Quick Start
+Control feature releases with flags for:
 
-### For Developers: Run Quality Gates Locally
+- Progressive feature rollout
+- A/B testing
+- Quick feature rollback
+- Feature toggles in production
+
+**Usage:**
+```bash
+./scripts/feature-flags/update-prod-flags.sh
+```
+
+## Security Features
+
+### 1. Scanning Integration
+
+- **Semgrep**: Static analysis
+- **Bandit**: Security linting
+- **Trivy**: Container scanning
+- **Dependency-check**: SCA
+- **Detect-secrets**: Secret scanning
+
+### 2. Compliance Automation
+
+Automated compliance checking for:
+- **ISO 27001**: Information security management
+- **SOC 2**: Service organization control
+- **PCI DSS**: Payment card industry standard
+- **GDPR**: General data protection
+- **HIPAA**: Health insurance portability
+
+**Usage:**
+```bash
+./scripts/compliance/check-all.sh
+```
+
+### 3. Network Security
+
+- VPC with private subnets
+- Security groups with strict rules
+- Network policies
+- Load balancer security
+- TLS encryption
+
+## Monitoring and Observability
+
+### 1. Metrics Collection
+
+- **Prometheus**: Metrics collection
+- **Grafana**: Visualization dashboards
+- **Alertmanager**: Alerting
+- **Node Exporter**: Infrastructure metrics
+
+### 2. Distributed Tracing
+
+- **Jaeger**: Tracing system
+- OpenTelemetry integration
+- Performance analysis
+- Request correlation
+
+### 3. Logging
+
+- **Structured logging** with JSON format
+- **Log aggregation**
+- **Log retention** policies
+- **Compliance logging**
+
+### 4. Alerting
+
+- **Slack notifications**
+- **Email alerts**
+- **PagerDuty integration**
+- **Custom webhooks**
+
+## Release Management
+
+### 1. Release Process
+
+1. **Pre-release validation**
+   - Version consistency check
+   - Release blocker detection
+   - Quality gate verification
+
+2. **Artifact building**
+   - Release compilation
+   - Docker image builds
+   - Artifact scanning
+
+3. **Release creation**
+   - GitHub release
+   - Version tagging
+   - Documentation updates
+
+4. **Deployment**
+   - Staging deployment
+   - Validation
+   - Production deployment
+
+### 2. Version Management
+
+- **Semantic versioning** (SemVer)
+- **Automatic version bumping**
+- **Changelog generation**
+- **Release notes automation**
+
+### 3. Rollback Strategies
+
+- **Automated rollback** on failure
+- **Manual rollback option**
+- **Canary rollback**
+- **Blue-green rollback**
+
+## Configuration Management
+
+### 1. Environment Configuration
+
+- **Environment-specific** settings
+- **Configuration templates**
+- **Secret management**
+- **Runtime configuration**
+
+### 2. Feature Flags
+
+- **Centralized flag management**
+- **Redis-backed storage**
+- **Rollout configuration**
+- **Feature analytics**
+
+### 3. Infrastructure Configuration
+
+- **Infrastructure as Code** (IaC)
+- **Configuration drift detection**
+- **Automated provisioning**
+- **State management**
+
+## Getting Started
+
+### Prerequisites
+
+- GitHub repository
+- AWS account
+- EKS cluster
+- Docker registry
+- Monitoring stack
+
+### Setup Steps
+
+1. **Initialize Terraform**
+   ```bash
+   cd infrastructure/terraform
+   terraform init
+   ```
+
+2. **Apply Infrastructure**
+   ```bash
+   terraform apply -var-file=prod.tfvars
+   ```
+
+3. **Deploy Application**
+   ```bash
+   helm install erlmcp ./infrastructure/helm/erlmcp
+   ```
+
+4. **Configure CI/CD**
+   - Set up GitHub Secrets
+   - Configure Slack notifications
+   - Set up monitoring
+
+### Environment Setup
+
+1. **Development Environment**
+   ```bash
+   ./scripts/deploy/deploy-dev.sh
+   ```
+
+2. **Staging Environment**
+   ```bash
+   ./scripts/deploy/deploy-staging.sh
+   ```
+
+3. **Production Environment**
+   ```bash
+   ./scripts/deploy/deploy-prod.sh
+   ```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Build Failures**
+   - Check dependencies
+   - Verify OTP version
+   - Review quality gates
+
+2. **Deployment Issues**
+   - Check environment health
+   - Verify configuration
+   - Review logs
+
+3. **Performance Issues**
+   - Check metrics
+   - Monitor resource usage
+   - Review scaling policies
+
+### Debug Commands
 
 ```bash
-# Full quality check (recommended before every push)
-make check-full
+# Check deployment status
+kubectl get pods -n erlmcp-prod
 
-# Individual gates
-make compile          # Gate 1: Compilation
-make xref             # Gate 2: Cross-reference
-make dialyzer         # Gate 3: Type checking
-make test             # Gate 4: Unit tests
-make coverage         # Gate 5: Code coverage
-make benchmark-quick  # Gate 6: Performance
+# View logs
+kubectl logs -n erlmcp-prod deployment/erlmcp-server
+
+# Debug feature flags
+redis-cli HGETALL feature_flags:my-feature
+
+# Check compliance status
+./scripts/compliance/check-all.sh
 ```
-
-### For Admins: Enable Branch Protection
-
-**Option 1: GitHub Web UI**
-1. Settings → Branches → Add rule
-2. Pattern: `main`
-3. Enable "Require status checks to pass"
-4. Select required checks (see [BRANCH_PROTECTION_SETUP.md](BRANCH_PROTECTION_SETUP.md))
-
-**Option 2: GitHub CLI**
-```bash
-gh api repos/:owner/:repo/branches/main/protection \
-  --method PUT \
-  --field required_status_checks[strict]=true \
-  --field required_status_checks[contexts][]="test (26)" \
-  --field required_status_checks[contexts][]="Quality Gates Summary" \
-  # ... (see full script in BRANCH_PROTECTION_SETUP.md)
-```
-
-**Option 3: Terraform**
-See [BRANCH_PROTECTION_SETUP.md](BRANCH_PROTECTION_SETUP.md#automated-setup-terraform---infrastructure-as-code)
-
----
-
-## How CI/CD Blocks Merges
-
-### GitHub Branch Protection Rules
-
-When enabled, these rules prevent merging until all required status checks pass:
-
-**Required checks:**
-- ✅ `test (25)` - CI on OTP 25
-- ✅ `test (26)` - CI on OTP 26 (canonical)
-- ✅ `test (27)` - CI on OTP 27
-- ✅ `test (28)` - CI on OTP 28 (optional)
-- ✅ `Quality Gates Summary` - Final summary
-- ✅ `Comprehensive Quality Gate (Blocking)` - Canonical quality check
-- ✅ `Benchmark Regression Analysis (Blocking)` - Performance check
-
-**Result:** Green checkmark = merge allowed, Red X = merge blocked
-
----
-
-## Common Failure Scenarios
-
-### Compilation Failed
-```
-Error: src/module.erl:42: undefined function foo/1
-```
-**Fix:** Check spelling, arity, ensure function exists
-
-### Xref Failed
-```
-Warning: module.erl calls undefined function unknown:bar/2
-```
-**Fix:** Add missing dependency or fix function call
-
-### Dialyzer Failed
-```
-Warning: Pattern can never match the type
-```
-**Fix:** Add type specs, fix type mismatches
-
-### Tests Failed (<90%)
-```
-erlmcp_client_tests:150: FAILED
-Expected: {error, timeout}
-Actual: {ok, connected}
-```
-**Fix:** Debug test, fix code or test expectation
-
-### Coverage Failed (<80%)
-```
-Overall coverage: 75% (< 80%)
-```
-**Fix:** Write tests for uncovered lines
-
-### Performance Regression (>10%)
-```
-Throughput: -15.3% vs base
-```
-**Fix:** Profile and optimize, or document why acceptable
-
----
-
-## Emergency Bypass
-
-**Use only for production hotfixes.**
-
-**Options:**
-1. Admin override: "Merge without waiting for requirements"
-2. Temporarily disable protection
-3. Use `hotfix/*` branch (not protected)
-
-**Required:**
-- Document reason in commit message
-- Create follow-up issue
-- Tag with `tech-debt`
-
-See [BLOCKING_QUALITY_GATES.md#emergency-bypass-process](BLOCKING_QUALITY_GATES.md#emergency-bypass-process)
-
----
-
-## Monitoring
-
-### Quality Gate Pass Rates
-**Target:** ≥95% first-time pass
-
-**Track:**
-- Gate failure frequency
-- Common failure patterns
-- Time to green
-
-### Bypass Frequency
-**Target:** <1 bypass per month
-
-**Track:**
-- Bypass count and reasons
-- Follow-up completion rate
-
----
-
-## File Structure
-
-```
-docs/ci-cd/
-├── README.md                       # This file
-├── BLOCKING_QUALITY_GATES.md       # How gates work, how to fix failures
-└── BRANCH_PROTECTION_SETUP.md      # GitHub branch protection configuration
-
-.github/workflows/
-├── ci.yml                          # Main CI pipeline (multi-OTP)
-├── quality-gate.yml                # Comprehensive single-job gate
-└── block-on-regression.yml         # Performance regression blocker
-```
-
----
 
 ## Best Practices
 
-### 1. Test Locally Before Pushing
-```bash
-make check-full
-```
-Faster feedback, fewer CI failures.
+### 1. Code Quality
 
-### 2. Fix Issues Incrementally
-Don't try to fix all gates at once. Focus on one at a time.
+- Follow coding standards
+- Maintain test coverage
+- Regular code reviews
+- Automated quality gates
 
-### 3. Monitor CI Status
-Watch GitHub Actions, fix failures immediately, don't merge until green.
+### 2. Security
 
-### 4. Document Regressions
-If performance regression is acceptable, document why in PR.
+- Regular security scans
+- Keep dependencies updated
+- Principle of least privilege
+- Regular compliance checks
 
-### 5. Keep Coverage High
-Write tests for all new code. Maintain ≥80% overall, ≥90% for critical modules.
+### 3. Deployment
 
-### 6. Don't Bypass Gates
-Emergency bypass only for production hotfixes. Always create follow-up issues.
+- Use feature flags
+- Monitor deployments
+- Have rollback plans
+- Test thoroughly
 
----
+### 4. Monitoring
+
+- Track key metrics
+- Set up alerts
+- Regular capacity planning
+- Performance optimization
 
 ## Support
 
-### Questions?
-- Read [BLOCKING_QUALITY_GATES.md](BLOCKING_QUALITY_GATES.md) for detailed troubleshooting
-- Check workflow logs in GitHub Actions
-- Open issue with `ci-cd` label
+- **Documentation**: [erlmcp.io/docs](https://erlmcp.io/docs)
+- **Issues**: [GitHub Issues](https://github.com/erlmcp/erlmcp/issues)
+- **Community**: [Discord](https://discord.gg/erlmcp)
+- **Email**: support@erlmcp.io
 
-### Need to bypass gates?
-- See [Emergency Bypass Process](BLOCKING_QUALITY_GATES.md#emergency-bypass-process)
-- Requires admin privileges
-- Must document reason and create follow-up
+## Contributing
 
-### Branch protection not working?
-- See [BRANCH_PROTECTION_SETUP.md](BRANCH_PROTECTION_SETUP.md#troubleshooting)
-- Verify status checks have run at least once
-- Check workflow trigger conditions
+1. Fork the repository
+2. Create a feature branch
+3. Make changes with tests
+4. Submit a pull request
+5. Review and merge
 
----
+## License
 
-## Summary
-
-**erlmcp's CI/CD quality gates:**
-- ✅ Block merges on quality failures
-- ✅ Enforce Lean Six Sigma standards
-- ✅ Provide clear feedback in PR comments
-- ✅ Support local testing with `make check-full`
-- ✅ Document bypass process for emergencies
-
-**Result:** Zero-defect production code, every commit.
+This project is licensed under the Apache License 2.0 - see the [LICENSE](../../LICENSE) file for details.

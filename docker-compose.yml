@@ -1,85 +1,619 @@
 version: '3.8'
 
-# === TAIEA Docker Compose Configuration ===
-# Multi-service orchestration for TAIEA development and testing
-# Services: TAIEA (main), Postgres (optional), Redis (optional), Prometheus (monitoring)
+# ============================================================================
+# erlmcp Docker Compose Configuration - Quality Lane Services
+# ============================================================================
+# Multi-service orchestration for erlmcp development and testing
+#
+# Quality Lanes (Gate Mapping):
+#   compile  -> erlmcp-build   : Compilation gate
+#   eunit    -> erlmcp-unit    : Unit test gate
+#   ct       -> erlmcp-ct      : Integration test gate
+#   check/*  -> erlmcp-check   : Quality analysis gate (dialyzer, xref, coverage)
+#   bench    -> erlmcp-bench   : Performance gate
+#   cluster  -> erlmcp-node*   : Cluster testing
+#
+# Constitution: DOCKER-ONLY CONSTITUTION
+#   All execution MUST run via Docker. Host execution forbidden.
+#   Each service has proper resource limits, volumes, and entrypoints.
+#
+# Usage:
+#   docker compose run --rm erlmcp-build make compile
+#   docker compose run --rm erlmcp-unit make eunit
+#   docker compose run --rm erlmcp-ct make ct
+#   docker compose run --rm erlmcp-check make check
+#   docker compose run --rm erlmcp-bench make benchmark
+# ============================================================================
 
 services:
-  # TAIEA: Main autonomic multi-agent application
-  taiea:
+  # =========================================================================
+  # QUALITY LANE: erlmcp-build - Compilation Gate
+  # =========================================================================
+  # Purpose: Compile all apps and verify successful build
+  # Gates: validate-compile, compile-core, compile-transports, compile-observability
+  # Resources: 2 CPUs, 2GB RAM (compilation is CPU-intensive)
+  # Usage: docker compose run --rm erlmcp-build make compile
+  # =========================================================================
+  erlmcp-build:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-master}
+        VERSION: ${VERSION:-3.0.0}
+    image: erlmcp:3.0.0-build
+    container_name: erlmcp-build
+    hostname: erlmcp-build
+    networks:
+      - erlmcp-network
+    environment:
+      # Build environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-build}
+      ERLMCP_PROFILE: ${ERLMCP_PROFILE:-dev}
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_build_cookie}
+      ERLMCP_NODE_NAME: erlmcp-build@erlmcp-build
+
+      # Compilation settings
+      TERM: dumb
+      REBAR_NO_USER_CONFIG: "true"
+      ERL_COMPILER_OPTIONS: deterministic
+
+      # Performance tuning for compilation
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 50000
+      ERL_FLAGS: "+MBacul 0 +Msbagf 512"
+
+      # Logging
+      ERLMCP_LOG_LEVEL: ${ERLMCP_LOG_LEVEL:-info}
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_BUILD_CPU_LIMIT:-2.0}'
+          memory: '${ERLMCP_BUILD_MEMORY_LIMIT:-2G}'
+          pids: ${ERLMCP_BUILD_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: '${ERLMCP_BUILD_CPU_RESERVATION:-1.0}'
+          memory: '${ERLMCP_BUILD_MEMORY_RESERVATION:-1G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 1
+    volumes:
+      # Source code (read-write for compilation artifacts)
+      - .:/workspace:cached
+      # Build cache persistence
+      - erlmcp-build-cache:/workspace/_build
+      # Hex package cache
+      - hex-cache:/root/.cache/rebar3
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec make $$MAKE_TARGET"]
+    profiles:
+      - build
+
+  # =========================================================================
+  # QUALITY LANE: erlmcp-unit - EUnit Test Gate
+  # =========================================================================
+  # Purpose: Run EUnit unit tests with coverage
+  # Gates: eunit, test-core, test-transports, test-observability
+  # Resources: 1 CPU, 1GB RAM (unit tests are lightweight)
+  # Usage: docker compose run --rm erlmcp-unit make eunit
+  # =========================================================================
+  erlmcp-unit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-master}
+        VERSION: ${VERSION:-3.0.0}
+    image: erlmcp:3.0.0-unit
+    container_name: erlmcp-unit
+    hostname: erlmcp-unit
+    networks:
+      - erlmcp-network
+    environment:
+      # Test environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-test}
+      ERLMCP_PROFILE: test
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_test_cookie}
+      ERLMCP_NODE_NAME: erlmcp-unit@erlmcp-unit
+
+      # Test configuration
+      TERM: dumb
+      EUNIT_OPTS: "-verbose"
+
+      # Coverage settings
+      COVER_ENABLED: "true"
+      COVER_EXPORT_ENABLED: "true"
+
+      # Performance tuning
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 50000
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_UNIT_CPU_LIMIT:-1.0}'
+          memory: '${ERLMCP_UNIT_MEMORY_LIMIT:-1G}'
+          pids: ${ERLMCP_UNIT_PIDS_LIMIT:-2048}
+        reservations:
+          cpus: '${ERLMCP_UNIT_CPU_RESERVATION:-0.5}'
+          memory: '${ERLMCP_UNIT_MEMORY_RESERVATION:-512M}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 1
+    volumes:
+      # Source code
+      - .:/workspace:cached
+      # Test artifacts
+      - erlmcp-unit-logs:/workspace/log/eunit
+      - erlmcp-unit-cover:/workspace/_build/test/cover
+      # Shared build cache
+      - erlmcp-build-cache:/workspace/_build
+      - hex-cache:/root/.cache/rebar3
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec make $$MAKE_TARGET"]
+    profiles:
+      - unit
+
+  # =========================================================================
+  # QUALITY LANE: erlmcp-ct - Common Test Gate
+  # =========================================================================
+  # Purpose: Run Common Test integration and property-based tests
+  # Gates: ct, test-smoke, test-quick, test-full, validate-spec
+  # Resources: 2 CPUs, 2GB RAM (integration tests need more resources)
+  # Usage: docker compose run --rm erlmcp-ct make ct
+  # =========================================================================
+  erlmcp-ct:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-master}
+        VERSION: ${VERSION:-3.0.0}
+    image: erlmcp:3.0.0-ct
+    container_name: erlmcp-ct
+    hostname: erlmcp-ct
+    networks:
+      - erlmcp-network
+    environment:
+      # Test environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-test}
+      ERLMCP_PROFILE: test
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_test_cookie}
+      ERLMCP_NODE_NAME: erlmcp-ct@erlmcp-ct
+
+      # CT configuration
+      TERM: dumb
+      CT_OPTS: "-logdir log/ct"
+
+      # Coverage settings
+      COVER_ENABLED: "true"
+      COVER_EXPORT_ENABLED: "true"
+
+      # Test timeout settings
+      CT_RUN_SUITE_TIMEOUT: ${CT_TIMEOUT:-3600}
+
+      # Performance tuning
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 50000
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_CT_CPU_LIMIT:-2.0}'
+          memory: '${ERLMCP_CT_MEMORY_LIMIT:-2G}'
+          pids: ${ERLMCP_CT_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: '${ERLMCP_CT_CPU_RESERVATION:-1.0}'
+          memory: '${ERLMCP_CT_MEMORY_RESERVATION:-1G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 1
+    volumes:
+      # Source code
+      - .:/workspace:cached
+      # Test artifacts
+      - erlmcp-ct-logs:/workspace/log/ct
+      - erlmcp-ct-cover:/workspace/_build/test/cover
+      # Shared build cache
+      - erlmcp-build-cache:/workspace/_build
+      - hex-cache:/root/.cache/rebar3
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec make $$MAKE_TARGET"]
+    profiles:
+      - ct
+
+  # =========================================================================
+  # QUALITY LANE: erlmcp-check - Quality Analysis Gate
+  # =========================================================================
+  # Purpose: Run static analysis (dialyzer, xref) and coverage checks
+  # Gates: dialyzer, xref, validate-quality, validate-coverage
+  # Resources: 4 CPUs, 4GB RAM (dialyzer is memory-intensive)
+  # Usage: docker compose run --rm erlmcp-check make check
+  # =========================================================================
+  erlmcp-check:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-master}
+        VERSION: ${VERSION:-3.0.0}
+    image: erlmcp:3.0.0-check
+    container_name: erlmcp-check
+    hostname: erlmcp-check
+    networks:
+      - erlmcp-network
+    environment:
+      # Analysis environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-analysis}
+      ERLMCP_PROFILE: dev
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_analysis_cookie}
+      ERLMCP_NODE_NAME: erlmcp-check@erlmcp-check
+
+      # Analysis configuration
+      TERM: dumb
+
+      # Dialyzer settings
+      DIALYZER_PLT_APPS: all_deps
+      DIALYZER_PLT_LOCATION: local
+      DIALYZER_PLT_PREFIX: erlmcp
+      DIALYZER_INCREMENTAL: "true"
+
+      # Coverage threshold
+      COVERAGE_THRESHOLD: ${COVERAGE_THRESHOLD:-80}
+
+      # Performance tuning (dialyzer needs significant memory)
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 50000
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_CHECK_CPU_LIMIT:-4.0}'
+          memory: '${ERLMCP_CHECK_MEMORY_LIMIT:-4G}'
+          pids: ${ERLMCP_CHECK_PIDS_LIMIT:-8192}
+        reservations:
+          cpus: '${ERLMCP_CHECK_CPU_RESERVATION:-2.0}'
+          memory: '${ERLMCP_CHECK_MEMORY_RESERVATION:-2G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 1
+    volumes:
+      # Source code
+      - .:/workspace:cached
+      # Dialyzer PLT cache (persistent for speed)
+      - erlmcp-dialyzer-plt:/workspace/_build/default
+      - erlmcp-dialyzer-plt-test:/workspace/_build/test
+      # Coverage reports
+      - erlmcp-check-cover:/workspace/_build/test/cover
+      # Analysis reports
+      - erlmcp-check-reports:/workspace/reports
+      # Shared build cache
+      - erlmcp-build-cache:/workspace/_build
+      - hex-cache:/root/.cache/rebar3
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec make $$MAKE_TARGET"]
+    profiles:
+      - check
+
+  # =========================================================================
+  # QUALITY LANE: erlmcp-bench - Performance Gate
+  # =========================================================================
+  # Purpose: Run performance benchmarks and regression tests
+  # Gates: benchmark, benchmark-nine-nines, validate-bench
+  # Resources: 2 CPUs, 2GB RAM (benchmarks need consistent performance)
+  # Usage: docker compose run --rm erlmcp-bench make benchmark
+  # =========================================================================
+  erlmcp-bench:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-master}
+        VERSION: ${VERSION:-3.0.0}
+    image: erlmcp:3.0.0-bench
+    container_name: erlmcp-bench
+    hostname: erlmcp-bench
+    networks:
+      - erlmcp-network
+    environment:
+      # Benchmark environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-benchmark}
+      ERLMCP_PROFILE: benchmark
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_bench_cookie}
+      ERLMCP_NODE_NAME: erlmcp-bench@erlmcp-bench
+
+      # Benchmark configuration
+      TERM: dumb
+
+      # Performance regression threshold (%)
+      BENCHMARK_REGRESSION_THRESHOLD: ${BENCH_REGRESSION_THRESHOLD:-10}
+
+      # Benchmark iterations
+      BENCHMARK_ITERATIONS: ${BENCH_ITERATIONS:-1000}
+      BENCHMARK_WARMUP: ${BENCH_WARMUP:-100}
+
+      # Performance tuning (consistent results)
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 50000
+      ERL_FLAGS: "+MBacul 0 +Msbagf 512 +MBacgs 0"
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_BENCH_CPU_LIMIT:-2.0}'
+          memory: '${ERLMCP_BENCH_MEMORY_LIMIT:-2G}'
+          pids: ${ERLMCP_BENCH_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: '${ERLMCP_BENCH_CPU_RESERVATION:-1.5}'
+          memory: '${ERLMCP_BENCH_MEMORY_RESERVATION:-1G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 1
+    volumes:
+      # Source code
+      - .:/workspace:cached
+      # Benchmark results
+      - erlmcp-bench-results:/workspace/bench/results
+      - erlmcp-bench-baselines:/workspace/bench/baselines
+      # Shared build cache
+      - erlmcp-build-cache:/workspace/_build
+      - hex-cache:/root/.cache/rebar3
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec make $$MAKE_TARGET"]
+    profiles:
+      - bench
+
+  # =========================================================================
+  # QUALITY LANE: erlmcp-node - Cluster Testing
+  # =========================================================================
+  # Purpose: Test distributed Erlang clustering and HA features
+  # Gates: test-cluster, validate-cluster, raft-tests
+  # Resources: 1 CPU, 1GB RAM per node (typically run multiple instances)
+  # Usage: docker compose run --rm erlmcp-node make test-cluster
+  # =========================================================================
+  erlmcp-node:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-master}
+        VERSION: ${VERSION:-3.0.0}
+    image: erlmcp:3.0.0-node
+    container_name: erlmcp-node
+    hostname: erlmcp-node
+    networks:
+      - erlmcp-network
+    ports:
+      - "${ERL_DIST_PORT:-9100}:9100"
+      - "${ERL_DIST_PORT_MIN:-9100}-${ERL_DIST_PORT_MAX:-9200}:9100-9200"
+    environment:
+      # Cluster environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-cluster}
+      ERLMCP_PROFILE: cluster
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_cluster_cookie}
+      ERLMCP_NODE_NAME: ${ERLMCP_NODE_NAME:-erlmcp-node@erlmcp-node}
+
+      # EPMD-less clustering
+      ERL_AFLAGS: "-proto_dist inet_tls"
+      ERL_DIST_PORT: "${ERL_DIST_PORT:-9100}"
+      ERLANG_DISTRIBUTION_PORT_RANGE: "${ERL_DIST_PORT_MIN:-9100}-${ERL_DIST_PORT_MAX:-9200}"
+
+      # Cluster configuration
+      CLUSTER_MODE: distributed
+      RAFT_ENABLED: "true"
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_NODE_CPU_LIMIT:-1.0}'
+          memory: '${ERLMCP_NODE_MEMORY_LIMIT:-1G}'
+          pids: ${ERLMCP_NODE_PIDS_LIMIT:-2048}
+        reservations:
+          cpus: '${ERLMCP_NODE_CPU_RESERVATION:-0.5}'
+          memory: '${ERLMCP_NODE_MEMORY_RESERVATION:-512M}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    volumes:
+      # Source code
+      - .:/workspace:cached
+      # Cluster data
+      - erlmcp-cluster-data:/var/lib/erlmcp
+      - erlmcp-cluster-logs:/var/log/erlmcp
+      # Shared build cache
+      - erlmcp-build-cache:/workspace/_build
+      - hex-cache:/root/.cache/rebar3
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec make $$MAKE_TARGET"]
+    profiles:
+      - cluster
+
+  # =========================================================================
+  # QUALITY LANE: erlmcp-shutdown - Graceful Shutdown Load Test
+  # =========================================================================
+  # Purpose: Test graceful shutdown behavior under load
+  # Gates: test-shutdown, validate-shutdown, zero-dropped-requests
+  # Resources: 2 CPUs, 2GB RAM (load tests need decent resources)
+  # Usage: docker compose run --rm erlmcp-shutdown /opt/erlmcp/scripts/test_graceful_shutdown_load.sh
+  # =========================================================================
+  erlmcp-shutdown:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-master}
+        VERSION: ${VERSION:-3.0.0}
+    image: erlmcp:3.0.0-shutdown
+    container_name: erlmcp-shutdown
+    hostname: erlmcp-shutdown
+    networks:
+      - erlmcp-network
+    environment:
+      # Test environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-test}
+      ERLMCP_PROFILE: test
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_test_cookie}
+      ERLMCP_NODE_NAME: erlmcp-shutdown@erlmcp-shutdown
+
+      # Test configuration
+      TERM: dumb
+      LOAD_TEST_DURATION: ${LOAD_TEST_DURATION:-30}
+      CONCURRENT_REQUESTS: ${CONCURRENT_REQUESTS:-50}
+      SHUTDOWN_TIMEOUT: ${SHUTDOWN_TIMEOUT:-5000}
+
+      # Coverage settings
+      COVER_ENABLED: "true"
+      COVER_EXPORT_ENABLED: "true"
+
+      # Performance tuning
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 50000
+      ERL_FLAGS: "+K true +A 128 +MBacul 0"
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_SHUTDOWN_CPU_LIMIT:-2.0}'
+          memory: '${ERLMCP_SHUTDOWN_MEMORY_LIMIT:-2G}'
+          pids: ${ERLMCP_SHUTDOWN_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: '${ERLMCP_SHUTDOWN_CPU_RESERVATION:-1.0}'
+          memory: '${ERLMCP_SHUTDOWN_MEMORY_RESERVATION:-1G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 1
+    volumes:
+      # Source code
+      - .:/workspace:cached
+      # Test artifacts
+      - erlmcp-shutdown-logs:/workspace/log/shutdown
+      - erlmcp-shutdown-reports:/workspace/reports/shutdown
+      # Shared build cache
+      - erlmcp-build-cache:/workspace/_build
+      - hex-cache:/root/.cache/rebar3
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["exec /opt/erlmcp/scripts/test_graceful_shutdown_load.sh"]
+    profiles:
+      - shutdown
+
+  # =========================================================================
+  # MAIN SERVICES (existing services maintained)
+  # =========================================================================
+
+  # erlmcp: Main Model Context Protocol application
+  erlmcp:
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        BUILD_DATE: ${BUILD_DATE:-2026-01-26}
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
         VCS_REF: ${VCS_REF:-master}
-        VERSION: ${VERSION:-1.0.0}
-    container_name: taiea
-    hostname: taiea
+        VERSION: ${VERSION:-3.0.0}
+    container_name: erlmcp
+    hostname: erlmcp
     restart: unless-stopped
     networks:
-      - taiea-network
+      - erlmcp-network
     ports:
-      - "${TAIEA_PORT:-8080}:8080"    # HTTP API
-      - "${EPMD_PORT:-4369}:4369"     # Erlang port mapper
-      - "${METRICS_PORT:-9100}:9100"  # Metrics/monitoring
+      - "${ERLMCP_PORT:-8080}:8080"
+      - "${ERL_DIST_PORT:-9100}:9100"
+      - "${METRICS_PORT:-9100}:9100"
+      - "${HEALTH_PORT:-9090}:9090"
     environment:
-      # TAIEA Configuration
-      TAIEA_ENV: ${TAIEA_ENV:-production}
-      ERLANG_COOKIE: ${ERLANG_COOKIE:-taiea_prod_cookie}
-      NODE_NAME: ${NODE_NAME:-taiea@taiea}
-
-      # Logging
-      LAGER_LEVEL: ${LAGER_LEVEL:-info}
-      LAGER_ERROR_LOGGER_HWND: true
-
-      # Performance tuning
+      ERLMCP_ENV: ${ERLMCP_ENV:-production}
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
+      ERLMCP_NODE_NAME: ${ERLMCP_NODE_NAME:-erlmcp@erlmcp}
+      ERL_AFLAGS: "-proto_dist inet_tls"
+      ERL_DIST_PORT: "${ERL_DIST_PORT:-9100}"
+      ERLANG_DISTRIBUTION_PORT_RANGE: "${ERL_DIST_PORT_MIN:-9100}-${ERL_DIST_PORT_MAX:-9200}"
+      ERLMCP_LOG_LEVEL: ${ERLMCP_LOG_LEVEL:-info}
       ERL_MAX_PORTS: ${ERL_MAX_PORTS:-65536}
-      ERL_MAX_ETS_TABLES: ${ERL_MAX_ETS_TABLES:-20000}
-
-      # Memory allocation
+      ERL_MAX_ETS_TABLES: ${ERLM_MAX_ETS_TABLES:-50000}
       ERL_FULLSWEEP_AFTER: ${ERL_FULLSWEEP_AFTER:-0}
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_CPU_LIMIT:-2.0}'
+          memory: '${ERLMCP_MEMORY_LIMIT:-4G}'
+          pids: ${ERLMCP_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: '${ERLMCP_CPU_RESERVATION:-0.5}'
+          memory: '${ERLMCP_MEMORY_RESERVATION:-1G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        delay: 5s
     volumes:
-      # Configuration
-      - ./config/sys.config:/opt/taiea/etc/sys.config:ro
-      - ./taiea/config/sys.config:/opt/taiea/etc/taiea.config:ro
-
-      # Logs and data persistence (optional)
-      - taiea-logs:/var/log/taiea
-      - taiea-data:/var/lib/taiea
+      - ./config/sys.config:/opt/erlmcp/etc/sys.config:ro
+      - ./vm.args:/opt/erlmcp/releases/3.0.0/vm.args:ro
+      - erlmcp-logs:/var/log/erlmcp
+      - erlmcp-data:/var/lib/erlmcp
     healthcheck:
-      test: [CMD, "/opt/taiea/bin/taiea", "ping"]
-      interval: 30s
+      test: [CMD, "/opt/erlmcp/bin/healthcheck.sh"]
+      interval: 15s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 45s
     logging:
       driver: "json-file"
       options:
         max-size: "10m"
         max-file: "3"
+    profiles:
+      - runtime
 
   # Development environment (optional)
-  taiea-dev:
+  erlmcp-dev:
     build:
       context: .
-      dockerfile: Dockerfile.dev
-    container_name: taiea-dev
-    hostname: taiea-dev
+      dockerfile: Dockerfile
+      target: debug
+    container_name: erlmcp-dev
+    hostname: erlmcp-dev
     networks:
-      - taiea-network
+      - erlmcp-network
     ports:
       - "8081:8080"
-      - "4370:4369"
+      - "9110:9100"
       - "9101:9100"
       - "9201:9200"
     environment:
-      TAIEA_ENV: ${TAIEA_ENV:-development}
-      ERLANG_COOKIE: ${ERLANG_COOKIE:-taiea_dev_cookie}
-      NODE_NAME: ${NODE_NAME:-taiea-dev@taiea-dev}
-      LAGER_LEVEL: debug
+      ERLMCP_ENV: ${ERLMCP_ENV:-development}
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
+      ERLMCP_NODE_NAME: ${ERLMCP_NODE_NAME:-erlmcp-dev@erlmcp-dev}
+      ERLMCP_LOG_LEVEL: debug
+      ERL_AFLAGS: "-proto_dist inet_tls"
+      ERL_DIST_PORT: "9110"
+      ERLANG_DISTRIBUTION_PORT_RANGE: "9110-9210"
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_DEV_CPU_LIMIT:-1.0}'
+          memory: '${ERLMCP_DEV_MEMORY_LIMIT:-2G}'
+          pids: ${ERLMCP_DEV_PIDS_LIMIT:-2048}
+        reservations:
+          cpus: '${ERLMCP_DEV_CPU_RESERVATION:-0.5}'
+          memory: '${ERLMCP_DEV_MEMORY_RESERVATION:-1G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        delay: 5s
     volumes:
-      # Mount workspace for live editing
       - .:/workspace
       - erlang-cache:/root/.cache
     working_dir: /workspace
@@ -89,39 +623,39 @@ services:
     profiles:
       - dev
 
-  # PostgreSQL (optional - uncomment to enable)
+  # PostgreSQL (optional - for integration tests)
   postgres:
     image: postgres:16-alpine
-    container_name: taiea-postgres
+    container_name: erlmcp-postgres
     hostname: postgres
     restart: unless-stopped
     networks:
-      - taiea-network
+      - erlmcp-network
     ports:
       - "${DB_PORT:-5432}:5432"
     environment:
-      POSTGRES_DB: ${DB_NAME:-taiea}
-      POSTGRES_USER: ${DB_USER:-taiea}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-taiea_secure_password}
+      POSTGRES_DB: ${DB_NAME:-erlmcp}
+      POSTGRES_USER: ${DB_USER:-erlmcp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-erlmcp_secure_password}
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: [CMD-SHELL, "pg_isready -U ${DB_USER:-taiea}"]
+      test: [CMD-SHELL, "pg_isready -U ${DB_USER:-erlmcp}"]
       interval: 10s
       timeout: 5s
       retries: 5
     profiles:
       - postgres
 
-  # Redis (optional - uncomment to enable)
+  # Redis (optional - for caching tests)
   redis:
     image: redis:7-alpine
-    container_name: taiea-redis
+    container_name: erlmcp-redis
     hostname: redis
     restart: unless-stopped
     networks:
-      - taiea-network
+      - erlmcp-network
     ports:
       - "${REDIS_PORT:-6379}:6379"
     command: redis-server --appendonly yes
@@ -135,74 +669,255 @@ services:
     profiles:
       - redis
 
-  # Prometheus (monitoring - optional)
+  # ============================================================================
+  # MONITORING STACK - Complete observability for erlmcp v3
+  # ============================================================================
+  # Services: Prometheus, Grafana, Alertmanager, Node Exporter, cAdvisor
+  # Metrics: Request rate, error rate, latency, memory, CPU, connections
+  # Usage: docker compose --profile monitoring up
+  # ============================================================================
+
+  # Prometheus - Metrics collection and storage
   prometheus:
-    image: prom/prometheus:latest
-    container_name: taiea-prometheus
+    image: prom/prometheus:v2.48.0
+    container_name: erlmcp-prometheus
     hostname: prometheus
     restart: unless-stopped
     networks:
-      - taiea-network
+      - erlmcp-network
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     volumes:
-      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - ./docker/recording_rules.yml:/etc/prometheus/recording_rules.yml:ro
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     profiles:
       - monitoring
 
-  # Grafana (visualization - optional)
+  # Alertmanager - Alert routing and notification
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: erlmcp-alertmanager
+    hostname: alertmanager
+    restart: unless-stopped
+    networks:
+      - erlmcp-network
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./docker/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    profiles:
+      - monitoring
+
+  # Grafana - Visualization dashboards
   grafana:
-    image: grafana/grafana:latest
-    container_name: taiea-grafana
+    image: grafana/grafana:10.2.2
+    container_name: erlmcp-grafana
     hostname: grafana
     restart: unless-stopped
     networks:
-      - taiea-network
+      - erlmcp-network
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       GF_INSTALL_PLUGINS: grafana-piechart-panel
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/provisioning/dashboards/erlmcp-home.json
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./apps/erlmcp_observability/grafana:/etc/grafana/provisioning/dashboards/erlmcp:ro
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
+      alertmanager:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    profiles:
+      - monitoring
+
+  # Node Exporter - System metrics (CPU, memory, disk, network)
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: erlmcp-node-exporter
+    hostname: node-exporter
+    restart: unless-stopped
+    networks:
+      - erlmcp-network
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--path.filesystem.mounts=/host/mounts'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    profiles:
+      - monitoring
+
+  # cAdvisor - Container metrics
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47.2
+    container_name: erlmcp-cadvisor
+    hostname: cadvisor
+    restart: unless-stopped
+    networks:
+      - erlmcp-network
+    ports:
+      - "${CADVISOR_PORT:-8080}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    privileged: true
+    devices:
+      - /dev/kmsg
+    profiles:
+      - monitoring
+
+  # Loki - Log aggregation (optional)
+  loki:
+    image: grafana/loki:2.9.2
+    container_name: erlmcp-loki
+    hostname: loki
+    restart: unless-stopped
+    networks:
+      - erlmcp-network
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./docker/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    profiles:
+      - monitoring
+
+  # Promtail - Log collection agent
+  promtail:
+    image: grafana/promtail:2.9.2
+    container_name: erlmcp-promtail
+    hostname: promtail
+    restart: unless-stopped
+    networks:
+      - erlmcp-network
+    volumes:
+      - ./docker/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
     profiles:
       - monitoring
 
 networks:
-  taiea-network:
+  erlmcp-network:
     driver: bridge
     ipam:
       config:
         - subnet: 172.25.0.0/16
 
 volumes:
-  # TAIEA
-  taiea-logs:
+  # ============================================================================
+  # QUALITY LANE VOLUMES (persistent caches and artifacts)
+  # ============================================================================
+  erlmcp-build-cache:
     driver: local
-  taiea-data:
+  erlmcp-unit-logs:
+    driver: local
+  erlmcp-unit-cover:
+    driver: local
+  erlmcp-ct-logs:
+    driver: local
+  erlmcp-ct-cover:
+    driver: local
+  erlmcp-dialyzer-plt:
+    driver: local
+  erlmcp-dialyzer-plt-test:
+    driver: local
+  erlmcp-check-cover:
+    driver: local
+  erlmcp-check-reports:
+    driver: local
+  erlmcp-bench-results:
+    driver: local
+  erlmcp-bench-baselines:
+    driver: local
+  erlmcp-cluster-data:
+    driver: local
+  erlmcp-cluster-logs:
+    driver: local
+  erlmcp-shutdown-logs:
+    driver: local
+  erlmcp-shutdown-reports:
+    driver: local
+
+  # ============================================================================
+  # EXISTING VOLUMES (maintained for compatibility)
+  # ============================================================================
+  erlmcp-logs:
+    driver: local
+  erlmcp-data:
     driver: local
   erlang-cache:
     driver: local
-
-  # Database
+  hex-cache:
+    driver: local
   postgres-data:
     driver: local
-
-  # Cache
   redis-data:
     driver: local
 
-  # Monitoring
+  # ============================================================================
+  # MONITORING VOLUMES (persistent metrics and dashboards)
+  # ============================================================================
   prometheus-data:
     driver: local
   grafana-data:
+    driver: local
+  alertmanager-data:
+    driver: local
+  loki-data:
     driver: local

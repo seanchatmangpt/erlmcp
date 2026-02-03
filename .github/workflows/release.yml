@@ -1,563 +1,205 @@
-name: Release
+name: Release Pipeline - erlmcp v3
 
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+*'  # Trigger on semver tags (v2.0.0, v2.1.0-rc.1, etc)
-
-permissions:
-  contents: write
-  packages: write
-  id-token: write
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 3.0.0)'
+        required: true
+        type: string
+      pre_release:
+        description: 'Is this a pre-release?'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+        - 'true'
+        - 'false'
 
 jobs:
+  # Pre-release Validation
   pre-release-validation:
-    name: Pre-Release Validation Gate
+    name: Pre-release Validation
     runs-on: ubuntu-latest
     outputs:
-      version: ${{ steps.extract.outputs.version }}
-      is-prerelease: ${{ steps.extract.outputs.is-prerelease }}
-      validation-passed: ${{ steps.validate.outputs.passed }}
+      version: ${{ steps.version.outputs.version }}
+      is_pre_release: ${{ steps.pre-release.outputs.is_pre_release }}
+      release_notes: ${{ steps.release-notes.outputs.release_notes }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Extract version from tag
-        id: extract
+      - name: Determine Version
+        id: version
         run: |
-          VERSION=${GITHUB_REF#refs/tags/v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-          # Check if prerelease (contains -, rc, beta, alpha)
-          if [[ $VERSION =~ -(alpha|beta|rc) ]]; then
-            echo "is-prerelease=true" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
           else
-            echo "is-prerelease=false" >> $GITHUB_OUTPUT
+            VERSION=${GITHUB_REF#refs/tags/v}
           fi
+          echo "::set-output name=version::${VERSION}"
 
-      - name: Setup Erlang/OTP
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: '26'
-          rebar3-version: '3.25'
-
-      - name: Cache dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/rebar3
-            _build
-          key: ${{ runner.os }}-otp26-${{ hashFiles('rebar.lock', 'apps/*/rebar.config') }}
-          restore-keys: |
-            ${{ runner.os }}-otp26-
-
-      - name: Run Release Blocker Check
-        id: blocker-check
+      - name: Check Pre-release Status
+        id: pre-release
         run: |
-          chmod +x ./tools/release/release-blocker-check.sh
-
-          echo "::group::Release Blocker Check"
-          if ./tools/release/release-blocker-check.sh; then
-            echo "✓ No release blockers found"
-            echo "blockers=false" >> $GITHUB_OUTPUT
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            IS_PRE_RELEASE="${{ github.event.inputs.pre_release }}"
           else
-            echo "✗ Release blockers detected"
-            echo "blockers=true" >> $GITHUB_OUTPUT
-            exit 1
+            IS_PRE_RELEASE=$(echo "${{ github.ref }}" | grep -E "alpha|beta|rc" || echo "false")
           fi
-          echo "::endgroup::"
+          echo "::set-output name=is_pre_release::${IS_PRE_RELEASE}"
 
-      - name: Run Pre-Release Validator
-        id: validate
+      - name: Generate Release Notes
+        id: release-notes
         run: |
-          chmod +x ./tools/release/pre-release-validator.sh
+          ./scripts/release/generate-notes.sh "${{ steps.version.outputs.version }}" > /tmp/release_notes.md
+          echo "::set-output name=release_notes::$(cat /tmp/release_notes.md)"
 
-          echo "::group::Pre-Release Validation"
-          if ./tools/release/pre-release-validator.sh ${{ steps.extract.outputs.version }}; then
-            echo "✓ Pre-release validation passed"
-            echo "passed=true" >> $GITHUB_OUTPUT
-          else
-            echo "✗ Pre-release validation failed"
-            echo "passed=false" >> $GITHUB_OUTPUT
-            exit 1
-          fi
-          echo "::endgroup::"
-
-      - name: Generate Release Gate Dashboard
-        if: always()
+      - name: Validate Release Readiness
         run: |
-          chmod +x ./tools/release/release-gate-dashboard.sh
+          ./scripts/release/validate.sh "${{ steps.version.outputs.version }}" ${{ steps.pre-release.outputs.is_pre_release }}
 
-          echo "::group::Release Gate Dashboard"
-          ./tools/release/release-gate-dashboard.sh ${{ steps.extract.outputs.version }} || true
-          echo "::endgroup::"
-
-      - name: Generate Release Readiness Report
-        if: always()
-        run: |
-          chmod +x ./tools/release/release-readiness-report.sh
-
-          echo "::group::Release Readiness Report"
-          ./tools/release/release-readiness-report.sh ${{ steps.extract.outputs.version }} || true
-          echo "::endgroup::"
-
-      - name: Upload Validation Reports
-        if: always()
-        uses: actions/upload-artifact@v3
-        with:
-          name: release-validation-reports
-          path: |
-            /tmp/pre-release-validation-*.txt
-            /tmp/release-readiness-*.md
-          retention-days: 30
-
-      - name: Block Release on Validation Failure
-        if: steps.validate.outputs.passed != 'true' || steps.blocker-check.outputs.blockers == 'true'
-        run: |
-          echo "::error::Release validation failed - release blocked"
-          echo ""
-          echo "Fix all validation failures and blockers, then:"
-          echo "1. Address all RED items in validation report"
-          echo "2. Re-run: ./tools/release/pre-release-validator.sh ${{ steps.extract.outputs.version }}"
-          echo "3. Re-run: ./tools/release/release-blocker-check.sh"
-          echo "4. Push new tag when ready"
-          exit 1
-
-  validate:
-    name: Validate Release
+  # Build Release Artifacts
+  build-release:
+    name: Build Release Artifacts
     runs-on: ubuntu-latest
     needs: pre-release-validation
     outputs:
-      version: ${{ needs.pre-release-validation.outputs.version }}
-      is-prerelease: ${{ needs.pre-release-validation.outputs.is-prerelease }}
+      package-tarball: ${{ steps.build.outputs.package-tarball }}
+      binary-linux: ${{ steps.build.outputs.binary-linux }}
+      binary-macos: ${{ steps.build.outputs.binary-macos }}
+      docker-images: ${{ steps.build.outputs.docker-images }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Verify tag matches version files
-        run: |
-          VERSION=${{ needs.pre-release-validation.outputs.version }}
-          echo "Verifying version $VERSION in source files..."
-
-          # Check root rebar.config relx version
-          if grep -q "{release, {erlmcp, \"$VERSION\"}" rebar.config 2>/dev/null; then
-            echo "✓ rebar.config release version matches"
-          else
-            echo "⚠ rebar.config version mismatch (expected $VERSION)"
-          fi
-
-          # Check umbrella app versions
-          for app in erlmcp_core erlmcp_transports erlmcp_observability tcps_erlmcp; do
-            APP_FILE="apps/$app/src/${app}.app.src"
-            if [ -f "$APP_FILE" ]; then
-              if grep -q "{vsn, \"$VERSION\"}" "$APP_FILE"; then
-                echo "✓ $app version matches"
-              else
-                echo "⚠ $app version mismatch"
-              fi
-            fi
-          done
-
-  manual-approval:
-    name: Manual Release Approval
-    runs-on: ubuntu-latest
-    needs: [pre-release-validation, validate]
-    environment:
-      name: production-release
-      url: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.pre-release-validation.outputs.version }}
-
-    steps:
-      - name: Display Release Summary
-        run: |
-          echo "::notice::Release v${{ needs.pre-release-validation.outputs.version }} ready for approval"
-          echo ""
-          echo "Pre-release validation: ✓ PASSED"
-          echo "Blocker check: ✓ PASSED"
-          echo "Version: ${{ needs.pre-release-validation.outputs.version }}"
-          echo "Is prerelease: ${{ needs.pre-release-validation.outputs.is-prerelease }}"
-          echo ""
-          echo "Awaiting manual approval to proceed with release..."
-
-  test:
-    name: Test Suite (OTP ${{ matrix.otp-version }})
-    runs-on: ubuntu-latest
-    needs: [validate, manual-approval]
-    strategy:
-      matrix:
-        otp-version: ['25', '26', '27']
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Erlang/OTP
+      - name: Setup OTP
         uses: erlef/setup-beam@v1
         with:
-          otp-version: ${{ matrix.otp-version }}
-          rebar3-version: ${{ matrix.otp-version >= 26 && '3.25' || '3.22' }}
+          version: ${{ env.OTP_VERSION }}
+          otp-version: ${{ env.OTP_VERSION }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cache dependencies
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.cache/rebar3
-            _build
-          key: ${{ runner.os }}-otp${{ matrix.otp-version }}-${{ hashFiles('rebar.lock', 'apps/*/rebar.config') }}
-          restore-keys: |
-            ${{ runner.os }}-otp${{ matrix.otp-version }}-
-
-      - name: Download dependencies
-        run: rebar3 get-deps
-
-      - name: Compile umbrella
-        run: rebar3 compile
-
-      - name: Verify all umbrella apps compiled
+      - name: Build Release
+        id: build
         run: |
-          for app in erlmcp_core erlmcp_transports erlmcp_observability tcps_erlmcp; do
-            if [ -d "apps/$app/ebin" ]; then
-              echo "✓ $app compiled ($(ls apps/$app/ebin/*.beam | wc -l) modules)"
-            else
-              echo "❌ $app failed to compile"
-              exit 1
-            fi
-          done
+          rebar3 release
+          ./scripts/release/build-artifacts.sh "${{ steps.version.outputs.version }}"
 
-      - name: Run unit tests
-        run: rebar3 eunit
+          echo "::set-output name=package-tarball::erlmcp-${{ steps.version.outputs.version }}.tar.gz"
+          echo "::set-output name=binary-linux::erlmcp-linux-x64-${{ steps.version.outputs.version }}"
+          echo "::set-output name=binary-macos::erlmcp-macos-x64-${{ steps.version.outputs.version }}"
+          echo "::set-output name=docker-images::registry,server,transports"
 
-      - name: Run integration tests
-        run: rebar3 ct --dir=test/integration
+      - name: Build Docker Images
+        run: |
+          docker build -f docker/Dockerfile.registry -t ${{ env.REGISTRY_IMAGE }}:${{ steps.version.outputs.version }} .
+          docker build -f docker/Dockerfile.server -t ${{ env.SERVER_IMAGE }}:${{ steps.version.outputs.version }} .
+          docker build -f docker/Dockerfile.transports -t ${{ env.TRANSPORT_IMAGE }}:${{ steps.version.outputs.version }} .
 
-      - name: Run property tests
-        run: rebar3 proper -c
+      - name: Scan Artifacts
+        run: |
+          ./scripts/security/scan-release-artifacts.sh "${{ steps.version.outputs.version }}"
 
-      - name: Run dialyzer (type checking)
-        run: rebar3 dialyzer
-
-      - name: Run xref (cross-reference checks)
-        run: rebar3 xref
-
-      - name: Generate coverage report
-        run: rebar3 cover
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./_build/test/cover/
-          flags: erlang-otp${{ matrix.otp-version }}
-          fail_ci_if_error: false
-
-  build-artifacts:
-    name: Build Release Artifacts
+  # Create GitHub Release
+  create-release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [validate, test, manual-approval]
+    needs: build-release
+    permissions:
+      contents: write
+      packages: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Erlang/OTP
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: '26'
-          rebar3-version: '3.25'
-
-      - name: Build production release
-        run: |
-          echo "Building erlmcp v${{ needs.validate.outputs.version }} production release..."
-          rebar3 as prod compile
-          rebar3 as prod release
-
-      - name: Verify release structure
-        run: |
-          RELEASE_DIR="_build/prod/rel/erlmcp"
-
-          if [ -d "$RELEASE_DIR" ]; then
-            echo "✓ Release directory created"
-            ls -lh "$RELEASE_DIR/"
-
-            # Verify critical files
-            [ -f "$RELEASE_DIR/bin/erlmcp" ] && echo "✓ erlmcp start script exists"
-            [ -d "$RELEASE_DIR/lib" ] && echo "✓ lib directory exists ($(ls $RELEASE_DIR/lib | wc -l) apps)"
-            [ -f "$RELEASE_DIR/releases/${{ needs.validate.outputs.version }}/erlmcp.rel" ] && echo "✓ Release file exists"
-          else
-            echo "❌ Release build failed - directory not found"
-            exit 1
-          fi
-
-      - name: Create tarball
-        run: |
-          VERSION=${{ needs.validate.outputs.version }}
-          TARBALL="erlmcp-${VERSION}.tar.gz"
-
-          tar -czf "$TARBALL" -C _build/prod/rel erlmcp
-          ls -lh "$TARBALL"
-
-          # Create checksums
-          sha256sum "$TARBALL" > "${TARBALL}.sha256"
-          md5sum "$TARBALL" > "${TARBALL}.md5"
-
-          echo "✓ Tarball created: $TARBALL"
-          cat "${TARBALL}.sha256"
-
-      - name: Upload tarball artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: erlmcp-release-${{ needs.validate.outputs.version }}
-          path: |
-            erlmcp-${{ needs.validate.outputs.version }}.tar.gz
-            erlmcp-${{ needs.validate.outputs.version }}.tar.gz.sha256
-            erlmcp-${{ needs.validate.outputs.version }}.tar.gz.md5
-          retention-days: 90
-
-  docker-build:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
-    needs: [validate, test, manual-approval]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      - uses: actions/checkout@v4
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v4
-        with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=semver,pattern={{version}},value=${{ needs.validate.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate.outputs.version }}
-            type=semver,pattern={{major}},value=${{ needs.validate.outputs.version }}
-            type=raw,value=latest,enable=${{ needs.validate.outputs.is-prerelease == 'false' }}
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
-          build-args: |
-            VERSION=${{ needs.validate.outputs.version }}
-            OTP_VERSION=26
-
-  publish-hex:
-    name: Publish to Hex Package Manager
-    runs-on: ubuntu-latest
-    needs: [validate, test, manual-approval]
-    if: ${{ needs.validate.outputs.is-prerelease == 'false' }}
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Erlang/OTP
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: '26'
-          rebar3-version: '3.25'
-
-      - name: Publish umbrella apps to Hex
-        env:
-          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+      - name: Push Docker Images
         run: |
-          # Publish each umbrella app individually
-          for app in erlmcp_core erlmcp_transports erlmcp_observability tcps_erlmcp; do
-            if [ -f "apps/$app/src/${app}.app.src" ]; then
-              echo "Publishing $app to Hex..."
-              cd "apps/$app"
-              rebar3 hex publish --yes || echo "⚠ Failed to publish $app (may already exist)"
-              cd ../..
-            fi
-          done
+          docker push ${{ env.REGISTRY_IMAGE }}:${{ needs.pre-release-validation.outputs.version }}
+          docker push ${{ env.SERVER_IMAGE }}:${{ needs.pre-release-validation.outputs.version }}
+          docker push ${{ env.TRANSPORT_IMAGE }}:${{ needs.pre-release-validation.outputs.version }}
 
-          # Publish root umbrella package
-          echo "Publishing erlmcp umbrella to Hex..."
-          rebar3 hex publish --yes
-
-  github-release:
-    name: Create GitHub Release
-    runs-on: ubuntu-latest
-    needs: [validate, build-artifacts, docker-build, manual-approval]
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
         with:
-          fetch-depth: 0
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
-
-      - name: Generate release notes
-        id: notes
-        run: |
-          VERSION=${{ needs.validate.outputs.version }}
-
-          # Extract from CHANGELOG if exists
-          if [ -f CHANGELOG.md ]; then
-            # Try to extract this version's section
-            NOTES=$(sed -n "/^## \[$VERSION\]/,/^## \[/p" CHANGELOG.md | sed '$d')
-            if [ -z "$NOTES" ]; then
-              # Fallback to getting everything since last version
-              NOTES=$(sed -n "/^## \[/,/^## \[/p" CHANGELOG.md | head -n -1)
-            fi
-          fi
-
-          # Default if no changelog
-          if [ -z "$NOTES" ]; then
-            NOTES="## erlmcp v$VERSION
-
-**Erlang/OTP MCP SDK - Umbrella Release**
-
-This release includes:
-- \`erlmcp_core\` - JSON-RPC, Registry, Client/Server
-- \`erlmcp_transports\` - STDIO, TCP, HTTP, WebSocket
-- \`erlmcp_observability\` - Metrics, Traces, OpenTelemetry
-- \`tcps_erlmcp\` - Toyota Code Production System (optional)
-
-### Installation
-
-\`\`\`erlang
-{deps, [{erlmcp, \"$VERSION\"}]}.
-\`\`\`
-
-Or download the release tarball below.
-
-See [CHANGELOG.md](CHANGELOG.md) for full details."
-          fi
-
-          # Store in multiline format
-          {
-            echo "content<<EOF"
-            echo "$NOTES"
-            echo "EOF"
-          } >> $GITHUB_OUTPUT
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ needs.validate.outputs.version }}
-          name: erlmcp v${{ needs.validate.outputs.version }}
-          body: ${{ steps.notes.outputs.content }}
+          tag_name: v${{ needs.pre-release-validation.outputs.version }}
+          name: erlmcp v${{ needs.pre-release-validation.outputs.version }}
+          body: ${{ needs.pre-release-validation.outputs.release_notes }}
           draft: false
-          prerelease: ${{ needs.validate.outputs.is-prerelease }}
+          prerelease: ${{ needs.pre-release-validation.outputs.is_pre_release }}
           files: |
-            erlmcp-release-${{ needs.validate.outputs.version }}/erlmcp-${{ needs.validate.outputs.version }}.tar.gz
-            erlmcp-release-${{ needs.validate.outputs.version }}/erlmcp-${{ needs.validate.outputs.version }}.tar.gz.sha256
-            erlmcp-release-${{ needs.validate.outputs.version }}/erlmcp-${{ needs.validate.outputs.version }}.tar.gz.md5
+            artifacts/erlmcp-${{ needs.pre-release-validation.outputs.version }}.tar.gz
+            artifacts/erlmcp-linux-x64-${{ needs.pre-release-validation.outputs.version }}
+            artifacts/erlmcp-macos-x64-${{ needs.pre-release-validation.outputs.version }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  benchmark-release:
-    name: Benchmark Release Build
+  # Deploy to Production
+  deploy-production:
+    name: Deploy to Production
     runs-on: ubuntu-latest
-    needs: [validate, build-artifacts, manual-approval]
+    needs: create-release
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.pre_release == 'false'
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Erlang/OTP
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: '26'
-          rebar3-version: '3.25'
-
-      - name: Build release
+      - name: Deploy Production
         run: |
-          rebar3 as prod compile
-          rebar3 as prod release
+          ./scripts/deploy/deploy-prod-release.sh "${{ needs.pre-release-validation.outputs.version }}"
 
-      - name: Run quick release benchmark
+      - name: Run Production Tests
         run: |
-          echo "Running benchmark on release build..."
+          ./scripts/test/prod-validation.sh
 
-          # Start release in background
-          _build/prod/rel/erlmcp/bin/erlmcp daemon
-
-          # Wait for startup
-          sleep 5
-
-          # Run quick benchmark
-          _build/prod/rel/erlmcp/bin/erlmcp eval "
-            erlmcp_bench_core_ops:run(<<\"core_ops_10k\">>).
-          "
-
-          # Stop release
-          _build/prod/rel/erlmcp/bin/erlmcp stop
-
-          echo "✓ Release benchmark completed"
-        timeout-minutes: 10
-        continue-on-error: true
-
-  summary:
-    name: Release Summary
+  # Update Documentation
+  update-docs:
+    name: Update Documentation
     runs-on: ubuntu-latest
-    needs: [validate, test, build-artifacts, docker-build, github-release, manual-approval]
+    needs: create-release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update API Reference
+        run: |
+          ./scripts/docs/update-api-reference.sh "${{ needs.pre-release-validation.outputs.version }}"
+
+      - name: Update Installation Guide
+        run: |
+          ./scripts/docs/update-installation.sh "${{ needs.pre-release-validation.outputs.version }}"
+
+      - name: Deploy Docs
+        run: |
+          ./scripts/docs/deploy.sh
+
+  # Notify
+  notify:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [create-release, deploy-production, update-docs]
     if: always()
 
     steps:
-      - name: Print summary
-        run: |
-          cat << 'EOF'
-          ╔═══════════════════════════════════════════╗
-          ║     erlmcp Release Pipeline Complete     ║
-          ╚═══════════════════════════════════════════╝
+      - uses: actions/checkout@v4
 
-          Version: v${{ needs.validate.outputs.version }}
-          Prerelease: ${{ needs.validate.outputs.is-prerelease }}
-          Type: Umbrella Release (4 applications)
-
-          Build Status:
-          ✓ Pre-Release Validation: PASSED
-          ✓ Manual Approval: APPROVED
-          ✓ Validation: ${{ needs.validate.result }}
-          ✓ Tests (OTP 25/26/27): ${{ needs.test.result }}
-          ✓ Artifacts: ${{ needs.build-artifacts.result }}
-          ✓ Docker: ${{ needs.docker-build.result }}
-          ✓ GitHub Release: ${{ needs.github-release.result }}
-
-          Umbrella Applications:
-          • erlmcp_core - JSON-RPC, Registry, Client/Server
-          • erlmcp_transports - STDIO, TCP, HTTP, WebSocket
-          • erlmcp_observability - Metrics, Traces, OpenTelemetry
-          • tcps_erlmcp - Toyota Code Production System
-
-          Artifacts:
-          • Tarball: erlmcp-${{ needs.validate.outputs.version }}.tar.gz
-          • Docker: ghcr.io/${{ github.repository }}:${{ needs.validate.outputs.version }}
-          • Hex: erlmcp v${{ needs.validate.outputs.version }}
-
-          Next Steps:
-          1. Review release notes at:
-             ${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ needs.validate.outputs.version }}
-          2. Test Docker image: docker pull ghcr.io/${{ github.repository }}:${{ needs.validate.outputs.version }}
-          3. Verify Hex packages published
-          4. Update downstream projects
-          5. Announce release
-
-          Documentation:
-          - CHANGELOG.md - Release notes
-          - README.md - Getting started
-          - docs/ - Full documentation
-          EOF
+      - name: Send Release Notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ needs.create-release.result }}
+          channel: '#releases'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          text: "Release v${{ needs.pre-release-validation.outputs.version }} completed"
+          fields: version,prerelease,release_notes

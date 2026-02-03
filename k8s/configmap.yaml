@@ -1,6 +1,25 @@
 ---
-# ConfigMap for erlmcp configuration
-# Contains application configuration that can be updated without redeploying
+# ==============================================================================
+# ErlMCP v3 - Unified ConfigMap with Hot-Reload Support
+# ==============================================================================
+# This ConfigMap centralizes all configuration for the ErlMCP cluster with
+# support for environment-specific overrides and hot-reload capabilities.
+#
+# Features:
+# - Environment-specific configuration (dev/staging/production)
+# - Feature flags system with runtime toggles
+# - Hot-reload support via ConfigMapWatcher
+# - Default values with override capability
+# - Validation on load
+#
+# Usage:
+#   kubectl apply -f k8s/configmap.yaml
+#   kubectl rollout restart deployment/erlmcp-cluster -n erlmcp
+#
+# Hot-reload:
+#   kubectl create -f scripts/feature-flags/configmap-reloader.yaml
+#
+# ==============================================================================
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -8,162 +27,429 @@ metadata:
   namespace: erlmcp
   labels:
     app: erlmcp
+    component: config
+    version: "3.0.0"
+  annotations:
+    description: "Centralized ErlMCP configuration with hot-reload support"
+    config-version: "3.0.0"
+    hot-reload-enabled: "true"
 data:
-  sys.config: |
+  # ==============================================================================
+  # APPLICATION CONFIGURATION
+  # ==============================================================================
+
+  # Main application configuration (Erlang term format)
+  erlmcp.conf: |
+    %% ==============================================================================
+    %% ErlMCP v3 Configuration
+    %% ==============================================================================
+    %% Environment: ${ERLMCP_ENV:-production}
+    %% This configuration is loaded at startup and can be hot-reloaded
+    %% ==============================================================================
+
     [
       {erlmcp, [
-        %% Logging configuration
-        {log_level, info},
+        %% --------------------------------------------------------------------------
+        %% Logging Configuration
+        %% --------------------------------------------------------------------------
+        {log_level, ${LOG_LEVEL:-info}},
+        {log_format, ${LOG_FORMAT:-json}},
         {log_output, [
-          {file, "/var/log/erlmcp/production.log"},
-          {console, false}
+          {stdout, true},
+          {file, "/var/log/erlmcp/erlmcp.log"}
         ]},
         {log_rotation, #{
           enabled => true,
           max_size_mb => 100,
-          max_files => 10
+          max_files => 10,
+          compress_on_rotate => true
+        }},
+        {log_metadata, #{
+          include_pod => true,
+          include_node => true,
+          include_timestamp => true
         }},
 
-        %% Server defaults
-        {server_defaults, #{
-          max_subscriptions_per_resource => 5000,
-          max_progress_tokens => 50000,
-          request_timeout => 30000,
-          max_concurrent_requests => 1000
+        %% --------------------------------------------------------------------------
+        %% Server Configuration
+        %% --------------------------------------------------------------------------
+        {server, #{
+          %% Request handling
+          max_subscriptions_per_resource => ${MAX_SUBSCRIPTIONS:-5000},
+          max_progress_tokens => ${MAX_PROGRESS_TOKENS:-50000},
+          request_timeout => ${REQUEST_TIMEOUT:-30000},
+          max_concurrent_requests => ${MAX_CONCURRENT_REQUESTS:-1000},
+
+          %% Connection limits
+          max_connections_per_client => ${MAX_CONNECTIONS_PER_CLIENT:-100},
+          connection_timeout => ${CONNECTION_TIMEOUT:-30000},
+          keepalive_timeout => ${KEEPALIVE_TIMEOUT:-60000},
+
+          %% Message handling
+          max_message_size => ${MAX_MESSAGE_SIZE:-16777216},
+          message_queue_limit => ${MESSAGE_QUEUE_LIMIT:-10000},
+
+          %% Graceful shutdown
+          shutdown_timeout => ${SHUTDOWN_TIMEOUT:-60000},
+          drain_timeout => ${DRAIN_TIMEOUT:-30000}
         }},
 
-        %% Client defaults
-        {client_defaults, #{
-          timeout => 5000,
-          strict_mode => true,
-          max_pending_requests => 500,
-          retry_attempts => 3,
-          retry_delay => 2000
+        %% --------------------------------------------------------------------------
+        %% Client Configuration
+        %% --------------------------------------------------------------------------
+        {client, #{
+          timeout => ${CLIENT_TIMEOUT:-5000},
+          strict_mode => ${STRICT_MODE:-true},
+          max_pending_requests => ${MAX_PENDING_REQUESTS:-500},
+          retry_attempts => ${RETRY_ATTEMPTS:-3},
+          retry_delay => ${RETRY_DELAY:-2000},
+          retry_backoff => ${RETRY_BACKOFF:-exponential},
+          max_backoff => ${MAX_BACKOFF:-30000}
         }},
 
-        %% Transport configuration
-        {transport_defaults, #{
+        %% --------------------------------------------------------------------------
+        %% Transport Configuration
+        %% --------------------------------------------------------------------------
+        {transport, #{
           tcp => #{
-            host => "0.0.0.0",
-            port => 8080,
-            connect_timeout => 5000,
-            keepalive => true,
-            nodelay => true,
-            max_connections => 1000,
-            backlog => 1024
+            enabled => ${TCP_ENABLED:-true},
+            host => ${TCP_HOST:-"0.0.0.0"},
+            port => ${TCP_PORT:-8080},
+            connect_timeout => ${TCP_CONNECT_TIMEOUT:-5000},
+            keepalive => ${TCP_KEEPALIVE:-true},
+            nodelay => ${TCP_NODELAY:-true},
+            max_connections => ${TCP_MAX_CONNECTIONS:-1000},
+            backlog => ${TCP_BACKLOG:-1024},
+            buffer_size => ${TCP_BUFFER_SIZE:-16384},
+            send_timeout => ${TCP_SEND_TIMEOUT:-30000},
+            recv_timeout => ${TCP_RECV_TIMEOUT:-30000}
           },
           http => #{
-            connect_timeout => 5000,
-            request_timeout => 30000,
-            max_connections => 500
+            enabled => ${HTTP_ENABLED:-true},
+            port => ${HTTP_PORT:-8081},
+            connect_timeout => ${HTTP_CONNECT_TIMEOUT:-5000},
+            request_timeout => ${HTTP_REQUEST_TIMEOUT:-30000},
+            max_connections => ${HTTP_MAX_CONNECTIONS:-500},
+            max_headers_size => ${HTTP_MAX_HEADERS_SIZE:-8192},
+            max_body_size => ${HTTP_MAX_BODY_SIZE:-16777216},
+            compression => ${HTTP_COMPRESSION:-true},
+            chunked => ${HTTP_CHUNKED:-true}
+          },
+          websocket => #{
+            enabled => ${WEBSOCKET_ENABLED:-true},
+            port => ${WEBSOCKET_PORT:-8082},
+            max_frame_size => ${WEBSOCKET_MAX_FRAME_SIZE:-16777216},
+            ping_interval => ${WEBSOCKET_PING_INTERVAL:-30000},
+            ping_timeout => ${WEBSOCKET_PING_TIMEOUT:-5000},
+            idle_timeout => ${WEBSOCKET_IDLE_TIMEOUT:-300000},
+            compression => ${WEBSOCKET_COMPRESSION:-false}
+          },
+          sse => #{
+            enabled => ${SSE_ENABLED:-true},
+            port => ${SSE_PORT:-8083},
+            retry_interval => ${SSE_RETRY_INTERVAL:-1000},
+            max_retries => ${SSE_MAX_RETRIES:-10},
+            keepalive_interval => ${SSE_KEEPALIVE_INTERVAL:-15000}
           },
           stdio => #{
-            buffer_size => 16384
+            enabled => ${STDIO_ENABLED:-true},
+            buffer_size => ${STDIO_BUFFER_SIZE:-16384}
           }
         }},
 
-        %% Message size limits
-        {message_size_limits, #{
-          default => 16777216,
-          http_body => 16777216,
-          sse_event => 16777216,
-          websocket => 16777216,
-          tcp => 16777216,
-          stdio => 16777216
-        }},
-
+        %% --------------------------------------------------------------------------
         %% HTTP Security Configuration
+        %% --------------------------------------------------------------------------
         {http_security, [
-          {allowed_origins, [
-            "https://erlmcp.example.com",
-            "https://dashboard.erlmcp.example.com"
-          ]},
-          {session_timeout, 1800},
-          {require_https, true},
-          {http_redirect_to_https, true},
-          {http_bind_address, "127.0.0.1"},
-          {https_bind_address, "0.0.0.0"}
+          {allowed_origins, ${ALLOWED_ORIGINS:-["https://erlmcp.example.com", "https://dashboard.erlmcp.example.com"]}},
+          {allowed_methods, ${ALLOWED_METHODS:-["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]}},
+          {allowed_headers, ${ALLOWED_HEADERS:-["Content-Type", "Authorization", "X-Requested-With"]}},
+          {exposed_headers, ${EXPOSED_HEADERS:-["X-Request-ID"]}},
+          {max_age, ${CORS_MAX_AGE:-86400}},
+          {credentials, ${CORS_CREDENTIALS:-true}},
+          {session_timeout, ${SESSION_TIMEOUT:-1800}},
+          {require_https, ${REQUIRE_HTTPS:-true}},
+          {http_redirect_to_https, ${HTTP_REDIRECT_TO_HTTPS:-true}},
+          {http_bind_address, ${HTTP_BIND_ADDRESS:-"127.0.0.1"}},
+          {https_bind_address, ${HTTPS_BIND_ADDRESS:-"0.0.0.0"}},
+          {hsts_enabled, ${HSTS_ENABLED:-true}},
+          {hsts_max_age, ${HSTS_MAX_AGE:-31536000}},
+          {hsts_include_subdomains, ${HSTS_INCLUDE_SUBDOMAINS:-true}},
+          {hsts_preload, ${HSTS_PRELOAD:-false}}
         ]},
 
+        %% --------------------------------------------------------------------------
         %% Authentication & Authorization
+        %% --------------------------------------------------------------------------
         {auth, #{
-          enabled => true,
-          type => jwt,
+          enabled => ${AUTH_ENABLED:-true},
+          type => ${AUTH_TYPE:-jwt},
           jwt => #{
             secret_key => {env, "ERLMCP_JWT_SECRET"},
-            algorithm => hs256,
-            expiration => 3600,
-            issuer => "erlmcp-production"
+            algorithm => ${JWT_ALGORITHM:-hs256},
+            expiration => ${JWT_EXPIRATION:-3600},
+            refresh_expiration => ${JWT_REFRESH_EXPIRATION:-86400},
+            issuer => ${JWT_ISSUER:-"erlmcp-production"},
+            audience => ${JWT_AUDIENCE:-"erlmcp-api"},
+            clock_skew => ${JWT_CLOCK_SKEW:-30}
           },
           oauth2 => #{
-            enabled => false,
-            provider => "https://auth.example.com",
+            enabled => ${OAUTH2_ENABLED:-false},
+            provider => ${OAUTH2_PROVIDER:-"https://auth.example.com"},
             client_id => {env, "OAUTH2_CLIENT_ID"},
-            client_secret => {env, "OAUTH2_CLIENT_SECRET"}
+            client_secret => {env, "OAUTH2_CLIENT_SECRET"},
+            redirect_uri => ${OAUTH2_REDIRECT_URI:-"https://erlmcp.example.com/oauth/callback"},
+            scopes => ${OAUTH2_SCOPES:-["openid", "profile", "email"]}
+          },
+          saml => #{
+            enabled => ${SAML_ENABLED:-false},
+            idp_metadata_url => ${SAML_IDP_METADATA_URL:-""},
+            sp_entity_id => ${SAML_SP_ENTITY_ID:-"erlmcp"},
+            assertion_consumer_service => ${SAML_ACS:-"https://erlmcp.example.com/saml/acs"}
           },
           rbac => #{
-            enabled => true,
-            roles => [admin, operator, readonly]
+            enabled => ${RBAC_ENABLED:-true},
+            roles => ${RBAC_ROLES:-[admin, operator, readonly, user]},
+            default_role => ${RBAC_DEFAULT_ROLE:-"user"},
+            admin_role => ${RBAC_ADMIN_ROLE:-"admin"}
+          },
+          rate_limit => #{
+            enabled => ${RATE_LIMIT_ENABLED:-true},
+            requests_per_second => ${RATE_LIMIT_RPS:-100},
+            burst => ${RATE_LIMIT_BURST:-200},
+            per_ip => ${RATE_LIMIT_PER_IP:-true},
+            per_user => ${RATE_LIMIT_PER_USER:-true},
+            storage => ${RATE_LIMIT_STORAGE:-ets}
           }
         }},
 
+        %% --------------------------------------------------------------------------
         %% Connection Pooling
+        %% --------------------------------------------------------------------------
         {poolboy, [
-          {size, 50},
-          {max_overflow, 100},
-          {strategy, lifo}
+          {size, ${POOL_SIZE:-50}},
+          {max_overflow, ${POOL_MAX_OVERFLOW:-100}},
+          {strategy, ${POOL_STRATEGY:-lifo}},
+          {worker_timeout, ${POOL_WORKER_TIMEOUT:-5000}}
         ]},
 
+        %% --------------------------------------------------------------------------
         %% Performance Tuning
+        %% --------------------------------------------------------------------------
         {performance, #{
-          gc_strategy => aggressive,
-          process_limit => 262144,
-          max_heap_size => 4294967296,
-          message_queue_limit => 10000
+          gc_strategy => ${GC_STRATEGY:-aggressive},
+          process_limit => ${PROCESS_LIMIT:-262144},
+          port_limit => ${PORT_LIMIT:-65536},
+          ets_limit => ${ETS_LIMIT:-20000},
+          max_heap_size => ${MAX_HEAP_SIZE:-4294967296},
+          message_queue_limit => ${MESSAGE_QUEUE_LIMIT:-10000},
+          fullsweep_after => ${FULLSWEEP_AFTER:-0},
+          min_heap_size => ${MIN_HEAP_SIZE:-233},
+          max_heap_size => ${MAX_HEAP_SIZE:-0},
+          gc_bin_vheap => ${GC_BIN_VHEAP:-233},
+          scheduler_bind_type => ${SCHEDULER_BIND_TYPE:-no_node_spread},
+          scheduler_force_wakeup_interval => ${SCHEDULER_FORCE_WAKEUP:-500},
+         .watermark => {${LOW_WATERMARK:-0}, ${HIGH_WATERMARK:-0}}
         }},
 
+        %% --------------------------------------------------------------------------
+        %% Session Configuration
+        %% --------------------------------------------------------------------------
+        {session, #{
+          backend => ${SESSION_BACKEND:-ets},
+          backend_config => #{
+            ets => #{
+              table => ${SESSION_ETS_TABLE:-erlmcp_sessions},
+              read_concurrency => true,
+              write_concurrency => true
+            },
+            dets => #{
+              file => "/var/lib/erlmcp/sessions.dets",
+              auto_save => 30000
+            },
+            mnesia => #{
+              disc_copies => [node()],
+              ram_copies => []
+            },
+            redis => #{
+              host => {env, "REDIS_HOST"},
+              port => ${REDIS_PORT:-6379},
+              database => ${REDIS_DB:-0},
+              password => {env, "REDIS_PASSWORD"},
+              prefix => "session:",
+              ttl => 3600
+            }
+          },
+          retention => ${SESSION_RETENTION:-86400},
+          max_sessions => ${MAX_SESSIONS:-100000},
+          cleanup_interval => ${SESSION_CLEANUP_INTERVAL:-300000},
+          gc_interval => ${SESSION_GC_INTERVAL:-60000}
+        }},
+
+        %% --------------------------------------------------------------------------
+        %% Registry Configuration
+        %% --------------------------------------------------------------------------
+        {registry, #{
+          type => ${REGISTRY_TYPE:-distributed},
+          backend => ${REGISTRY_BACKEND:-gproc},
+          max_entries => ${REGISTRY_MAX_ENTRIES:-100000},
+          cleanup_interval => ${REGISTRY_CLEANUP_INTERVAL:-600000},
+          sync_interval => ${REGISTRY_SYNC_INTERVAL:-5000},
+          conflict_resolution => ${REGISTRY_CONFLICT_RESOLUTION:-last_write_wins}
+        }},
+
+        %% --------------------------------------------------------------------------
         %% Monitoring & Alerting
+        %% --------------------------------------------------------------------------
         {monitoring, #{
-          enabled => true,
-          prometheus_port => 9090,
-          health_check_interval => 30,
-          metrics_retention_days => 30
+          enabled => ${MONITORING_ENABLED:-true},
+          prometheus_port => ${PROMETHEUS_PORT:-9090},
+          prometheus_host => ${PROMETHEUS_HOST:-"0.0.0.0"},
+          health_check_interval => ${HEALTH_CHECK_INTERVAL:-30000},
+          metrics_retention_days => ${METRICS_RETENTION_DAYS:-30},
+          metrics_export_interval => ${METRICS_EXPORT_INTERVAL:-15000},
+          alert_evaluation_interval => ${ALERT_EVALUATION_INTERVAL:-60000}
         }},
 
-        %% OpenTelemetry Configuration
+        %% --------------------------------------------------------------------------
+        %% Distributed Tracing (OpenTelemetry)
+        %% --------------------------------------------------------------------------
         {otel, #{
-          enabled => true,
-          exporter => otlp,
+          enabled => ${OTEL_ENABLED:-true},
+          exporter => ${OTEL_EXPORTER:-otlp},
           endpoint => {env, "OTEL_EXPORTER_OTLP_ENDPOINT"},
           headers => {env, "OTEL_EXPORTER_OTLP_HEADERS"},
-          sampling => #{
-            type => probability,
-            probability => 0.1
+          service_name => ${OTEL_SERVICE_NAME:-"erlmcp"},
+          service_namespace => ${OTEL_SERVICE_NAMESPACE:-"production"},
+          service_version => ${OTEL_SERVICE_VERSION:-"3.0.0"},
+          sampler => #{
+            type => ${OTEL_SAMPLER_TYPE:-probability},
+            probability => ${OTEL_SAMPLER_PROBABILITY:-0.1},
+            parent_based => ${OTEL_SAMPLER_PARENT_BASED:-true}
           },
           trace_config => #{
-            span_processor => batch,
-            max_queue_size => 2048,
-            max_export_batch_size => 512
+            span_processor => ${OTEL_SPAN_PROCESSOR:-batch},
+            max_queue_size => ${OTEL_MAX_QUEUE_SIZE:-2048},
+            max_export_batch_size => ${OTEL_MAX_EXPORT_BATCH_SIZE:-512},
+            export_timeout_ms => ${OTEL_EXPORT_TIMEOUT:-30000},
+            exporter_timeout_ms => ${OTEL_EXPORTER_TIMEOUT:-5000}
+          },
+          batch_processor => #{
+            max_queue_size => ${OTEL_BATCH_MAX_QUEUE_SIZE:-2048},
+            batch_timeout_ms => ${OTEL_BATCH_TIMEOUT:-5000},
+            max_export_batch_size => ${OTEL_BATCH_MAX_EXPORT_SIZE:-512},
+            export_timeout_ms => ${OTEL_BATCH_EXPORT_TIMEOUT:-30000}
+          }
+        }},
+
+        %% --------------------------------------------------------------------------
+        %% Cluster Configuration
+        %% --------------------------------------------------------------------------
+        {cluster, #{
+          enabled => ${CLUSTER_ENABLED:-true},
+          autoconnect => ${CLUSTER_AUTOCONNECT:-true},
+          discovery => ${CLUSTER_DISCOVERY:-kubernetes},
+          discovery_config => #{
+            kubernetes => #{
+              namespace => ${K8S_NAMESPACE:-"erlmcp"},
+              selector => ${K8S_SELECTOR:-"app=erlmcp"},
+              headless_service => ${K8S_HEADLESS:-"erlmcp-headless"},
+              node_name_pattern => ${K8S_NODE_PATTERN:-"erlmcp-${POD_NAME}"}
+            },
+            dns => #{
+              domain => ${DNS_DOMAIN:-"erlmcp.local"},
+              record_type => ${DNS_RECORD_TYPE:-"srv"}
+            },
+            static => #{
+              nodes => ${STATIC_NODES:-[]}
+            }
+          },
+          heartbeat => #{
+            interval => ${HEARTBEAT_INTERVAL:-10000},
+            timeout => ${HEARTBEAT_TIMEOUT:-30000},
+            missed_threshold => ${HEARTBEAT_MISSED_THRESHOLD:-3}
+          },
+          partition_handling => #{
+            strategy => ${PARTITION_STRATEGY:-majority},
+            auto_heal => ${PARTITION_AUTO_HEAL:-true},
+            heal_timeout => ${PARTITION_HEAL_TIMEOUT:-300000}
+          },
+          sync => #{
+            interval => ${SYNC_INTERVAL:-60000},
+            batch_size => ${SYNC_BATCH_SIZE:-100},
+            timeout => ${SYNC_TIMEOUT:-30000}
+          }
+        }},
+
+        %% --------------------------------------------------------------------------
+        %% Persistence Configuration
+        %% --------------------------------------------------------------------------
+        {persistence, #{
+          enabled => ${PERSISTENCE_ENABLED:-true},
+          backend => ${PERSISTENCE_BACKEND:-mnesia},
+          backend_config => #{
+            mnesia => #{
+              dir => "/var/lib/erlmcp/mnesia",
+              dump_log_write_threshold => ${MNESIA_DUMP_THRESHOLD:-5000},
+              dump_log_time_threshold => ${MNESIA_DUMP_TIME:-30000},
+              no_table_loading => true
+            },
+            postgres => #{
+              host => {env, "DB_HOST"},
+              port => ${DB_PORT:-5432},
+              database => {env, "DB_NAME"},
+              user => {env, "DB_USER"},
+              password => {env, "DB_PASSWORD"},
+              pool_size => ${DB_POOL_SIZE:-10},
+              pool_max => ${DB_POOL_MAX:-20}
+            },
+            redis => #{
+              host => {env, "REDIS_HOST"},
+              port => ${REDIS_PORT:-6379},
+              database => ${REDIS_DB:-0},
+              password => {env, "REDIS_PASSWORD"}
+            }
+          },
+          backup => #{
+            enabled => ${BACKUP_ENABLED:-true},
+            interval => ${BACKUP_INTERVAL:-86400000},
+            retention => ${BACKUP_RETENTION:-7},
+            location => ${BACKUP_LOCATION:-"/backup"}
           }
         }}
       ]},
 
-      %% SASL (System Architecture Support Libraries)
-      {sasl, [
-        {sasl_error_logger, {file, "/var/log/erlmcp/production-sasl.log"}},
-        {errlog_type, error},
-        {error_logger_format_depth, 50}
-      ]},
-
-      %% Kernel configuration
+      %% ==============================================================================
+      %% Kernel Configuration
+      %% ==============================================================================
       {kernel, [
-        {logger_level, info},
+        {logger_level, ${LOG_LEVEL:-info}},
         {logger, [
           {handler, default, logger_std_h, #{
             config => #{
-              file => "/var/log/erlmcp/production-kernel.log",
-              max_no_bytes => 104857600,
-              max_no_files => 10,
+              type => stdio,
+              sync_mode_qlen => ${LOGGER_SYNC_MODE_QLEN:-100},
+              drop_mode_qlen => ${LOGGER_DROP_MODE_QLEN:-300},
+              flush_qlen => ${LOGGER_FLUSH_QLEN:-5000},
+              overflow => ${LOGGER_OVERFLOW:-keep}
+            },
+            formatter => {logger_formatter, #{
+              single_line => true,
+              legacy_header => false,
+              time_designator => $ ,
+              time_offset => ""
+            }},
+            filter_default => stop,
+            filters => [
+              {remote_logger, {fun logger_filters:remote_logger/2, stop}},
+              {domain_filter, {fun logger_filters:domain/2, {log, equal, []}}}
+            ]
+          }},
+          {handler, file_handler, logger_std_h, #{
+            config => #{
+              file => "/var/log/erlmcp/kernel.log",
+              max_no_bytes => ${LOG_MAX_BYTES:-104857600},
+              max_no_files => ${LOG_MAX_FILES:-10},
               compress_on_rotate => true
             },
             formatter => {logger_formatter, #{
@@ -172,66 +458,370 @@ data:
             }}
           }}
         ]},
-        {inet_dist_listen_min, 9100},
-        {inet_dist_listen_max, 9200}
+        {inet_dist_listen_min, ${DIST_PORT_MIN:-9100}},
+        {inet_dist_listen_max, ${DIST_PORT_MAX:-9200}},
+        {inet_dist_use_interface, {${DIST_INTERFACE:-"127.0.0.1"}}},
+        {net_setuptime, ${NET_SETUP_TIME:-7000}}
       ]},
 
-      %% SSL/TLS
+      %% ==============================================================================
+      %% SASL Configuration
+      %% ==============================================================================
+      {sasl, [
+        {sasl_error_logger, {file, "/var/log/erlmcp/sasl.log"}},
+        {errlog_type, ${ERRLOG_TYPE:-error}},
+        {error_logger_format_depth, ${ERROR_FORMAT_DEPTH:-50}},
+        {utc_log, ${UTC_LOG:-true}}
+      ]},
+
+      %% ==============================================================================
+      %% SSL/TLS Configuration
+      %% ==============================================================================
       {ssl, [
-        {session_lifetime, 300},
-        {protocol_version, ['tlsv1.2', 'tlsv1.3']}
+        {session_lifetime, ${SSL_SESSION_LIFETIME:-300}},
+        {protocol_version, ['tlsv1.2', 'tlsv1.3']},
+        {secure_renegotiate, ${SSL_SECURE_RENEGOTIATE:-true}},
+        {ciphers, ${SSL_CIPHERS:-[]}},
+        {honor_cipher_order, ${SSL_HONOR_CIPHER_ORDER:-true}},
+        {client_renegotiation, ${SSL_CLIENT_RENEGOTIATION:-false}}
+      ]},
+
+      %% ==============================================================================
+      %% OS Specific Configuration
+      %% ==============================================================================
+      {os_mon, [
+        {start_memsup, ${OS_MON_MEMSUP:-false}},
+        {start_cpu_sup, ${OS_MON_CPUSUP:-false}},
+        {start_disksup, ${OS_MON_DISKSUP:-false}}
       ]}
     ].
 
+  # ==============================================================================
+  # VM ARGUMENTS
+  # ==============================================================================
   vm.args: |
-    ## Name of the node
+    %% ==============================================================================
+    %% Erlang VM Arguments for ErlMCP v3
+    %% ==============================================================================
+    %% These flags control the BEAM VM behavior and performance
+    %% Most values can be overridden via environment variables
+    %% ==============================================================================
+
+    %% ----------------------------------------------------------------------------
+    %% Node Identification
+    %% ----------------------------------------------------------------------------
     -name erlmcp@${ERLMCP_NODE_NAME:-erlmcp.erlmcp.svc.cluster.local}
+    -setcookie ${ERLANG_COOKIE}
 
-    ## Cookie for distributed Erlang
-    -setcookie ${ERLANG_COOKIE:-erlmcp_prod_cookie}
-
-    ## Memory allocation strategy
+    %% ----------------------------------------------------------------------------
+    %% Code Paths
+    %% ----------------------------------------------------------------------------
     -pa /opt/erlmcp/lib/*/ebin
+    -pa /opt/erlmcp/ebin
 
-    ## Distributed Erlang configuration
-    -kernel inet_dist_listen_min 9100
-    -kernel inet_dist_listen_max 9200
+    %% ----------------------------------------------------------------------------
+    %% Process Limits
+    %% ----------------------------------------------------------------------------
+    +P ${ERL_PROCESS_LIMIT:-262144}       %% Max number of Erlang processes
+    +Q ${ERL_PORT_LIMIT:-262144}          %% Max number of ports
+    +t ${ERL_THREAD_POOL_SIZE:-524288}    %% VM thread pool size
 
-    ## Performance tuning
-    +K true
-    +A 256
-    +IOt 256
+    %% ----------------------------------------------------------------------------
+    %% Scheduler Configuration
+    %% ----------------------------------------------------------------------------
+    +sbt db                                %% Dirty CPU schedulers: use dirty schedulers
+    +SDcpu ${ERL_DIRTY_CPU_SCHEDULERS:-10} %% Number of dirty CPU schedulers
+    +SDio ${ERL_DIRTY_IO_SCHEDULERS:-10}   %% Number of dirty IO schedulers
+    +sfwi ${ERL_SCHEDULER_FORCED_WAKEUP:-500} %% Scheduler forced wakeup interval (ms)
 
-    ## Scheduler threads
-    +sbt db
+    %% ----------------------------------------------------------------------------
+    %% Memory & Garbage Collection
+    %% ----------------------------------------------------------------------------
+    +MB acb0 ${ACB0:-0}                    %% Allocator carrier block size
+    +MB acbl ${ACBL:-256}                  %% Allocator large block size
+    +MB aclb ${ACLB:-256}                  %% Allocator large block size
+    +MB asbc ${ASBC:-0}                    %% Allocator sync block size
+    +MB sbct ${SBCT:-10000}                %% Small block carrier threshold
+    +MB mfsb ${MFSB:-0}                    %% Multi-block free segments
+    +MB mbsd ${MBSD:-0}                    %% Multi-block segment data
+    +e ${FULLSWEEP_AFTER:-0}               %% Fullsweep after 0 allocations
+    -env ERL_MAX_PORTS ${ERL_MAX_PORTS:-65536}
+    -env ERL_MAX_ETS_TABLES ${ERL_MAX_ETS_TABLES:-20000}
 
-    ## Garbage collection tuning
-    +t 524288
-    -env ERL_FULLSWEEP_AFTER 0
+    %% ----------------------------------------------------------------------------
+    %% Networking
+    %% ----------------------------------------------------------------------------
+    -kernel inet_dist_listen_min ${DIST_PORT_MIN:-9100}
+    -kernel inet_dist_listen_max ${DIST_PORT_MAX:-9200}
+    -kernel net_setuptime ${NET_SETUP_TIME:-7000}
+    -proto_dist ${PROTODIST:-inet_tcp}
 
-    ## Runtime system parameters
-    +P 262144
-    +Q 262144
-    +R 1
+    %% ----------------------------------------------------------------------------
+    %% Time & Time Correction
+    %% ----------------------------------------------------------------------------
+    +C ${TIME_CORRECTION:-no_time_correction}  %% Time correction mode
 
-    ## TCP tuning
-    -kernel net_setuptime 7000
+    %% ----------------------------------------------------------------------------
+    %% Signal Handling
+    %% ----------------------------------------------------------------------------
+    +B ${BVM_OPTIONS:-}                     %% Backwards VM compatibility flags
 
-    ## Logger
-    -kernel logger_level info
+    %% ----------------------------------------------------------------------------
+    %% Error Handling
+    %% ----------------------------------------------------------------------------
+    +emqx ${EMQX:-0}                        %% Error message queue limit
 
-    ## Foreground mode for container
+    %% ----------------------------------------------------------------------------
+    %% Runtime Tools
+    %% ----------------------------------------------------------------------------
+    +J ${JOURNAL:-}                        %% Journaling options
+    +JMsacrb true                          %% Exit when controller exits
+
+    %% ----------------------------------------------------------------------------
+    %% Interactive Mode (disabled for containers)
+    %% ----------------------------------------------------------------------------
     -noshell
     -noinput
 
-    ## Terminate Erlang when controller exits
-    +JMsacrb true
+    %% ----------------------------------------------------------------------------
+    %% Boot Options
+    %% ----------------------------------------------------------------------------
+    -mode ${ERL_MODE:-embedded}            %% Interactive or embedded
 
+  # ==============================================================================
+  # FEATURE FLAGS (JSON format for easy parsing)
+  # ==============================================================================
+  feature-flags.json: |
+    {
+      "version": "3.0.0",
+      "environment": "${ERLMCP_ENV:-production}",
+      "last_updated": "2025-01-01T00:00:00Z",
+      "flags": {
+        "observability": {
+          "metrics.enabled": true,
+          "metrics.prometheus": true,
+          "metrics.opentelemetry": true,
+          "telemetry.enabled": true,
+          "tracing.enabled": true,
+          "tracing.jaeger": false,
+          "tracing.zipkin": false,
+          "tracing.otlp": true,
+          "logging.json": true,
+          "logging.level": "info",
+          "logging.sampling": 1.0,
+          "dashboards.enabled": true,
+          "alerts.enabled": true
+        },
+        "performance": {
+          "cache.enabled": true,
+          "cache.redis": true,
+          "cache.ets": true,
+          "compression.enabled": true,
+          "compression.gzip": true,
+          "compression.brotli": false,
+          "pooling.enabled": true,
+          "pooling.connection": true,
+          "pooling.process": true,
+          "async.enabled": true,
+          "pipeline.enabled": true,
+          "batch.enabled": true
+        },
+        "security": {
+          "auth.enabled": true,
+          "auth.jwt": true,
+          "auth.oauth2": false,
+          "auth.saml": false,
+          "auth.rbac": true,
+          "auth.rate_limit": true,
+          "auth.tls": true,
+          "auth.mtls": true,
+          "audit.enabled": true,
+          "audit.detailed": false,
+          "encryption.at_rest": true,
+          "encryption.in_transit": true
+        },
+        "experimental": {
+          "new_api": false,
+          "websocket": true,
+          "grpc": false,
+          "graphql": false,
+          "sse": true,
+          "streaming": true,
+          "batch_mode": true,
+          "async_mode": true
+        },
+        "cluster": {
+          "distributed_tracing": true,
+          "session_persistence": true,
+          "load_balancing": true,
+          "circuit_breaker": true,
+          "retry": true,
+          "backpressure": true,
+          "healthchecks": true,
+          "graceful_shutdown": true,
+          "auto_healing": true,
+          "split_brain_resolution": true
+        },
+        "database": {
+          "pooling": true,
+          "connection_limit": 100,
+          "query_cache": true,
+          "read_replica": false,
+          "write_replica": false,
+          "migrations": true
+        },
+        "redis": {
+          "caching": true,
+          "sessions": true,
+          "pubsub": true,
+          "rate_limiting": true,
+          "connection_limit": 50
+        },
+        "storage": {
+          "file_storage": false,
+          "s3_storage": false,
+          "backup": false,
+          "archive": false
+        },
+        "scaling": {
+          "high_availability": true,
+          "auto_scaling": true,
+          "horizontal_scaling": true,
+          "vertical_scaling": false,
+          "canary_deployment": true,
+          "blue_green_deployment": true,
+          "rolling_updates": true,
+          "rollbacks": true,
+          "rollouts": true
+        },
+        "networking": {
+          "service_mesh": true,
+          "ingress": true,
+          "load_balancer": false,
+          "network_policy": true,
+          "pod_security": true,
+          "resource_limits": true
+        },
+        "secrets": {
+          "vault": true,
+          "kubernetes": true,
+          "aws_secrets": false,
+          "azure_keyvault": false,
+          "gcp_secret_manager": false
+        },
+        "monitoring": {
+          "prometheus": true,
+          "grafana": true,
+          "jaeger": false,
+          "elasticsearch": false,
+          "loki": false,
+          "tempo": false,
+          "health_endpoint": true,
+          "metrics_endpoint": true,
+          "readiness_endpoint": true
+        },
+        "developer_tools": {
+          "api_docs": true,
+          "swagger_ui": true,
+          "debug_mode": false,
+          "profiling": false,
+          "tracing_ui": false
+        }
+      },
+      "rollouts": {
+        "experimental.new_api": {
+          "strategy": "canary",
+          "percentage": 0,
+          "conditions": {
+            "user_segments": [],
+            "regions": [],
+            "versions": []
+          }
+        },
+        "experimental.grpc": {
+          "strategy": "canary",
+          "percentage": 0,
+          "conditions": {
+            "user_segments": ["beta_testers"],
+            "regions": [],
+            "versions": []
+          }
+        }
+      }
+    }
+
+  # ==============================================================================
+  # ENVIRONMENT-SPECIFIC OVERRIDES
+  # ==============================================================================
+
+  # Development environment overrides
+  env-dev.conf: |
+    [
+      {erlmcp, [
+        {log_level, debug},
+        {auth, #{
+          enabled => false,
+          rate_limit => #{
+            enabled => false
+          }
+        }},
+        {performance, #{
+          process_limit => 50000
+        }}
+      ]}
+    ].
+
+  # Staging environment overrides
+  env-staging.conf: |
+    [
+      {erlmcp, [
+        {log_level, info},
+        {auth, #{
+          enabled => true,
+          rbac => #{
+            enabled => true
+          }
+        }},
+        {monitoring, #{
+          enabled => true
+        }}
+      ]}
+    ].
+
+  # Production environment overrides
+  env-prod.conf: |
+    [
+      {erlmcp, [
+        {log_level, info},
+        {auth, #{
+          enabled => true,
+          rbac => #{
+            enabled => true
+          },
+          rate_limit => #{
+            enabled => true
+          }
+        }},
+        {performance, #{
+          process_limit => 262144
+        }},
+        {monitoring, #{
+          enabled => true,
+          alert_evaluation_interval => 60000
+        }}
+      ]}
+    ].
+
+  # ==============================================================================
+  # PROMETHEUS CONFIGURATION
+  # ==============================================================================
   prometheus.yml: |
     global:
       scrape_interval: 15s
       evaluation_interval: 15s
       external_labels:
+        cluster: 'erlmcp'
+        environment: '${ERLMCP_ENV:-production}'
         monitor: 'erlmcp-monitor'
 
     scrape_configs:
@@ -242,6 +832,38 @@ data:
         relabel_configs:
           - source_labels: [__address__]
             target_label: instance
+          - source_labels: [__address__]
+            target_label: pod
+            regex: '([^:]+).*'
+            replacement: '${POD_NAME:-unknown}'
+
+      - job_name: 'erlmcp-kube-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        scheme: http
+        tls_config:
+          insecure_skip_verify: true
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
 
       - job_name: 'kubernetes-apiservers'
         kubernetes_sd_configs:
@@ -250,3 +872,241 @@ data:
         tls_config:
           ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
         bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: default;kubernetes;https
+
+      - job_name: 'kubernetes-nodes'
+        kubernetes_sd_configs:
+          - role: node
+        scheme: https
+        tls_config:
+          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+        relabel_configs:
+          - action: labelmap
+            regex: __meta_kubernetes_node_label_(.+)
+
+      - job_name: 'kubernetes-pods'
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            action: replace
+            target_label: kubernetes_namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            action: replace
+            target_label: kubernetes_pod_name
+
+---
+# ==============================================================================
+# CONFIGMAP RELOADER - Sidecar for Hot-Reload
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-config-reloader
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: config-reloader
+data:
+  config-reloader.sh: |
+    #!/bin/sh
+    # ==============================================================================
+    # ErlMCP ConfigMap Hot-Reload Script
+    # ==============================================================================
+    # This script watches for ConfigMap changes and triggers a graceful reload
+    # of the configuration without restarting the pod.
+    #
+    # Usage: Run as a sidecar container alongside the main erlmcp container
+    # ==============================================================================
+
+    set -e
+
+    # Configuration
+    CONFIGMAP_NAME="erlmcp-config"
+    NAMESPACE="${ERLMCP_NAMESPACE:-erlmcp}"
+    ERLMCP_ADMIN_PORT="${ERLMCP_ADMIN_PORT:-8081}"
+    HEALTH_ENDPOINT="${HEALTH_ENDPOINT:-http://localhost:${ERLMCP_ADMIN_PORT}/health}"
+    RELOAD_ENDPOINT="${RELOAD_ENDPOINT:-http://localhost:${ERLMCP_ADMIN_PORT}/admin/reload-config}"
+    WATCH_INTERVAL="${WATCH_INTERVAL:-5}"
+    LOG_LEVEL="${LOG_LEVEL:-info}"
+
+    # Logging functions
+    log() {
+        echo "[$(date -Iseconds)] [INFO] $*"
+    }
+
+    warn() {
+        echo "[$(date -Iseconds)] [WARN] $*" >&2
+    }
+
+    error() {
+        echo "[$(date -Iseconds)] [ERROR] $*" >&2
+    }
+
+    # Get current ConfigMap resource version
+    get_config_version() {
+        kubectl get configmap "${CONFIGMAP_NAME}" -n "${NAMESPACE}" -o jsonpath='{.metadata.resourceVersion}' 2>/dev/null || echo ""
+    }
+
+    # Trigger configuration reload
+    trigger_reload() {
+        log "Triggering configuration reload..."
+
+        # Check if service is healthy
+        if ! curl -sf "${HEALTH_ENDPOINT}" >/dev/null 2>&1; then
+            warn "Service not healthy, skipping reload"
+            return 1
+        fi
+
+        # Trigger reload
+        if curl -sf -X POST "${RELOAD_ENDPOINT}" >/dev/null 2>&1; then
+            log "Configuration reload triggered successfully"
+            return 0
+        else
+            # Try RPC method if HTTP not available
+            if command -v erl >/dev/null 2>&1; then
+                erl -noshell -s erlmcp_config reload_config -s init stop 2>/dev/null
+                log "Configuration reload triggered via RPC"
+                return 0
+            fi
+            warn "Failed to trigger configuration reload"
+            return 1
+        fi
+    }
+
+    # Main watch loop
+    main() {
+        log "Starting ConfigMap watcher for ${CONFIGMAP_NAME} in ${NAMESPACE}"
+        log "Watch interval: ${WATCH_INTERVAL} seconds"
+
+        CURRENT_VERSION=""
+
+        while true; do
+            NEW_VERSION=$(get_config_version)
+
+            if [ -z "${NEW_VERSION}" ]; then
+                warn "Failed to get ConfigMap version, retrying..."
+                sleep "${WATCH_INTERVAL}"
+                continue
+            fi
+
+            if [ "${CURRENT_VERSION}" != "${NEW_VERSION}" ]; then
+                if [ -n "${CURRENT_VERSION}" ]; then
+                    log "ConfigMap changed: ${CURRENT_VERSION} -> ${NEW_VERSION}"
+
+                    # Trigger reload
+                    if trigger_reload; then
+                        CURRENT_VERSION="${NEW_VERSION}"
+                    else
+                        warn "Reload failed, will retry on next check"
+                    fi
+                else
+                    CURRENT_VERSION="${NEW_VERSION}"
+                    log "Initial version: ${CURRENT_VERSION}"
+                fi
+            fi
+
+            sleep "${WATCH_INTERVAL}"
+        done
+    }
+
+    # Signal handlers
+    trap 'log "Received SIGTERM, exiting..."; exit 0' TERM
+    trap 'log "Received SIGINT, exiting..."; exit 0' INT
+
+    main "$@"
+
+---
+# ==============================================================================
+# DEVELOPMENT ENVIRONMENT CONFIGMAP
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-config-dev
+  namespace: erlmcp-dev
+  labels:
+    app: erlmcp
+    environment: development
+data:
+  ERLMCP_ENV: "development"
+  LOG_LEVEL: "debug"
+  LOG_FORMAT: "text"
+  AUTH_ENABLED: "false"
+  RATE_LIMIT_ENABLED: "false"
+  MONITORING_ENABLED: "true"
+  OTEL_ENABLED: "false"
+  CLUSTER_ENABLED: "false"
+  MAX_SUBSCRIPTIONS: "100"
+  MAX_PROGRESS_TOKENS: "1000"
+  MAX_CONCURRENT_REQUESTS: "100"
+
+---
+# ==============================================================================
+# STAGING ENVIRONMENT CONFIGMAP
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-config-staging
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+data:
+  ERLMCP_ENV: "staging"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  AUTH_ENABLED: "true"
+  RATE_LIMIT_ENABLED: "true"
+  MONITORING_ENABLED: "true"
+  OTEL_ENABLED: "true"
+  CLUSTER_ENABLED: "true"
+  OTEL_SAMPLER_PROBABILITY: "0.5"
+  MAX_SUBSCRIPTIONS: "2000"
+  MAX_PROGRESS_TOKENS: "20000"
+  MAX_CONCURRENT_REQUESTS: "500"
+
+---
+# ==============================================================================
+# PRODUCTION ENVIRONMENT CONFIGMAP (overrides)
+# ==============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-config-prod
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    environment: production
+data:
+  ERLMCP_ENV: "production"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  AUTH_ENABLED: "true"
+  RATE_LIMIT_ENABLED: "true"
+  MONITORING_ENABLED: "true"
+  OTEL_ENABLED: "true"
+  CLUSTER_ENABLED: "true"
+  OTEL_SAMPLER_PROBABILITY: "0.1"
+  MAX_SUBSCRIPTIONS: "5000"
+  MAX_PROGRESS_TOKENS: "50000"
+  MAX_CONCURRENT_REQUESTS: "1000"

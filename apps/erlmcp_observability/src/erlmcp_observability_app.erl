@@ -12,7 +12,7 @@
 -behaviour(application).
 
 %% Application callbacks
--export([start/2, stop/1]).
+-export([start/2, stop/1, prep_stop/1]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -62,6 +62,23 @@ stop(_State) ->
     end,
 
     ok.
+
+%% @doc Prepare for graceful shutdown
+-spec prep_stop(term()) -> term().
+prep_stop(State) ->
+    ?LOG_INFO("Preparing erlmcp_observability for graceful shutdown"),
+    %% Flush any remaining telemetry data
+    try
+        case application:get_env(erlmcp_observability, otel_enabled, true) of
+            true ->
+                erlmcp_otel:flush();
+            false ->
+                ok
+        end
+    catch
+        _:_ -> ok
+    end,
+    State.
 
 %%====================================================================
 %% Internal Functions

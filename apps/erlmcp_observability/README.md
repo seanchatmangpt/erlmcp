@@ -1,29 +1,41 @@
-# erlmcp_observability - Observability & Metrics
+# erlmcp v3 Enterprise Monitoring Stack
 
-**Version:** 2.0.0
+**Version:** 3.0.0
 **Application:** erlmcp_observability
-**Modules:** 9
+**Modules:** 15
 
-Production observability for erlmcp - OpenTelemetry traces, Prometheus metrics, deterministic receipt chains, and health monitoring.
+Enterprise-grade observability for erlmcp v3 - Fortune 500 scale monitoring with comprehensive observability stack.
 
 ## Overview
 
 erlmcp_observability provides comprehensive monitoring:
+- **Metrics Collection** - Prometheus integration with custom metrics and enterprise features
+- **Visualization** - Grafana dashboards for monitoring and analytics
+- **Alerting** - Alertmanager with enterprise-grade policies and escalation
+- **Logging** - Loki with Promtail for log aggregation and structured parsing
+- **Health Monitoring** - Comprehensive health checks and dependency verification
+- **SLA Monitoring** - Service Level Agreement tracking and reporting
+- **Compliance** - Regulatory compliance monitoring frameworks (SOC2, GDPR, HIPAA, PCI)
+- **Cost Optimization** - Cost tracking and optimization insights
 - **OpenTelemetry** - Distributed tracing with OTLP export to Jaeger/Honeycomb/Datadog
-- **Metrics** - Performance counters, histograms, Prometheus export
 - **Receipt Chains** - SHA-256 hash chains for deterministic build verification
-- **Health Checks** - Process monitoring, registry health, transport status
-- **Dashboards** - Real-time observability UI
 
-## Observability Modules (9 total)
+## Observability Modules (15 total)
 
 ### Metrics
-- **erlmcp_metrics.erl** - Metrics collection and export (Prometheus-compatible)
+- **erlmcp_monitoring_metrics.erl** - Enterprise metrics collection with business metrics
 - **erlmcp_routing_metrics.erl** - Registry routing and throughput metrics
+- **erlmcp_prometheus_exporter.erl** - Prometheus exporter with enterprise features
 
 ### OpenTelemetry
 - **erlmcp_otel.erl** - OpenTelemetry integration (OTLP exporter)
 - **erlmcp_tracer.erl** - Span creation, context propagation, sampling
+- **erlmcp_opentelemetry.erl** - Comprehensive OpenTelemetry instrumentation
+
+### Health Monitoring
+- **erlmcp_health_monitor.erl** - Health check system with dependency verification
+- **erlmcp_sla_monitor.erl** - SLA tracking and compliance monitoring
+- **erlmcp_compliance_monitor.erl** - Regulatory compliance monitoring
 
 ### Receipt Chains
 - **erlmcp_receipt_chain.erl** - Deterministic SHA-256 hash chains

@@ -6,19 +6,73 @@
 .gitignore
 .gitattributes
 
-# Build artifacts
+# Build artifacts (rebuild in container)
 _build/
-.rebar3/
 *.beam
 *.erl.ast
 *.erl.asn1db
 ebin/
-priv/
-relx
+.rebar3/
+rebar3.crashdump
+erl_crash.dump
+*.dump
 
-# Dependencies
+# Dependencies (download fresh in container)
 deps/
 _checkouts/
+
+# Test files (exclude from production builds)
+test/
+tests/
+_test/
+*.test.erl
+*.SUITE.erl
+*.SUITE_data
+.cover/
+.coverdata
+*.cover
+log/
+ct.log/
+test-results/
+
+# Documentation
+docs/
+examples/
+*.md
+!README.md
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Container files
+docker-compose*.yml
+docker-compose*.yaml
+Dockerfile*
+.dockerignore
+
+# Secrets and environment
+.env
+.env.local
+.env.*.local
+secrets/
+.envrc
+*.pem
+*.key
+*.cert
+*.crt
+
+# Development tools
+.venv/
+venv/
+node_modules/
+vendor/bundle/
+*.egg-info/
+__pycache__/
+*.pyc
+.pytest_cache/
 
 # IDE & editor files
 .vscode/
@@ -31,58 +85,6 @@ _checkouts/
 .project
 .classpath
 .c9/
-*.sublime-project
-*.sublime-workspace
-
-# OS files
-Thumbs.db
-.DS_Store
-.AppleDouble
-.LSOverride
-
-# Test artifacts
-test/
-tests/
-_build/test/
-*.cover
-.cover/
-.coverdata
-
-# Documentation
-docs/
-examples/
-*.md
-
-# CI/CD
-.github/
-.gitlab-ci.yml
-.travis.yml
-Jenkinsfile
-
-# Container files
-docker-compose*.yml
-Dockerfile*
-.dockerignore
-
-# Secrets and environment
-.env
-.env.local
-.env.*.local
-secrets/
-.envrc
-
-# Development artifacts
-.venv/
-venv/
-*.egg-info/
-__pycache__/
-*.pyc
-.pytest_cache/
-
-# Node (if used for tools)
-node_modules/
-package-lock.json
-yarn.lock
 
 # Temporary files
 tmp/
@@ -91,12 +93,48 @@ temp/
 *.bak
 *.log
 *.pid
+.cache/
+*.cache
 
-# Performance
-benches/
+# Hive-mind and swarm data
+.hive-mind/
+.swarm/
+.claude-flow/
+.claude/
 
-# License and misc
-LICENSE
-README.md
-CONTRIBUTING.md
-CHANGELOG.md
+# Monitoring and observability configs (not needed in image)
+monitoring/
+prometheus/
+grafana/
+alertmanager/
+loki/
+
+# Load testing
+bench/
+benchmarks/
+load-testing/
+*.prof
+
+# Release artifacts
+releases/
+artifacts/
+packages/
+dist/
+
+# Infrastructure
+cluster/
+k8s/
+kubernetes/
+helm/
+charts/
+terraform/
+infrastructure/
+scripts/deploy/
+scripts/k8s/
+
+# Specific app exclusions to reduce build context
+apps/*/_build/
+apps/*/erl_crash.dump
+apps/*/*.beam
+apps/*/log/
+apps/*/.rebar3/

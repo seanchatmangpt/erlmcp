@@ -66,8 +66,9 @@
 +no_prof
 
 %% Distributed Erlang
+%% Cookie MUST be set via ERLANG_COOKIE environment variable
+%% DO NOT hardcode cookies - security vulnerability
 -proto_dist inet_tcp
--setcookie erlmcp_cluster
 
 %% Set node name dynamically via shell variable
 %% erl -sname erlmcp1 -args @config/vm-cluster.args

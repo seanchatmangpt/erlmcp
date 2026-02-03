@@ -2,6 +2,11 @@
 # scripts/test/smoke.sh - Smoke test tier (target: ≤2 min)
 # Fast, critical tests: codec, lifecycle, basic transport, validators
 
+# ==============================================================================
+# DOCKER-ONLY CONSTITUTION: Host execution FORBIDDEN
+# ==============================================================================
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../dev/docker_guard.sh"
+
 set -euo pipefail
 
 # Colors
