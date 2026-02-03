@@ -23,9 +23,8 @@ set -euo pipefail
 #==============================================================================
 
 readonly REQUIRED_OTP_VERSION="28.3.1"
-readonly ERLMCP_ROOT="$(cd "${ERLMCP_ROOT:-.}" 2>/dev/null && pwd || echo "$PWD")"
 readonly REQUIRED_OTP_MAJOR=28
-readonly ERLMCP_ROOT="$(cd "${ERLMCP_ROOT:-.}" && pwd)"
+readonly ERLMCP_ROOT="$(cd "${ERLMCP_ROOT:-.}" 2>/dev/null && pwd || echo "$PWD")"
 readonly OTP_CACHE_DIR="${ERLMCP_ROOT}/.erlmcp/otp-${REQUIRED_OTP_VERSION}"
 readonly OTP_BIN="${OTP_CACHE_DIR}/bin/erl"
 readonly LOCK_FILE="${ERLMCP_ROOT}/.erlmcp/cache/sessionstart.lock"
