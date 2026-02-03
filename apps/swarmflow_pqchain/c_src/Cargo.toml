@@ -1,0 +1,68 @@
+[package]
+name = "pqc_rust_nif"
+version = "0.1.0"
+edition = "2021"
+authors = ["SwarmFlow PQChain Team"]
+description = "Post-Quantum Cryptography NIF for Erlang/OTP"
+license = "Apache-2.0"
+
+[lib]
+name = "pqc_rust_nif"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Rustler - Erlang NIF bindings
+rustler = "0.30"
+
+# NIST PQC Standards (FIPS 203, 204, 205)
+# Using pqcrypto crates which implement the standardized algorithms
+pqcrypto-dilithium = "0.5"    # ML-DSA (FIPS 204)
+pqcrypto-kyber = "0.8"        # ML-KEM (FIPS 203)
+pqcrypto-sphincsplus = "0.6"  # SLH-DSA (FIPS 205)
+pqcrypto-traits = "0.3"       # Common traits for PQC algorithms
+
+# Cryptographic Hash Functions
+sha3 = "0.10"                 # SHA3-256, SHA3-512 (FIPS 202)
+blake3 = "1.5"                # BLAKE3 (fast, SIMD-accelerated)
+
+# Parallel Processing
+rayon = "1.8"                 # Data parallelism for batch operations
+
+[profile.release]
+# Optimize for cryptographic performance
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+
+# Enable CPU-specific optimizations (SIMD, AES-NI, etc.)
+# CAUTION: Binary will only run on CPUs with these features
+# For production, consider using runtime CPU feature detection
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+# x86_64 SIMD optimizations enabled via target-cpu=native at build time
+
+[profile.dev]
+# Faster compile times for development
+opt-level = 0
+
+[profile.bench]
+# Maximum optimization for benchmarks
+opt-level = 3
+lto = true
+codegen-units = 1
+
+# Build configuration notes:
+#
+# For maximum performance (production builds):
+#   RUSTFLAGS="-C target-cpu=native" cargo build --release
+#
+# For portable builds (works on all x86_64):
+#   cargo build --release
+#
+# To enable specific CPU features:
+#   RUSTFLAGS="-C target-feature=+aes,+avx2" cargo build --release
+#
+# Memory safety:
+#   - All key material uses zeroize-on-drop where supported
+#   - Constant-time operations for side-channel resistance
+#   - No unsafe code in cryptographic primitives (delegated to pqcrypto)

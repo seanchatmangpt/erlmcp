@@ -1,0 +1,153 @@
+{application, swarmflow_pqchain,
+ [{description, "SwarmFlow PQChain - Post-Quantum Blockchain with Workflow Net Contracts"},
+  {vsn, "1.0.0"},
+  {registered, [
+      swarmflow_pqchain_sup,
+      pqc_identity,
+      pqc_crypto_policy,
+      pqc_mempool_sup,
+      pqc_consensus_sup,
+      pqc_peer_sup,
+      pqc_contract_sup,
+      pqc_chain,
+      pqc_a2a_bridge,
+      pqc_mcp_bridge
+  ]},
+  {applications, [
+      kernel,
+      stdlib,
+      crypto,
+      gproc,
+      swarmflow_os,
+      erlmcp_core
+  ]},
+  {mod, {swarmflow_pqchain_app, []}},
+  {env, [
+      {chain_id, <<"pqchain-mainnet">>},
+      {block_time_ms, 5000},
+      {max_block_size, 4194304},  % 4MB
+      {max_tx_per_block, 10000},
+      {min_gas_price, 1000},
+      {max_gas_per_block, 50000000},
+
+      %% Crypto policy defaults
+      {default_sig_algorithm, ml_dsa_65},
+      {default_kem_algorithm, ml_kem_768},
+      {default_hash_algorithm, sha3_256},
+
+      %% Consensus parameters
+      {consensus_timeout_ms, 10000},
+      {min_validators, 4},
+      {max_validators, 100},
+      {quorum_fraction, 0.67},
+
+      %% Mempool parameters
+      {mempool_max_size, 100000},
+      {mempool_max_gas, 500000000},
+      {tx_expiry_seconds, 300},
+
+      %% Peer network parameters
+      {max_peers, 50},
+      {peer_rekey_interval_ms, 3600000},  % 1 hour
+      {peer_keepalive_interval_ms, 30000},  % 30 seconds
+
+      %% Contract execution parameters
+      {max_contract_gas, 10000000},
+      {contract_timeout_ms, 60000}
+  ]},
+  {modules, [
+      %% Application and Supervision
+      swarmflow_pqchain_app,
+      swarmflow_pqchain_sup,
+      pqc_mempool_sup,
+      pqc_consensus_sup,
+      pqc_peer_sup,
+      pqc_contract_sup,
+
+      %% Public API
+      swarmflow_pqchain,
+
+      %% Case Kernel (one kernel, two faces)
+      pqc_case,
+      pqc_case_registry,
+      pqc_net,
+      pqc_receipt,
+      pqc_events,
+      pqc_tools,
+
+      %% Core Workers
+      pqc_identity,
+      pqc_crypto_policy,
+      pqc_chain,
+
+      %% Crypto and Keys
+      pqc_crypto,
+
+      %% Transactions and Blocks
+      pqc_transaction,
+      pqc_block,
+
+      %% Consensus
+      pqc_consensus_round,
+
+      %% Peer Network
+      pqc_peer_channel,
+
+      %% Smart Contracts
+      pqc_contract,
+
+      %% A2A Protocol Face
+      pqc_a2a_bridge,
+      pqc_projection_a2a,
+      pqc_a2a_router,
+
+      %% MCP Protocol Face
+      pqc_mcp_bridge,
+      pqc_projection_mcp,
+      pqc_mcp_router,
+
+      %% Rust NIFs
+      pqc_rust_nif,
+
+      %% C4 Architecture Model (Simon Brown)
+      pqc_c4_model,
+      pqc_c4_example,
+
+      %% Van der Aalst Process Mining
+      pqc_alpha_miner,
+      pqc_heuristics_miner,
+      pqc_alignment,
+      pqc_process_mining,
+
+      %% Van der Aalst / ter Hofstede Workflow Patterns
+      pqc_workflow_patterns,
+
+      %% Pattern-Complete Control-Flow Kernel (43 Patterns)
+      pqc_pattern_net,       % Token multiset kernel with all operator families
+      pqc_patterns_43,       % All 43 patterns as executable net fragments
+
+      %% Joe Armstrong Supervision Principles
+      pqc_armstrong_sup,
+      pqc_armstrong_example
+  ]},
+  {licenses, ["Apache-2.0"]},
+  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
+  %% OTP 28+ Runtime Dependencies
+  {runtime_dependencies, [
+      "erts-16.0.3",
+      "kernel-10.4",
+      "stdlib-6.0",
+      "crypto-5.3",
+      "gproc-0.9.0",
+      "swarmflow_os-1.0.0"
+  ]},
+  {notes, [
+      "Requires: Erlang/OTP 28+ (STRICT)",
+      "Post-quantum blockchain using NIST-approved PQC algorithms:",
+      "  - ML-KEM (FIPS 203): Key encapsulation",
+      "  - ML-DSA (FIPS 204): Digital signatures",
+      "  - SLH-DSA (FIPS 205): Stateless hash-based signatures",
+      "Smart contracts are SwarmFlow workflow nets with crypto guarantees",
+      "Integrates with A2A protocol for cross-chain agent transactions"
+  ]}
+ ]}.

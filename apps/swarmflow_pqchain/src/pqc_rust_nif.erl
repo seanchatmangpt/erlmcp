@@ -1,0 +1,254 @@
+%%% @doc Post-Quantum Cryptography Rust NIF Interface
+%%%
+%%% High-performance PQC operations implemented in Rust for:
+%%% - ML-DSA (FIPS 204) digital signatures
+%%% - SLH-DSA (FIPS 205) hash-based signatures
+%%% - ML-KEM (FIPS 203) key encapsulation
+%%% - SHA3, BLAKE3, HKDF key derivation
+%%% - Merkle tree and batch hashing operations
+%%%
+%%% Architecture:
+%%% - OTP orchestrates workflows and supervision
+%%% - Rust NIFs handle compute-intensive cryptography
+%%% - SIMD acceleration for batch operations
+%%% - Rayon parallelism for batch verification
+%%%
+%%% @end
+-module(pqc_rust_nif).
+
+-include("pqchain.hrl").
+
+%% API exports
+-export([
+    %% ML-DSA (FIPS 204) - Lattice-based signatures
+    ml_dsa_keygen/1,
+    ml_dsa_sign/3,
+    ml_dsa_verify/3,
+    ml_dsa_batch_verify/1,
+
+    %% SLH-DSA (FIPS 205) - Stateless hash-based signatures
+    slh_dsa_keygen/1,
+    slh_dsa_sign/3,
+    slh_dsa_verify/3,
+
+    %% ML-KEM (FIPS 203) - Lattice-based key encapsulation
+    ml_kem_keygen/1,
+    ml_kem_encapsulate/2,
+    ml_kem_decapsulate/2,
+
+    %% Hash functions
+    sha3_256/1,
+    sha3_512/1,
+    blake3/1,
+
+    %% Key derivation
+    hkdf_sha3/3,
+
+    %% Merkle tree operations
+    merkle_root/1,
+
+    %% Batch operations
+    batch_hash/1
+]).
+
+-on_load(init/0).
+
+%%% ============================================================================
+%%% NIF Loading
+%%% ============================================================================
+
+-spec init() -> ok | {error, term()}.
+init() ->
+    PrivDir = case code:priv_dir(?MODULE) of
+        {error, _} ->
+            %% Development fallback
+            EbinDir = filename:dirname(code:which(?MODULE)),
+            AppPath = filename:dirname(EbinDir),
+            filename:join([AppPath, "priv"]);
+        Dir ->
+            Dir
+    end,
+    SoName = filename:join(PrivDir, "pqc_rust_nif"),
+
+    case erlang:load_nif(SoName, 0) of
+        ok ->
+            ok;
+        {error, {reload, _}} ->
+            %% Already loaded
+            ok;
+        {error, Reason} ->
+            error_logger:error_msg(
+                "Failed to load PQC Rust NIF from ~s: ~p~n",
+                [SoName, Reason]
+            ),
+            {error, {nif_load_failed, Reason}}
+    end.
+
+%%% ============================================================================
+%%% ML-DSA (FIPS 204) - Digital Signature Algorithm
+%%% ============================================================================
+
+%% @doc Generate ML-DSA keypair
+%% @param SecurityLevel 44 (Level 2) | 65 (Level 3) | 87 (Level 5)
+%% @returns {ok, {PublicKey, SecretKey}} | {error, Reason}
+-spec ml_dsa_keygen(44 | 65 | 87) ->
+    {ok, {binary(), binary()}} | {error, term()}.
+ml_dsa_keygen(_SecurityLevel) ->
+    erlang:nif_error(nif_not_loaded).
+
+%% @doc Sign message with ML-DSA secret key
+%% @param SecurityLevel 44 | 65 | 87
+%% @param Message Binary message to sign
+%% @param SecretKey ML-DSA secret key
+%% @returns {ok, Signature} | {error, Reason}
+-spec ml_dsa_sign(44 | 65 | 87, binary(), binary()) ->
+    {ok, binary()} | {error, term()}.
+ml_dsa_sign(_SecurityLevel, _Message, _SecretKey) ->
+    erlang:nif_error(nif_not_loaded).
+
+%% @doc Verify ML-DSA signature
+%% @param SecurityLevel 44 | 65 | 87
+%% @param Message Binary message
+%% @param Signature ML-DSA signature
+%% @param PublicKey ML-DSA public key
+%% @returns ok | {error, invalid_signature}
+-spec ml_dsa_verify(44 | 65 | 87, binary(), binary(), binary()) ->
+    ok | {error, term()}.
+ml_dsa_verify(_SecurityLevel, _Message, _Signature, _PublicKey) ->
+    erlang:nif_error(nif_not_loaded).
+
+%% @doc Batch verify multiple ML-DSA signatures in parallel
+%% @param Verifications List of {SecurityLevel, Message, Signature, PublicKey}
+%% @returns {ok, Results} where Results is list of ok | {error, Reason}
+-spec ml_dsa_batch_verify([{44 | 65 | 87, binary(), binary(), binary()}]) ->
+    {ok, [ok | {error, term()}]}.
+ml_dsa_batch_verify(_Verifications) ->
+    erlang:nif_error(nif_not_loaded).
+
+%%% ============================================================================
+%%% SLH-DSA (FIPS 205) - Stateless Hash-Based Signatures
+%%% ============================================================================
+
+%% @doc Generate SLH-DSA keypair
+%% @param Variant 128s | 128f | 192s | 192f | 256s | 256f
+%%        (s = small signature, f = fast signing)
+%% @returns {ok, {PublicKey, SecretKey}} | {error, Reason}
+-spec slh_dsa_keygen(atom()) ->
+    {ok, {binary(), binary()}} | {error, term()}.
+slh_dsa_keygen(_Variant) ->
+    erlang:nif_error(nif_not_loaded).
+
+%% @doc Sign message with SLH-DSA secret key
+%% @param Variant 128s | 128f | 192s | 192f | 256s | 256f
+%% @param Message Binary message to sign
+%% @param SecretKey SLH-DSA secret key
+%% @returns {ok, Signature} | {error, Reason}
+-spec slh_dsa_sign(atom(), binary(), binary()) ->
+    {ok, binary()} | {error, term()}.
+slh_dsa_sign(_Variant, _Message, _SecretKey) ->
+    erlang:nif_error(nif_not_loaded).
+
+%% @doc Verify SLH-DSA signature
+%% @param Variant 128s | 128f | 192s | 192f | 256s | 256f
+%% @param Message Binary message
+%% @param Signature SLH-DSA signature
+%% @param PublicKey SLH-DSA public key
+%% @returns ok | {error, invalid_signature}
+-spec slh_dsa_verify(atom(), binary(), binary(), binary()) ->
+    ok | {error, term()}.
+slh_dsa_verify(_Variant, _Message, _Signature, _PublicKey) ->
+    erlang:nif_error(nif_not_loaded).
+
+%%% ============================================================================
+%%% ML-KEM (FIPS 203) - Key Encapsulation Mechanism
+%%% ============================================================================
+
+%% @doc Generate ML-KEM keypair
+%% @param SecurityLevel 512 (Level 1) | 768 (Level 3) | 1024 (Level 5)
+%% @returns {ok, {PublicKey, SecretKey}} | {error, Reason}
+-spec ml_kem_keygen(512 | 768 | 1024) ->
+    {ok, {binary(), binary()}} | {error, term()}.
+ml_kem_keygen(_SecurityLevel) ->
+    erlang:nif_error(nif_not_loaded).
+
+%% @doc Encapsulate shared secret with ML-KEM public key
+%% @param SecurityLevel 512 | 768 | 1024
+%% @param PublicKey ML-KEM public key
+%% @returns {ok, {Ciphertext, SharedSecret}} | {error, Reason}
+-spec ml_kem_encapsulate(512 | 768 | 1024, binary()) ->
+    {ok, {binary(), binary()}} | {error, term()}.
+ml_kem_encapsulate(_SecurityLevel, _PublicKey) ->
+    erlang:nif_error(nif_not_loaded).
+
+%% @doc Decapsulate ML-KEM ciphertext to recover shared secret
+%% @param SecurityLevel 512 | 768 | 1024
+%% @param Ciphertext ML-KEM ciphertext
+%% @param SecretKey ML-KEM secret key
+%% @returns {ok, SharedSecret} | {error, Reason}
+-spec ml_kem_decapsulate(512 | 768 | 1024, binary(), binary()) ->
+    {ok, binary()} | {error, term()}.
+ml_kem_decapsulate(_SecurityLevel, _Ciphertext, _SecretKey) ->
+    erlang:nif_error(nif_not_loaded).
+
+%%% ============================================================================
+%%% Hash Functions
+%%% ============================================================================
+
+%% @doc Compute SHA3-256 hash
+%% @param Data Binary data to hash
+%% @returns {ok, Hash} | {error, Reason}
+-spec sha3_256(binary()) -> {ok, binary()} | {error, term()}.
+sha3_256(_Data) ->
+    erlang:nif_error(nif_not_loaded).
+
+%% @doc Compute SHA3-512 hash
+%% @param Data Binary data to hash
+%% @returns {ok, Hash} | {error, Reason}
+-spec sha3_512(binary()) -> {ok, binary()} | {error, term()}.
+sha3_512(_Data) ->
+    erlang:nif_error(nif_not_loaded).
+
+%% @doc Compute BLAKE3 hash
+%% @param Data Binary data to hash
+%% @returns {ok, Hash} | {error, Reason}
+-spec blake3(binary()) -> {ok, binary()} | {error, term()}.
+blake3(_Data) ->
+    erlang:nif_error(nif_not_loaded).
+
+%%% ============================================================================
+%%% Key Derivation
+%%% ============================================================================
+
+%% @doc HKDF key derivation with SHA3-256
+%% @param Salt Salt value (can be empty binary)
+%% @param InputKeyMaterial Input key material
+%% @param Info Context information
+%% @param Length Output key length in bytes
+%% @returns {ok, DerivedKey} | {error, Reason}
+-spec hkdf_sha3(binary(), binary(), binary(), pos_integer()) ->
+    {ok, binary()} | {error, term()}.
+hkdf_sha3(_Salt, _InputKeyMaterial, _Info, _Length) ->
+    erlang:nif_error(nif_not_loaded).
+
+%%% ============================================================================
+%%% Merkle Tree Operations
+%%% ============================================================================
+
+%% @doc Compute Merkle tree root from leaf hashes
+%% @param Leaves List of binary leaf hashes
+%% @returns {ok, Root} | {error, Reason}
+-spec merkle_root([binary()]) -> {ok, binary()} | {error, term()}.
+merkle_root(_Leaves) ->
+    erlang:nif_error(nif_not_loaded).
+
+%%% ============================================================================
+%%% Batch Operations
+%%% ============================================================================
+
+%% @doc Hash multiple items in parallel using SIMD
+%% @param Items List of binaries to hash
+%% @param Algorithm sha3_256 | sha3_512 | blake3
+%% @returns {ok, [Hash]} | {error, Reason}
+-spec batch_hash([binary()], atom()) -> {ok, [binary()]} | {error, term()}.
+batch_hash(_Items, _Algorithm) ->
+    erlang:nif_error(nif_not_loaded).

@@ -1,0 +1,30 @@
+[package]
+name = "swf_rust_nif"
+version = "0.1.0"
+edition = "2021"
+authors = ["SwarmFlow Team"]
+description = "High-performance compute kernels for SwarmFlow OS"
+license = "Apache-2.0"
+
+[lib]
+name = "swf_rust_nif"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.31"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = 3
+
+[profile.release.build-override]
+opt-level = 3
+
+# Enable SIMD optimizations
+[target.'cfg(target_arch = "x86_64")']
+rustflags = ["-C", "target-feature=+avx2"]
+
+[features]
+default = []
+simd = []
