@@ -84,22 +84,17 @@
 ).
 
 %%====================================================================
-%% Stack Trace Handling (OTP 26+)
+%% Stack Trace Handling (OTP 21+)
 %%====================================================================
 %%
-%% OTP 26 introduced new stacktrace format
-%% Use erlang:get_stacktrace/0 (deprecated) or try...catch with :stacktrace/1
+%% OTP 21+ requires stacktrace in catch clause: catch Class:Reason:Stacktrace
+%% erlang:get_stacktrace/0 was deprecated in OTP 21 and removed in OTP 24
+%% This project targets OTP 26+, so we always use the new syntax
 
-%% Get stacktrace in a version-compatible way
+%% Get stacktrace - just returns the catch clause stacktrace variable
+%% Usage: try ... catch Type:Error:Stacktrace -> ?GET_STACKTRACE(Type, Error, Stacktrace) end
 -define(GET_STACKTRACE(Type, Error, Stacktrace),
-        case ?IS_OTP_26() of
-            true ->
-                %% OTP 26+: Stacktrace is in catch variable
-                {Type, Error, Stacktrace};
-            false ->
-                %% OTP 25 and earlier: Use erlang:get_stacktrace/0
-                {Type, Error, erlang:get_stacktrace()}
-        end).
+        {Type, Error, Stacktrace}).
 
 %%====================================================================
 %% Enhanced Assertions (Version-Agnostic)

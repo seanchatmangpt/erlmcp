@@ -228,7 +228,7 @@ test_gen_server_handle_cast(_Pid) ->
     %% Verify: Doesn't crash
     ?assertEqual(ok, Result).
 
-test_gen_server_handle_info(_Pid) ->
+test_gen_server_handle_info(Pid) ->
     %% Exercise: Send info message
     Pid ! test_info,
     timer:sleep(100),
@@ -236,7 +236,7 @@ test_gen_server_handle_info(_Pid) ->
     %% Verify: Still alive
     ?assert(is_process_alive(Pid)).
 
-test_gen_server_terminate(_Pid) ->
+test_gen_server_terminate(Pid) ->
     %% Exercise: Stop server
     ok = gen_server:stop(erlmcp_hooks),
 
