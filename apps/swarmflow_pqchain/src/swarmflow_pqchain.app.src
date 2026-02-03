@@ -122,6 +122,10 @@
       %% Van der Aalst / ter Hofstede Workflow Patterns
       pqc_workflow_patterns,
 
+      %% Pattern-Complete Control-Flow Kernel (43 Patterns)
+      pqc_pattern_net,       % Token multiset kernel with all operator families
+      pqc_patterns_43,       % All 43 patterns as executable net fragments
+
       %% Joe Armstrong Supervision Principles
       pqc_armstrong_sup,
       pqc_armstrong_example
