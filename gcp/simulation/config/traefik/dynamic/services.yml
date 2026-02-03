@@ -1,0 +1,147 @@
+# ============================================================================
+# Cloud Load Balancer Simulation - Traefik Dynamic Configuration
+# ============================================================================
+# Simulates GCP Cloud Load Balancer with Traefik
+
+http:
+  # Routers
+  routers:
+    # ErlMCP API router
+    erlmcp-api:
+      rule: "Host(`api.erlmcp.local`) || PathPrefix(`/api`)"
+      service: erlmcp
+      entryPoints:
+        - http
+      middlewares:
+        - rate-limit
+        - cors
+
+    # Health check router
+    erlmcp-health:
+      rule: "PathPrefix(`/health`) || PathPrefix(`/ready`) || PathPrefix(`/live`)"
+      service: erlmcp-health
+      entryPoints:
+        - http
+
+    # Metrics router (internal)
+    erlmcp-metrics:
+      rule: "PathPrefix(`/metrics`)"
+      service: erlmcp-metrics
+      entryPoints:
+        - http
+      middlewares:
+        - internal-only
+
+    # MinIO console router
+    minio-console:
+      rule: "Host(`storage.erlmcp.local`)"
+      service: minio-console
+      entryPoints:
+        - http
+
+    # Grafana dashboard router
+    grafana:
+      rule: "Host(`dashboard.erlmcp.local`)"
+      service: grafana
+      entryPoints:
+        - http
+
+    # Prometheus router
+    prometheus:
+      rule: "Host(`monitoring.erlmcp.local`)"
+      service: prometheus
+      entryPoints:
+        - http
+
+    # Vault router
+    vault:
+      rule: "Host(`secrets.erlmcp.local`)"
+      service: vault
+      entryPoints:
+        - http
+
+  # Services
+  services:
+    erlmcp:
+      loadBalancer:
+        servers:
+          - url: "http://erlmcp-node:8080"
+        healthCheck:
+          path: /health
+          interval: "10s"
+          timeout: "3s"
+
+    erlmcp-health:
+      loadBalancer:
+        servers:
+          - url: "http://erlmcp-node:9090"
+
+    erlmcp-metrics:
+      loadBalancer:
+        servers:
+          - url: "http://erlmcp-node:9090"
+
+    minio-console:
+      loadBalancer:
+        servers:
+          - url: "http://minio:9001"
+
+    grafana:
+      loadBalancer:
+        servers:
+          - url: "http://grafana:3000"
+
+    prometheus:
+      loadBalancer:
+        servers:
+          - url: "http://prometheus:9090"
+
+    vault:
+      loadBalancer:
+        servers:
+          - url: "http://vault:8200"
+
+  # Middlewares
+  middlewares:
+    # Rate limiting (simulates Cloud Armor)
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 200
+        period: 1s
+
+    # CORS headers
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 86400
+        addVaryHeader: true
+
+    # Internal only (block external access)
+    internal-only:
+      ipWhiteList:
+        sourceRange:
+          - "127.0.0.0/8"
+          - "10.0.0.0/8"
+          - "172.16.0.0/12"
+          - "192.168.0.0/16"
+
+    # Retry middleware
+    retry:
+      retry:
+        attempts: 3
+        initialInterval: 100ms
+
+    # Circuit breaker
+    circuit-breaker:
+      circuitBreaker:
+        expression: "NetworkErrorRatio() > 0.30 || ResponseCodeRatio(500, 600, 0, 600) > 0.25"

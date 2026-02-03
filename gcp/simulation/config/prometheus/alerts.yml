@@ -1,0 +1,110 @@
+# ============================================================================
+# Cloud Monitoring Alerts - Prometheus Alerting Rules
+# ============================================================================
+# Simulates GCP Cloud Monitoring alerting policies
+
+groups:
+  - name: erlmcp_application
+    rules:
+      # High error rate (simulates Cloud Monitoring error rate alert)
+      - alert: HighErrorRate
+        expr: rate(erlmcp_http_requests_total{status=~"5.."}[5m]) / rate(erlmcp_http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          gcp_equivalent: google_monitoring_alert_policy
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # High latency (simulates Cloud Monitoring latency alert)
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(erlmcp_http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          gcp_equivalent: google_monitoring_alert_policy
+        annotations:
+          summary: "High latency detected"
+          description: "P95 latency is {{ $value | humanizeDuration }} (threshold: 2s)"
+
+      # Service down
+      - alert: ServiceDown
+        expr: up{job="erlmcp"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          gcp_equivalent: google_monitoring_uptime_check_config
+        annotations:
+          summary: "ErlMCP service is down"
+          description: "ErlMCP application is not responding"
+
+  - name: cloudsql_alerts
+    rules:
+      # Database connection pool exhausted
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_activity_count > 90
+        for: 5m
+        labels:
+          severity: warning
+          gcp_equivalent: cloud_sql_insights
+        annotations:
+          summary: "Database connections near limit"
+          description: "PostgreSQL has {{ $value }} active connections"
+
+      # Slow queries
+      - alert: SlowQueries
+        expr: rate(pg_stat_statements_seconds_total[5m]) / rate(pg_stat_statements_calls_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          gcp_equivalent: cloud_sql_insights
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Average query time is {{ $value | humanizeDuration }}"
+
+  - name: memorystore_alerts
+    rules:
+      # Redis memory usage high
+      - alert: RedisMemoryHigh
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          gcp_equivalent: google_redis_instance
+        annotations:
+          summary: "Redis memory usage high"
+          description: "Redis is using {{ $value | humanizePercentage }} of max memory"
+
+      # Redis connection rejected
+      - alert: RedisConnectionsRejected
+        expr: rate(redis_rejected_connections_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          gcp_equivalent: google_redis_instance
+        annotations:
+          summary: "Redis rejecting connections"
+          description: "Redis rejected {{ $value }} connections in last 5 minutes"
+
+  - name: infrastructure_alerts
+    rules:
+      # Container restarts
+      - alert: ContainerRestarting
+        expr: increase(container_restarts_total[1h]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container restarting frequently"
+          description: "Container {{ $labels.container_name }} has restarted {{ $value }} times in 1 hour"
+
+      # Disk usage high
+      - alert: DiskUsageHigh
+        expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk usage high"
+          description: "Disk {{ $labels.mountpoint }} is {{ $value | humanizePercentage }} full"

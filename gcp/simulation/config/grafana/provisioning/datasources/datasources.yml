@@ -1,0 +1,64 @@
+# ============================================================================
+# Cloud Monitoring Dashboard - Grafana Datasources
+# ============================================================================
+# Pre-configured datasources for GCP simulation
+
+apiVersion: 1
+
+datasources:
+  # Prometheus - Cloud Monitoring simulation
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: POST
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
+    uid: prometheus
+
+  # Loki - Cloud Logging simulation
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      derivedFields:
+        - datasourceUid: tempo
+          matcherRegex: "trace_id=(\\w+)"
+          name: TraceID
+          url: "$${__value.raw}"
+    uid: loki
+
+  # PostgreSQL - Cloud SQL simulation
+  - name: PostgreSQL
+    type: postgres
+    url: postgres:5432
+    user: erlmcp
+    secureJsonData:
+      password: erlmcp_secret
+    jsonData:
+      database: erlmcp_dev
+      sslmode: disable
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+    editable: false
+    uid: postgresql
+
+  # Redis - Memorystore simulation
+  - name: Redis
+    type: redis-datasource
+    url: redis:6379
+    editable: false
+    jsonData:
+      client: standalone
+      poolSize: 5
+    secureJsonData:
+      password: erlmcp_redis
+    uid: redis
