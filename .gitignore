@@ -7,7 +7,7 @@ ebin/
 *.dylib
 *.so
 priv/
-*.app.src
+# *.app.src files ARE tracked - they're required OTP application resource files
 .dialyzer_plt
 
 # Rebar

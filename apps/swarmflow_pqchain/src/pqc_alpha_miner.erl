@@ -1,0 +1,717 @@
+%%%-------------------------------------------------------------------
+%%% @doc pqc_alpha_miner - Van der Aalst's Alpha Algorithm for Process Discovery
+%%%
+%%% Implements the foundational Alpha Miner algorithm (Aalst et al., 2004)
+%%% for discovering Petri nets from event logs.
+%%%
+%%% The Alpha algorithm works by:
+%%% 1. Extracting all activities from the event log
+%%% 2. Computing ordering relations (succession, causality, parallel, choice)
+%%% 3. Finding maximal pairs (A,B) where all a->b and items in A/B are mutually exclusive
+%%% 4. Building a Petri net with source, sink, and intermediate places
+%%%
+%%% Ordering relations:
+%%% - Direct succession: a >_L b iff exists trace with ...ab...
+%%% - Causality: a ->_L b iff (a >_L b) and not (b >_L a)
+%%% - Parallel: a ||_L b iff (a >_L b) and (b >_L a)
+%%% - Choice: a #_L b iff not (a >_L b) and not (b >_L a)
+%%%
+%%% Limitations:
+%%% - Cannot handle loops
+%%% - Cannot handle invisible transitions
+%%% - Cannot handle duplicate activities
+%%% - Cannot handle non-free-choice constructs
+%%%
+%%% For production use, consider Alpha+, Alpha++, or Heuristic Miner.
+%%%
+%%% OTP 26+ compatible.
+%%% @end
+%%%-------------------------------------------------------------------
+
+-module(pqc_alpha_miner).
+
+-include("pqchain.hrl").
+
+%% API exports
+-export([
+    discover/1,
+    footprint/1,
+    compute_places/1,
+    build_net/2,
+    footprint_to_matrix/1,
+    compare_footprints/2
+]).
+
+%% Utility exports for testing
+-export([
+    direct_succession/1,
+    start_activities/1,
+    end_activities/1,
+    all_activities/1
+]).
+
+%%--------------------------------------------------------------------
+%% Types
+%%--------------------------------------------------------------------
+
+-type activity() :: atom() | binary().
+-type trace() :: [activity()].
+-type event_log() :: [trace()].
+-type relation_set() :: ordsets:ordset({activity(), activity()}).
+
+-record(alpha_footprint, {
+    activities :: ordsets:ordset(activity()),
+    direct_succession :: relation_set(),  % a > b
+    causality :: relation_set(),          % a -> b
+    parallel :: relation_set(),           % a || b
+    choice :: relation_set(),             % a # b
+    start_activities :: ordsets:ordset(activity()),
+    end_activities :: ordsets:ordset(activity())
+}).
+
+-type footprint() :: #alpha_footprint{}.
+
+-type place_spec() :: {ordsets:ordset(activity()), ordsets:ordset(activity())}.
+
+-export_type([
+    activity/0,
+    trace/0,
+    event_log/0,
+    footprint/0,
+    place_spec/0
+]).
+
+%%--------------------------------------------------------------------
+%% @doc Discover Petri net from event log using Alpha algorithm.
+%%
+%% Takes an event log (list of traces) and returns a discovered Petri net
+%% in SwarmFlow format. The net includes source and sink places, transitions
+%% for each activity, and places connecting transitions based on ordering relations.
+%%
+%% Example:
+%% ```
+%% Log = [[a, b, c], [a, c, b]],
+%% {ok, Net} = pqc_alpha_miner:discover(Log).
+%% '''
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec discover(event_log()) -> {ok, #swf_net{}} | {error, term()}.
+discover([]) ->
+    {error, <<"empty_event_log">>};
+discover(EventLog) when is_list(EventLog) ->
+    try
+        %% Step 1: Compute footprint
+        Footprint = footprint(EventLog),
+
+        %% Step 2: Find maximal places
+        Places = compute_places(Footprint),
+
+        %% Step 3: Build net structure
+        Net = build_net(Footprint, Places),
+
+        {ok, Net}
+    catch
+        error:Reason:Stack ->
+            {error, {discovery_failed, Reason, Stack}};
+        throw:Error ->
+            {error, Error}
+    end;
+discover(_) ->
+    {error, <<"invalid_event_log_format">>}.
+
+%%--------------------------------------------------------------------
+%% @doc Compute footprint from event log.
+%%
+%% Extracts all ordering relations between activities:
+%% - Direct succession: a >_L b if a is followed by b in some trace
+%% - Causality: a ->_L b if a >_L b and not b >_L a
+%% - Parallel: a ||_L b if a >_L b and b >_L a
+%% - Choice: a #_L b if not a >_L b and not b >_L a
+%%
+%% Also identifies start and end activities.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec footprint(event_log()) -> footprint().
+footprint(EventLog) when is_list(EventLog) ->
+    %% Extract all activities
+    Activities = all_activities(EventLog),
+
+    %% Compute direct succession relation
+    DirectSuccession = direct_succession(EventLog),
+
+    %% Compute causality relation (a -> b)
+    Causality = compute_causality(DirectSuccession),
+
+    %% Compute parallel relation (a || b)
+    Parallel = compute_parallel(DirectSuccession),
+
+    %% Compute choice relation (a # b)
+    Choice = compute_choice(Activities, DirectSuccession),
+
+    %% Identify start and end activities
+    StartActivities = start_activities(EventLog),
+    EndActivities = end_activities(EventLog),
+
+    #alpha_footprint{
+        activities = Activities,
+        direct_succession = DirectSuccession,
+        causality = Causality,
+        parallel = Parallel,
+        choice = Choice,
+        start_activities = StartActivities,
+        end_activities = EndActivities
+    }.
+
+%%--------------------------------------------------------------------
+%% @doc Compute places from footprint.
+%%
+%% Finds maximal pairs (A, B) where:
+%% - For all a in A, b in B: a ->_L b (causality)
+%% - For all a1, a2 in A: a1 #_L a2 (choice)
+%% - For all b1, b2 in B: b1 #_L b2 (choice)
+%% - No superset satisfies these conditions
+%%
+%% Returns list of place specifications as {InputSet, OutputSet} tuples.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec compute_places(footprint()) -> [place_spec()].
+compute_places(#alpha_footprint{
+    causality = Causality,
+    choice = Choice
+}) ->
+    %% Get all activities involved in causality relations
+    AllCausalActivities = ordsets:union(
+        ordsets:from_list([A || {A, _} <- Causality]),
+        ordsets:from_list([B || {_, B} <- Causality])
+    ),
+
+    %% Generate all candidate pairs
+    CandidatePairs = generate_candidate_pairs(AllCausalActivities, Causality, Choice),
+
+    %% Filter for maximal pairs
+    MaximalPairs = filter_maximal(CandidatePairs, Causality, Choice),
+
+    MaximalPairs.
+
+%%--------------------------------------------------------------------
+%% @doc Build Petri net from footprint and places.
+%%
+%% Constructs a complete Petri net with:
+%% - Source place (i_L) connected to start activities
+%% - Sink place (o_L) connected from end activities
+%% - Internal places from maximal pairs
+%% - Transitions for each activity
+%% - Arcs connecting places and transitions
+%%
+%% Returns net in SwarmFlow #swf_net{} format.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec build_net(footprint(), [place_spec()]) -> #swf_net{}.
+build_net(
+    #alpha_footprint{
+        activities = Activities,
+        start_activities = StartActs,
+        end_activities = EndActs
+    },
+    PlaceSpecs
+) ->
+    NetId = generate_net_id(),
+
+    %% Create places
+    SourcePlaceId = <<"i_L">>,
+    SinkPlaceId = <<"o_L">>,
+
+    SourcePlace = #swf_place{
+        id = SourcePlaceId,
+        name = <<"Source">>,
+        tokens = 1,  %% Initial marking: one token in source
+        metadata = #{type => source}
+    },
+
+    SinkPlace = #swf_place{
+        id = SinkPlaceId,
+        name = <<"Sink">>,
+        tokens = 0,
+        metadata = #{type => sink}
+    },
+
+    %% Create internal places from place specs
+    {InternalPlaces, PlaceIdMap} = create_internal_places(PlaceSpecs),
+
+    AllPlaces = maps:merge(
+        #{SourcePlaceId => SourcePlace, SinkPlaceId => SinkPlace},
+        InternalPlaces
+    ),
+
+    %% Create transitions (one per activity)
+    Transitions = create_transitions(Activities),
+
+    %% Create arcs
+    SourceArcs = create_source_arcs(SourcePlaceId, StartActs),
+    SinkArcs = create_sink_arcs(SinkPlaceId, EndActs),
+    InternalArcs = create_internal_arcs(PlaceSpecs, PlaceIdMap),
+
+    AllArcs = lists:flatten([SourceArcs, SinkArcs, InternalArcs]),
+
+    %% Build final net
+    #swf_net{
+        id = NetId,
+        name = <<"Alpha Miner Discovered Net">>,
+        version = <<"1.0.0">>,
+        places = AllPlaces,
+        transitions = Transitions,
+        arcs = AllArcs,
+        initial_marking = #{SourcePlaceId => 1},
+        final_places = [SinkPlaceId],
+        metadata = #{
+            algorithm => <<"alpha_miner">>,
+            discovered_at => erlang:system_time(millisecond),
+            place_count => maps:size(AllPlaces),
+            transition_count => maps:size(Transitions),
+            arc_count => length(AllArcs)
+        }
+    }.
+
+%%--------------------------------------------------------------------
+%% @doc Export footprint as matrix for visualization.
+%%
+%% Returns a map representation of the footprint suitable for display
+%% or export. The matrix shows relations between all activity pairs.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec footprint_to_matrix(footprint()) -> map().
+footprint_to_matrix(#alpha_footprint{
+    activities = Activities,
+    causality = Causality,
+    parallel = Parallel,
+    choice = Choice
+}) ->
+    ActList = ordsets:to_list(Activities),
+
+    Matrix = lists:foldl(
+        fun(A, AccMap) ->
+            Row = lists:foldl(
+                fun(B, RowAcc) ->
+                    Relation = determine_relation(A, B, Causality, Parallel, Choice),
+                    RowAcc#{B => Relation}
+                end,
+                #{},
+                ActList
+            ),
+            AccMap#{A => Row}
+        end,
+        #{},
+        ActList
+    ),
+
+    #{
+        activities => ActList,
+        matrix => Matrix
+    }.
+
+%%--------------------------------------------------------------------
+%% @doc Compare two footprints for similarity/conformance.
+%%
+%% Returns a similarity score (0.0 to 1.0) based on agreement of
+%% ordering relations between two footprints.
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec compare_footprints(footprint(), footprint()) -> float().
+compare_footprints(
+    #alpha_footprint{activities = Acts1, causality = C1, parallel = P1, choice = Ch1},
+    #alpha_footprint{activities = Acts2, causality = C2, parallel = P2, choice = Ch2}
+) ->
+    %% Compare on intersection of activities
+    CommonActs = ordsets:intersection(Acts1, Acts2),
+
+    if
+        ordsets:size(CommonActs) =:= 0 ->
+            0.0;
+        true ->
+            %% Filter relations to common activities only
+            C1_Common = filter_relations(C1, CommonActs),
+            C2_Common = filter_relations(C2, CommonActs),
+            P1_Common = filter_relations(P1, CommonActs),
+            P2_Common = filter_relations(P2, CommonActs),
+            Ch1_Common = filter_relations(Ch1, CommonActs),
+            Ch2_Common = filter_relations(Ch2, CommonActs),
+
+            %% Count agreements and total comparisons
+            CausalityScore = relation_similarity(C1_Common, C2_Common),
+            ParallelScore = relation_similarity(P1_Common, P2_Common),
+            ChoiceScore = relation_similarity(Ch1_Common, Ch2_Common),
+
+            %% Average similarity across relation types
+            (CausalityScore + ParallelScore + ChoiceScore) / 3.0
+    end.
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%%--------------------------------------------------------------------
+%% Basic log analysis functions
+%%--------------------------------------------------------------------
+
+-spec all_activities(event_log()) -> ordsets:ordset(activity()).
+all_activities(EventLog) ->
+    ordsets:from_list(lists:flatten(EventLog)).
+
+-spec start_activities(event_log()) -> ordsets:ordset(activity()).
+start_activities(EventLog) ->
+    Starts = [hd(Trace) || Trace <- EventLog, Trace =/= []],
+    ordsets:from_list(Starts).
+
+-spec end_activities(event_log()) -> ordsets:ordset(activity()).
+end_activities(EventLog) ->
+    Ends = [lists:last(Trace) || Trace <- EventLog, Trace =/= []],
+    ordsets:from_list(Ends).
+
+-spec direct_succession(event_log()) -> relation_set().
+direct_succession(EventLog) ->
+    Pairs = lists:flatmap(fun trace_pairs/1, EventLog),
+    ordsets:from_list(Pairs).
+
+-spec trace_pairs(trace()) -> [{activity(), activity()}].
+trace_pairs([]) -> [];
+trace_pairs([_]) -> [];
+trace_pairs([A, B | Rest]) ->
+    [{A, B} | trace_pairs([B | Rest])].
+
+%%--------------------------------------------------------------------
+%% Relation computation
+%%--------------------------------------------------------------------
+
+-spec compute_causality(relation_set()) -> relation_set().
+compute_causality(DirectSuccession) ->
+    %% a -> b iff (a > b) and not (b > a)
+    ordsets:filter(
+        fun({A, B}) ->
+            ordsets:is_element({A, B}, DirectSuccession) andalso
+            not ordsets:is_element({B, A}, DirectSuccession)
+        end,
+        DirectSuccession
+    ).
+
+-spec compute_parallel(relation_set()) -> relation_set().
+compute_parallel(DirectSuccession) ->
+    %% a || b iff (a > b) and (b > a)
+    ordsets:filter(
+        fun({A, B}) ->
+            A < B andalso  % Only include (a,b) where a < b to avoid duplicates
+            ordsets:is_element({A, B}, DirectSuccession) andalso
+            ordsets:is_element({B, A}, DirectSuccession)
+        end,
+        DirectSuccession
+    ).
+
+-spec compute_choice(ordsets:ordset(activity()), relation_set()) -> relation_set().
+compute_choice(Activities, DirectSuccession) ->
+    %% a # b iff not (a > b) and not (b > a)
+    ActList = ordsets:to_list(Activities),
+    AllPairs = [{A, B} || A <- ActList, B <- ActList, A < B],
+
+    ordsets:from_list([
+        {A, B} || {A, B} <- AllPairs,
+        not ordsets:is_element({A, B}, DirectSuccession),
+        not ordsets:is_element({B, A}, DirectSuccession)
+    ]).
+
+%%--------------------------------------------------------------------
+%% Place computation
+%%--------------------------------------------------------------------
+
+-spec generate_candidate_pairs(
+    ordsets:ordset(activity()),
+    relation_set(),
+    relation_set()
+) -> [place_spec()].
+generate_candidate_pairs(Activities, Causality, Choice) ->
+    ActList = ordsets:to_list(Activities),
+
+    %% Generate all possible pairs of activity subsets
+    AllSubsets = generate_all_subsets(ActList),
+
+    %% Filter for valid pairs
+    ValidPairs = [
+        {A_Set, B_Set} ||
+        A_Set <- AllSubsets, A_Set =/= [],
+        B_Set <- AllSubsets, B_Set =/= [],
+        is_valid_place_pair(A_Set, B_Set, Causality, Choice)
+    ],
+
+    ValidPairs.
+
+-spec is_valid_place_pair(
+    ordsets:ordset(activity()),
+    ordsets:ordset(activity()),
+    relation_set(),
+    relation_set()
+) -> boolean().
+is_valid_place_pair(A_Set, B_Set, Causality, Choice) ->
+    %% Check: all a in A_Set, all b in B_Set: a -> b
+    AllCausal = lists:all(
+        fun(A) ->
+            lists:all(
+                fun(B) -> ordsets:is_element({A, B}, Causality) end,
+                ordsets:to_list(B_Set)
+            )
+        end,
+        ordsets:to_list(A_Set)
+    ),
+
+    if
+        not AllCausal -> false;
+        true ->
+            %% Check: all a1, a2 in A_Set: a1 # a2 (or a1 = a2)
+            A_List = ordsets:to_list(A_Set),
+            A_Choice = lists:all(
+                fun(A1) ->
+                    lists:all(
+                        fun(A2) ->
+                            A1 =:= A2 orelse
+                            ordsets:is_element({min(A1, A2), max(A1, A2)}, Choice)
+                        end,
+                        A_List
+                    )
+                end,
+                A_List
+            ),
+
+            if
+                not A_Choice -> false;
+                true ->
+                    %% Check: all b1, b2 in B_Set: b1 # b2 (or b1 = b2)
+                    B_List = ordsets:to_list(B_Set),
+                    lists:all(
+                        fun(B1) ->
+                            lists:all(
+                                fun(B2) ->
+                                    B1 =:= B2 orelse
+                                    ordsets:is_element({min(B1, B2), max(B1, B2)}, Choice)
+                                end,
+                                B_List
+                            )
+                        end,
+                        B_List
+                    )
+            end
+    end.
+
+-spec filter_maximal([place_spec()], relation_set(), relation_set()) -> [place_spec()].
+filter_maximal(Pairs, Causality, Choice) ->
+    %% A pair is maximal if no other valid pair properly contains it
+    lists:filter(
+        fun({A_Set, B_Set}) ->
+            not lists:any(
+                fun({A_Set2, B_Set2}) ->
+                    ({A_Set, B_Set} =/= {A_Set2, B_Set2}) andalso
+                    ordsets:is_subset(A_Set, A_Set2) andalso
+                    ordsets:is_subset(B_Set, B_Set2) andalso
+                    (ordsets:size(A_Set2) > ordsets:size(A_Set) orelse
+                     ordsets:size(B_Set2) > ordsets:size(B_Set)) andalso
+                    is_valid_place_pair(A_Set2, B_Set2, Causality, Choice)
+                end,
+                Pairs
+            )
+        end,
+        Pairs
+    ).
+
+-spec generate_all_subsets([activity()]) -> [ordsets:ordset(activity())].
+generate_all_subsets([]) ->
+    [ordsets:new()];
+generate_all_subsets([H | T]) ->
+    SubT = generate_all_subsets(T),
+    SubT ++ [ordsets:add_element(H, S) || S <- SubT].
+
+%%--------------------------------------------------------------------
+%% Net construction
+%%--------------------------------------------------------------------
+
+-spec create_internal_places([place_spec()]) ->
+    {#{binary() => #swf_place{}}, #{place_spec() => binary()}}.
+create_internal_places(PlaceSpecs) ->
+    {Places, IdMap, _Counter} = lists:foldl(
+        fun(PlaceSpec, {AccPlaces, AccMap, N}) ->
+            PlaceId = iolist_to_binary([<<"p_">>, integer_to_binary(N)]),
+            Place = #swf_place{
+                id = PlaceId,
+                name = format_place_name(PlaceSpec),
+                tokens = 0,
+                metadata = #{
+                    type => internal,
+                    inputs => element(1, PlaceSpec),
+                    outputs => element(2, PlaceSpec)
+                }
+            },
+            {
+                AccPlaces#{PlaceId => Place},
+                AccMap#{PlaceSpec => PlaceId},
+                N + 1
+            }
+        end,
+        {#{}, #{}, 1},
+        PlaceSpecs
+    ),
+    {Places, IdMap}.
+
+-spec format_place_name(place_spec()) -> binary().
+format_place_name({Inputs, Outputs}) ->
+    InputStr = format_activity_set(Inputs),
+    OutputStr = format_activity_set(Outputs),
+    iolist_to_binary([<<"(">>, InputStr, <<",">>, OutputStr, <<")">>]).
+
+-spec format_activity_set(ordsets:ordset(activity())) -> binary().
+format_activity_set(Set) ->
+    ActList = ordsets:to_list(Set),
+    iolist_to_binary(lists:join(<<",">>, [activity_to_binary(A) || A <- ActList])).
+
+-spec activity_to_binary(activity()) -> binary().
+activity_to_binary(A) when is_atom(A) -> atom_to_binary(A, utf8);
+activity_to_binary(A) when is_binary(A) -> A.
+
+-spec create_transitions(ordsets:ordset(activity())) -> #{binary() => #swf_transition{}}.
+create_transitions(Activities) ->
+    ActList = ordsets:to_list(Activities),
+    maps:from_list([
+        {activity_to_binary(Act), create_transition(Act)} || Act <- ActList
+    ]).
+
+-spec create_transition(activity()) -> #swf_transition{}.
+create_transition(Act) ->
+    ActBin = activity_to_binary(Act),
+    #swf_transition{
+        id = ActBin,
+        name = ActBin,
+        kind = automatic,
+        metadata = #{discovered => true}
+    }.
+
+-spec create_source_arcs(binary(), ordsets:ordset(activity())) -> [#swf_arc{}].
+create_source_arcs(SourcePlaceId, StartActivities) ->
+    [
+        #swf_arc{
+            id = arc_id(SourcePlaceId, activity_to_binary(Act)),
+            source = SourcePlaceId,
+            target = activity_to_binary(Act),
+            weight = 1,
+            kind = normal
+        }
+        || Act <- ordsets:to_list(StartActivities)
+    ].
+
+-spec create_sink_arcs(binary(), ordsets:ordset(activity())) -> [#swf_arc{}].
+create_sink_arcs(SinkPlaceId, EndActivities) ->
+    [
+        #swf_arc{
+            id = arc_id(activity_to_binary(Act), SinkPlaceId),
+            source = activity_to_binary(Act),
+            target = SinkPlaceId,
+            weight = 1,
+            kind = normal
+        }
+        || Act <- ordsets:to_list(EndActivities)
+    ].
+
+-spec create_internal_arcs([place_spec()], #{place_spec() => binary()}) -> [#swf_arc{}].
+create_internal_arcs(PlaceSpecs, PlaceIdMap) ->
+    lists:flatmap(
+        fun(PlaceSpec) ->
+            PlaceId = maps:get(PlaceSpec, PlaceIdMap),
+            {Inputs, Outputs} = PlaceSpec,
+
+            %% Arcs from input activities to place
+            InputArcs = [
+                #swf_arc{
+                    id = arc_id(activity_to_binary(Act), PlaceId),
+                    source = activity_to_binary(Act),
+                    target = PlaceId,
+                    weight = 1,
+                    kind = normal
+                }
+                || Act <- ordsets:to_list(Inputs)
+            ],
+
+            %% Arcs from place to output activities
+            OutputArcs = [
+                #swf_arc{
+                    id = arc_id(PlaceId, activity_to_binary(Act)),
+                    source = PlaceId,
+                    target = activity_to_binary(Act),
+                    weight = 1,
+                    kind = normal
+                }
+                || Act <- ordsets:to_list(Outputs)
+            ],
+
+            InputArcs ++ OutputArcs
+        end,
+        PlaceSpecs
+    ).
+
+-spec arc_id(binary(), binary()) -> binary().
+arc_id(From, To) ->
+    iolist_to_binary([From, <<"_to_">>, To]).
+
+%%--------------------------------------------------------------------
+%% Utility functions
+%%--------------------------------------------------------------------
+
+-spec generate_net_id() -> binary().
+generate_net_id() ->
+    Timestamp = erlang:system_time(millisecond),
+    Random = crypto:strong_rand_bytes(8),
+    Base = <<Timestamp:64, Random/binary>>,
+    iolist_to_binary([<<"alpha_net_">>, base64:encode(Base)]).
+
+-spec determine_relation(
+    activity(),
+    activity(),
+    relation_set(),
+    relation_set(),
+    relation_set()
+) -> atom().
+determine_relation(A, B, _Causality, _Parallel, _Choice) when A =:= B ->
+    self;
+determine_relation(A, B, Causality, _Parallel, _Choice) ->
+    AB_Causal = ordsets:is_element({A, B}, Causality),
+    BA_Causal = ordsets:is_element({B, A}, Causality),
+
+    if
+        AB_Causal -> causality;
+        BA_Causal -> reverse_causality;
+        true ->
+            %% Check parallel (need to check min/max order)
+            {Min, Max} = if A < B -> {A, B}; true -> {B, A} end,
+            case ordsets:is_element({Min, Max}, _Parallel) of
+                true -> parallel;
+                false -> choice
+            end
+    end.
+
+-spec filter_relations(relation_set(), ordsets:ordset(activity())) -> relation_set().
+filter_relations(Relations, Activities) ->
+    ordsets:filter(
+        fun({A, B}) ->
+            ordsets:is_element(A, Activities) andalso
+            ordsets:is_element(B, Activities)
+        end,
+        Relations
+    ).
+
+-spec relation_similarity(relation_set(), relation_set()) -> float().
+relation_similarity(R1, R2) ->
+    case ordsets:union(R1, R2) of
+        [] ->
+            1.0;  % Both empty = perfect agreement
+        Union ->
+            Intersection = ordsets:intersection(R1, R2),
+            ordsets:size(Intersection) / ordsets:size(Union)
+    end.

@@ -1,0 +1,77 @@
+{application, swarmflow_os,
+ [{description, "SwarmFlow OS - Autonomic Workflow Runtime with YAWL/Petri-net Semantics"},
+  {vsn, "1.0.0"},
+  {registered, [
+      swf_net_registry,
+      swf_event_log,
+      swf_case_sup,
+      swf_swarm_coordinator,
+      swf_promotion_engine,
+      swf_a2a_bridge,
+      swf_mcp_bridge
+  ]},
+  {applications, [
+      kernel,
+      stdlib,
+      crypto,
+      gproc,
+      erlmcp_core
+  ]},
+  {mod, {swarmflow_os_app, []}},
+  {env, [
+      {net_registry_defaults, #{
+          max_versions_per_net => 100,
+          auto_compile => true,
+          validate_on_register => true
+      }},
+      {case_defaults, #{
+          max_concurrent_cases => 10000,
+          default_timeout_ms => 300000,
+          enable_event_logging => true
+      }},
+      {swarm_defaults, #{
+          worker_pool_size => 10,
+          proposal_evaluation_window_ms => 60000,
+          min_confidence_threshold => 0.8
+      }}
+  ]},
+  {modules, [
+      %% Application
+      swarmflow_os_app,
+      swarmflow_os_sup,
+      %% Public API
+      swarmflow,
+      %% Workflow Engine
+      swf_net_registry,
+      swf_case,
+      swf_case_sup,
+      swf_event_log,
+      %% Process Mining
+      swf_conformance,
+      swf_patch_proposer,
+      %% Swarm Coordination
+      swf_swarm_coordinator,
+      swf_promotion_engine,
+      %% Protocol Integration
+      swf_a2a_bridge,
+      swf_mcp_bridge,
+      %% Rust NIFs
+      swf_rust_nif
+  ]},
+  {licenses, ["Apache-2.0"]},
+  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
+  %% OTP 28+ Runtime Dependencies
+  {runtime_dependencies, [
+      "erts-16.0.3",
+      "kernel-10.4",
+      "stdlib-6.0",
+      "crypto-5.3",
+      "gproc-0.9.0"
+  ]},
+  {notes, [
+      "Requires: Erlang/OTP 28+ (STRICT)",
+      "Implements YAWL/Petri-net workflow semantics",
+      "Provides autonomic workflow execution with process mining",
+      "Integrates with A2A protocol for agent orchestration"
+  ]}
+ ]}.

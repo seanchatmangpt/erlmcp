@@ -1,0 +1,532 @@
+%%%-------------------------------------------------------------------
+%%% @doc A2A Projection - "One Kernel, Two Faces"
+%%%
+%%% Maps A2A protocol to Case reality. A2A is just a face over the
+%%% unified Case kernel. Every A2A Task IS a Case, every A2A Message
+%%% becomes a Case signal, every A2A Artifact is a Case artifact.
+%%%
+%%% Architecture:
+%%% - Task ID = Case ID (same thing)
+%%% - SendMessageRequest → signal(Name, Payload)
+%%% - Task state = projection of Case status
+%%% - Artifacts = Case artifacts with PQC signatures
+%%% - Subscriptions = pg subscription to Case events
+%%%
+%%% State Mapping:
+%%% - submitted → TASK_STATE_SUBMITTED
+%%% - running → TASK_STATE_WORKING
+%%% - input_required → TASK_STATE_INPUT_REQUIRED
+%%% - auth_required → TASK_STATE_AUTH_REQUIRED
+%%% - completed → TASK_STATE_COMPLETED
+%%% - failed → TASK_STATE_FAILED
+%%% - cancelled → TASK_STATE_CANCELED
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(pqc_projection_a2a).
+
+-include("pqchain.hrl").
+-include_lib("erlmcp_core/include/erlmcp_a2a.hrl").
+
+%% API exports
+-export([
+    send_message/1,
+    get_task/1,
+    cancel_task/1,
+    list_tasks/1,
+    subscribe_task/2,
+    unsubscribe_task/2,
+
+    %% Conversion functions
+    case_to_a2a_task/1,
+    case_to_a2a_message/1,
+    a2a_message_to_signal/1,
+    case_status_to_a2a_state/1
+]).
+
+%%====================================================================
+%% Type Definitions
+%%====================================================================
+
+-type task_id() :: binary().
+-type case_snapshot() :: map().
+-type error_reason() :: atom() | {atom(), term()}.
+
+-export_type([task_id/0, case_snapshot/0]).
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+%% @doc Handle A2A SendMessageRequest - becomes Case signal
+%%
+%% Takes an A2A message, creates or finds the corresponding Case,
+%% and signals it with the message content.
+%%
+%% Returns an A2A Task representing the current Case state.
+%%
+%% @end
+-spec send_message(ReqMap :: map()) ->
+    {ok, map()} | {error, error_reason()}.
+send_message(#{
+    <<"message">> := MessageMap,
+    <<"configuration">> := ConfigMap
+} = _Req) ->
+    try
+        %% Parse A2A message
+        Message = parse_a2a_message(MessageMap),
+
+        %% Extract or generate task/context IDs
+        TaskId = case Message#a2a_message.task_id of
+            undefined ->
+                %% New task - generate Case ID
+                ContextId = Message#a2a_message.context_id,
+                generate_task_id(ContextId);
+            ExistingTaskId ->
+                ExistingTaskId
+        end,
+
+        %% Ensure Case exists (Task ID = Case ID)
+        case ensure_case(TaskId, Message) of
+            {ok, CasePid} ->
+                %% Convert A2A message to Case signal
+                {SignalName, SignalPayload} = a2a_message_to_signal(Message),
+
+                %% Send signal to Case
+                ok = pqc_case:signal(CasePid, SignalName, SignalPayload),
+
+                %% Get current Case snapshot
+                {ok, Snapshot} = pqc_case:snapshot(CasePid),
+
+                %% Convert to A2A Task
+                A2ATask = case_to_a2a_task(Snapshot),
+
+                %% Check if blocking requested
+                Blocking = maps:get(<<"blocking">>, ConfigMap, false),
+                case Blocking of
+                    true ->
+                        %% Wait for terminal state
+                        {ok, wait_for_terminal(CasePid, A2ATask)};
+                    false ->
+                        %% Return immediately
+                        {ok, A2ATask}
+                end;
+            {error, Reason} ->
+                {error, {case_creation_failed, Reason}}
+        end
+    catch
+        error:Reason:Stacktrace ->
+            logger:error("send_message failed: ~p~n~p", [Reason, Stacktrace]),
+            {error, {internal_error, Reason}}
+    end;
+send_message(#{<<"message">> := MessageMap}) ->
+    %% No configuration provided - use defaults
+    send_message(#{
+        <<"message">> => MessageMap,
+        <<"configuration">> => #{<<"blocking">> => false}
+    });
+send_message(_Req) ->
+    {error, invalid_request}.
+
+%% @doc Get A2A Task by ID (Task ID = Case ID)
+-spec get_task(TaskId :: task_id()) ->
+    {ok, map()} | {error, error_reason()}.
+get_task(TaskId) when is_binary(TaskId) ->
+    case pqc_case_registry:lookup(TaskId) of
+        {ok, CasePid} ->
+            {ok, Snapshot} = pqc_case:snapshot(CasePid),
+            A2ATask = case_to_a2a_task(Snapshot),
+            {ok, A2ATask};
+        {error, not_found} ->
+            {error, task_not_found}
+    end.
+
+%% @doc Cancel A2A Task (signals Case to cancel)
+-spec cancel_task(TaskId :: task_id()) ->
+    ok | {error, error_reason()}.
+cancel_task(TaskId) when is_binary(TaskId) ->
+    case pqc_case_registry:lookup(TaskId) of
+        {ok, CasePid} ->
+            %% Signal Case to cancel
+            ok = pqc_case:signal(CasePid, cancel, #{}),
+            ok;
+        {error, not_found} ->
+            {error, task_not_found}
+    end.
+
+%% @doc List tasks with filters
+-spec list_tasks(Params :: map()) ->
+    {ok, [map()]} | {error, error_reason()}.
+list_tasks(Params) ->
+    %% Get all Cases
+    CaseIds = pqc_case_registry:list_cases(),
+
+    %% Convert each to A2A Task
+    Tasks = lists:filtermap(
+        fun(CaseId) ->
+            case pqc_case_registry:lookup(CaseId) of
+                {ok, CasePid} ->
+                    {ok, Snapshot} = pqc_case:snapshot(CasePid),
+                    A2ATask = case_to_a2a_task(Snapshot),
+
+                    %% Apply filters
+                    case matches_filters(A2ATask, Params) of
+                        true -> {true, A2ATask};
+                        false -> false
+                    end;
+                {error, _} ->
+                    false
+            end
+        end,
+        CaseIds
+    ),
+
+    %% Apply pagination
+    PageSize = maps:get(<<"page_size">>, Params, ?A2A_DEFAULT_PAGE_SIZE),
+    PageToken = maps:get(<<"page_token">>, Params, undefined),
+
+    {PaginatedTasks, NextToken} = paginate_tasks(Tasks, PageSize, PageToken),
+
+    {ok, #{
+        <<"tasks">> => PaginatedTasks,
+        <<"nextPageToken">> => NextToken,
+        <<"pageSize">> => PageSize,
+        <<"totalSize">> => length(Tasks)
+    }}.
+
+%% @doc Subscribe to Case events (Task ID = Case ID)
+-spec subscribe_task(TaskId :: task_id(), Pid :: pid()) ->
+    ok | {error, error_reason()}.
+subscribe_task(TaskId, Pid) when is_binary(TaskId), is_pid(Pid) ->
+    case pqc_case_registry:lookup(TaskId) of
+        {ok, CasePid} ->
+            %% Subscribe via Case
+            pqc_case:subscribe(CasePid),
+            %% Also subscribe via registry for broadcasts
+            pqc_case_registry:subscribe(TaskId),
+            ok;
+        {error, not_found} ->
+            {error, task_not_found}
+    end.
+
+%% @doc Unsubscribe from Case events
+-spec unsubscribe_task(TaskId :: task_id(), Pid :: pid()) ->
+    ok | {error, error_reason()}.
+unsubscribe_task(TaskId, Pid) when is_binary(TaskId), is_pid(Pid) ->
+    case pqc_case_registry:lookup(TaskId) of
+        {ok, CasePid} ->
+            pqc_case:unsubscribe(CasePid),
+            pqc_case_registry:unsubscribe(TaskId),
+            ok;
+        {error, not_found} ->
+            {error, task_not_found}
+    end.
+
+%%====================================================================
+%% Conversion Functions
+%%====================================================================
+
+%% @doc Convert Case snapshot to A2A Task format
+-spec case_to_a2a_task(Snapshot :: case_snapshot()) -> map().
+case_to_a2a_task(#{
+    case_id := CaseId,
+    status := Status,
+    marking := _Marking,
+    artifacts_count := ArtifactCount,
+    metadata := Metadata
+} = Snapshot) ->
+    %% Map Case status to A2A task state
+    State = case_status_to_a2a_state(maps:get(state, Status, running)),
+    Message = maps:get(message, Status, undefined),
+    Timestamp = maps:get(ts, Status, erlang:system_time(millisecond)),
+
+    %% Create A2A task status
+    TaskStatus = #{
+        <<"state">> => atom_to_binary(State, utf8),
+        <<"message">> => case Message of
+            undefined -> null;
+            Msg when is_binary(Msg) -> #{
+                <<"role">> => <<"agent">>,
+                <<"parts">> => [#{<<"text">> => Msg}]
+            };
+            _ -> null
+        end,
+        <<"timestamp">> => format_timestamp(Timestamp)
+    },
+
+    %% Get context ID from metadata
+    ContextId = maps:get(context_id, Metadata, CaseId),
+
+    %% Build A2A Task
+    #{
+        <<"id">> => CaseId,
+        <<"contextId">> => ContextId,
+        <<"status">> => TaskStatus,
+        <<"artifacts">> => [],  % TODO: Convert Case artifacts
+        <<"history">> => [],    % TODO: Convert Case history
+        <<"metadata">> => Metadata
+    }.
+
+%% @doc Convert Case event to A2A Message format
+-spec case_to_a2a_message(Event :: map()) -> map().
+case_to_a2a_message(#{
+    type := Type,
+    timestamp := Timestamp,
+    data := Data
+}) ->
+    %% Generate message ID
+    MessageId = generate_message_id(),
+
+    %% Determine role based on event type
+    Role = case Type of
+        signal -> <<"user">>;
+        tool_call -> <<"user">>;
+        _ -> <<"agent">>
+    end,
+
+    %% Create parts from data
+    Parts = case Type of
+        signal ->
+            SignalName = maps:get(name, Data, <<"unknown">>),
+            SignalPayload = maps:get(payload, Data, #{}),
+            [#{
+                <<"text">> => <<SignalName/binary, ": ", (jsx:encode(SignalPayload))/binary>>
+            }];
+        status_change ->
+            StatusMsg = maps:get(message, Data, <<"Status changed">>),
+            [#{<<"text">> => StatusMsg}];
+        _ ->
+            [#{<<"text">> => jsx:encode(Data)}]
+    end,
+
+    #{
+        <<"messageId">> => MessageId,
+        <<"role">> => Role,
+        <<"parts">> => Parts,
+        <<"metadata">> => #{
+            <<"timestamp">> => format_timestamp(Timestamp),
+            <<"eventType">> => atom_to_binary(Type, utf8)
+        }
+    }.
+
+%% @doc Convert A2A Message to Case signal
+-spec a2a_message_to_signal(Message :: #a2a_message{}) ->
+    {SignalName :: binary(), SignalPayload :: map()}.
+a2a_message_to_signal(#a2a_message{parts = Parts, metadata = Metadata}) ->
+    %% Extract text from parts
+    TextParts = lists:filtermap(
+        fun(#a2a_part{text = Text}) when Text =/= undefined ->
+                {true, Text};
+           (_) ->
+                false
+        end,
+        Parts
+    ),
+
+    %% Combine text parts
+    CombinedText = iolist_to_binary(lists:join(<<" ">>, TextParts)),
+
+    %% Signal name is 'message' by default
+    SignalName = <<"message">>,
+
+    %% Payload includes the text and metadata
+    SignalPayload = #{
+        text => CombinedText,
+        parts => length(Parts),
+        metadata => case Metadata of
+            undefined -> #{};
+            M -> M
+        end
+    },
+
+    {SignalName, SignalPayload}.
+
+%% @doc Convert Case status state to A2A task state
+-spec case_status_to_a2a_state(CaseState :: atom()) -> a2a_task_state().
+case_status_to_a2a_state(submitted) -> ?A2A_TASK_STATE_SUBMITTED;
+case_status_to_a2a_state(running) -> ?A2A_TASK_STATE_WORKING;
+case_status_to_a2a_state(input_required) -> ?A2A_TASK_STATE_INPUT_REQUIRED;
+case_status_to_a2a_state(auth_required) -> ?A2A_TASK_STATE_AUTH_REQUIRED;
+case_status_to_a2a_state(completed) -> ?A2A_TASK_STATE_COMPLETED;
+case_status_to_a2a_state(failed) -> ?A2A_TASK_STATE_FAILED;
+case_status_to_a2a_state(cancelled) -> ?A2A_TASK_STATE_CANCELED;
+case_status_to_a2a_state(_Other) -> ?A2A_TASK_STATE_WORKING.
+
+%%====================================================================
+%% Internal Functions
+%%====================================================================
+
+%% @private Parse A2A message map to record
+parse_a2a_message(MessageMap) ->
+    MessageId = maps:get(<<"messageId">>, MessageMap),
+    ContextId = maps:get(<<"contextId">>, MessageMap, undefined),
+    TaskId = maps:get(<<"taskId">>, MessageMap, undefined),
+    Role = binary_to_existing_atom(maps:get(<<"role">>, MessageMap, <<"user">>), utf8),
+    PartsMap = maps:get(<<"parts">>, MessageMap, []),
+
+    %% Parse parts
+    Parts = lists:map(fun parse_a2a_part/1, PartsMap),
+
+    #a2a_message{
+        message_id = MessageId,
+        context_id = ContextId,
+        task_id = TaskId,
+        role = Role,
+        parts = Parts,
+        metadata = maps:get(<<"metadata">>, MessageMap, undefined)
+    }.
+
+%% @private Parse A2A part map to record
+parse_a2a_part(PartMap) ->
+    #a2a_part{
+        text = maps:get(<<"text">>, PartMap, undefined),
+        raw = maps:get(<<"raw">>, PartMap, undefined),
+        url = maps:get(<<"url">>, PartMap, undefined),
+        data = maps:get(<<"data">>, PartMap, undefined),
+        metadata = maps:get(<<"metadata">>, PartMap, undefined),
+        filename = maps:get(<<"filename">>, PartMap, undefined),
+        media_type = maps:get(<<"mediaType">>, PartMap, undefined)
+    }.
+
+%% @private Ensure Case exists for task
+ensure_case(TaskId, Message) ->
+    %% Create default net for message-based Case
+    Net = #{
+        id => <<"message_net">>,
+        initial_marking => #{<<"start">> => 1}
+    },
+
+    %% Create metadata from message
+    Metadata = #{
+        context_id => Message#a2a_message.context_id,
+        created_by => <<"a2a_projection">>,
+        role => Message#a2a_message.role
+    },
+
+    %% Generate or get signing key
+    SigningKey = get_signing_key(),
+
+    %% Ensure Case exists
+    pqc_case_registry:ensure_case(TaskId, Net, SigningKey).
+
+%% @private Get signing key for Case
+get_signing_key() ->
+    %% TODO: Get from configuration or generate
+    %% For now, return undefined (Case will work without signing)
+    undefined.
+
+%% @private Generate task ID
+generate_task_id(ContextId) ->
+    %% Use ULID-like format
+    Timestamp = erlang:system_time(millisecond),
+    Random = crypto:strong_rand_bytes(10),
+    Hash = crypto:hash(sha3_256, <<Timestamp:64, Random/binary, ContextId/binary>>),
+    base64:encode(Hash).
+
+%% @private Generate message ID
+generate_message_id() ->
+    %% UUID v4 format
+    Random = crypto:strong_rand_bytes(16),
+    <<A:32, B:16, _:4, C:12, _:2, D:62>> = Random,
+    UUID = <<A:32, B:16, 4:4, C:12, 2:2, D:62>>,
+    uuid_to_string(UUID).
+
+%% @private Convert UUID binary to string
+uuid_to_string(<<A:32, B:16, C:16, D:16, E:48>>) ->
+    iolist_to_binary(
+        io_lib:format("~8.16.0b-~4.16.0b-~4.16.0b-~4.16.0b-~12.16.0b",
+                      [A, B, C, D, E])
+    ).
+
+%% @private Format timestamp to ISO 8601
+format_timestamp(Milliseconds) when is_integer(Milliseconds) ->
+    Seconds = Milliseconds div 1000,
+    MicroRemainder = (Milliseconds rem 1000) * 1000,
+    {{Year, Month, Day}, {Hour, Min, Sec}} =
+        calendar:system_time_to_universal_time(Seconds, second),
+    iolist_to_binary(
+        io_lib:format("~4.10.0B-~2.10.0B-~2.10.0BT~2.10.0B:~2.10.0B:~2.10.0B.~3.10.0BZ",
+                      [Year, Month, Day, Hour, Min, Sec, MicroRemainder div 1000])
+    ).
+
+%% @private Check if task matches filters
+matches_filters(Task, Params) ->
+    %% Check status filter
+    StatusMatch = case maps:get(<<"status">>, Params, undefined) of
+        undefined -> true;
+        FilterStatus ->
+            TaskStatus = maps:get(<<"status">>, Task),
+            maps:get(<<"state">>, TaskStatus) =:= atom_to_binary(FilterStatus, utf8)
+    end,
+
+    %% Check context ID filter
+    ContextMatch = case maps:get(<<"contextId">>, Params, undefined) of
+        undefined -> true;
+        FilterContext ->
+            maps:get(<<"contextId">>, Task) =:= FilterContext
+    end,
+
+    StatusMatch andalso ContextMatch.
+
+%% @private Paginate tasks
+paginate_tasks(Tasks, PageSize, undefined) ->
+    %% First page
+    {Page, Rest} = lists:split(min(PageSize, length(Tasks)), Tasks),
+    NextToken = case Rest of
+        [] -> <<"">>;
+        _ -> encode_page_token(PageSize)
+    end,
+    {Page, NextToken};
+paginate_tasks(Tasks, PageSize, PageToken) ->
+    %% Decode page token to get offset
+    Offset = decode_page_token(PageToken),
+    Remaining = lists:nthtail(min(Offset, length(Tasks)), Tasks),
+    {Page, Rest} = lists:split(min(PageSize, length(Remaining)), Remaining),
+    NextToken = case Rest of
+        [] -> <<"">>;
+        _ -> encode_page_token(Offset + PageSize)
+    end,
+    {Page, NextToken}.
+
+%% @private Encode page token
+encode_page_token(Offset) ->
+    base64:encode(integer_to_binary(Offset)).
+
+%% @private Decode page token
+decode_page_token(Token) ->
+    binary_to_integer(base64:decode(Token)).
+
+%% @private Wait for Case to reach terminal state
+wait_for_terminal(CasePid, InitialTask) ->
+    %% Subscribe to Case events
+    ok = pqc_case:subscribe(CasePid),
+
+    %% Wait for terminal state with timeout
+    Result = wait_for_terminal_loop(CasePid, InitialTask, 30000),
+
+    %% Unsubscribe
+    pqc_case:unsubscribe(CasePid),
+
+    Result.
+
+%% @private Wait loop for terminal state
+wait_for_terminal_loop(CasePid, CurrentTask, Timeout) ->
+    %% Check if already terminal
+    Status = maps:get(<<"status">>, CurrentTask),
+    State = binary_to_existing_atom(maps:get(<<"state">>, Status), utf8),
+
+    case lists:member(State, ?A2A_TERMINAL_STATES) of
+        true ->
+            CurrentTask;
+        false ->
+            receive
+                {pqc_case_event, _, _Event} ->
+                    %% Get updated snapshot
+                    {ok, Snapshot} = pqc_case:snapshot(CasePid),
+                    UpdatedTask = case_to_a2a_task(Snapshot),
+                    wait_for_terminal_loop(CasePid, UpdatedTask, Timeout)
+            after Timeout ->
+                %% Timeout - return current task
+                CurrentTask
+            end
+    end.
