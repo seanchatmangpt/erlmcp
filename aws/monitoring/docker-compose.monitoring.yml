@@ -1,0 +1,206 @@
+# ============================================================================
+# Monitoring Stack for erlmcp AWS Deployment
+# ============================================================================
+# Docker Compose configuration for local monitoring development
+#
+# DOCKER-ONLY CONSTITUTION: Monitoring runs in containers
+#
+# Usage:
+#   docker compose -f docker-compose.monitoring.yml up -d
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------------------
+  # Prometheus - Metrics Collection
+  # -------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: erlmcp-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./alerting-rules.yml:/etc/prometheus/rules/alerting-rules.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    networks:
+      - erlmcp-monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # -------------------------------------------------------------------------
+  # Grafana - Dashboards & Visualization
+  # -------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: erlmcp-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3000
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-piechart-panel
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards/erlmcp:ro
+      - grafana-data:/var/lib/grafana
+    networks:
+      - erlmcp-monitoring
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # -------------------------------------------------------------------------
+  # Loki - Log Aggregation
+  # -------------------------------------------------------------------------
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: erlmcp-loki
+    restart: unless-stopped
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki-data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - erlmcp-monitoring
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # -------------------------------------------------------------------------
+  # Promtail - Log Shipping
+  # -------------------------------------------------------------------------
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: erlmcp-promtail
+    restart: unless-stopped
+    volumes:
+      - /var/log:/var/log:ro
+      - ./promtail-config.yml:/etc/promtail/config.yml:ro
+    command: -config.file=/etc/promtail/config.yml
+    networks:
+      - erlmcp-monitoring
+    depends_on:
+      - loki
+
+  # -------------------------------------------------------------------------
+  # Alertmanager - Alert Routing
+  # -------------------------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: erlmcp-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - erlmcp-monitoring
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # -------------------------------------------------------------------------
+  # Node Exporter - Host Metrics
+  # -------------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: erlmcp-node-exporter
+    restart: unless-stopped
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - erlmcp-monitoring
+
+  # -------------------------------------------------------------------------
+  # Postgres Exporter (for RDS metrics simulation)
+  # -------------------------------------------------------------------------
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.14.0
+    container_name: erlmcp-postgres-exporter
+    restart: unless-stopped
+    ports:
+      - "9187:9187"
+    environment:
+      - DATA_SOURCE_NAME=postgresql://erlmcp:erlmcp_secure@postgres:5432/erlmcp?sslmode=disable
+    networks:
+      - erlmcp-monitoring
+    profiles:
+      - full
+
+  # -------------------------------------------------------------------------
+  # Redis Exporter (for ElastiCache metrics simulation)
+  # -------------------------------------------------------------------------
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.55.0
+    container_name: erlmcp-redis-exporter
+    restart: unless-stopped
+    ports:
+      - "9121:9121"
+    environment:
+      - REDIS_ADDR=redis://redis:6379
+    networks:
+      - erlmcp-monitoring
+    profiles:
+      - full
+
+  # -------------------------------------------------------------------------
+  # Blackbox Exporter - Endpoint Probing
+  # -------------------------------------------------------------------------
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.24.0
+    container_name: erlmcp-blackbox-exporter
+    restart: unless-stopped
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    networks:
+      - erlmcp-monitoring
+
+networks:
+  erlmcp-monitoring:
+    name: erlmcp-monitoring
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  loki-data:
+  alertmanager-data:

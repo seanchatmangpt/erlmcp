@@ -1,0 +1,17 @@
+# ============================================================================
+# Grafana Dashboard Provisioning for erlmcp
+# ============================================================================
+apiVersion: 1
+
+providers:
+  - name: 'erlmcp'
+    orgId: 1
+    folder: 'erlmcp'
+    folderUid: 'erlmcp-folder'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/erlmcp
+      foldersFromFilesStructure: true

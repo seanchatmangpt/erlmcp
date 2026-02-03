@@ -1,0 +1,231 @@
+# ============================================================================
+# Prometheus Configuration for erlmcp
+# ============================================================================
+# Scrapes metrics from erlmcp nodes, AWS infrastructure, and supporting services
+#
+# DOCKER-ONLY CONSTITUTION: Prometheus runs in container, scrapes containerized apps
+# ============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'erlmcp'
+    environment: '${ENVIRONMENT:-development}'
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Rule files for alerting
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# Scrape configurations
+scrape_configs:
+  # -------------------------------------------------------------------------
+  # erlmcp Application Metrics
+  # -------------------------------------------------------------------------
+  - job_name: 'erlmcp'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+    # Static targets for known nodes
+    static_configs:
+      - targets:
+          - 'erlmcp-node-1:9568'
+          - 'erlmcp-node-2:9568'
+          - 'erlmcp-node-3:9568'
+        labels:
+          service: 'erlmcp'
+          component: 'app'
+
+    # Dynamic discovery via file
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/erlmcp-*.json
+        refresh_interval: 30s
+
+    # EC2 service discovery (for AWS deployments)
+    ec2_sd_configs:
+      - region: ${AWS_REGION:-us-west-2}
+        port: 9568
+        filters:
+          - name: tag:Service
+            values: ['erlmcp']
+          - name: instance-state-name
+            values: ['running']
+
+    relabel_configs:
+      # Keep only instances with the erlmcp tag
+      - source_labels: [__meta_ec2_tag_Service]
+        regex: erlmcp
+        action: keep
+      # Use instance ID as instance label
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance
+      # Use private IP for scraping
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: __address__
+        replacement: '${1}:9568'
+      # Add environment label
+      - source_labels: [__meta_ec2_tag_Environment]
+        target_label: environment
+      # Add availability zone
+      - source_labels: [__meta_ec2_availability_zone]
+        target_label: az
+
+  # -------------------------------------------------------------------------
+  # ECS Service Discovery (for Fargate deployments)
+  # -------------------------------------------------------------------------
+  - job_name: 'erlmcp-ecs'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+    # Use ECS service discovery if available
+    # Note: Requires prometheus-ecs-sd sidecar or native ECS SD
+    static_configs:
+      - targets: []  # Populated dynamically
+
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/ecs-*.json
+        refresh_interval: 30s
+
+  # -------------------------------------------------------------------------
+  # Erlang VM Metrics (via prometheus_erl)
+  # -------------------------------------------------------------------------
+  - job_name: 'erlang-vm'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+    static_configs:
+      - targets:
+          - 'erlmcp-node-1:9568'
+        labels:
+          metrics_type: 'vm'
+
+    metric_relabel_configs:
+      # Keep only erlang_ prefixed metrics
+      - source_labels: [__name__]
+        regex: 'erlang_.*'
+        action: keep
+
+  # -------------------------------------------------------------------------
+  # Node Exporter (host metrics)
+  # -------------------------------------------------------------------------
+  - job_name: 'node'
+    scrape_interval: 30s
+
+    static_configs:
+      - targets:
+          - 'node-exporter:9100'
+
+    ec2_sd_configs:
+      - region: ${AWS_REGION:-us-west-2}
+        port: 9100
+        filters:
+          - name: tag:Service
+            values: ['erlmcp']
+
+    relabel_configs:
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: __address__
+        replacement: '${1}:9100'
+
+  # -------------------------------------------------------------------------
+  # PostgreSQL Exporter
+  # -------------------------------------------------------------------------
+  - job_name: 'postgres'
+    scrape_interval: 60s
+
+    static_configs:
+      - targets:
+          - 'postgres-exporter:9187'
+        labels:
+          service: 'postgres'
+          component: 'database'
+
+  # -------------------------------------------------------------------------
+  # Redis Exporter
+  # -------------------------------------------------------------------------
+  - job_name: 'redis'
+    scrape_interval: 30s
+
+    static_configs:
+      - targets:
+          - 'redis-exporter:9121'
+        labels:
+          service: 'redis'
+          component: 'cache'
+
+  # -------------------------------------------------------------------------
+  # Prometheus Self-Monitoring
+  # -------------------------------------------------------------------------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9090'
+
+  # -------------------------------------------------------------------------
+  # Grafana Health
+  # -------------------------------------------------------------------------
+  - job_name: 'grafana'
+    static_configs:
+      - targets:
+          - 'grafana:3000'
+    metrics_path: '/metrics'
+
+  # -------------------------------------------------------------------------
+  # Blackbox Exporter (for health checks)
+  # -------------------------------------------------------------------------
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - 'http://erlmcp-node-1:8080/health'
+          - 'http://erlmcp-node-2:8080/health'
+          - 'http://erlmcp-node-3:8080/health'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 'blackbox-exporter:9115'
+
+  # -------------------------------------------------------------------------
+  # AWS CloudWatch Exporter
+  # -------------------------------------------------------------------------
+  - job_name: 'cloudwatch'
+    scrape_interval: 300s
+    scrape_timeout: 120s
+
+    static_configs:
+      - targets:
+          - 'cloudwatch-exporter:9106'
+        labels:
+          service: 'cloudwatch'
+
+# ============================================================================
+# Remote Write (for long-term storage)
+# ============================================================================
+# remote_write:
+#   - url: "https://prometheus-remote-write-endpoint.example.com/api/v1/write"
+#     basic_auth:
+#       username: prometheus
+#       password_file: /etc/prometheus/secrets/remote_write_password
+
+# ============================================================================
+# Remote Read (for federated queries)
+# ============================================================================
+# remote_read:
+#   - url: "https://prometheus-remote-read-endpoint.example.com/api/v1/read"

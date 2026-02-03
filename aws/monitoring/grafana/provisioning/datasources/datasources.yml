@@ -1,0 +1,53 @@
+# ============================================================================
+# Grafana Datasource Provisioning for erlmcp
+# ============================================================================
+apiVersion: 1
+
+datasources:
+  # Prometheus - primary metrics source
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+      queryTimeout: "60s"
+      httpMethod: "POST"
+
+  # CloudWatch - AWS metrics
+  - name: CloudWatch
+    type: cloudwatch
+    access: proxy
+    editable: false
+    jsonData:
+      authType: default
+      defaultRegion: ${AWS_REGION:-us-west-2}
+      customMetricsNamespaces: "erlmcp"
+
+  # Loki - log aggregation
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: false
+    jsonData:
+      maxLines: 1000
+
+  # Tempo - distributed tracing (if enabled)
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      tracesToLogs:
+        datasourceUid: loki
+        tags: ['job', 'instance', 'pod', 'namespace']
+        mappedTags: [{ key: 'service.name', value: 'service' }]
+        mapTagNamesEnabled: true
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
+        filterBySpanID: true
