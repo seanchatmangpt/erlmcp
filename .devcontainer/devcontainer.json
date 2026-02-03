@@ -1,0 +1,124 @@
+{
+  "name": "erlmcp Development",
+  "dockerComposeFile": ["../docker-compose.yml", "docker-compose.devcontainer.yml"],
+  "service": "devcontainer",
+  "workspaceFolder": "/workspace",
+
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "moby": true,
+      "installDockerBuildx": true,
+      "installDockerComposeSwitch": true
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "ppa": true,
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true,
+      "installOhMyZsh": true,
+      "upgradePackages": true,
+      "username": "vscode",
+      "userUid": "1000",
+      "userGid": "1000"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "erlang-ls.erlang-ls",
+        "pgourlain.erlang",
+        "yuce.erlang-otp",
+        "ms-azuretools.vscode-docker",
+        "eamodio.gitlens",
+        "EditorConfig.EditorConfig",
+        "davidanson.vscode-markdownlint",
+        "yzhang.markdown-all-in-one",
+        "redhat.vscode-yaml",
+        "hashicorp.terraform",
+        "hashicorp.hcl",
+        "ms-kubernetes-tools.vscode-kubernetes-tools",
+        "streetsidesoftware.code-spell-checker"
+      ],
+      "settings": {
+        "erlang.erlangPath": "/usr/local/lib/erlang/bin/erl",
+        "erlang.rebarPath": "/usr/local/bin/rebar3",
+        "erlang_ls.serverPath": "/usr/local/bin/erlang_ls",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4,
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true,
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "[erlang]": {
+          "editor.tabSize": 4,
+          "editor.insertSpaces": true
+        },
+        "[terraform]": {
+          "editor.tabSize": 2,
+          "editor.insertSpaces": true
+        },
+        "[yaml]": {
+          "editor.tabSize": 2,
+          "editor.insertSpaces": true
+        }
+      }
+    }
+  },
+
+  "forwardPorts": [
+    8080,
+    9090,
+    4369,
+    3000,
+    16686
+  ],
+
+  "portsAttributes": {
+    "8080": {
+      "label": "erlmcp HTTP",
+      "onAutoForward": "notify"
+    },
+    "9090": {
+      "label": "Prometheus Metrics",
+      "onAutoForward": "silent"
+    },
+    "4369": {
+      "label": "EPMD",
+      "onAutoForward": "silent"
+    },
+    "3000": {
+      "label": "Grafana",
+      "onAutoForward": "notify"
+    },
+    "16686": {
+      "label": "Jaeger UI",
+      "onAutoForward": "notify"
+    }
+  },
+
+  "postCreateCommand": "/workspace/.devcontainer/post-create.sh",
+  "postStartCommand": "/workspace/.devcontainer/post-start.sh",
+
+  "containerEnv": {
+    "ERLMCP_PROFILE": "dev",
+    "TERM": "xterm-256color",
+    "ERL_AFLAGS": "-kernel shell_history enabled",
+    "REBAR_CACHE_DIR": "/workspace/.cache/rebar3"
+  },
+
+  "mounts": [
+    "source=${localWorkspaceFolder}/.cache/rebar3,target=/workspace/.cache/rebar3,type=bind,consistency=cached",
+    "source=${localWorkspaceFolder}/.cache/hex,target=/root/.cache/hex,type=bind,consistency=cached"
+  ],
+
+  "remoteUser": "vscode",
+
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  }
+}

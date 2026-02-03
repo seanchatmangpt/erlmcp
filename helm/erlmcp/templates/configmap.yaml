@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-config
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+data:
+  sys.config: |
+    [{erlmcp_core, [
+        {http_port, {{ .Values.service.port }}},
+        {metrics_port, {{ .Values.metrics.port | default 9090 }}},
+        {max_subscriptions, {{ .Values.config.maxSubscriptions | default 1000 }}},
+        {request_timeout, {{ .Values.config.requestTimeout | default 30000 }}},
+        {max_message_size, {{ .Values.config.maxMessageSize | default 1048576 }}}
+    ]},
+    {kernel, [
+        {logger_level, {{ .Values.config.logLevel | default "info" }}},
+        {logger, [
+            {handler, default, logger_std_h, #{
+                level => {{ .Values.config.logLevel | default "info" }},
+                formatter => {logger_formatter, #{
+                    template => [time," ",level," ",pid," ",msg,"\n"],
+                    single_line => true
+                }}
+            }}
+        ]}
+    ]},
+    {sasl, [
+        {sasl_error_logger, false}
+    ]}].
+  vm.args: |
+    ## Name of the node
+    {{- if .Values.erlang.distribution.enabled }}
+    -name {{ include "erlmcp.nodeName" . }}
+    {{- else }}
+    -sname erlmcp
+    {{- end }}
+
+    ## Cookie for distributed Erlang
+    -setcookie ${ERLANG_COOKIE}
+
+    ## Heartbeat management
+    -heart
+
+    ## Enable kernel poll
+    +K true
+
+    ## Number of async threads
+    +A {{ .Values.erlang.asyncThreads | default 10 }}
+
+    ## Max ports (file descriptors)
+    +Q {{ .Values.erlang.maxPorts | default 65536 }}
+
+    ## Max processes
+    +P {{ .Values.erlang.maxProcesses | default 1048576 }}
+
+    ## Scheduler bind type
+    +sbt {{ .Values.erlang.schedulerBindType | default "db" }}
+
+    ## Enable SMP
+    -smp auto
+
+    ## Crash dump location
+    -env ERL_CRASH_DUMP /var/log/erlmcp/erl_crash.dump
+
+    ## Shell history
+    -kernel shell_history enabled

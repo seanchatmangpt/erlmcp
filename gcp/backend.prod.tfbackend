@@ -1,0 +1,5 @@
+# Production environment backend configuration
+# Usage: terraform init -backend-config=backend.prod.tfbackend
+
+bucket = "taiea-v1-terraform-state"
+prefix = "erlmcp/prod"

@@ -1,0 +1,29 @@
+apiVersion: v2
+name: erlmcp
+description: Erlang/OTP MCP SDK - Enterprise-grade Model Context Protocol implementation
+type: application
+version: 0.6.0
+appVersion: "0.6.0"
+
+keywords:
+  - erlang
+  - otp
+  - mcp
+  - model-context-protocol
+  - json-rpc
+  - distributed-systems
+
+home: https://github.com/seanchatmangpt/erlmcp
+sources:
+  - https://github.com/seanchatmangpt/erlmcp
+
+maintainers:
+  - name: erlmcp team
+    email: erlmcp@example.com
+
+annotations:
+  artifacthub.io/license: MIT
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/containsSecurityUpdates: "true"
+
+dependencies: []

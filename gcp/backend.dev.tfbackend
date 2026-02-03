@@ -1,0 +1,5 @@
+# Development environment backend configuration
+# Usage: terraform init -backend-config=backend.dev.tfbackend
+
+bucket = "taiea-v1-terraform-state"
+prefix = "erlmcp/dev"

@@ -1,0 +1,5 @@
+# Staging environment backend configuration
+# Usage: terraform init -backend-config=backend.staging.tfbackend
+
+bucket = "taiea-v1-terraform-state"
+prefix = "erlmcp/staging"

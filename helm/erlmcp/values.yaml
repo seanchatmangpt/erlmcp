@@ -1,12 +1,16 @@
+# ==============================================================================
 # erlmcp Helm Chart - Default Values
-# Used as base configuration; profile-specific values override
+# ==============================================================================
+# Erlang/OTP MCP SDK - Enterprise-grade Model Context Protocol implementation
+# Used as base configuration; profile-specific values override (dev, staging, gov)
+# ==============================================================================
 
 replicaCount: 3
 
 image:
   registry: us-central1-docker.pkg.dev
   repository: taiea-v1/erlmcp-repo/erlmcp
-  tag: "0.7.0"
+  tag: ""  # Defaults to Chart.appVersion
   pullPolicy: IfNotPresent
 
 imagePullSecrets:
@@ -18,7 +22,7 @@ fullnameOverride: ""
 serviceAccount:
   create: true
   annotations: {}
-  name: "erlmcp"
+  name: ""  # Defaults to release name
 
 podAnnotations:
   prometheus.io/scrape: "true"
@@ -39,15 +43,42 @@ securityContext:
 
 service:
   type: LoadBalancer
-  ports:
-    http:
-      port: 8080
-      targetPort: 8080
-      protocol: TCP
-    metrics:
-      port: 9090
-      targetPort: 9090
-      protocol: TCP
+  port: 8080
+  annotations: {}
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+
+# Erlang/OTP runtime configuration
+erlang:
+  # Profile: dev, test, staging, prod
+  profile: prod
+  # Erlang distribution cookie (leave empty to auto-generate)
+  cookie: ""
+  # Async thread pool size
+  asyncThreads: 10
+  # Max ports (file descriptors)
+  maxPorts: 65536
+  # Max Erlang processes
+  maxProcesses: 1048576
+  # Scheduler bind type: db (default bound), u (unbound), s (spread)
+  schedulerBindType: db
+  # Erlang distribution (clustering) settings
+  distribution:
+    enabled: false
+    port: 9000
+
+# Application configuration
+config:
+  logLevel: info
+  maxSubscriptions: 1000
+  requestTimeout: 30000
+  maxMessageSize: 1048576
+
+# Metrics/monitoring
+metrics:
+  enabled: true
+  port: 9090
+  path: /metrics
 
 resources:
   limits:
@@ -81,15 +112,34 @@ affinity:
 
 tolerations: []
 
-# Environment configuration
-env:
-  ERLMCP_ENV: "production"
-  ERLANG_COOKIE: ""
-  LANG: "C.UTF-8"
-  LC_ALL: "C.UTF-8"
+# Extra environment variables
+extraEnv: []
+#  - name: MY_VAR
+#    value: "my-value"
+#  - name: SECRET_VAR
+#    valueFrom:
+#      secretKeyRef:
+#        name: my-secret
+#        key: my-key
 
-# Secrets (should be overridden at deployment)
-secrets: {}
+extraEnvFrom: []
+#  - secretRef:
+#      name: my-secret
+#  - configMapRef:
+#      name: my-configmap
+
+# Secrets (override at deployment - these are sensitive!)
+secrets:
+  # Database URL (base64 encoded in generated secret)
+  databaseUrl: ""
+  # API key
+  apiKey: ""
+  # Additional secrets as key-value pairs
+  extra: {}
+
+# Extra volumes and mounts
+extraVolumes: []
+extraVolumeMounts: []
 
 # Storage configuration
 persistence:
@@ -99,30 +149,29 @@ persistence:
   size: 1Gi
   mountPath: /var/lib/erlmcp
 
-# Health checks
-livenessProbe:
-  httpGet:
+# Health probes (BEAM-aware)
+probes:
+  liveness:
     path: /health
-    port: 8080
-  initialDelaySeconds: 30
-  periodSeconds: 10
-  timeoutSeconds: 5
-  failureThreshold: 3
-
-readinessProbe:
-  httpGet:
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readiness:
     path: /ready
-    port: 8080
-  initialDelaySeconds: 10
-  periodSeconds: 5
-  timeoutSeconds: 3
-  failureThreshold: 2
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  startup:
+    path: /health
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 30
 
-# Monitoring
-monitoring:
-  enabled: true
-  interval: 30s
-  path: /metrics
+# Graceful shutdown (allow in-flight requests to complete)
+terminationGracePeriodSeconds: 30
 
 # GCP-specific settings
 gcp:

@@ -1,0 +1,84 @@
+╔════════════════════════════════════════════════════════════════╗
+║                    erlmcp Helm Chart                           ║
+║          Erlang/OTP MCP SDK - Enterprise Grade                 ║
+╚════════════════════════════════════════════════════════════════╝
+
+Thank you for installing {{ .Chart.Name }}!
+
+Release: {{ .Release.Name }}
+Version: {{ .Chart.AppVersion }}
+
+=== Getting Started ===
+
+1. Get the application URL:
+{{- if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "erlmcp.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+  NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  You can watch the status with:
+    kubectl get --namespace {{ .Release.Namespace }} svc -w {{ include "erlmcp.fullname" . }}
+
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "erlmcp.fullname" . }} --template "{{"{{ range (index .status.loadBalancer.ingress 0) }}{{.}}{{ end }}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.port }}
+{{- else if contains "ClusterIP" .Values.service.type }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "erlmcp.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+  echo "Visit http://127.0.0.1:{{ .Values.service.port }}"
+{{- end }}
+
+2. Check pod status:
+  kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "erlmcp.name" . }},app.kubernetes.io/instance={{ .Release.Name }}"
+
+3. View logs:
+  kubectl logs --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "erlmcp.name" . }}" -f
+
+{{- if .Values.metrics.enabled }}
+
+4. Access Prometheus metrics:
+  kubectl port-forward --namespace {{ .Release.Namespace }} svc/{{ include "erlmcp.fullname" . }} {{ .Values.metrics.port | default 9090 }}:{{ .Values.metrics.port | default 9090 }}
+  curl http://localhost:{{ .Values.metrics.port | default 9090 }}/metrics
+{{- end }}
+
+{{- if .Values.erlang.distribution.enabled }}
+
+5. Erlang Distribution (Clustering):
+  Erlang distribution is enabled. Pods will form a cluster using:
+  - EPMD port: 4369
+  - Distribution port: {{ .Values.erlang.distribution.port | default 9000 }}
+
+  Headless service for peer discovery: {{ include "erlmcp.fullname" . }}-headless
+{{- end }}
+
+=== Health Endpoints ===
+
+  /health  - Liveness check (VM running)
+  /ready   - Readiness check (dependencies available)
+  /metrics - Prometheus metrics (if enabled)
+
+=== Useful Commands ===
+
+  # Scale deployment
+  kubectl scale deployment {{ include "erlmcp.fullname" . }} --replicas=5 -n {{ .Release.Namespace }}
+
+  # Rolling restart
+  kubectl rollout restart deployment {{ include "erlmcp.fullname" . }} -n {{ .Release.Namespace }}
+
+  # View rollout status
+  kubectl rollout status deployment {{ include "erlmcp.fullname" . }} -n {{ .Release.Namespace }}
+
+  # Describe deployment
+  kubectl describe deployment {{ include "erlmcp.fullname" . }} -n {{ .Release.Namespace }}
+
+=== Documentation ===
+
+  GitHub: https://github.com/seanchatmangpt/erlmcp
+  MCP Spec: https://spec.modelcontextprotocol.io
+
+For more information, see the chart README.

@@ -1,0 +1,92 @@
+# ==============================================================================
+# Dev Container Docker Compose Override
+# ==============================================================================
+# Extends the main docker-compose.yml for VS Code/Codespaces development.
+# Provides a complete development environment with OTP 28+ and all tools.
+# ==============================================================================
+
+services:
+  devcontainer:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+      args:
+        OTP_VERSION: "28.3.1"
+        REBAR3_VERSION: "3.24.0"
+    volumes:
+      - ..:/workspace:cached
+      - devcontainer-home:/home/vscode
+      - devcontainer-rebar3-cache:/home/vscode/.cache/rebar3
+      - devcontainer-hex-cache:/home/vscode/.cache/hex
+      - devcontainer-plt-cache:/home/vscode/.dialyzer_plt
+    environment:
+      - ERLMCP_PROFILE=dev
+      - TERM=xterm-256color
+      - ERL_AFLAGS=-kernel shell_history enabled
+      - REBAR_CACHE_DIR=/home/vscode/.cache/rebar3
+      - HEX_HOME=/home/vscode/.cache/hex
+      - MIX_HOME=/home/vscode/.mix
+    command: sleep infinity
+    networks:
+      - erlmcp-dev
+    depends_on:
+      - postgres
+      - redis
+    user: vscode
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+
+  # Development database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: erlmcp
+      POSTGRES_PASSWORD: erlmcp_dev
+      POSTGRES_DB: erlmcp_dev
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - erlmcp-dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erlmcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Development cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - erlmcp-dev
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Observability stack for development
+  prometheus:
+    profiles: ["monitoring"]
+
+  grafana:
+    profiles: ["monitoring"]
+
+  jaeger:
+    profiles: ["monitoring"]
+
+networks:
+  erlmcp-dev:
+    driver: bridge
+
+volumes:
+  devcontainer-home:
+  devcontainer-rebar3-cache:
+  devcontainer-hex-cache:
+  devcontainer-plt-cache:
+  postgres-data:
