@@ -1,0 +1,55 @@
+# ==============================================================================
+# ERLMCP AWS Infrastructure - Development Environment
+# ==============================================================================
+# Copy this file to terraform.dev.tfvars and fill in your values.
+# ==============================================================================
+
+# General
+app_name    = "erlmcp"
+app_version = "latest"
+environment = "dev"
+aws_region  = "us-east-1"
+cost_center = "engineering"
+
+# Networking - Single NAT for cost savings in dev
+vpc_cidr           = "10.0.0.0/16"
+enable_nat_gateway = true
+single_nat_gateway = true # Use single NAT in dev for cost savings
+enable_vpc_endpoints = false # Disable in dev to save costs
+enable_flow_logs   = false # Disable in dev
+
+# ECS - Minimal resources for dev
+desired_count = 1
+min_capacity  = 1
+max_capacity  = 3
+task_cpu      = 512  # 0.5 vCPU
+task_memory   = 1024 # 1 GB
+cpu_architecture = "X86_64"
+use_spot_instances = true # Use spot for cost savings
+enable_service_discovery = false
+
+# Load Balancer
+# Replace with your ACM certificate ARN
+acm_certificate_arn = "arn:aws:acm:us-east-1:123456789012:certificate/example"
+
+# RDS - Minimal for dev
+enable_rds = true
+db_instance_class = "db.t3.micro"
+db_allocated_storage = 20
+db_max_allocated_storage = 50
+db_multi_az = false # Single AZ for dev
+db_backup_retention_period = 1
+db_monitoring_interval = 0 # Disable enhanced monitoring
+enable_rds_proxy = false
+
+# Secrets - Leave empty to auto-generate
+erlang_cookie = ""
+db_password   = ""
+
+# Monitoring - Minimal for dev
+log_retention_days = 7
+enable_xray = false
+alert_email_addresses = []
+
+# Pipeline - Disabled by default
+enable_pipeline = false

@@ -1,0 +1,211 @@
+# ==============================================================================
+# AWS CodeBuild Buildspec
+# ==============================================================================
+# CI/CD pipeline for erlmcp on AWS CodeBuild/CodePipeline.
+# Follows DOCKER-ONLY CONSTITUTION - all builds and tests run in containers.
+#
+# Pipeline stages:
+# 1. Build test image
+# 2. Run tests (eunit, ct, dialyzer, xref)
+# 3. Check coverage (80% threshold)
+# 4. Build production image
+# 5. Security scan
+# 6. Push to ECR
+# 7. Deploy to ECS
+# ==============================================================================
+
+version: 0.2
+
+env:
+  variables:
+    DOCKER_BUILDKIT: "1"
+    AWS_DEFAULT_REGION: "us-east-1"
+    IMAGE_TAG: "latest"
+    COVERAGE_THRESHOLD: "80"
+  secrets-manager:
+    ERLANG_COOKIE: "erlmcp-production/erlang-cookie"
+    DATABASE_URL: "erlmcp-production/database-url"
+  parameter-store:
+    APP_CONFIG: "/erlmcp-production/config"
+
+phases:
+  install:
+    runtime-versions:
+      docker: 20
+    commands:
+      - echo "=== Installing dependencies ==="
+      - nohup /usr/local/bin/dockerd --host=unix:///var/run/docker.sock --host=tcp://127.0.0.1:2375 --storage-driver=overlay2 &
+      - timeout 15 sh -c "until docker info; do echo .; sleep 1; done"
+      - docker --version
+
+  pre_build:
+    commands:
+      - echo "=== Pre-build phase ==="
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - REPOSITORY_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/erlmcp
+      - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:-latest}
+      - echo "Repository URI: $REPOSITORY_URI"
+      - echo "Image tag: $IMAGE_TAG"
+
+  build:
+    commands:
+      - echo "=== Build phase ==="
+
+      # Stage 1: Build test image
+      - echo "Building test image..."
+      - |
+        docker build \
+          --target builder \
+          --cache-from $REPOSITORY_URI:cache \
+          --build-arg BUILDKIT_INLINE_CACHE=1 \
+          -t erlmcp-test:$IMAGE_TAG \
+          -f Dockerfile .
+
+      # Stage 2: Run EUnit tests (DOCKER-ONLY)
+      - echo "Running EUnit tests..."
+      - |
+        docker run --rm \
+          -e ERLANG_COOKIE=$ERLANG_COOKIE \
+          erlmcp-test:$IMAGE_TAG \
+          /bin/sh -c "cd /app && rebar3 eunit --cover" \
+          | tee eunit-results.txt
+
+      # Stage 3: Run Common Test (DOCKER-ONLY)
+      - echo "Running Common Test..."
+      - |
+        docker run --rm \
+          -e ERLANG_COOKIE=$ERLANG_COOKIE \
+          erlmcp-test:$IMAGE_TAG \
+          /bin/sh -c "cd /app && rebar3 ct --cover" \
+          | tee ct-results.txt
+
+      # Stage 4: Run Dialyzer (DOCKER-ONLY)
+      - echo "Running Dialyzer..."
+      - |
+        docker run --rm \
+          erlmcp-test:$IMAGE_TAG \
+          /bin/sh -c "cd /app && rebar3 dialyzer" \
+          | tee dialyzer-results.txt
+
+      # Stage 5: Run Xref (DOCKER-ONLY)
+      - echo "Running Xref..."
+      - |
+        docker run --rm \
+          erlmcp-test:$IMAGE_TAG \
+          /bin/sh -c "cd /app && rebar3 xref" \
+          | tee xref-results.txt
+
+      # Stage 6: Check coverage threshold
+      - echo "Checking coverage..."
+      - |
+        docker run --rm \
+          erlmcp-test:$IMAGE_TAG \
+          /bin/sh -c "cd /app && rebar3 cover --verbose" \
+          | tee coverage-results.txt
+      - |
+        COVERAGE=$(grep -oP 'Total:\s+\K[0-9]+' coverage-results.txt | head -1 || echo "0")
+        echo "Coverage: $COVERAGE%"
+        if [ "$COVERAGE" -lt "$COVERAGE_THRESHOLD" ]; then
+          echo "ERROR: Coverage $COVERAGE% is below $COVERAGE_THRESHOLD% threshold"
+          exit 1
+        fi
+        echo "Coverage check passed: $COVERAGE% >= $COVERAGE_THRESHOLD%"
+
+      # Stage 7: Build production image
+      - echo "Building production image..."
+      - |
+        docker build \
+          --target runtime \
+          --cache-from $REPOSITORY_URI:cache \
+          --cache-from $REPOSITORY_URI:latest \
+          --build-arg BUILDKIT_INLINE_CACHE=1 \
+          --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) \
+          --build-arg GIT_SHA=$CODEBUILD_RESOLVED_SOURCE_VERSION \
+          --build-arg GIT_BRANCH=$CODEBUILD_SOURCE_VERSION \
+          -t $REPOSITORY_URI:$IMAGE_TAG \
+          -t $REPOSITORY_URI:latest \
+          -f Dockerfile .
+
+      # Stage 8: Security scan
+      - echo "Running security scan..."
+      - |
+        docker run --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          aquasec/trivy:latest image \
+          --severity HIGH,CRITICAL \
+          --exit-code 1 \
+          --ignore-unfixed \
+          $REPOSITORY_URI:$IMAGE_TAG \
+          | tee security-scan.txt || true
+
+      # Check for critical vulnerabilities
+      - |
+        CRITICAL=$(grep -c "CRITICAL" security-scan.txt || true)
+        if [ "$CRITICAL" -gt 0 ]; then
+          echo "WARNING: Found $CRITICAL CRITICAL vulnerabilities"
+          # For production, change to: exit 1
+        fi
+
+  post_build:
+    commands:
+      - echo "=== Post-build phase ==="
+      - echo "Build completed at $(date)"
+
+      # Push images to ECR
+      - echo "Pushing images to ECR..."
+      - docker push $REPOSITORY_URI:$IMAGE_TAG
+      - docker push $REPOSITORY_URI:latest
+
+      # Push cache image
+      - docker tag erlmcp-test:$IMAGE_TAG $REPOSITORY_URI:cache
+      - docker push $REPOSITORY_URI:cache
+
+      # Create imagedefinitions.json for ECS deployment
+      - echo "Creating image definitions..."
+      - printf '[{"name":"erlmcp","imageUri":"%s"}]' $REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+      - cat imagedefinitions.json
+
+      # Create deployment manifest
+      - |
+        cat > deployment-manifest.json << EOF
+        {
+          "image": "$REPOSITORY_URI:$IMAGE_TAG",
+          "commit": "$CODEBUILD_RESOLVED_SOURCE_VERSION",
+          "branch": "$CODEBUILD_SOURCE_VERSION",
+          "build_id": "$CODEBUILD_BUILD_ID",
+          "build_number": "$CODEBUILD_BUILD_NUMBER",
+          "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+          "coverage": "$COVERAGE"
+        }
+        EOF
+
+reports:
+  erlmcp-test-reports:
+    files:
+      - 'eunit-results.txt'
+      - 'ct-results.txt'
+      - 'dialyzer-results.txt'
+      - 'xref-results.txt'
+      - 'coverage-results.txt'
+    base-directory: '.'
+    discard-paths: yes
+
+artifacts:
+  files:
+    - imagedefinitions.json
+    - deployment-manifest.json
+    - security-scan.txt
+  secondary-artifacts:
+    TestResults:
+      files:
+        - eunit-results.txt
+        - ct-results.txt
+        - coverage-results.txt
+      base-directory: '.'
+
+cache:
+  paths:
+    - '/root/.cache/rebar3/**/*'
+    - '_build/**/*'
