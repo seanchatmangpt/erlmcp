@@ -106,7 +106,7 @@ init([]) ->
            modules => [erlmcp_elicitation]},
         %% ================================================================
         %% CLIENT MANAGEMENT: Dynamic client process management
-        ================================================================
+        %% ================================================================
         #{id => erlmcp_client_sup,
            start => {erlmcp_client_sup, start_link, []},
            restart => permanent,

@@ -612,7 +612,7 @@ is_valid_utf8_name(<<>>) ->
 is_valid_utf8_name(Name) ->
     % Check that name doesn't contain invalid control characters
     % or NULL bytes
-    case binary:match(Name, [<<0>>, <<255>>, <<254>>, <<253>>) of
+    case binary:match(Name, [<<0>>, <<255>>, <<254>>, <<253>>]) of
         nomatch ->
             % Check character length (OTP 28: 255 chars)
             try

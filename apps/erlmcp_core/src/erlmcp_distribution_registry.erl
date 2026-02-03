@@ -258,7 +258,7 @@ handle_info({'DOWN', Ref, process, Pid, Reason}, State = #state{monitors = Monit
             unregister_entity_optimized(Type, Id, State),
 
             %% Leave all process groups
-            lists:foreach(fun(Group) -> leave_process_group_optimized(Group, Pid, State) end, Groups),
+            lists:foreach(fun(Group) -> leave_process_group(Group, Pid, State) end, Groups),
 
             %% Remove from monitor registry
             NewMonitors = maps:remove(Ref, Monitors),
@@ -474,7 +474,7 @@ unregister_entity_optimized(Type, Id, State = #state{optimization_level = OptLev
                     erase_entity_config(Type, Id),
                     %% Remove from groups
                     Groups = determine_groups(Type, #{}),
-                    lists:foreach(fun(Group) -> leave_process_group_optimized(Group, Pid, State) end, Groups)
+                    lists:foreach(fun(Group) -> leave_process_group(Group, Pid, State) end, Groups)
             end;
         _ ->
             %% Standard cleanup
@@ -484,7 +484,7 @@ unregister_entity_optimized(Type, Id, State = #state{optimization_level = OptLev
                     global:unregister_name(GlobalName),
                     erase_entity_config(Type, Id),
                     Groups = determine_groups(Type, #{}),
-                    lists:foreach(fun(Group) -> leave_process_group_optimized(Group, Pid, State) end, Groups)
+                    lists:foreach(fun(Group) -> leave_process_group(Group, Pid, State) end, Groups)
             end
     end,
     ok.
@@ -537,7 +537,7 @@ list_entities(Type, State = #state{optimization_level = OptLevel}) ->
                     MatchingNames).
 
 %% Filter and validate names with optimization
--spec filter_and_validate_names(string(), [atom()], basic | standard | optimal(), state()) -> [atom()].
+-spec filter_and_validate_names(string(), [atom()], basic | standard | optimal, state()) -> [atom()].
 filter_and_validate_names(Pattern, AllNames, OptLevel, State) ->
     lists:filter(fun(Name) ->
                     case matches_pattern(Name, Pattern) of

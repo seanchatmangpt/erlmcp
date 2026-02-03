@@ -125,22 +125,22 @@ profile_function(Fun, Label, Opts) when is_function(Fun, 0), is_binary(Label), i
     %% Execute function
     try
         Result = Fun(),
-        EndTime = erlang:system_time(microsecond),
+        EndTime1 = erlang:system_time(microsecond),
 
         %% Stop profiling and collect data
-        Events = collect_profile_data(ProfilerPid, Opts),
-        Timeline = build_timeline(ProfileId, Label, StartTime, EndTime, Events),
+        Events1 = collect_profile_data(ProfilerPid, Opts),
+        Timeline1 = build_timeline(ProfileId, Label, StartTime, EndTime1, Events1),
 
-        {ok, Result, Timeline}
+        {ok, Result, Timeline1}
     catch
         Class:Reason:Stacktrace ->
-            EndTime = erlang:system_time(microsecond),
+            EndTime2 = erlang:system_time(microsecond),
             stop_system_profile(ProfilerPid),
 
             %% Create error timeline
-            Events = [],
-            Timeline = build_timeline(ProfileId, Label, StartTime, EndTime, Events),
-            ErrorTimeline = Timeline#{error => #{class => Class,
+            Events2 = [],
+            Timeline2 = build_timeline(ProfileId, Label, StartTime, EndTime2, Events2),
+            _ = Timeline2#{error => #{class => Class,
                                                 reason => Reason,
                                                 stacktrace => Stacktrace}},
 
@@ -186,7 +186,7 @@ profile_session_request(SessionId, Request) when is_binary(SessionId), is_map(Re
                                {ok, term(), timeline_profile()} | {error, term()}.
 profile_transport(TransportType, MessageSize) when is_binary(TransportType) ->
     Label = <<"transport.", TransportType/binary>>,
-    TestData = crypto:strong_rand_bytes(MessageSize),
+    _TestData = crypto:strong_rand_bytes(MessageSize),
 
     Fun = fun() ->
                   %% Simulate transport send/receive
@@ -530,7 +530,7 @@ normalize_timestamp(_Other) ->
     erlang:system_time(microsecond).
 
 %% @private Format MFA tuple to binary
--spec format_mfa({module(), Function, Arity} | {module(), Function, Arity, term()}) -> binary().
+-spec format_mfa({module(), atom(), integer()} | {module(), atom(), integer(), term()}) -> binary().
 format_mfa({M, F, A}) when is_atom(M), is_atom(F), is_integer(A) ->
     iolist_to_binary(io_lib:format("~p:~p/~p", [M, F, A]));
 format_mfa({M, F, A, _Location}) when is_atom(M), is_atom(F), is_integer(A) ->
@@ -540,7 +540,7 @@ format_mfa(Other) ->
 
 %% @private Calculate percentage change
 -spec percent_change(number(), number()) -> float().
-percent_change(Old, New) when Old =:= 0 ->
+percent_change(Old, _New) when Old =:= 0 ->
     0.0;
 percent_change(Old, New) ->
     ((New - Old) / Old) * 100.0.

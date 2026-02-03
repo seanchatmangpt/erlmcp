@@ -225,7 +225,7 @@ code_change(_OldVsn, State = #state{current_version = Version}, _Extra) ->
         {error, _} ->
             %% Keep original state if patches fail
             {ok, State}
-    end}.
+    end.
 
 %%====================================================================
 %% Internal Functions
@@ -238,8 +238,8 @@ get_target_versions() ->
         {{28, 0, 0}, fully_compatible},
         {{27, 0, 0}, fully_compatible},
         {{26, 0, 0}, fully_compatible},
-        {{25, _, _}, partially_compatible},
-        {{24, _, _}, incompatible}
+        {{25, 0, 0}, partially_compatible},
+        {{24, 0, 0}, incompatible}
     ].
 
 %% Determine optimization level based on current and target versions

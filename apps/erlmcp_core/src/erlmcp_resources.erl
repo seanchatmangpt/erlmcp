@@ -10,13 +10,10 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
-%% Import nominal types for type safety
--import(erlmcp_mcp_types, [mcp_resource_uri/0]).
-
 %% Types
 %% Note: root_uri() is now a nominal type from erlmcp_mcp_types
 %% This prevents accidental confusion with other binary types like tool names
--type root_uri() :: mcp_resource_uri().
+-type root_uri() :: erlmcp_mcp_types:mcp_resource_uri().
 -type root_name() :: binary().
 -type root_entry() :: #{uri => root_uri(), name => root_name()}.
 

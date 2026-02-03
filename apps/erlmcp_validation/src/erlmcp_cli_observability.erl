@@ -50,7 +50,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, stop/0, init/1, trace_validation/4, trace_validation/3,
+-export([start_link/0, stop/0, trace_validation/4, trace_validation/3,
          get_validation_metrics/0, get_performance_summary/0, inject_chaos/1,
          inject_latency/2, inject_failure/2, get_chaos_status/0, reset_metrics/0,
          observe_command/3, observe_command/4, export_trace/2, export_metrics/2]).
@@ -62,6 +62,8 @@
 -export_type([otel_config/0, validation_span/0, metrics_data/0, chaos_config/0]).
 
 -include("erlmcp.hrl").
+
+-define(VERSION, <<"2.1.0">>).
 
 %%====================================================================
 %% Type Definitions
@@ -173,9 +175,8 @@ start_link() ->
 stop() ->
     gen_server:stop(?SERVER).
 
-%% @doc Initialize observability with custom configuration
--spec init(map()) -> ok | {error, term()}.
-init(Config) ->
+%% @doc Initialize observability with custom configuration (private API function)
+initialize_otel(Config) ->
     MergedConfig = maps:merge(?DEFAULT_OTEL_CONFIG, Config),
 
     %% Initialize OpenTelemetry
@@ -386,7 +387,16 @@ export_metrics(SpanId, Filename) ->
 init([]) ->
     %% Defer OTEL initialization to avoid blocking
     %% Use {continue, init} pattern for async setup
-    {ok, #state{}, {continue, init}};
+    {ok, #state{
+        config = ?DEFAULT_OTEL_CONFIG,
+        tracer = undefined,
+        spans = #{},
+        metrics = init_metrics_data(),
+        chaos_enabled = false,
+        chaos_history = [],
+        aggregation_timer = undefined,
+        exporter_pids = #{}
+    }, {continue, init}}.
 
 handle_call({store_span, SpanId, Span}, _From, State) ->
     UpdatedSpans = maps:put(SpanId, Span, State#state.spans),
@@ -452,7 +462,8 @@ handle_cast({add_span_event, SpanId, EventName, Attributes}, State) ->
             Event = #{name => EventName,
                      timestamp => erlang:system_time(nanosecond),
                      attributes => Attributes},
-            UpdatedEvents = [Event | Span#events],
+            Events = maps:get(events, Span, []),
+            UpdatedEvents = [Event | Events],
             UpdatedSpan = Span#{events => UpdatedEvents},
             UpdatedSpans = maps:put(SpanId, UpdatedSpan, State#state.spans),
             {noreply, State#state{spans = UpdatedSpans}};
@@ -469,7 +480,8 @@ handle_cast({add_span_error, SpanId, Error}, State) ->
                 error_stacktrace => element(3, Error),
                 error_class => error
             },
-            UpdatedErrors = [ErrorRecord | Span#errors],
+            Errors = maps:get(errors, Span, []),
+            UpdatedErrors = [ErrorRecord | Errors],
             UpdatedSpan = Span#{errors => UpdatedErrors},
             UpdatedSpans = maps:put(SpanId, UpdatedSpan, State#state.spans),
             {noreply, State#state{spans = UpdatedSpans}};
@@ -495,7 +507,8 @@ handle_cast({inject_latency, SpanId, DurationMs}, State) ->
                               <<"span_id">> => SpanId}
             },
 
-            UpdatedEvents = [LatencyEvent | Span#events],
+            Events = maps:get(events, Span, []),
+            UpdatedEvents = [LatencyEvent | Events],
             UpdatedSpan = Span#{events => UpdatedEvents, chaos_injected => true},
             UpdatedSpans = maps:put(SpanId, UpdatedSpan, State#state.spans),
 
@@ -532,7 +545,8 @@ handle_cast({observe_command_complete, SpanId, Command, Result}, State) ->
     case maps:find(SpanId, State#state.spans) of
         {ok, Span} ->
             EndTime = erlang:system_time(nanosecond),
-            Duration = EndTime - Span#start_time,
+            StartTime = maps:get(start_time, Span, EndTime),
+            Duration = EndTime - StartTime,
 
             CompletionEvent = #{
                 name => <<"command.completed">>,
@@ -542,10 +556,11 @@ handle_cast({observe_command_complete, SpanId, Command, Result}, State) ->
                               <<"duration_ms">> => Duration div 1000000}
             },
 
+            Events = maps:get(events, Span, []),
             UpdatedSpan = Span#{end_time => EndTime,
                               duration_ns => Duration,
                               status => ok,
-                              events => [CompletionEvent | Span#events]},
+                              events => [CompletionEvent | Events]},
             UpdatedSpans = maps:put(SpanId, UpdatedSpan, State#state.spans),
 
             {noreply, State#state{spans = UpdatedSpans}};
@@ -563,7 +578,8 @@ handle_cast({observe_command_error, SpanId, Command, Error}, State) ->
                 error_class => error
             },
 
-            UpdatedSpan = Span#{errors => [ErrorRecord | Span#errors], status => error},
+            Errors = maps:get(errors, Span, []),
+            UpdatedSpan = Span#{errors => [ErrorRecord | Errors], status => error},
             UpdatedSpans = maps:put(SpanId, UpdatedSpan, State#state.spans),
 
             {noreply, State#state{spans = UpdatedSpans}};
@@ -834,9 +850,11 @@ generate_span_id() ->
 
 %% @private Record validation success
 -spec record_validation_success(metrics_data(), binary(), boolean()) -> metrics_data().
-record_validation_success(Metrics, Type, ChaosInjected) ->
-    UpdatedMetrics = Metrics#{total_validations := Metrics#total_validations + 1,
-                             successful_validations := Metrics#successful_validations + 1},
+record_validation_success(Metrics, _Type, _ChaosInjected) ->
+    TotalValidations = maps:get(total_validations, Metrics, 0),
+    SuccessfulValidations = maps:get(successful_validations, Metrics, 0),
+    UpdatedMetrics = Metrics#{total_validations := TotalValidations + 1,
+                             successful_validations := SuccessfulValidations + 1},
 
     %% Update error rate
     ErrorRate = calculate_error_rate(UpdatedMetrics),
@@ -844,10 +862,13 @@ record_validation_success(Metrics, Type, ChaosInjected) ->
 
 %% @private Record validation error
 -spec record_validation_error(metrics_data(), binary(), boolean()) -> metrics_data().
-record_validation_error(Metrics, Type, ChaosInjected) ->
-    UpdatedMetrics = Metrics#{total_validations := Metrics#total_validations + 1,
-                             failed_validations := Metrics#failed_validations + 1,
-                             chaos_events := Metrics#chaos_events + 1},
+record_validation_error(Metrics, _Type, _ChaosInjected) ->
+    TotalValidations = maps:get(total_validations, Metrics, 0),
+    FailedValidations = maps:get(failed_validations, Metrics, 0),
+    ChaosEvents = maps:get(chaos_events, Metrics, 0),
+    UpdatedMetrics = Metrics#{total_validations := TotalValidations + 1,
+                             failed_validations := FailedValidations + 1,
+                             chaos_events := ChaosEvents + 1},
 
     %% Update error rate
     ErrorRate = calculate_error_rate(UpdatedMetrics),
@@ -856,9 +877,9 @@ record_validation_error(Metrics, Type, ChaosInjected) ->
 %% @private Calculate error rate
 -spec calculate_error_rate(metrics_data()) -> float().
 calculate_error_rate(Metrics) ->
-    Total = Metrics#total_validations,
+    Total = maps:get(total_validations, Metrics, 1),
     if Total > 0 ->
-        Failed = Metrics#failed_validations,
+        Failed = maps:get(failed_validations, Metrics, 0),
         Failed / Total;
     true ->
         0.0
@@ -868,24 +889,26 @@ calculate_error_rate(Metrics) ->
 -spec calculate_performance_summary(map(), metrics_data()) -> map().
 calculate_performance_summary(Spans, Metrics) ->
     Latencies = collect_latencies(Spans),
+    TotalValidations = maps:get(total_validations, Metrics, 1),
+    SuccessfulValidations = maps:get(successful_validations, Metrics, 0),
 
     #{
         total_spans => map_size(Spans),
-        total_validations => Metrics#total_validations,
-        success_rate => (Metrics#successful_validations / Metrics#total_validations) * 100,
+        total_validations => TotalValidations,
+        success_rate => (SuccessfulValidations / TotalValidations) * 100,
         average_latency_ms => calculate_average_latency(Latencies),
         p95_latency_ms => calculate_percentile(Latencies, 95),
         p99_latency_ms => calculate_percentile(Latencies, 99),
-        error_rate => Metrics#error_rate,
-        chaos_events => Metrics#chaos_events,
-        resource_usage => Metrics#resource_usage,
+        error_rate => maps:get(error_rate, Metrics, 0.0),
+        chaos_events => maps:get(chaos_events, Metrics, 0),
+        resource_usage => maps:get(resource_usage, Metrics, #{}),
         timestamp => erlang:system_time(millisecond)
     }.
 
 %% @private Collect latency data from spans
 -spec collect_latencies(map()) -> [integer()].
 collect_latencies(Spans) ->
-    lists:foldl(fun(_, Acc) ->
+    lists:foldl(fun(Span, Acc) ->
                     case maps:get(duration_ns, Span, undefined) of
                         undefined -> Acc;
                         DurationNs -> [DurationNs div 1000000 | Acc]  % Convert to ms

@@ -185,7 +185,7 @@ test_json_performance_regression(Config) ->
     ct:log("Testing JSON performance regression"),
 
     %% Load or create baseline
-    BaselineFile = proplists:get_value(baseline_path, Config, 
+    BaselineFile = proplists:get_value(baseline_path, Config,
                                        "./bench/baseline/otp28_baseline.json"),
 
     Baseline = case file:read_file(BaselineFile) of
@@ -209,14 +209,14 @@ test_json_performance_regression(Config) ->
     CurrentDecodeThroughput = maps:get(decode_throughput, Current),
     BaselineDecodeThroughput = maps:get(<<"decode_throughput">>, BaselineNative),
 
-    DecodeRegression = 
+    DecodeRegression =
         ((CurrentDecodeThroughput - BaselineDecodeThroughput) / BaselineDecodeThroughput) * 100,
 
     ct:log("JSON decode throughput regression: ~.2f%", [DecodeRegression]),
 
     %% Check threshold (10%)
     Threshold = proplists:get_value(regression_threshold, Config, 10.0),
-    
+
     case DecodeRegression < -Threshold of
         true ->
             ct:log("FAIL: JSON decode regression > ~p%", [Threshold]),
@@ -235,7 +235,7 @@ test_priority_messages_regression(Config) ->
 
     %% Check availability
     Available = maps:get(available, Result),
-    
+
     case Available of
         true ->
             PriorityLatency = maps:get(priority_latency_us, Result),
@@ -249,7 +249,7 @@ test_priority_messages_regression(Config) ->
 
             %% Check for reasonable latency (< 100us)
             ?assert(PriorityLatency < 100.0),
-            
+
             ct:log("PASS: Priority messages working correctly");
         false ->
             ct:log("SKIP: Priority messages not available (OTP < 28)"),
@@ -327,7 +327,7 @@ test_process_iterator_regression(Config) ->
 
             %% New iterator should use less memory (time as proxy)
             ?assert(Improvement >= 1.0),
-            
+
             ct:log("PASS: Process iterator working correctly");
         false ->
             ct:log("SKIP: Process iterator not available"),
@@ -422,8 +422,8 @@ test_performance_gates(Config) ->
     NativeJson = maps:get(<<"native_json">>, Benchmarks),
     JsxJson = maps:get(<<"jsx_json">>, Benchmarks),
 
-    JsonDecodeSpeedup = 
-        maps:get(<<"decode_throughput">>, NativeJson) / 
+    JsonDecodeSpeedup =
+        maps:get(<<"decode_throughput">>, NativeJson) /
         maps:get(<<"decode_throughput">>, JsxJson),
 
     ct:log("JSON decode speedup: ~.2fx", [JsonDecodeSpeedup]),

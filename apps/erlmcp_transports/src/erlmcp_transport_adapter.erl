@@ -196,9 +196,9 @@ wrap_transport_send(TransportModule, State, Data) ->
         case TransportModule:send(State, Data) of
             ok ->
                 ok;
-            {error, Reason} = Error ->
+            {error, Reason} = Err ->
                 ?LOG_WARNING("Transport ~p send failed: ~p", [TransportModule, Reason]),
-                Error
+                Err
         end
     catch
         Type:Error:Stacktrace ->
