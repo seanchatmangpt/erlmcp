@@ -63,7 +63,7 @@ start_link(Config) when is_map(Config) ->
 %% Check compliance of an action against policies
 %% @end
 %%--------------------------------------------------------------------
--spec check_policy_compliance(binary(), map()) -> {compliant, map()} | {non_compliant, binary(), map()}.
+-spec check_policy_compliant(binary(), map()) -> {compliant, map()} | {non_compliant, binary(), map()}.
 check_policy_compliant(Action, Context) ->
     gen_server:call(?SERVER, {check_policy_compliance, Action, Context}).
 
@@ -534,7 +534,7 @@ generate_soc2_report(State) ->
     %% SOC2 compliance report
     #{
         framework => soc2,
-        period => {start, get_report_period_start(), end, get_report_period_end()},
+        period => {get_report_period_start(), get_report_period_end()},
         controls => get_compliance_controls(State),
         findings => get_audit_findings(State),
         score => get_compliance_score(State),

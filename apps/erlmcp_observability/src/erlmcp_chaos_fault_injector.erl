@@ -405,7 +405,7 @@ handle_call({start_scenario, Scenario}, _From, State) ->
         execute_fault_injection(generate_fault_id(), FaultConfig)
     end, Faults),
 
-    SuccessCount = length([R || {ok, _} <- Results]),
+    SuccessCount = length(lists:filter(fun({ok, _}) -> true; (_) -> false end, Results)),
 
     TimerRef = erlang:send_after(Duration, self(), {scenario_complete, ScenarioName}),
 

@@ -782,7 +782,7 @@ generate_embedding(Task, AgentType) ->
     normalize_vector(Expanded).
 
 %% @private Expand binary to embedding dimension
--spec expand_to_dim(binary(), pos_integer()) -> binary(float()).
+-spec expand_to_dim(binary(), pos_integer()) -> binary().
 expand_to_dim(Bin, TargetDim) ->
     BinSize = byte_size(Bin),
     FloatsNeeded = TargetDim,
@@ -798,7 +798,7 @@ cycle_list([]) -> [];
 cycle_list(L) -> lists:append(L, cycle_list(L)).
 
 %% @private Normalize vector to unit length
--spec normalize_vector(binary(float())) -> binary(float()).
+-spec normalize_vector(binary()) -> binary().
 normalize_vector(VectorBin) ->
     Floats = [F || <<F:64/float-native>> <= VectorBin],
     Norm = math:sqrt(lists:sum([F * F || F <- Floats])),
@@ -858,10 +858,11 @@ consolidate_patterns(State) ->
         consolidated_patterns = [P#pattern.id || P <- Promoted]
     },
 
-    NewMetrics = State#learning_state.metrics#{
-        patterns_promoted => maps:get(patterns_promoted, State#learning_state.metrics, 0) + length(Promoted),
-        patterns_demoted => maps:get(patterns_demoted, State#learning_state.metrics, 0) + length(Demoted),
-        consolidations_performed => maps:get(consolidations_performed, State#learning_state.metrics, 0) + 1
+    CurrentMetrics = State#learning_state.metrics,
+    NewMetrics = CurrentMetrics#{
+        patterns_promoted => maps:get(patterns_promoted, CurrentMetrics, 0) + length(Promoted),
+        patterns_demoted => maps:get(patterns_demoted, CurrentMetrics, 0) + length(Demoted),
+        consolidations_performed => maps:get(consolidations_performed, CurrentMetrics, 0) + 1
     },
 
     State#learning_state{
@@ -921,7 +922,7 @@ create_pattern_recommendation(Pattern) ->
         id = ?GENERATE_PATTERN_ID,
         category = pattern_selection,
         priority = Priority,
-        title = <<"High-performing pattern: ", Pattern#pattern.approach/binary>>,
+        title = iolist_to_binary([<<"High-performing pattern: ">>, Pattern#pattern.approach]),
         description = io_lib:format("Pattern ~s has ~.2f average reward across ~p uses",
                                    [Pattern#pattern.approach, Pattern#pattern.avg_reward,
                                     Pattern#pattern.success_count]),
@@ -933,7 +934,7 @@ create_pattern_recommendation(Pattern) ->
         expected_outcome = <<"Improved success rate for similar tasks">>,
         confidence = calculate_confidence(Pattern),
         evidence = [Pattern#pattern.id],
-        expires_at => erlang:system_time(millisecond) + 3600000  % 1 hour
+        expires_at = erlang:system_time(millisecond) + 3600000  % 1 hour
     }.
 
 %% @private Create recommendation from anomaly
@@ -943,7 +944,7 @@ create_anomaly_recommendation(Anomaly) ->
         id = ?GENERATE_PATTERN_ID,
         category = error_prevention,
         priority = Anomaly#anomaly.severity,
-        title = <<"Anomaly detected: ", Anomaly#anomaly.metric_name/binary>>,
+        title = iolist_to_binary([<<"Anomaly detected: ">>, Anomaly#anomaly.metric_name]),
         description = io_lib:format("Metric ~s deviated by ~.2f sigma (~.2f from expected ~.2f)",
                                    [Anomaly#anomaly.metric_name, Anomaly#anomaly.sigma_score,
                                     Anomaly#anomaly.observed_value, Anomaly#anomaly.expected_value]),
@@ -955,7 +956,7 @@ create_anomaly_recommendation(Anomaly) ->
         expected_outcome = <<"Prevent potential failure by addressing anomaly">>,
         confidence = min(1.0, Anomaly#anomaly.sigma_score / 5.0),
         evidence = [Anomaly#anomaly.id],
-        expires_at => erlang:system_time(millisecond) + 1800000  % 30 minutes
+        expires_at = erlang:system_time(millisecond) + 1800000  % 30 minutes
     }.
 
 %% @private Persist state to disk

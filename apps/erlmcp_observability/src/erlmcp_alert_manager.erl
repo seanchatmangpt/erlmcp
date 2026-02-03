@@ -43,7 +43,7 @@
     template :: binary()    % Notification template
 }).
 
--record.alert_policy, {
+-record(alert_policy, {
     id :: binary(),
     name :: binary(),
     severity :: low | medium | high | critical,
@@ -52,14 +52,14 @@
     active :: boolean()
 }).
 
--record.alert_suppression, {
+-record(alert_suppression, {
     id :: binary(),
     condition :: binary(),
     duration :: binary(),   % Duration (e.g., "30m", "1h")
     expires :: integer()    % Expiration timestamp
-}.
+}).
 
--record.alert, {
+-record(alert, {
     id :: binary(),
     timestamp :: integer(),
     source :: binary(),
@@ -74,9 +74,9 @@
     acknowledged_at :: integer() | undefined,
     resolved :: boolean(),
     resolved_at :: integer() | undefined
-}.
+}).
 
--record.state, {
+-record(state, {
     routes :: #{binary() => #alert_route{}},
     policies :: #{binary() => #alert_policy{}},
     suppressions :: #{binary() => #alert_suppression{}},
@@ -84,7 +84,7 @@
     alert_history :: queue:queue(#alert{}),
     metrics :: map(),
     last_alert_id :: binary()
-}.
+}).
 
 %%====================================================================
 %% API Functions
@@ -116,7 +116,7 @@ add_policy(Config) ->
     gen_server:call(?MODULE, {add_policy, Config}).
 
 %% @doc Remove escalation policy
--spec remove_policy(PolicyId) -> ok.
+-spec remove_policy(binary()) -> ok.
 remove_policy(PolicyId) ->
     gen_server:call(?MODULE, {remove_policy, PolicyId}).
 
@@ -126,7 +126,7 @@ add_suppression(Config) ->
     gen_server:call(?MODULE, {add_suppression, Config}).
 
 %% @doc Remove suppression rule
--spec remove_suppression(SuppressionId) -> ok.
+-spec remove_suppression(binary()) -> ok.
 remove_suppression(SuppressionId) ->
     gen_server:call(?MODULE, {remove_suppression, SuppressionId}).
 
@@ -182,7 +182,7 @@ init(Config) ->
             resolved_alerts => 0,
             alerts_by_severity => #{low => 0, medium => 0, high => 0, critical => 0}
         },
-        last_alert_id => generate_alert_id()
+        last_alert_id = generate_alert_id()
     },
 
     %% Start cleanup timer
@@ -534,7 +534,7 @@ escalate(AlertId, Step) ->
     %% Send escalation notification
     EscalationMessage = io_lib:format("Escalation step: ~s", [Step]),
     EscalationAlert = Alert#alert{
-        message <<Alert#alert.message/binary, "\n", EscalationMessage/binary>>
+        message = iolist_to_binary([Alert#alert.message, "\n", EscalationMessage])
     },
 
     %% Send notification
@@ -542,20 +542,21 @@ escalate(AlertId, Step) ->
 
 %% @doc Update alert metrics
 update_alert_metrics(Alert, Metrics) ->
-    SeverityMap = Metrics#{
-        alerts_by_severity => maps:update_with(
-            Alert#alert.severity,
-            fun(V) -> V + 1 end,
-            1
-        )
-    },
+    Severity = Alert#alert.severity,
+    Silenced = Alert#alert.silenced,
+    Acknowledged = Alert#alert.acknowledged,
+    Resolved = Alert#alert.resolved,
 
-    SeverityMap#{
-        total_alerts => Metrics#metrics.total_alerts + 1,
-        active_alerts => Metrics#metrics.active_alerts + 1,
-        silenced_alerts => if Alert#alert.silenced -> Metrics#metrics.silenced_alerts + 1; true -> Metrics#metrics.silenced_alerts end,
-        acknowledged_alerts => if Alert#alert.acknowledged -> Metrics#metrics.acknowledged_alerts + 1; true -> Metrics#metrics.acknowledged_alerts end,
-        resolved_alerts => if Alert#alert.resolved -> Metrics#metrics.resolved_alerts + 1; true -> Metrics#metrics.resolved_alerts end
+    BySeverity = maps:get(alerts_by_severity, Metrics, #{}),
+    UpdatedSeverity = maps:update_with(Severity, fun(V) -> V + 1 end, 1, BySeverity),
+
+    Metrics#{
+        alerts_by_severity => UpdatedSeverity,
+        total_alerts => maps:get(total_alerts, Metrics, 0) + 1,
+        active_alerts => maps:get(active_alerts, Metrics, 0) + 1,
+        silenced_alerts => case Silenced of true -> maps:get(silenced_alerts, Metrics, 0) + 1; false -> maps:get(silenced_alerts, Metrics, 0) end,
+        acknowledged_alerts => case Acknowledged of true -> maps:get(acknowledged_alerts, Metrics, 0) + 1; false -> maps:get(acknowledged_alerts, Metrics, 0) end,
+        resolved_alerts => case Resolved of true -> maps:get(resolved_alerts, Metrics, 0) + 1; false -> maps:get(resolved_alerts, Metrics, 0) end
     }.
 
 %% @brief Trim history queue to size limit

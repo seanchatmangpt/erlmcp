@@ -32,7 +32,7 @@
 
 %% API
 -export([start_link/0, start_link/1]).
--export([new/3]).
+-export([new/2, new/3]).
 -export([insert/3, insert/4]).
 -export([search/3, search/4]).
 -export([delete/2]).
@@ -110,10 +110,10 @@ new(Dim, Metric, Config) ->
         max_elements = MaxElements
     }.
 
-%% @doc Create index with default config
--spec new(embedding_dim(), distance_metric(), map()) -> #hnsw_index{}.
-new(Dim, Metric, Opts) ->
-    new(Dim, Metric, maps merge #{}, Opts).
+%% @doc Create index with default config (empty config map)
+-spec new(embedding_dim(), distance_metric()) -> #hnsw_index{}.
+new(Dim, Metric) ->
+    new(Dim, Metric, #{}).
 
 %% @doc Insert a vector into the index
 -spec insert(#hnsw_index{}, node_id(), embedding_vector()) -> #hnsw_index{}.
@@ -219,21 +219,24 @@ init(Opts) ->
 
 handle_call({create_index, Name, Dim, Metric, Config}, _From, State) ->
     Index = new(Dim, Metric, Config),
-    NewState = State#{indexes => maps:put(Name, Index, State#indexes)},
+    Indexes = maps:get(indexes, State),
+    NewState = State#{indexes => maps:put(Name, Index, Indexes)},
     {reply, {ok, Index}, NewState};
 
 handle_call({insert, Name, NodeId, Vector}, _From, State) ->
-    case maps:get(Name, State#indexes, undefined) of
+    Indexes = maps:get(indexes, State),
+    case maps:get(Name, Indexes, undefined) of
         undefined ->
             {reply, {error, index_not_found}, State};
         Index ->
             NewIndex = insert(Index, NodeId, Vector),
-            NewState = State#{indexes => maps:put(Name, NewIndex, State#indexes)},
+            NewState = State#{indexes => maps:put(Name, NewIndex, Indexes)},
             {reply, ok, NewState}
     end;
 
 handle_call({search, Name, Query, K}, _From, State) ->
-    case maps:get(Name, State#indexes, undefined) of
+    Indexes = maps:get(indexes, State),
+    case maps:get(Name, Indexes, undefined) of
         undefined ->
             {reply, {error, index_not_found}, State};
         Index ->
@@ -409,11 +412,12 @@ find_nearest_in_layer(Layer, StartNode, Vector, K, Metric) ->
 
     %% Greedy search from start node
     Visited = sets:new(),
-    Candidates = priority_queue:new(),
+    Candidates = pq_new(),
 
     %% Initialize with start node
-    StartDist = distance(maps:get(StartNode, Data, []), Vector, Metric),
-    PQ1 = priority_queue:in(StartDist, StartNode, Candidates),
+    StartNodeVector = maps:get(StartNode, Data, []),
+    StartDist = calculate_vector_distance(StartNodeVector, Vector, Metric),
+    PQ1 = pq_in(StartDist, StartNode, Candidates),
     Visited1 = sets:add_element(StartNode, Visited),
 
     search_layer_greedy(Data, Vector, K, Metric, PQ1, Visited1, StartNode, StartDist).
@@ -423,10 +427,10 @@ find_nearest_in_layer(Layer, StartNode, Vector, K, Metric) ->
                          term(), sets:set(node_id()), node_id(), distance()) ->
     node_id().
 search_layer_greedy(_Data, _Vector, _K, _Metric, PQ, _Visited, BestNode, BestDist) ->
-    case priority_queue:is_empty(PQ) of
+    case pq_is_empty(PQ) of
         true -> BestNode;
         false ->
-            {{Dist, Node}, PQ1} = priority_queue:out(PQ),
+            {{Dist, Node}, PQ1} = pq_out(PQ),
             case Dist < BestDist of
                 true ->
                     %% Found better node, continue searching
@@ -453,9 +457,9 @@ search_layer_candidates(Layer, EntryPoint, Vector, Ef, Metric) ->
         _ ->
             %% Beam search from entry point
             Visited = sets:new(),
-            W = priority_queue:new(),  % Dynamic candidate set
+            W = pq_new(),  % Dynamic candidate set
 
-            W1 = priority_queue:in(0.0, EntryPoint, W),
+            W1 = pq_in(0.0, EntryPoint, W),
             Visited1 = sets:add_element(EntryPoint, Visited),
 
             {Candidates, _} = beam_search(Data, Vector, Ef, Metric, W1, Visited1, Ef),
@@ -468,17 +472,17 @@ search_layer_candidates(Layer, EntryPoint, Vector, Ef, Metric) ->
     {[{node_id(), distance()}], sets:set(node_id())}.
 beam_search(_Data, _Vector, Ef, _Metric, W, Visited, 0) ->
     %% Extract Ef closest from W
-    Candidates = priority_queue:to_list(W),
+    Candidates = pq_to_list(W),
     Sorted = lists:keysort(1, Candidates),
     TopK = lists:sublist(Sorted, Ef),
     {TopK, Visited};
 
 beam_search(Data, Vector, Ef, Metric, W, Visited, Iterations) ->
-    case priority_queue:is_empty(W) of
+    case pq_is_empty(W) of
         true ->
             beam_search(Data, Vector, Ef, Metric, W, Visited, 0);
         false ->
-            {{Dist, Current}, W1} = priority_queue:out(W),
+            {{Dist, Current}, W1} = pq_out(W),
 
             %% Get neighbors of current node
             Neighbors = maps:get(Current, Data, []),
@@ -489,7 +493,7 @@ beam_search(Data, Vector, Ef, Metric, W, Visited, Iterations) ->
                     true -> {WAcc, VisAcc};
                     false ->
                         NDist = distance(Data, Neighbor, Vector, Metric),
-                        WAcc2 = priority_queue:in(NDist, Neighbor, WAcc),
+                        WAcc2 = pq_in(NDist, Neighbor, WAcc),
                         VisAcc2 = sets:add_element(Neighbor, VisAcc),
                         {WAcc2, VisAcc2}
                 end
@@ -504,12 +508,12 @@ beam_search(Data, Vector, Ef, Metric, W, Visited, Iterations) ->
 %% @private Trim priority queue to EF elements
 -spec trim_to_ef(term(), pos_integer()) -> term().
 trim_to_ef(PQ, Ef) ->
-    All = priority_queue:to_list(PQ),
+    All = pq_to_list(PQ),
     Sorted = lists:keysort(1, All),
     TopEf = lists:sublist(Sorted, Ef),
     lists:foldl(fun({Dist, Node}, Acc) ->
-        priority_queue:in(Dist, Node, Acc)
-    end, priority_queue:new(), TopEf).
+        pq_in(Dist, Node, Acc)
+    end, pq_new(), TopEf).
 
 %% @private Select M nearest neighbors
 -spec select_neighbors([{node_id(), distance()}], pos_integer(), distance_metric()) ->
@@ -543,10 +547,10 @@ update_reverse_connections(Layer, NodeId, Neighbors) ->
 
 %% @private Calculate distance between nodes
 -spec distance(map(), node_id(), embedding_vector(), distance_metric()) -> float().
-distance(_Data, NodeId, Vector, Metric) ->
-    %% In a full implementation, we'd look up the node's vector
-    %% For now, use placeholder
-    calculate_vector_distance(Vector, Vector, Metric).
+distance(Data, NodeId, Vector, Metric) ->
+    %% Look up the node's vector from the data map
+    NodeVector = maps:get(NodeId, Data, Vector),
+    calculate_vector_distance(NodeVector, Vector, Metric).
 
 %% @private Calculate vector distance
 -spec calculate_vector_distance(embedding_vector(), embedding_vector(), distance_metric()) ->
@@ -574,7 +578,7 @@ cosine_similarity(V1, V2) ->
     Norm2 = math:sqrt(lists:sum([B * B || B <- F2])),
 
     case Norm1 * Norm2 of
-        0.0 -> 0.0;
+        +0.0 -> 0.0;
         Product -> Dot / Product
     end.
 
@@ -678,23 +682,21 @@ search_layers([Layer | Rest], CurrentNode, Query, Ef, Metric, Acc) ->
 
 %% @private Priority queue implementation (simple list-based)
 %% In production, use a proper priority queue library or orddict
--module(priority_queue).
--export([new/0, in/3, out/1, is_empty/1, to_list/1]).
 
-new() -> [].
+pq_new() -> [].
 
-in(Priority, Value, Queue) ->
+pq_in(Priority, Value, Queue) ->
     [{Priority, Value} | Queue].
 
-out([]) ->
+pq_out([]) ->
     erlang:error(empty_queue);
-out(Queue) ->
+pq_out(Queue) ->
     %% Find minimum (closest = highest priority for distance)
     MinElem = lists:min(Queue),
     NewQueue = lists:delete(MinElem, Queue),
     {MinElem, NewQueue}.
 
-is_empty([]) -> true;
-is_empty(_) -> false.
+pq_is_empty([]) -> true;
+pq_is_empty(_) -> false.
 
-to_list(Queue) -> Queue.
+pq_to_list(Queue) -> Queue.
