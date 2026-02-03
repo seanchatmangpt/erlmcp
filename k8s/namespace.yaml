@@ -6,3 +6,21 @@ metadata:
     name: erlmcp
     environment: production
     app: erlmcp
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erlmcp-staging
+  labels:
+    name: erlmcp-staging
+    environment: staging
+    app: erlmcp
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erlmcp-production
+  labels:
+    name: erlmcp-production
+    environment: production
+    app: erlmcp

@@ -169,7 +169,18 @@ init(_Opts) ->
            restart => permanent,
            shutdown => 5000,
            type => worker,
-           modules => [erlmcp_health_dashboard]}],
+           modules => [erlmcp_health_dashboard]},
+         %% Health HTTP Server - Health check endpoints for Docker/Kubernetes
+         %% Provides /health, /ready, /live endpoints on port 8080
+         %% Level 1: HTTP endpoint (application health)
+         %% Level 2: Node ping (distribution)
+         %% Level 3: ETS table availability (state)
+         #{id => erlmcp_health_http_server,
+           start => {erlmcp_health_http_server, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_health_http_server]}],
 
     %% Note: Receipt chain (erlmcp_receipt_chain) is ETS-based with no process
     %% Note: OTEL (erlmcp_otel) is a library module with no supervision

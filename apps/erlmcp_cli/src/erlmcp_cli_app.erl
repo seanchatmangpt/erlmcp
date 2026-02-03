@@ -14,7 +14,7 @@
 %% API
 -export([start/0]).
 %% Application callbacks
--export([start/2, stop/1]).
+-export([start/2, stop/1, prep_stop/1]).
 
 %%====================================================================
 %% API Functions
@@ -68,3 +68,18 @@ stop(_State) ->
 
                              ok
                           end).
+
+%% @doc Prepare for graceful shutdown
+-spec prep_stop(term()) -> term().
+prep_stop(State) ->
+    logger:info("Preparing erlmcp_cli for graceful shutdown"),
+    %% Signal sessions to complete gracefully
+    try
+        Sessions = erlmcp_cli_session_sup:list_sessions(),
+        lists:foreach(fun({SessionId, _, _, _}) ->
+                         erlmcp_cli_session_sup:prepare_shutdown(SessionId)
+                      end, Sessions)
+    catch
+        _:_ -> ok
+    end,
+    State.

@@ -1,392 +1,76 @@
-% === WORKSPACE CONFIGURATION: erlmcp + taiea ===
-% This is the root rebar.config for the erlmcp workspace.
-% TAIEA is a separate umbrella application in ./taiea with its own rebar.config
+%% -*- erlang -*-
+%% vim: set ft=erlang ts=4 sw=4 et:
 
-{erl_opts, [
-    debug_info,
-    nowarn_export_vars,
-    nowarn_shadow_vars,
-    nowarn_obsolete_guard,
-    nowarn_unused_import,
-    nowarn_missing_spec,
-    nowarn_unused_function,
-    nowarn_unused_type,
-    nowarn_unused_vars,
-    {i, "include"},
-    {platform_define, "^2[1-9]|^[3-9]", 'POST_OTP_21'}
-]}.
+%% Rebar3 configuration for erlmcp
+%% Purpose: Multi-application (umbrella) project for Model Context Protocol SDK
+%% Structure: apps/{erlmcp_core, erlmcp_transports, erlmcp_observability, erlmcp_validation, erlmcp_compliance}
 
-%% Suppress all compiler warnings to work around rebar3 formatter crash
-{compiler_warnings_as_errors, false}.
+%% Minimum OTP version - STRICT: Only OTP 28+ allowed
+%% This project requires Erlang/OTP 28+ for:
+%%   - OTP 28: Priority messages, hibernate/0, PCRE2 regex, process iteration improvements
+%%   - OTP 27: runtime_dependencies enforcement, json module, enhanced monitoring
+%%   - OTP 26: Concurrent application startup, persistent configuration, prep_stop/1
+%%   - Modern language features: Maybe expressions (default), map comprehensions, improved shell
+%%   - Performance: JIT improvements, Base64 3-4x faster, TLS 1.3 15-25% faster
+%%   - Security: SSL verify_peer default, legacy alg disabled, safer defaults
+%% Lower versions will fail with a clear error message.
+%% See docs/OTP_APPLICATION_CONFIG_RESEARCH.md for version-specific features.
+{minimum_otp_vsn, "28"}.
 
-{project_plugins, [rebar3_auto]}.
+%% Dependencies (shared across all apps)
+{deps,
+ [% JSON encoding/decoding (using OTP 27+ native json module)
+  % jsx removed - migrated to native json:decode/encode
+  % JSON Schema validation (jesse maintained fork)
+  {jesse, "1.8.1"},
+  % Process registry (O(log N) lookup)
+  {gproc, "0.9.0"},
+  % HTTP client (gun for HTTP/2 and WebSocket)
+  {gun, "2.0.1"},
+  % TCP acceptor pool (ranch)
+  {ranch, "2.1.0"},
+  % Connection pooling (poolboy)
+  {poolboy, "1.5.2"},
+  % HTTP server (cowboy for HTTP/WebSocket/SSE)
+  {cowboy, "2.10.0"},
+  % Template engine (bbmustache)
+  {bbmustache, "1.12.2"},
+  % JWT validation (CRITICAL - security dependency)
+  {jose, "1.11.1"},
+  % OpenTelemetry (observability)
+  {opentelemetry_api, "1.5.0"},
+  {opentelemetry, "1.7.0"},
+  {opentelemetry_exporter, "1.10.0"},
+  %% Compliance framework
+  % {elixir, "~> 1.15"},     % Elixir support for policy templates - temporarily disabled
+  % {yaml, "~> 2.0"}]}.        % YAML support for configuration files - temporarily disabled
 
-% Umbrella project configuration
-{project_app_dirs, ["apps/*"]}.
+%% Shell (for `rebar3 shell`)
+{shell,
+ [{apps, [erlmcp_core, erlmcp_transports, erlmcp_observability, erlmcp_validation]},  % erlmcp_compliance disabled due to Elixir dependency
+  {config, "config/sys.config"},
+  {vm_args, "vm.args"}]}.
 
-{src_dirs, ["src"]}.
-{test_dirs, ["test"]}.
-{include_dirs, ["include"]}.
+%% EUnit configuration
+{eunit_opts, [verbose, {report, {eunit_surefire, [{dir, "log/eunit"}]}}, {cover_enabled, true}]}.
 
-%% Exclude integration subdirectory from eunit (use ct for integration tests)
-{eunit_opts, [
-    {exclude_dir, "test/integration"},
-    {exclude_dir, "test/tcps_mcp_diataxis"},
-    verbose
-]}.
+%% Common Test configuration
+{ct_opts, [{logdir, "log/ct"}, {cover_enabled, true}]}.
 
-% Core dependencies for erlmcp workspace
-{deps, [
-    {jsx, "3.1.0"},
-    {jesse, "1.8.1"},
-    {gproc, "0.9.0"},
-    {gun, "2.0.1"},
-    {ranch, "2.1.0"},
-    {poolboy, "1.5.2"},
-    {bbmustache, "1.12.2"},  % Mustache template engine for TCPS artifacts
-    {cowboy, "2.10.0"},      % HTTP server for TCPS dashboard
-    % OpenTelemetry for observability (latest versions as of Oct 2025)
-    {opentelemetry_api, "1.5.0"},
-    {opentelemetry, "1.7.0"},
-    {opentelemetry_exporter, "1.10.0"},
-    % MCP 2025-11-25 Feature Support
-    {jobs, "0.10.0"},         % Job queue for Tasks API
-    {fs, "0.9.2"}             % Filesystem monitoring for Roots enforcement
-    % Note: OAuth implemented via standard httpc + jsx for token management
-]}.
-
-{shell, [
-    {config, "config/sys.config"},
-    {apps, [erlmcp, tcps_erlmcp]}
-]}.
-
-{profiles, [
-    {prod, [
-        {erl_opts, [
-            no_debug_info,
-            {d, 'PROD'}
-        ]},
-        {relx, [
-            {dev_mode, false},
-            {include_erts, true},
-            {include_src, false}
-        ]}
-    ]},
-    {test, [
-        {deps, [
-            {proper, "1.4.0"},
-            {meck, "0.9.2"},
-            {coveralls, "2.2.0"}
-        ]},
-        {erl_opts, [
-            debug_info,
-            export_all,
-            nowarn_missing_spec,
-            nowarn_export_all
-        ]},
-        {cover_enabled, true},
-        {cover_export_enabled, true},
-        {coveralls_coverdata, "_build/test/cover/*.coverdata"},
-        {coveralls_service_name, "github"},
-        {coveralls_parallel, true}
-    ]},
-    {testlocal, [
-        {src_dirs, ["src", "priv/test", "examples/simple", "examples/calculator", "examples/weather"]},
-        {deps, [
-            {proper, "1.4.0"},
-            {meck, "0.9.2"},
-            {coveralls, "2.2.0"}
-        ]},
-        {erl_opts, [
-            debug_info,
-            export_all,
-            nowarn_missing_spec,
-            nowarn_export_all
-        ]},
-        {cover_enabled, true},
-        {cover_export_enabled, true},
-        {coveralls_coverdata, "_build/test/cover/*.coverdata"},
-        {coveralls_service_name, "github"},
-        {coveralls_parallel, true}
-    ]},
-    {dev, [
-        {deps, [
-            {recon, "2.5.3"},
-            {observer_cli, "1.7.4"}
-        ]},
-        {plugins, [
-            {rebar3_lint, "3.0.1"}
-        ]}
-    ]},
-    {simple, [
-        {src_dirs, ["src", "examples/simple"]},
-        {erl_opts, [
-            debug_info,
-            nowarn_missing_spec,
-            nowarn_export_all,
-            nowarn_unused_function,
-            nowarn_unused_variable
-        ]},
-        {shell, [
-            {config, "config/sys.config"},
-            {apps, [erlmcp]}
-        ]},
-        {erl_first_files, [
-            "examples/simple_server.erl",
-            "examples/simple_client.erl"
-        ]}
-    ]},
-    {calculator, [
-        {src_dirs, ["src", "examples/calculator"]},
-        {erl_opts, [
-            debug_info,
-            nowarn_missing_spec,
-            nowarn_export_all,
-            nowarn_unused_function,
-            nowarn_unused_variable
-        ]},
-        {shell, [
-            {config, "config/sys.config"},
-            {apps, [erlmcp]}
-        ]}
-    ]},
-    {weather, [
-        {src_dirs, ["src", "examples/weather"]},
-        {erl_opts, [
-            debug_info,
-            nowarn_missing_spec,
-            nowarn_export_all,
-            nowarn_unused_function,
-            nowarn_unused_variable
-        ]},
-        {shell, [
-            {config, "config/sys.config"},
-            {apps, [erlmcp]}
-        ]}
-    ]}
-]}.
-
-{dialyzer, [
-    {warnings, [
-        unmatched_returns,
-        error_handling,
-        unknown,
-        no_improper_lists,
-        no_fun_app,
-        no_match,
-        no_opaque,
-        no_fail_call,
-        no_contracts,
-        no_behaviours,
-        no_undefined_callbacks
-    ]},
-    {plt_apps, top_level_deps},
-    {plt_extra_apps, [kernel, stdlib, ssl, inets]},
-    {plt_location, local},
-    {base_plt_apps, [kernel, stdlib, erts, ssl, inets]},
-    {base_plt_location, global},
-    {exclude_apps, []},
-    {apps, [erlmcp]}
-]}.
-
-{xref_checks, [
-    undefined_function_calls,
-    undefined_functions,
-    locals_not_used,
-    deprecated_function_calls,
-    deprecated_functions
-]}.
-
-{xref_ignores, [
-    %% Ignore dynamically called functions
-    {erlmcp_transport_stdio, read_loop, 2},
-    {erlmcp_transport_tcp, send, 2},
-
-    %% OpenTelemetry API functions (external library)
-    {otel_tracer, start_span, 1},
-    {otel_tracer, get_tracer, 1},
-    {otel_span, record_exception, 4},
-    {otel, with_span, 3},
-    {otel, add_event, 2},
-
-    %% Stdlib extensions available in Erlang/OTP 25+
-    {maps, any, 2},
-    {erlang, term_to_string, 1},
-    {uri_string, quote_string, 1},
-    {file, canonicalize_path, 1},
-    {inet, getstat, 0},
-
-    %% Cowboy HTTP server functions
-    {cowboy_req, stream_body, 2},
-
-    %% Rebar3 provider API functions (only available in build context)
-    {providers, create, 1},
-    {rebar_api, debug, 2},
-    {rebar_api, error, 2},
-    {rebar_api, info, 2},
-    {rebar_api, warn, 2},
-    {rebar_state, add_provider, 2},
-    {rebar_state, command_parsed_args, 1},
-    {rebar_state, dir, 1}
-]}.
-
+%% Coverage configuration
 {cover_enabled, true}.
-{cover_export_enabled, true}.
+
 {cover_opts, [verbose]}.
 
-{alias, [
-    {check, [xref, dialyzer, {proper, "-c"}, cover]},
-    {test, [eunit, {proper, "-c"}, cover]},
-    {cleanplus, [clean, {cover, "-r"}]},
-    {simple, [compile, shell]},
-    %% TCPS aliases
-    {tcps_validate, [{tcps, shacl_validate}, {tcps, check_quality_gates}]},
-    {tcps_build, [{tcps, shacl_validate}, compile, {tcps, generate_receipt}]},
-    {tcps_full, [{tcps, shacl_validate}, compile, {tcps, generate_receipt},
-                 eunit, {tcps, check_quality_gates}]}
-]}.
+{cover_export_enabled, true}.
 
-%% ============================================================================
-%% RELEASE CONFIGURATION - erlmcp v0.6.0
-%% ============================================================================
-%% Production release configuration with ERTS, overlays, and multi-environment support
-%% ============================================================================
-
-{relx, [
-    {release, {erlmcp, "0.7.0"},
-     [erlmcp,
-      tcps_erlmcp,  % TCPS is now optional - can be excluded from release
-      gproc,
-      gun,
-      ranch,
-      poolboy,
-      jsx,
-      jesse,
-      bbmustache,
-      cowboy,
-      opentelemetry_api,
-      opentelemetry,
-      opentelemetry_exporter,
-      jobs,
-      fs,
-      sasl]},
-
-    {sys_config, "./config/sys.config"},
-    {vm_args, "./vm.args"},
-
-    {dev_mode, false},
-    {include_erts, true},
-    {include_src, false},
-
-    {extended_start_script, true},
-    {extended_start_script_hooks, [
-        {pre_start, [{custom, "hooks/pre_start"}]},
-        {post_start, [{custom, "hooks/post_start"}]},
-        {pre_stop, [{custom, "hooks/pre_stop"}]}
-    ]},
-
-    {overlay, [
-        {mkdir, "log"},
-        {mkdir, "data"},
-        {mkdir, "etc"},
-
-        %% Copy scripts
-        {copy, "scripts/start_dashboard.sh", "bin/start_dashboard"},
-        {copy, "tools/tcps", "bin/tcps"},
-
-        %% Copy dashboard
-        {copy, "priv/dashboard", "priv/dashboard"},
-
-        %% Copy ontologies and shapes
-        {copy, "ontology", "priv/ontology"},
-        {copy, "shapes", "priv/shapes"},
-
-        %% Copy configuration templates
-        {template, "config/sys.config", "etc/sys.config"},
-        {template, "vm.args", "etc/vm.args"},
-
-        %% Copy environment configs
-        {copy, "config/dev.config", "etc/dev.config"},
-        {copy, "config/staging.config", "etc/staging.config"},
-        {copy, "config/production.config", "etc/production.config"}
-    ]},
-
-    %% Profiles for different environments
-    {profile, dev, [
-        {dev_mode, true},
-        {include_erts, false},
-        {sys_config, "./config/dev.config"}
-    ]},
-
-    {profile, staging, [
-        {dev_mode, false},
-        {include_erts, true},
-        {sys_config, "./config/staging.config"},
-        {overlay, [
-            {copy, "config/staging.config", "etc/sys.config"}
-        ]}
-    ]},
-
-    {profile, prod, [
-        {dev_mode, false},
-        {include_erts, true},
-        {include_src, false},
-        {sys_config, "./config/production.config"},
-        {overlay, [
-            {copy, "config/production.config", "etc/sys.config"}
-        ]},
-        {overlay_vars, "config/prod.vars"}
-    ]}
-]}.
-
-%% ============================================================================
-%% TCPS PROVIDER HOOKS - Toyota Code Production System Integration
-%% ============================================================================
-%% Automatic quality enforcement at each build stage:
-%%   Pre-compile:  SHACL validation (work orders & ontology)
-%%   Post-compile: Receipt generation (compilation metrics)
-%%   Post-test:    Quality gates check (80% pass, 80% coverage)
-%%   Pre-release:  Deterministic build verification
-%%
-%% Failures trigger Andon events and block pipeline.
-%% ============================================================================
-
-%% Temporarily disabled TCPS provider hooks for testing
-%% {provider_hooks, [
-%%     %% Pre-compile: Validate SHACL shapes
-%%     {pre, [
-%%         {compile, {tcps, shacl_validate}}
-%%     ]},
-%%
-%%     %% Post-compile: Generate compilation receipt
-%%     {post, [
-%%         {compile, {tcps, generate_receipt}}
-%%     ]},
-%%
-%%     %% Post-test: Check quality gates (pass rate, coverage)
-%%     {post, [
-%%         {eunit, {tcps, check_quality_gates}}
-%%     ]},
-%%
-%%     %% Pre-release: Verify deterministic build
-%%     {pre, [
-%%         {release, {tcps, check_quality_gates}}
-%%     ]}
-%% ]}.
-
-{plugins, [
-    rebar3_hex,
-    {rebar3_proper, "0.12.1"},
-    {coveralls, "2.2.0"}
-]}.
-
-%% Formatting configuration for rebar3_format (DISABLED - crashes on compilation)
-%% {format, [
-%%     {files, ["src/*.erl", "include/*.hrl", "test/*.erl", "examples/*.erl"]},
-%%     {formatter, default_formatter},
-%%     {encoding, utf8},
-%%     {paper, 100},
-%%     {ribbon, 90},
-%%     {break_indent, 4},
-%%     {sub_indent, 2}
-%% ]}.
+%% Dialyzer configuration
+{dialyzer,
+ [{warnings, [error_handling, underspecs, unknown, unmatched_returns]},
+  {get_warnings, true},
+  {plt_apps, all_deps},
+  {plt_location, local},
+  {plt_prefix, "erlmcp"},
+  {dialyzer_options, [incremental]},  % OTP 26+: Incremental mode (3-7x faster)
+  {base_plt_apps, [stdlib, kernel, erts, sasl, mnesia, crypto, ssl, inets, public_key, asn1, ssh]},
+  {base_plt_location, global}]}.

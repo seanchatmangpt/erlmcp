@@ -88,6 +88,16 @@ init([]) ->
            restart => permanent,
            shutdown => 5000,
            type => worker,
-           modules => [erlmcp_rate_limiter]}],
+           modules => [erlmcp_rate_limiter]},
+         %% ================================================================
+         %% DATABASE POOL SUPERVISOR: Database connection pool management
+         %% Provides connection pooling, health checks, circuit breakers, retry logic
+         %% ================================================================
+         #{id => erlmcp_db_pool_sup,
+           start => {erlmcp_db_pool_sup, start_link, []},
+           restart => permanent,
+           shutdown => infinity,
+           type => supervisor,
+           modules => [erlmcp_db_pool_sup]}],
 
     {ok, {SupFlags, ChildSpecs}}.

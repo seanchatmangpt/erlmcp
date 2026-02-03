@@ -12,7 +12,8 @@
          list_servers/1, list_transports/0, list_transports/1, bind_transport_to_server/2,
          unbind_transport/1, get_server_for_transport/1, get_all_state/0, get_pid/0,
          get_queue_depth/0, restore_state/1, route_message/2,
-         validate_tool_name/1, validate_transport_name/1, normalize_name/1]).
+         validate_tool_name/1, validate_transport_name/1, normalize_name/1,
+         graceful_shutdown/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
          format_status/2]).
@@ -235,6 +236,41 @@ route_message({transport, TransportId}, Message) ->
             end;
         {error, not_found} ->
             {error, transport_not_found}
+    end.
+
+%%--------------------------------------------------------------------
+%% @doc Graceful shutdown - notify all registered servers and transports
+%% @end
+%%--------------------------------------------------------------------
+-spec graceful_shutdown() -> ok.
+graceful_shutdown() ->
+    logger:info("Initiating graceful shutdown of erlmcp_registry"),
+    try
+        % Get all servers and transports
+        Servers = list_servers(),
+        Transports = list_transports(),
+
+        % Notify servers of impending shutdown
+        lists:foreach(fun({ServerId, {Pid, _Config}}) ->
+            logger:debug("Notifying server ~p (~p) of shutdown", [ServerId, Pid]),
+            Pid ! {erlmcp_shutdown, ServerId, normal}
+        end, Servers),
+
+        % Notify transports of impending shutdown
+        lists:foreach(fun({TransportId, {Pid, _Config}}) ->
+            logger:debug("Notifying transport ~p (~p) of shutdown", [TransportId, Pid]),
+            Pid ! {erlmcp_shutdown, TransportId, normal}
+        end, Transports),
+
+        % Allow time for graceful shutdown
+        timer:sleep(1000),
+
+        logger:info("Graceful shutdown notification complete"),
+        ok
+    catch
+        _:Error ->
+            logger:error("Error during graceful shutdown: ~p", [Error]),
+            ok
     end.
 
 %%====================================================================

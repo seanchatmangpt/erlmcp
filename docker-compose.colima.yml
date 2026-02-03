@@ -61,7 +61,7 @@ services:
     environment:
       # Node Configuration
       NODE_NAME: node1
-      ERLANG_COOKIE: erlmcp_colima_secret_100k
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
 
       # Erlang VM Tuning for 25K concurrent connections per node
       # =========================================================
@@ -149,7 +149,7 @@ services:
       - "9002:9001"
     environment:
       NODE_NAME: node2
-      ERLANG_COOKIE: erlmcp_colima_secret_100k
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
       ERL_MAX_PORTS: 65536
       ERL_MAX_ETS_TABLES: 32768
       ERLANG_MAX_PROCESSES: 2000000
@@ -207,7 +207,7 @@ services:
       - "9003:9001"
     environment:
       NODE_NAME: node3
-      ERLANG_COOKIE: erlmcp_colima_secret_100k
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
       ERL_MAX_PORTS: 65536
       ERL_MAX_ETS_TABLES: 32768
       ERLANG_MAX_PROCESSES: 2000000
@@ -265,7 +265,7 @@ services:
       - "9004:9001"
     environment:
       NODE_NAME: node4
-      ERLANG_COOKIE: erlmcp_colima_secret_100k
+      ERLANG_COOKIE: ${ERLANG_COOKIE}
       ERL_MAX_PORTS: 65536
       ERL_MAX_ETS_TABLES: 32768
       ERLANG_MAX_PROCESSES: 2000000

@@ -77,7 +77,7 @@ format_call_graph(Events) ->
 -spec format_message_flow([trace_event()]) -> iolist().
 format_message_flow(Events) ->
     SendEvents = filter_by_type(Events, send),
-    RecvEvents = filter_by_type(Events, receive),
+    RecvEvents = filter_by_type(Events, 'receive'),
     build_message_flow(SendEvents, RecvEvents).
 
 %% @doc Format system event monitoring results
@@ -108,7 +108,7 @@ generate_report(Events) ->
     #{timeline => format_text_timeline(Events, #{}),
      call_graph => build_call_graph(filter_by_type(Events, call)),
      message_flow => build_message_flow(filter_by_type(Events, send),
-                                        filter_by_type(Events, receive)),
+                                        filter_by_type(Events, 'receive')),
      system_events => format_system_monitoring(filter_by_type(Events,
                                                              system_monitor)),
      statistics => calculate_statistics(Events),
@@ -286,7 +286,7 @@ format_html_timeline(Events, _Options) ->
               "  .details { color: #ce9178; }\n",
               "  .call { border-color: #4ec9b0; }\n",
               "  .send { border-color: #dcdcaa; }\n",
-              "  .receive { border-color: #b5cea8; }\n",
+              "  .'receive' { border-color: #b5cea8; }\n",
               "  .system { border-color: #f48771; }\n",
               "</style>\n",
               "</head>\n<body>\n",
@@ -362,7 +362,7 @@ format_calls(Calls) ->
 %% Build message flow visualization
 -spec build_message_flow([trace_event()], [trace_event()]) -> iolist().
 build_message_flow(SendEvents, RecvEvents) ->
-    %% Pair send and receive events
+    %% Pair send and 'receive' events
     Flows = pair_messages(SendEvents, RecvEvents),
 
     ["Message Flow:\n",
@@ -371,14 +371,14 @@ build_message_flow(SendEvents, RecvEvents) ->
      format_message_flows(Flows)].
 
 %% @private
-%% Pair send and receive events
+%% Pair send and 'receive' events
 -spec pair_messages([trace_event()], [trace_event()]) -> [map()].
 pair_messages(SendEvents, RecvEvents) ->
     %% Simple pairing by timestamp proximity
     %% TODO: Implement proper correlation by message ID
     lists:zipwith(fun(Send, Recv) ->
                      #{send => maps:get(data, Send),
-                       receive => maps:get(data, Recv)}
+                       'receive' => maps:get(data, Recv)}
                   end,
                   SendEvents,
                   RecvEvents).
@@ -392,7 +392,7 @@ format_message_flows(Flows) ->
 %% @private
 %% Format single message flow
 -spec format_single_flow(map()) -> iolist().
-format_single_flow(#{send := Send, receive := Recv}) ->
+format_single_flow(#{send := Send, 'receive' := Recv}) ->
     io_lib:fwrite("~p -> ~p: ~p~n",
                   [maps:get(pid, Send),
                    maps:get(to, Send),

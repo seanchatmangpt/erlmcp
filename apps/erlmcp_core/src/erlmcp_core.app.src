@@ -5,7 +5,10 @@
       erlmcp_sup,
       erlmcp_core_sup,
       erlmcp_server_sup,
-      erlmcp_registry
+      erlmcp_registry,
+      erlmcp_cluster_discovery,
+      erlmcp_db_pool,
+      erlmcp_db_pool_sup
   ]},
   {applications, [
       kernel,
@@ -132,7 +135,37 @@
     erlmcp_atoms,
     %% OTP 28 Process Introspection
     erlmcp_inspector,
-    erlmcp_admin
+    erlmcp_admin,
+    %% Raft Consensus for Distributed Coordination
+    erlmcp_raft,
+    erlmcp_raft_log,
+    erlmcp_raft_state_machine,
+    erlmcp_raft_membership,
+    erlmcp_raft_transport,
+    erlmcp_raft_sup,
+    %% Workflow State Machine (v3)
+    erlmcp_workflow_statemachine,
+    erlmcp_workflow_orchestrator,
+    erlmcp_workflow_persistence,
+    erlmcp_workflow_monitor,
+    erlmcp_workflow_policy,
+    erlmcp_workflow_compensation,
+    erlmcp_workflow_governance,
+    %% Tool Sandbox Execution (v3)
+    erlmcp_tool_execute,
+    %% Security and Audit (v3)
+    erlmcp_audit_log,
+    erlmcp_authorization,
+    erlmcp_session_audit,
+    erlmcp_enterprise_security,
+    %% Database Pool and Connection Management (v3)
+    erlmcp_db_pool,
+    erlmcp_db_connection,
+    erlmcp_db_pool_sup,
+    %% Cluster Service Discovery (v3)
+    erlmcp_cluster_discovery,
+    %% Cluster Coordination (v3)
+    erlmcp_cluster_coordinator
 ]},
   {licenses, ["Apache-2.0"]},
   {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},

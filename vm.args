@@ -2,7 +2,9 @@
 -name erlmcp@127.0.0.1
 
 ## Cookie for distributed node communication
--setcookie erlmcp_secret_cookie
+## Cookie MUST be set via ERLANG_COOKIE environment variable
+## DO NOT hardcode cookies in this file - security vulnerability
+# Cookie is set via -setcookie flag passed from environment
 
 ## Heartbeat management; auto-restarts VM if it dies or becomes unresponsive
 -heart
@@ -68,6 +70,14 @@
 +MBlmbcs 512
 +MBsmbcs 1024
 +MBsbct 2048
+
+%% Cgroups-aware memory detection (OTP 26+)
+%% +MBacul 0: Disable carrier utilization limit for cgroups v2
+%% +Msbagf 512: Set carrier size alignment to 512 bytes
+%% +MBacgs 0: Auto-detect cgroups memory limits
++MBacul 0
++Msbagf 512
++MBacgs 0
 
 ## Garbage collection settings
 +hms 46422

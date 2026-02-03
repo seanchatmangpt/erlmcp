@@ -2,6 +2,11 @@
 # scripts/test/quick.sh - Quick test tier (target: ≤10 min)
 # Smoke + important integration tests, excluding chaos/performance
 
+# ==============================================================================
+# DOCKER-ONLY CONSTITUTION: Host execution FORBIDDEN
+# ==============================================================================
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../dev/docker_guard.sh"
+
 set -euo pipefail
 
 # Colors

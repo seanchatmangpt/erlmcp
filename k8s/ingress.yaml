@@ -1,3 +1,6 @@
+---
+# TLS-enabled Ingress for erlmcp
+# Implements automatic certificate management with cert-manager
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -5,21 +8,39 @@ metadata:
   namespace: erlmcp
   labels:
     app: erlmcp
+    component: ingress
+    erlmcp.io/tls-enabled: "true"
   annotations:
     kubernetes.io/ingress.class: nginx
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    cert-manager.io/acme-challenge-type: http01
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
     nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
     nginx.ingress.kubernetes.io/proxy-body-size: "10m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
     nginx.ingress.kubernetes.io/rate-limit: "100"
     nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+    nginx.ingress.kubernetes.io/proxy-ssl-ciphers: "ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384"
+    nginx.ingress.kubernetes.io/proxy-ssl-protocols: "TLSv1.2 TLSv1.3"
+    nginx.ingress.kubernetes.io/proxy-ssl-server-name: "on"
+    nginx.ingress.kubernetes.io/proxy-ssl-session-reuse: "on"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+    traefik.ingress.kubernetes.io/frontend-entry-points: "https,http"
+    traefik.ingress.kubernetes.io/protocol: "https"
 spec:
+  ingressClassName: nginx
   tls:
     - hosts:
         - erlmcp.example.com
         - dashboard.erlmcp.example.com
+        - api.erlmcp.example.com
       secretName: erlmcp-tls-cert
   rules:
     - host: erlmcp.example.com
@@ -31,7 +52,17 @@ spec:
               service:
                 name: erlmcp
                 port:
-                  name: http
+                  number: 8081
+    - host: api.erlmcp.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: erlmcp
+                port:
+                  number: 8443
     - host: dashboard.erlmcp.example.com
       http:
         paths:
@@ -41,4 +72,42 @@ spec:
               service:
                 name: erlmcp-dashboard
                 port:
-                  name: http
+                  number: 8081
+
+---
+# mTLS-only Ingress for internal services
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-internal-ingress
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: ingress
+    erlmcp.io/mtls-enabled: "true"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: erlmcp-ca-issuer
+    nginx.ingress.kubernetes.io/auth-tls-verify-client: "on"
+    nginx.ingress.kubernetes.io/auth-tls-pass-certificate-to-upstream: "on"
+    nginx.ingress.kubernetes.io/auth-tls-secret: "erlmcp-ca-secret"
+    nginx.ingress.kubernetes.io/auth-tls-verify-depth: "3"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    nginx.ingress.kubernetes.io/proxy-ssl-verify: "on"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - erlmcp-internal.erlmcp.svc.cluster.local
+      secretName: erlmcp-internal-tls
+  rules:
+    - host: erlmcp-internal.erlmcp.svc.cluster.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: erlmcp-headless
+                port:
+                  number: 8443

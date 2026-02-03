@@ -12,7 +12,7 @@
 -behaviour(application).
 
 %% Application callbacks
--export([start/2, stop/1]).
+-export([start/2, stop/1, prep_stop/1]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -40,3 +40,33 @@ start(_StartType, _StartArgs) ->
 stop(_State) ->
     ?LOG_INFO("Stopping erlmcp_transports application"),
     ok.
+
+%% @doc Prepare for graceful shutdown
+-spec prep_stop(term()) -> term().
+prep_stop(State) ->
+    ?LOG_INFO("Preparing erlmcp_transports for graceful shutdown"),
+    %% Stop accepting new connections
+    try
+        Pid = whereis(erlmcp_transport_sup),
+        case Pid of
+            undefined ->
+                ok;
+            _ ->
+                erlmcp_transport_sup:stop_accepting()
+        end
+    catch
+        _:_ -> ok
+    end,
+    %% Drain existing connection pool
+    try
+        PoolPid = whereis(erlmcp_connection_pool),
+        case PoolPid of
+            undefined ->
+                ok;
+            _ ->
+                erlmcp_connection_pool:drain()
+        end
+    catch
+        _:_ -> ok
+    end,
+    State.

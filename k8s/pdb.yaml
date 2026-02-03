@@ -8,26 +8,13 @@ metadata:
   namespace: erlmcp
   labels:
     app: erlmcp
+    component: pod-disruption-budget
+  annotations:
+    description: "Ensures at least 1 pod (33%) remains available during voluntary disruptions"
 spec:
-  minAvailable: 2
+  minAvailable: 1
   selector:
     matchLabels:
       app: erlmcp
       component: server
   unhealthyPodEvictionPolicy: IfHealthyBudget
-
----
-# Pod Disruption Budget for safe rolling updates
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: erlmcp-pdb-update
-  namespace: erlmcp
-  labels:
-    app: erlmcp
-spec:
-  maxUnavailable: "33%"
-  selector:
-    matchLabels:
-      app: erlmcp
-      component: server

@@ -138,6 +138,18 @@ build_child_specs(_Opts) ->
                    [erlmcp_metrics_aggregator]),
 
         %% ================================================================
+        %% Metrics Collector - Comprehensive metrics for Prometheus
+        %% ================================================================
+        child_spec(erlmcp_metrics_collector, worker, permanent, 5000,
+                   [erlmcp_metrics_collector]),
+
+        %% ================================================================
+        %% Prometheus Exporter - Prometheus exposition format
+        %% ================================================================
+        child_spec(erlmcp_prometheus_exporter, worker, permanent, 5000,
+                   [erlmcp_prometheus_exporter]),
+
+        %% ================================================================
         %% Dashboard Server - Real-time metrics dashboard
         %% ================================================================
         %% Cowboy + WebSocket based dashboard
@@ -192,7 +204,21 @@ build_child_specs(_Opts) ->
         %% ================================================================
         %% Critical: Maintains compliance trail for GDPR, SOC2, HIPAA
         child_spec(erlmcp_audit_log, worker, permanent, 5000,
-                   [erlmcp_audit_log])
+                   [erlmcp_audit_log]),
+
+        %% ================================================================
+        %% Adaptive Learning System - 4-step intelligence pipeline
+        %% ================================================================
+        %% RETRIEVE (HNSW) -> JUDGE (Verdicts) -> DISTILL (Patterns) -> CONSOLIDATE (EWC++)
+        child_spec(erlmcp_adaptive_learning, worker, permanent, 5000,
+                   [erlmcp_adaptive_learning]),
+
+        %% ================================================================
+        %% Anomaly Detector - Statistical anomaly detection
+        %% ================================================================
+        %% Z-score based detection with moving average baselines
+        child_spec(erlmcp_anomaly_detector, worker, permanent, 5000,
+                   [erlmcp_anomaly_detector])
     ].
 
 %% @doc Build a child specification map

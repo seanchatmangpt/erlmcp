@@ -127,3 +127,18 @@ STOP_HOOK_DIAGNOSTIC_REPORT.md
 .rebar-backup/
 log/diagnostics/
 tools/rebar3-diagnostics/
+
+# Hive-mind runtime databases
+.hive-mind/*.db
+.hive-mind/*.db-shm
+.hive-mind/*.db-wal
+.hive-mind/sessions/
+
+# HNSW vector index
+.swarm/hnsw.index
+.swarm/hnsw.metadata.json
+.swarm/memory.db
+
+# CT runtime cache
+log/ct/ct_log_cache
+log/ct/*.log
