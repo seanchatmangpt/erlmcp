@@ -1,0 +1,203 @@
+%%% @doc Post-Quantum Blockchain Chain State Management
+%%%
+%%% Maintains the current blockchain state as a gen_server.
+%%% Provides a single source of truth for:
+%%% - Current block height
+%%% - Latest block hash
+%%% - Validator sets
+%%% - Account states
+%%% - Contract states
+%%%
+%%% This module wraps pqc_block functionality in a stateful gen_server
+%%% for OTP supervision and process-based access patterns.
+%%%
+%%% @end
+-module(pqc_chain).
+
+-behaviour(gen_server).
+
+-include("pqchain.hrl").
+
+%% API
+-export([
+    start_link/0,
+    get_balance/1,
+    get_nonce/1,
+    get_account_state/1,
+    get_contract_state/1,
+    get_state/0,
+    get_receipt/1,
+    get_by_height/1,
+    get_by_hash/1,
+    add_block/2
+]).
+
+%% gen_server callbacks
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
+
+-define(SERVER, ?MODULE).
+
+-record(state, {
+    height :: non_neg_integer(),
+    last_block_hash :: binary(),
+    blocks :: #{binary() => #pqc_block{}},
+    accounts :: #{binary() => map()},
+    contracts :: #{binary() => map()},
+    validator_set :: #validator_set{} | undefined
+}).
+
+%%%====================================================================
+%%% API Functions
+%%%====================================================================
+
+%% @doc Start the chain state manager
+-spec start_link() -> {ok, pid()} | ignore | {error, term()}.
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+%% @doc Get account balance
+-spec get_balance(binary()) -> {ok, non_neg_integer()} | {error, term()}.
+get_balance(Address) ->
+    gen_server:call(?SERVER, {get_balance, Address}).
+
+%% @doc Get account nonce
+-spec get_nonce(binary()) -> {ok, non_neg_integer()} | {error, term()}.
+get_nonce(Address) ->
+    gen_server:call(?SERVER, {get_nonce, Address}).
+
+%% @doc Get full account state
+-spec get_account_state(binary()) -> {ok, map()} | {error, term()}.
+get_account_state(Address) ->
+    gen_server:call(?SERVER, {get_account_state, Address}).
+
+%% @doc Get contract state
+-spec get_contract_state(binary()) -> {ok, map()} | {error, term()}.
+get_contract_state(ContractAddress) ->
+    gen_server:call(?SERVER, {get_contract_state, ContractAddress}).
+
+%% @doc Get current chain state
+-spec get_state() -> {ok, map()}.
+get_state() ->
+    gen_server:call(?SERVER, get_state).
+
+%% @doc Get transaction receipt
+-spec get_receipt(binary()) -> {ok, #execution_receipt{}} | {error, not_found}.
+get_receipt(TxId) ->
+    gen_server:call(?SERVER, {get_receipt, TxId}).
+
+%% @doc Get block by height
+-spec get_by_height(non_neg_integer()) -> {ok, #pqc_block{}} | {error, not_found}.
+get_by_height(Height) ->
+    gen_server:call(?SERVER, {get_by_height, Height}).
+
+%% @doc Get block by hash
+-spec get_by_hash(binary()) -> {ok, #pqc_block{}} | {error, not_found}.
+get_by_hash(Hash) ->
+    gen_server:call(?SERVER, {get_by_hash, Hash}).
+
+%% @doc Add a new block to the chain
+-spec add_block(#pqc_block{}, #validator_set{}) -> ok | {error, term()}.
+add_block(Block, ValidatorSet) ->
+    gen_server:call(?SERVER, {add_block, Block, ValidatorSet}).
+
+%%%====================================================================
+%%% gen_server Callbacks
+%%%====================================================================
+
+%% @private
+init([]) ->
+    {ok, #state{
+        height = 0,
+        last_block_hash = <<0:256>>,
+        blocks = #{},
+        accounts = #{},
+        contracts = #{},
+        validator_set = undefined
+    }}.
+
+%% @private
+handle_call({get_balance, Address}, _From, State) ->
+    case maps:get(Address, State#state.accounts, undefined) of
+        undefined ->
+            {reply, {ok, 0}, State};
+        Account ->
+            Balance = maps:get(<<"balance">>, Account, 0),
+            {reply, {ok, Balance}, State}
+    end;
+
+handle_call({get_nonce, Address}, _From, State) ->
+    case maps:get(Address, State#state.accounts, undefined) of
+        undefined ->
+            {reply, {ok, 0}, State};
+        Account ->
+            Nonce = maps:get(<<"nonce">>, Account, 0),
+            {reply, {ok, Nonce}, State}
+    end;
+
+handle_call({get_account_state, Address}, _From, State) ->
+    Account = maps:get(Address, State#state.accounts, #{}),
+    {reply, {ok, Account}, State};
+
+handle_call({get_contract_state, ContractAddress}, _From, State) ->
+    Contract = maps:get(ContractAddress, State#state.contracts, #{}),
+    {reply, {ok, Contract}, State};
+
+handle_call({get_receipt, _TxId}, _From, State) ->
+    %% TODO: Implement receipt lookup from block receipts
+    {reply, {error, not_found}, State};
+
+handle_call({get_by_height, _Height}, _From, State) ->
+    %% TODO: Implement height-based lookup
+    {reply, {error, not_found}, State};
+
+handle_call({get_by_hash, _Hash}, _From, State) ->
+    %% TODO: Implement hash-based lookup
+    {reply, {error, not_found}, State};
+
+handle_call(get_state, _From, State) ->
+    ChainState = #{
+        height => State#state.height,
+        last_block_hash => State#state.last_block_hash,
+        validator_set => State#state.validator_set
+    },
+    {reply, {ok, ChainState}, State};
+
+handle_call({add_block, Block, ValidatorSet}, _From, State) ->
+    #pqc_block{header = Header} = Block,
+    #pqc_block_header{height = Height, hash = Hash} = Header,
+
+    %% Update state
+    NewState = State#state{
+        height = Height,
+        last_block_hash = Hash,
+        blocks = maps:put(Hash, Block, State#state.blocks),
+        validator_set = ValidatorSet
+    },
+
+    {reply, ok, NewState};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+%% @private
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+%% @private
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+%% @private
+terminate(_Reason, _State) ->
+    ok.
+
+%% @private
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.

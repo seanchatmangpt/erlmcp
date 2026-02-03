@@ -27,13 +27,10 @@
 -include("erlmcp_refusal.hrl").
 
 %% API
--export([run_all_scenarios/0, run_all_scenarios/1, run_scenario/1, run_scenario/2, scenarios/0,
-         validate_bounded_refusal/2, generate_chaos_report/1]).
+-export([,]).
+
 %% Scenario functions
--export([chaos_process_crash/1, chaos_network_partition/1, chaos_memory_exhaustion/1,
-         chaos_message_flood/1, chaos_invalid_payload/1, chaos_connection_leak/1,
-         chaos_slow_consumer/1, chaos_supervisor_cascade/1, chaos_disk_full/1,
-         chaos_cpu_saturation/1, chaos_large_payload/1]).
+-export([,,,]).
 
 %% Types
 -type scenario_id() :: binary().

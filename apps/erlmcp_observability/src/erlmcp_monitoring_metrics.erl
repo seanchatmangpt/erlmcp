@@ -192,20 +192,20 @@ handle_call({export_metrics, json}, _From, State) ->
 
 handle_cast({record_counter, Name, Value, Tags}, State) ->
     record_metric(Name, counter, Value, Tags),
-    {noreply, State#{metrics_collected := State#metrics_collected + 1}};
+    {noreply, State#{metrics_collected := maps:get(metrics_collected, State, 0) + 1}};
 
 handle_cast({record_gauge, Name, Value, Tags}, State) ->
     record_metric(Name, gauge, Value, Tags),
-    {noreply, State#{metrics_collected := State#metrics_collected + 1}};
+    {noreply, State#{metrics_collected := maps:get(metrics_collected, State, 0) + 1}};
 
 handle_cast({record_histogram, Name, Value, Tags}, State) ->
     record_metric(Name, histogram, Value, Tags),
-    {noreply, State#{metrics_collected := State#metrics_collected + 1}};
+    {noreply, State#{metrics_collected := maps:get(metrics_collected, State, 0) + 1}};
 
 handle_cast({record_business_metric, Category, Metric, Value, Tags}, State) ->
     FullName = <<Category/binary, <<"_">>/binary, Metric/binary>>,
     record_metric(FullName, gauge, Value, Tags),
-    {noreply, State#{metrics_collected := State#metrics_collected + 1}};
+    {noreply, State#{metrics_collected := maps:get(metrics_collected, State, 0) + 1}};
 
 handle_cast({record_error, Error, Context}, State) ->
     %% Record error metric
@@ -229,7 +229,7 @@ handle_cast({record_error, Error, Context}, State) ->
     },
     ets:insert(erlmcp_error_storage, {erlang:system_time(millisecond), ErrorDetail}),
 
-    {noreply, State#{errors_detected := State#errors_detected + 1}};
+    {noreply, State#{errors_detected := maps:get(errors_detected, State, 0) + 1}};
 
 handle_cast({record_security_event, Event, Tags}, State) ->
     SecurityMetric = #{
@@ -239,7 +239,7 @@ handle_cast({record_security_event, Event, Tags}, State) ->
     },
     ets:insert(erlmcp_security_storage, {erlang:system_time(millisecond), SecurityMetric}),
 
-    {noreply, State#{security_events := State#security_events + 1}}.
+    {noreply, State#{security_events := maps:get(security_events, State, 0) + 1}}.
 
 handle_info(collect_metrics, State) ->
     collect_system_metrics(),

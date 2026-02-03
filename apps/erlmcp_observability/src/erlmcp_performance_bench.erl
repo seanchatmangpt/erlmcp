@@ -96,10 +96,10 @@ run_full_suite(Opts) ->
     Iterations = maps:get(iterations, Opts, 10000),
 
     Categories = [
-        {registry, fun() => benchmark_registry(Iterations) end},
+        {registry, fun() -> benchmark_registry(Iterations) end},
         {transports, fun() -> benchmark_transports(Iterations) end},
         {batching, fun() -> benchmark_batching(Iterations) end},
-        {flash_attention, fun() => benchmark_flash_attention(Iterations) end},
+        {flash_attention, fun() -> benchmark_flash_attention(Iterations) end},
         {ets_ops, fun() -> benchmark_ets_ops(Iterations) end}
     ],
 
@@ -450,7 +450,10 @@ percentile(P, SortedTimes, Count) ->
 compare_results(Results1, Results2) ->
     maps:from_list(lists:map(fun(Result1) ->
         Name = maps:get(name, Result1),
-        Result2 = lists:keyfind(Name, #benchmark_result.name, Results2, #benchmark_result{name => Name}),
+        Result2 = case lists:search(fun(R) -> maps:get(name, R, undefined) =:= Name end, Results2) of
+            {value, R} -> R;
+            false -> #{name => Name, avg_time_us => 0}
+        end,
 
         Avg1 = maps:get(avg_time_us, Result1),
         Avg2 = maps:get(avg_time_us, Result2),
@@ -514,7 +517,7 @@ generate_html_header(Results) ->
 </head>
 <body>
     <h1>erlmcp v3 Performance Benchmark Report</h1>
-    <p>Generated: " ++ erlang:system_time_to_string(UniversalTime, "{0Y}-{0M}-{0D} {0h}:{0m}:{0s}s") ++ "</p>
+    <p>Generated: " ++ format_timestamp() ++ "</p>
     <div class='summary'>
         <div class='summary-card'>
             <h3>" ++ format_total_results(Results) ++ "</h3>
@@ -582,8 +585,14 @@ format_total_results(Results) ->
 format_float(Float, Precision) ->
     lists:flatten(io_lib:format("~." ++ integer_to_list(Precision) ++ "f", [Float])).
 
+%% @doc Format current timestamp
+format_timestamp() ->
+    {{Year, Month, Day}, {Hour, Min, Sec}} = erlang:universaltime(),
+    lists:flatten(io_lib:format("~4..0B-~2..0B-~2..0B ~2..0B:~2..0B:~2..0B UTC",
+                              [Year, Month, Day, Hour, Min, Sec])).
+
 %% @doc JSON encode (simplified)
-json:encode(Term) ->
+json_encode(Term) ->
     json_encode(Term, "").
 
 json_encode(Map, Acc) when is_map(Map) ->
@@ -604,7 +613,7 @@ json_encode(Atom, Acc) when is_atom(Atom) ->
     "\"" ++ atom_to_list(Atom) ++ "\"" ++ Acc.
 
 %% @doc JSON decode (simplified)
-json:decode(Binary) ->
+json_decode(Binary) ->
     %% For actual implementation, use jsx or json library
     binary_to_term(Binary).
 

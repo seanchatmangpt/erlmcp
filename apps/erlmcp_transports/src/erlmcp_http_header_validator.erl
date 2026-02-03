@@ -57,7 +57,7 @@ validate_request_headers(Headers, Method) when is_list(Headers), is_atom(Method)
 format_error_response(StatusCode, Message, Data) ->
     Headers = [{<<"content-type">>, <<"application/json">>}],
     Body =
-        jsx:encode(#{<<"error">> => <<"header_validation_failed">>,
+        json:encode(#{<<"error">> => <<"header_validation_failed">>,
                      <<"message">> => Message,
                      <<"data">> => format_error_data(Data)}),
     {StatusCode, Headers, Body}.

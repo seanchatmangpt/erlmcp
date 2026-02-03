@@ -33,15 +33,11 @@
 %% Public API - Digital Signatures
 -export([
     sign/3,
-    verify/3,
-    batch_verify/2
-]).
+    verify/3]).
 
 %% Public API - Key Encapsulation
 -export([
-    kem_encapsulate/2,
-    kem_decapsulate/2
-]).
+    kem_encapsulate/2]).
 
 %% Public API - Hashing
 -export([
@@ -58,11 +54,6 @@
 ]).
 
 %% Internal - Hybrid Signatures
--export([
-    sign_hybrid/4,
-    verify_hybrid/3
-]).
-
 %%% ============================================================================
 %%% Type Specifications
 %%% ============================================================================

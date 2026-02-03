@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, authenticate/2, authorize/3, validate_token/1]).
+-export([ authenticate/2, authorize/3, validate_token/1]).
 -export([create_identity/1, update_identity/2, delete_identity/1]).
 -export([enroll_device/2, validate_device/1, revoke_device/1]).
 

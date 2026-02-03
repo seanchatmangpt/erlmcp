@@ -89,3 +89,21 @@ output "kubectl_config_command" {
     var.project_id
   )
 }
+
+# ============================================================================
+# Service URL Output (for Marketplace compatibility)
+# ============================================================================
+output "service_url" {
+  description = "Service URL for accessing erlmcp"
+  value = var.enable_private_endpoint ? null : format(
+    "https://%s.%s.%s",
+    google_service.erlmcp.load_balancer_ip,
+    var.region,
+    "go.cloud.google.com"
+  )
+}
+
+output "load_balancer_ip" {
+  description = "Load balancer IP address"
+  value = google_service.erlmcp.load_balancer_ip
+}

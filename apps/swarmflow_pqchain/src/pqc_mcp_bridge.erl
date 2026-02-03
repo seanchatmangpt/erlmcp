@@ -29,13 +29,10 @@
     start_link/1,
     call_tool/4,
     verify_tool_call/1,
-    authorize_tool/3,
     list_resources/1,
     read_resource/2,
-    invoke_prompt/3,
     register_capability/2,
     verify_capability/1,
-    create_session/2,
     anchor_invocation/2
 ]).
 
@@ -165,7 +162,7 @@ call_tool(Bridge, Method, Params, CallerKeypair) ->
     call_tool(Bridge, Method, Params, CallerKeypair, #{}).
 
 call_tool(Bridge, Method, Params, CallerKeypair, Options)
-    when is_binary(Method), is_map(Params), is_record(CallerKeypair, pqc_keypair), is_map(Options) ->
+    when is_binary(Method), is_map(Params), #pqc_keypair{} = CallerKeypair, is_map(Options) ->
     Timeout = maps:get(timeout, Options, ?DEFAULT_CALL_TIMEOUT),
     gen_server:call(Bridge, {call_tool, Method, Params, CallerKeypair, Options}, Timeout).
 
@@ -255,7 +252,7 @@ verify_capability(#pqc_capability{} = Capability) ->
 
 %% @doc Create MCP session with ML-KEM encrypted channel
 -spec create_session(pid(), #pqc_keypair{}) -> {ok, binary(), #pqc_mcp_session{}} | {error, term()}.
-create_session(Bridge, CallerKeypair) when is_record(CallerKeypair, pqc_keypair) ->
+create_session(#pqc_keypair{} = CallerKeypair) ->
     gen_server:call(Bridge, {create_session, CallerKeypair}, ?DEFAULT_CALL_TIMEOUT).
 
 %% @doc Anchor tool invocation on-chain for audit trail
@@ -501,8 +498,8 @@ validate_config(Config) ->
 
 %% @doc Register with gproc for service discovery
 register_with_gproc(BridgeId) ->
-    gproc:reg({n, l, {pqc_mcp_bridge, BridgeId}}),
-    gproc:reg({p, l, pqc_mcp_bridge}),
+    ok = gproc:reg({n, l, {pqc_mcp_bridge, BridgeId}}),
+    ok = gproc:reg({p, l, pqc_mcp_bridge}),
     ok.
 
 %% @doc Schedule periodic session cleanup

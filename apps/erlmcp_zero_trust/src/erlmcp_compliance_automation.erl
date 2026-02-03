@@ -7,7 +7,7 @@
 
 %% API
 -export([start_link/0, assess_compliance/2, generate_report/2]).
--export([create_compliance_policy/2, enforce_compliance/2, monitor_compliance/1]).
+-export([ enforce_compliance/2, monitor_compliance/1]).
 -export([scan_controls/1, generate_evidence/2, audit_findings/1]).
 -export([remediate_findings/2, update_compliance_status/2, create_audit_trail/2]).
 
@@ -138,12 +138,12 @@ create_audit_trail(FindingId, Action) ->
 
 init([]) ->
     %% Initialize compliance stores
-    PolicyStore = ets:new(compliance_policy_store, [set, protected, {keypos, #compliance_policy.id}]),
-    AssessmentStore = ets:new(control_assessment_store, [set, protected, {keypos, record.control_assessment.id}]),
-    ReportStore = ets:new(compliance_report_store, [set, protected, {keypos, record.compliance_report.id}]),
-    FindingStore = ets:new(audit_finding_store, [set, protected, {keypos, record.audit_finding.id}]),
-    StateStore = ets:new(compliance_state_store, [set, protected, {keypos, 2}]),
-    EvidenceStore = ets:new(evidence_store, [set, protected, {keypos, 2}]),
+    PolicyStore = ets:new(compliance_policy_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    AssessmentStore = ets:new(control_assessment_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    ReportStore = ets:new(compliance_report_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    FindingStore = ets:new(audit_finding_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    StateStore = ets:new(compliance_state_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    EvidenceStore = ets:new(evidence_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
 
     %% Load configuration
     Config = load_compliance_config(),

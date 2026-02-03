@@ -3,8 +3,8 @@
 -include("erlmcp.hrl").
 
 %% API exports
--export([validate_tool/1, validate_tool_name/1, validate_tool_description/1,
-         validate_input_schema/1, validate_tool_metadata/1, encode_tool/1, decode_tool/1,
+-export([ validate_tool_name/1, validate_tool_description/1,
+         validate_input_schema/1, validate_tool_metadata/1, decode_tool/1,
          send_priority_cancel/3, send_urgent_tool_alert/2]).
 
 %% Types

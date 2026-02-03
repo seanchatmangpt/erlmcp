@@ -5,9 +5,8 @@
 -include("erlmcp.hrl").
 
 %% API exports
--export([start_link/0, start_link/1, complete/3, complete/4, stream_completion/3,
-         stream_completion/4, cancel_completion/2, get_cached_completion/3,
-         add_completion_handler/3, add_completion_handler/4, add_completion_handler/5,
+-export([start_link/0, start_link/1, complete/3, complete/4, stream_completion/3, cancel_completion/2, get_cached_completion/3,
+         add_completion_handler/3, add_completion_handler/4,
          remove_completion_handler/2, stop/1, jaro_winkler_similarity/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).

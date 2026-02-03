@@ -142,3 +142,85 @@ tools/rebar3-diagnostics/
 # CT runtime cache
 log/ct/ct_log_cache
 log/ct/*.log
+
+# Marketplace test evidence (ephemeral)
+marketplace/gcp/test-evidence/
+
+# Devcontainer (KEEP TRACKED - useful for development)
+# .devcontainer/
+
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform/
+.terraform.lock.hcl
+terraform.tfplan
+*.backup
+
+# Crash dumps
+*.crashdump
+rebar3.crashdump
+
+# Environment templates (tracked, but .env.local ignored)
+.env.*.template
+
+# Docker
+*.dockerignore.optimized
+
+# Helm
+charts/*.tgz
+charts/*/Chart.lock
+
+# CI/CD ephemeral files
+.github/workflows/*.log
+
+# Test execution reports (ephemeral)
+test-execution-*.json
+test-execution-analysis.sh
+test-analysis-report.md
+
+# QA and validation (keep archive, ignore latest)
+qa/latest/
+
+# Quick reference and temporary docs
+TEST_SUITE_QUICK_REFERENCE.md
+QUICK*.md
+
+# Broken symlinks and temp directories
+.broken/
+
+# Docker compose overrides (keep examples, ignore generated)
+docker-compose.override.*.yml
+!docker-compose.override.dev.yml
+!docker-compose.override.prod.yml
+!docker-compose.override.staging.yml
+
+# K8s temporary resources
+k8s/*.yaml
+!k8s/namespace.yaml
+!k8s/priority-class.yaml
+!k8s/resource-quota.yaml
+!k8s/secret-template.yaml
+
+# Logs and metrics
+log/*.log
+logs/
+
+# Receipts (ephemeral test artifacts)
+receipts/*.json
+!receipts/.gitkeep
+
+# Build scripts output
+scripts/**/*.log
+scripts/**/build/
+
+# Coverage reports
+coverage_analysis_report*.md
+coverage_reports/
+*.coverage
+
+# Performance reports
+PERFORMANCE_*.md
+reports/PERFORMANCE_*.md

@@ -341,7 +341,7 @@ perform_heartbeat(Nodes) ->
 
 %% @doc Ping a node
 -spec do_ping_node(node(), state() | #node_state{}) -> pong | pang.
-do_ping_node(Node, State) when is_record(State, state) ->
+do_ping_node(Node, State) when element(1, State) =:= state ->
     case maps:get(Node, State#state.nodes, undefined) of
         undefined -> pang;
         NodeState -> do_ping_node(Node, NodeState)

@@ -48,7 +48,7 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_bench_stress).
 
--export([run_all/0, run_workload/1, workloads/0, quick_stress/0, standard_stress/0,
+-export([run_all/0, workloads/0, quick_stress/0, standard_stress/0,
          endurance_stress/0]).
 
 -include_lib("kernel/include/logger.hrl").

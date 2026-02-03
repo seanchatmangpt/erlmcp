@@ -5,7 +5,7 @@
 -include("erlmcp.hrl").
 
 %% API exports
--export([start_link/0, register_app/3, get_apps/0, start_app/2, stop_app/1, get_app_status/1,
+-export([start_link/0, get_apps/0, start_app/2, stop_app/1, get_app_status/1,
          unregister_app/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).

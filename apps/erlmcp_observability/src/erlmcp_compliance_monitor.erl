@@ -12,7 +12,6 @@
 %% API
 -export([start_link/0,
          start_link/1,
-         check_policy_compliance/2,
          generate_compliance_report/1,
          track_security_event/3,
          track_audit_log/3,

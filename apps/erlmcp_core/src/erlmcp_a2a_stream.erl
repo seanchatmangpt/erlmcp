@@ -121,7 +121,7 @@
     total_streams_created :: non_neg_integer()
 }).
 
--type stream() :: #stream{}.
+%% -type stream() :: #stream{}.  % Unused type removed
 -type state() :: #state{}.
 
 %% Default configuration

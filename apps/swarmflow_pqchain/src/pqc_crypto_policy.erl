@@ -160,7 +160,7 @@ init([]) ->
 
     %% Register with gproc
     try
-        gproc:reg({n, l, {?MODULE, server}})
+        ok = gproc:reg({n, l, {?MODULE, server}})
     catch
         error:badarg ->
             %% Already registered (restart case)

@@ -215,7 +215,7 @@ init({Net, InitMeta, SigningKey}) ->
 
         %% Register with gproc
         try
-            true = gproc:reg({n, l, {pqc_case, CaseId}}, self())
+            ok = gproc:reg({n, l, {pqc_case, CaseId}})
         catch
             error:badarg ->
                 %% Already registered or gproc not available

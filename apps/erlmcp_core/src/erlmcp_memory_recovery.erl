@@ -518,7 +518,7 @@ do_create_checkpoint(State) ->
         NewCheckpoints = add_checkpoint(Checkpoint, State#state.checkpoints),
         NewState = State#state{checkpoints = NewCheckpoints},
 
-        logger:info("Created checkpoint ~p (~p bytes)", [CheckpointId, Checkpoint#checkpoint.size_bytes]),
+        logger:info("Created checkpoint ~p (~p bytes)", [CheckpointId, maps:get(size_bytes, Checkpoint)]),
 
         {{ok, Checkpoint}, NewState}
     catch
@@ -678,7 +678,7 @@ snapshot_recovery(_Node, State) ->
         [] ->
             {error, no_checkpoints};
         [Checkpoint | _] ->
-            case do_restore_checkpoint(maps_get(id, Checkpoint), State) of
+            case do_restore_checkpoint(maps:get(id, Checkpoint), State) of
                 {{ok, Result}, _} ->
                     {ok, #{mode => snapshot, checkpoint => Checkpoint, result => Result}};
                 {{error, Reason}, _} ->
@@ -728,7 +728,7 @@ get_peer_nodes(ExcludeNode) ->
 sync_to_new_node(Node) ->
     %% Send current state to new node
     {ok, Snapshot} = create_checkpoint(),
-    rpc:cast(Node, erlmcp_memory_recovery, restore_checkpoint, [maps_get(id, Snapshot)]),
+    rpc:cast(Node, erlmcp_memory_recovery, restore_checkpoint, [maps:get(id, Snapshot)]),
     ok.
 
 %% @private Verify state internal
@@ -818,8 +818,8 @@ load_checkpoints() ->
                                     case string:prefix(File, "checkpoint_") of
                                         false -> false;
                                         _ ->
-                                            FullPath = filename([Dir, File]),
-                                            try load_checkpoint_file(FullPath) of
+                                            FullPath = filename:join(Dir, File),
+                                            case load_checkpoint_file(FullPath) of
                                                 {ok, Checkpoint} -> {true, Checkpoint};
                                                 _ -> false
                                             end
@@ -854,7 +854,7 @@ generate_checkpoint_id() ->
 %% @private Checkpoint filename
 -spec checkpoint_filename(binary()) -> file:filename_all().
 checkpoint_filename(CheckpointId) ->
-    filename([checkpoint_dir(), "checkpoint_" ++ binary_to_list(CheckpointId)]).
+    filename:join(checkpoint_dir(), "checkpoint_" ++ binary_to_list(CheckpointId)).
 
 %% @private Checkpoint directory
 -spec checkpoint_dir() -> file:filename_all().

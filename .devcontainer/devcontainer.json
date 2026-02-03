@@ -20,7 +20,7 @@
       }
     }
   },
-  "postCreateCommand": "apk add --no-cache git make gcc g++ musl-dev openssl-dev ncurses-dev bash && rebar3 local install",
+  "postCreateCommand": "apk add --no-cache git make gcc g++ musl-dev openssl-dev ncurses-dev bash wget curl && wget -q https://s3.amazonaws.com/rebar3/rebar3 -O /usr/local/bin/rebar3 && chmod +x /usr/local/bin/rebar3",
   "remoteUser": "root",
   "workingDir": "/workspaces/erlmcp",
   "mounts": [

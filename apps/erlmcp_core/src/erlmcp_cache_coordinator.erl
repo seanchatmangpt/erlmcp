@@ -60,7 +60,6 @@
 
 -type cache_key() :: binary() | atom().
 -type coherence_level() :: strong | eventual | relaxed.
--type invalidation_ack() :: {node(), cache_key(), reference()}.
 
 -type cache_stats() :: #{invalidations_sent => non_neg_integer(),
                           invalidations_received => non_neg_integer(),
@@ -87,7 +86,7 @@
 -record(state,
         {node_id :: node(),
          coherence_level = ?DEFAULT_COHERENCE :: coherence_level(),
-         pending_invalidations = #{} :: #{reference() => {cache_key(), [node()]}}",
+         pending_invalidations = #{} :: #{reference() => {cache_key(), [node()]}},
          subscription_table :: ets:tid(),
          stats = #{} :: cache_stats(),
          sync_timer :: reference() | undefined,
@@ -209,7 +208,7 @@ init(Opts) ->
     Timeout = maps:get(invalidation_timeout, Opts, ?INVALIDATION_TIMEOUT),
 
     %% Create subscription table
-    SubscriptionTable = ets:new(erlmcp_cache_subscriptions, [bag, public]),
+    SubscriptionTable = ets:new(erlmcp_cache_subscriptions, [bag, public, named_table]),
 
     %% Start sync timer
     SyncTimer = erlang:send_after(?SYNC_INTERVAL, self(), sync_tick),
@@ -304,8 +303,9 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), #state{}) -> ok.
-terminate(_Reason, State) ->
+terminate(_Reason, _State) ->
     pg:leave(erlmcp_cache, cache_nodes, self()),
+    ets:delete(erlmcp_cache_subscriptions),
     logger:info("Cache coordinator terminating"),
     ok.
 
@@ -333,7 +333,7 @@ do_invalidate(Key, Opts, State) ->
             do_invalidate_async(Key, State);
         relaxed ->
             %% Only invalidate if explicitly requested
-            case maps-get(remote, Opts, true) of
+            case maps:get(remote, Opts, true) of
                 true -> do_invalidate_async(Key, State);
                 false -> {ok, State}
             end

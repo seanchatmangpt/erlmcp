@@ -3,8 +3,8 @@
 
 %% API
 -export([start_link/0, log_event/2, log_event/3]).
--export([create_monitoring_policy/2, update_monitoring_policy/3, delete_monitoring_policy/2]).
--export([get_monitoring_policies/1, get_event_history/2]).
+-export([ delete_monitoring_policy/2]).
+-export([get_monitoring_policies/1]).
 -export([enable_monitoring/1, disable_monitoring/1]).
 -export([set_alert_threshold/2, get_alert_summary/1]).
 -export([create_dashboard/1, update_dashboard/2, get_dashboard/1]).

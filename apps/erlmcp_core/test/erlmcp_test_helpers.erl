@@ -36,7 +36,7 @@
 %% API exports
 -export([start_test_server/0, start_test_server/1, start_test_server/2, start_test_client/0,
          start_test_client/1, start_test_client/2, stop_test_server/1, stop_test_server/2,
-         stop_test_client/1, stop_test_client/2, with_test_server/1, with_test_server/3,
+         stop_test_client/1, stop_test_client/2, with_test_server/1,
          with_test_client/1, with_test_client/2, start_test_cache/0, start_test_cache/1,
          stop_test_cache/0, with_test_cache/1, with_test_cache/2]).
 %% gen_server callbacks (for test coordinator process)

@@ -124,7 +124,7 @@ handle_info({'DOWN', _Ref, process, Pid, Reason}, State) ->
     {noreply, State#state{monitoring_pid = NewMonitoringPid}};
 
 handle_info(health_check_interval, State) ->
-    NewState = perform_periodic_health_check(State),
+    NewState = perform_health_check_periodic(State),
     {noreply, NewState};
 
 handle_info(_Info, State) ->
@@ -137,7 +137,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%====================================================================
- Internal Functions
+%% Internal functions
 %%====================================================================
 
 get_primary_nodes() ->
@@ -248,15 +248,15 @@ should_initiate_failover(State) ->
     case State#state.current_active of
         primary ->
             %% Check if primary region has failed
-            case PrimaryStatus#healthy.healthy_count >= State#state.failover_threshold of
+            case maps:get(healthy_count, PrimaryStatus) >= State#state.failover_threshold of
                 true -> false; % Primary is healthy
                 false ->
                     %% Check if secondary has enough healthy nodes
-                    case SecondaryStatus#healthy.healthy_count >= State#state.failover_threshold of
+                    case maps:get(healthy_count, SecondaryStatus) >= State#state.failover_threshold of
                         true -> {true, secondary};
                         false ->
                             %% Check tertiary as last resort
-                            case TertiaryStatus#healthy.healthy_count >= 1 of
+                            case maps:get(healthy_count, TertiaryStatus) >= 1 of
                                 true -> {true, tertiary};
                                 false -> false
                             end
@@ -264,15 +264,15 @@ should_initiate_failover(State) ->
             end;
         secondary ->
             %% Check if secondary has failed
-            case SecondaryStatus#healthy.healthy_count >= State#state.failover_threshold of
+            case maps:get(healthy_count, SecondaryStatus) >= State#state.failover_threshold of
                 true -> false; % Secondary is healthy
                 false ->
                     %% Check if primary has recovered
-                    case PrimaryStatus#healthy.healthy_count >= State#state.failover_threshold of
+                    case maps:get(healthy_count, PrimaryStatus) >= State#state.failover_threshold of
                         true -> {true, primary};
                         false ->
                             %% Check tertiary
-                            case TertiaryStatus#healthy.healthy_count >= 1 of
+                            case maps:get(healthy_count, TertiaryStatus) >= 1 of
                                 true -> {true, tertiary};
                                 false -> false
                             end
@@ -280,15 +280,19 @@ should_initiate_failover(State) ->
             end;
         tertiary ->
             %% Check if tertiary has failed
-            case TertiaryStatus#healthy.healthy_count >= 1 of
+            case maps:get(healthy_count, TertiaryStatus) >= 1 of
                 true -> false; % Tertiary is healthy
                 false ->
                     %% Check if primary or secondary has recovered
-                    case PrimaryStatus#healthy.healthy_count >= State#state.failover_threshold of
+                    PrimaryHealthy = maps:get(healthy_count, PrimaryStatus) >= State#state.failover_threshold,
+                    SecondaryHealthy = maps:get(healthy_count, SecondaryStatus) >= State#state.failover_threshold,
+                    case PrimaryHealthy of
                         true -> {true, primary};
-                        true when SecondaryStatus#healthy.healthy_count >= State#state.failover_threshold ->
-                            {true, secondary};
-                        false -> false
+                        false ->
+                            case SecondaryHealthy of
+                                true -> {true, secondary};
+                                false -> false
+                            end
                     end
             end
     end.
@@ -296,16 +300,18 @@ should_initiate_failover(State) ->
 validate_failover_request(TargetRegion, State) ->
     %% Check if target region is healthy enough
     RegionStatus = maps:get(TargetRegion, State#state.region_status),
+    HealthyCount = maps:get(healthy_count, RegionStatus),
+    FailoverThreshold = State#state.failover_threshold,
 
-    case RegionStatus#healthy.healthy_count >= State#state.failover_threshold of
-        true when TargetRegion =:= primary orelse TargetRegion =:= secondary ->
+    case TargetRegion of
+        primary when HealthyCount >= FailoverThreshold ->
             {ok, State};
-        true when TargetRegion =:= tertiary andalso RegionStatus#healthy.healthy_count >= 1 ->
+        secondary when HealthyCount >= FailoverThreshold ->
             {ok, State};
-        false ->
-            {error, {insufficient_healthy_nodes, TargetRegion}};
+        tertiary when HealthyCount >= 1 ->
+            {ok, State};
         _ ->
-            {error, invalid_region}
+            {error, {insufficient_healthy_nodes, TargetRegion}}
     end.
 
 execute_failover(TargetRegion, State) ->
@@ -351,7 +357,7 @@ update_dns_target(Region) ->
             ok
     end.
 
-notify_failover(Region, State) ->
+notify_failover(Region, _State) ->
     %% Notify all nodes in the cluster about the failover
     Nodes = get_nodes_for_region(Region),
 

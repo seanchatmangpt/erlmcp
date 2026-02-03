@@ -21,7 +21,6 @@
 %% API
 -export([start_link/0,
          start_contract/2,
-         start_contract/3,
          stop_contract/1,
          list_contracts/0,
          count_contracts/0]).

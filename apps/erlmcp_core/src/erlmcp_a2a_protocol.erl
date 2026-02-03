@@ -59,7 +59,6 @@
     %% Response encoding/decoding
     encode_send_message_response/1,
     decode_send_message_response/1,
-    encode_stream_response/1,
     decode_stream_response/1,
     encode_list_tasks_response/1,
     decode_list_tasks_response/1,

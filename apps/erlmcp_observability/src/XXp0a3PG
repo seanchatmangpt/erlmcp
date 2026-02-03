@@ -1,0 +1,264 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Dashboard Manager for erlmcp Monitoring Stack
+%%%
+%%% Manages the creation, storage, and retrieval of monitoring dashboards
+%%% for Prometheus, Grafana, and other monitoring platforms.
+%%%
+%%% Features:
+%%% - Dashboard template management
+%%% - Dynamic dashboard generation
+%%% - Multi-platform support (Prometheus, Grafana, etc.)
+%%% - Dashboard versioning
+%%% - Sharing and collaboration
+%%% - Performance optimization
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_dashboard_manager).
+
+-behaviour(gen_server).
+
+%% API
+-export([start_link/0, start_link/1,
+         create_dashboard/2, get_dashboard/1,
+         update_dashboard/2, delete_dashboard/1,
+         list_dashboards/0, clone_dashboard/2,
+         export_dashboard/1, import_dashboard/2,
+         get_dashboard_stats/0, get_prometheus_rules/0,
+         get_grafana_dashboards/0]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
+
+-include_lib("kernel/include/logger.hrl").
+
+%% Records
+-record(dashboard_template, {
+    id :: binary(),
+    name :: binary(),
+    description :: binary(),
+    platform :: prometheus | grafana | custom,
+    template :: map(),
+    variables :: [binary()],
+    version :: binary(),
+    created_at :: integer(),
+    updated_at :: integer(),
+    author :: binary()
+}).
+
+-record(dashboard, {
+    id :: binary(),
+    name :: binary(),
+    description :: binary(),
+    platform :: prometheus | grafana | custom,
+    data :: map(),
+    template_id :: binary(),
+    version :: binary(),
+    created_at :: integer(),
+    updated_at :: integer(),
+    variables :: map(),
+    shared :: boolean(),
+    access_control :: [binary()]
+}).
+
+-record(prometheus_alert_rule, {
+    name :: binary(),
+    expr :: binary(),
+    duration :: binary(),
+    labels :: map(),
+    annotations :: map(),
+    enabled :: boolean()
+}).
+
+-record(dashboard_stats, {
+    total_dashboards :: integer(),
+    dashboards_by_platform :: map(),
+    shared_dashboards :: integer(),
+    recent_access :: map(),
+    storage_usage :: integer()
+}).
+
+-record(state, {
+    templates :: #{binary() => #dashboard_template{}},
+    dashboards :: #{binary() => #dashboard{}},
+    stats :: #dashboard_stats{},
+    storage_limit :: integer(),
+    version_control :: boolean(),
+    auto_export :: boolean(),
+    export_interval :: pos_integer(),
+    last_export :: integer() | undefined
+}).
+
+-define(STORAGE_LIMIT, 10737418240).  % 10GB
+-define(EXPORT_INTERVAL, 3600000).  % 1 hour
+-define(DEFAULT_TEMPLATE_VERSION, "1.0.0").
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+%% @doc Start the dashboard manager
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    start_link(#{}).
+
+%% @doc Start with configuration
+-spec start_link(map()) -> {ok, pid()} | {error, term()}.
+start_link(Config) ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, Config, []).
+
+%% @brief Create a new dashboard
+-spec create_dashboard(binary(), map()) -> ok.
+create_dashboard(Name, Config) ->
+    gen_server:call(?MODULE, {create_dashboard, Name, Config}).
+
+%% @brief Get dashboard by ID
+-spec get_dashboard(binary()) -> map() | undefined.
+get_dashboard(Id) ->
+    gen_server:call(?MODULE, {get_dashboard, Id}).
+
+%% @brief Update existing dashboard
+-spec update_dashboard(binary(), map()) -> ok.
+update_dashboard(Id, Config) ->
+    gen_server:call(?MODULE, {update_dashboard, Id, Config}).
+
+%% @brief Delete a dashboard
+-spec delete_dashboard(binary()) -> ok.
+delete_dashboard(Id) ->
+    gen_server:call(?MODULE, {delete_dashboard, Id}).
+
+%% @brief List all dashboards
+-spec list_dashboards() -> [map()].
+list_dashboards() ->
+    gen_server:call(?MODULE, list_dashboards).
+
+%% @brief Clone an existing dashboard
+-spec clone_dashboard(binary(), binary()) -> ok.
+clone_dashboard(SourceId, NewName) ->
+    gen_server:call(?MODULE, {clone_dashboard, SourceId, NewName}).
+
+%% @brief Export dashboard
+-spec export_dashboard(binary()) -> map().
+export_dashboard(Id) ->
+    gen_server:call(?MODULE, {export_dashboard, Id}).
+
+%% @brief Import dashboard
+-spec import_dashboard(binary(), map()) -> ok.
+import_dashboard(Id, Data) ->
+    gen_server:call(?MODULE, {import_dashboard, Id, Data}).
+
+%% @brief Get dashboard statistics
+-spec get_dashboard_stats() -> map().
+get_dashboard_stats() ->
+    gen_server:call(?MODULE, get_dashboard_stats).
+
+%% @brief Get Prometheus alert rules
+-spec get_prometheus_alert_rules() -> [#prometheus_alert_rule{}].
+get_prometheus_alert_rules() ->
+    gen_server:call(?MODULE, get_prometheus_alert_rules).
+
+%% @brief Get Grafana dashboards
+-spec get_grafana_dashboards() -> [map()].
+get_grafana_dashboards() ->
+    gen_server:call(?MODULE, get_grafana_dashboards).
+
+%%====================================================================
+%% gen_server Callbacks
+%%====================================================================
+
+init(Config) ->
+    process_flag(trap_exit, true),
+
+    %% Initialize with default templates
+    DefaultTemplates = load_default_templates(),
+
+    %% Initialize state
+    State0 = #state{
+        templates = DefaultTemplates,
+        dashboards = #{},
+        stats = #dashboard_stats{
+            total_dashboards = 0,
+            dashboards_by_platform = #{prometheus => 0, grafana => 0, custom => 0},
+            shared_dashboards = 0,
+            recent_access = #{},
+            storage_usage = 0
+        },
+        storage_limit = maps:get(storage_limit, Config, ?STORAGE_LIMIT),
+        version_control = maps:get(version_control, Config, true),
+        auto_export = maps:get(auto_export, Config, false),
+        export_interval = maps:get(export_interval, Config, ?EXPORT_INTERVAL),
+        last_export = undefined
+    },
+
+    %% Start auto-export if enabled
+    State = case State0#state.auto_export of
+        true ->
+            ExportRef = erlang:send_after(State0#state.export_interval, self(), auto_export),
+            State0#state{last_export = ExportRef};
+        false ->
+            State0
+    end,
+
+    {ok, State}.
+
+handle_call({create_dashboard, Name, Config}, _From, State) ->
+    %% Generate unique ID
+    DashboardId = generate_dashboard_id(),
+
+    %% Extract platform and template
+    Platform = maps:get(platform, Config, prometheus),
+    TemplateId = maps:get(template_id, Config),
+
+    %% Get template
+    Template = case TemplateId of
+        undefined ->
+            create_default_template(Platform);
+        _ ->
+            maps:get(TemplateId, State#state.templates, create_default_template(Platform))
+    end,
+
+    %% Get variables
+    Variables = maps:get(variables, Config, #{}),
+
+    %% Generate dashboard data
+    DashboardData = generate_dashboard_data(Template#dashboard_template.template, Variables),
+
+    %% Create dashboard record
+    Dashboard = #dashboard{
+        id = DashboardId,
+        name = Name,
+        description = maps:get(description, Config, ""),
+        platform = Platform,
+        data = DashboardData,
+        template_id = TemplateId,
+        version = ?DEFAULT_TEMPLATE_VERSION,
+        created_at = erlang:system_time(millisecond),
+        updated_at = erlang:system_time(millisecond),
+        variables = Variables,
+        shared = maps:get(shared, Config, false),
+        access_control = maps:get(access_control, Config, [])
+    },
+
+    %% Store dashboard
+    Dashboards = maps:put(DashboardId, Dashboard, State#state.dashboards),
+
+    %% Update stats
+    UpdatedStats = update_dashboard_stats(Dashboard, State#state.stats),
+
+    ?LOG_INFO("Created dashboard: ~s (~s)", [Name, Platform]),
+
+    {reply, DashboardId, State#state{
+        dashboards = Dashboards,
+        stats = UpdatedStats
+    }};
+
+handle_call({get_dashboard, Id}, _From, State) ->
+    Dashboard = maps:get(Id, State#state.dashboards, undefined),
+    case Dashboard of
+        undefined -> {reply, undefined, State};
+        _ ->
+            %% Update access time
+            UpdatedStats = update_access_stats(Id, State#state.stats),
+   

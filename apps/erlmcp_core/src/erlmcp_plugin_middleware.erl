@@ -14,8 +14,7 @@
 %%% -module(erlmcp_plugin_audit_middleware).
 %%% -behaviour(erlmcp_plugin_middleware).
 %%%
-%%% -export([init/1, pre_execute/2, post_execute/2, metadata/0]).
-%%%
+%%% %%%
 %%% metadata() ->
 %%%     #{name => <<"audit_middleware">>,
 %%%       version => <<"1.0.0">>,

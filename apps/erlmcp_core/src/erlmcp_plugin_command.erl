@@ -13,8 +13,7 @@
 %%% -module(erlmcp_plugin_analyze_command).
 %%% -behaviour(erlmcp_plugin_command).
 %%%
-%%% -export([init/1, execute/2, help/0, metadata/0]).
-%%%
+%%% %%%
 %%% metadata() ->
 %%%     #{name => <<"analyze">>,
 %%%       version => <<"1.0.0">>,

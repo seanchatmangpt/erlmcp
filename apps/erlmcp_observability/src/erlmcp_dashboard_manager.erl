@@ -25,7 +25,8 @@
          update_dashboard/2, delete_dashboard/1,
          list_dashboards/0, clone_dashboard/2,
          export_dashboard/1, import_dashboard/2,
-         get_dashboard_stats/0, get_prometheus_rules/0,
+         get_dashboard_stats/0,
+         get_prometheus_alert_rules/0,
          get_grafana_dashboards/0]).
 
 %% gen_server callbacks
@@ -35,52 +36,52 @@
 -include_lib("kernel/include/logger.hrl").
 
 %% Records
--record.dashboard_template, {
+-record(dashboard_template, {
     id :: binary(),
     name :: binary(),
     description :: binary(),
     platform :: prometheus | grafana | custom,
-    template :: map(),  % Dashboard template data
-    variables :: [binary()],  % Template variables
+    template :: map(),
+    variables :: [binary()],
     version :: binary(),
     created_at :: integer(),
     updated_at :: integer(),
     author :: binary()
-}.
+}).
 
-#dashboard, {
+-record(dashboard, {
     id :: binary(),
     name :: binary(),
     description :: binary(),
     platform :: prometheus | grafana | custom,
-    data :: map(),  % Generated dashboard data
+    data :: map(),
     template_id :: binary(),
     version :: binary(),
     created_at :: integer(),
     updated_at :: integer(),
-    variables :: map(),  % Actual variable values
+    variables :: map(),
     shared :: boolean(),
-    access_control :: [binary()]  % List of user IDs with access
-}.
+    access_control :: [binary()]
+}).
 
-#prometheus_alert_rule, {
+-record(prometheus_alert_rule, {
     name :: binary(),
     expr :: binary(),
     duration :: binary(),
     labels :: map(),
     annotations :: map(),
     enabled :: boolean()
-}.
+}).
 
-#dashboard_stats, {
+-record(dashboard_stats, {
     total_dashboards :: integer(),
     dashboards_by_platform :: map(),
     shared_dashboards :: integer(),
     recent_access :: map(),
     storage_usage :: integer()
-}.
+}).
 
--record.state, {
+-record(state, {
     templates :: #{binary() => #dashboard_template{}},
     dashboards :: #{binary() => #dashboard{}},
     stats :: #dashboard_stats{},
@@ -88,8 +89,9 @@
     version_control :: boolean(),
     auto_export :: boolean(),
     export_interval :: pos_integer(),
+    export_ref :: reference() | undefined,
     last_export :: integer() | undefined
-}.
+}).
 
 -define(STORAGE_LIMIT, 10737418240).  % 10GB
 -define(EXPORT_INTERVAL, 3600000).  % 1 hour
@@ -172,41 +174,45 @@ init(Config) ->
     process_flag(trap_exit, true),
 
     %% Initialize with default templates
-    DefaultTemplates = load_default_templates();
+    DefaultTemplates = load_default_templates(),
 
     %% Initialize state
-    State = #state{
+    State0 = #state{
         templates = DefaultTemplates,
         dashboards = #{},
         stats = #dashboard_stats{
             total_dashboards = 0,
-            dashboards_by_platform => #{prometheus => 0, grafana => 0, custom => 0},
+            dashboards_by_platform = #{prometheus => 0, grafana => 0, custom => 0},
             shared_dashboards = 0,
-            recent_access => #{},
+            recent_access = #{},
             storage_usage = 0
         },
         storage_limit = maps:get(storage_limit, Config, ?STORAGE_LIMIT),
         version_control = maps:get(version_control, Config, true),
         auto_export = maps:get(auto_export, Config, false),
         export_interval = maps:get(export_interval, Config, ?EXPORT_INTERVAL),
+        export_ref = undefined,
         last_export = undefined
     },
 
     %% Start auto-export if enabled
-    if State#state.auto_export ->
-            ExportRef = erlang:send_after(State#state.export_interval, self(), auto_export),
-            State#state{export_ref = ExportRef};
-       true ->
-            State
-    end.
+    State = case State0#state.auto_export of
+        true ->
+            ExportRef = erlang:send_after(State0#state.export_interval, self(), auto_export),
+            State0#state{export_ref = ExportRef};
+        false ->
+            State0
+    end,
+
+    {ok, State}.
 
 handle_call({create_dashboard, Name, Config}, _From, State) ->
     %% Generate unique ID
-    DashboardId = generate_dashboard_id();
+    DashboardId = generate_dashboard_id(),
 
     %% Extract platform and template
-    Platform = maps:get(platform, Config, prometheus);
-    TemplateId = maps:get(template_id, Config);
+    Platform = maps:get(platform, Config, prometheus),
+    TemplateId = maps:get(template_id, Config),
 
     %% Get template
     Template = case TemplateId of
@@ -214,13 +220,13 @@ handle_call({create_dashboard, Name, Config}, _From, State) ->
             create_default_template(Platform);
         _ ->
             maps:get(TemplateId, State#state.templates, create_default_template(Platform))
-    end;
+    end,
 
     %% Get variables
-    Variables = maps:get(variables, Config, #{});
+    Variables = maps:get(variables, Config, #{}),
 
     %% Generate dashboard data
-    DashboardData = generate_dashboard_data(Template#dashboard_template.template, Variables);
+    DashboardData = generate_dashboard_data(Template#dashboard_template.template, Variables),
 
     %% Create dashboard record
     Dashboard = #dashboard{
@@ -236,13 +242,13 @@ handle_call({create_dashboard, Name, Config}, _From, State) ->
         variables = Variables,
         shared = maps:get(shared, Config, false),
         access_control = maps:get(access_control, Config, [])
-    };
+    },
 
     %% Store dashboard
-    Dashboards = maps:put(DashboardId, Dashboard, State#state.dashboards);
+    Dashboards = maps:put(DashboardId, Dashboard, State#state.dashboards),
 
     %% Update stats
-    UpdatedStats = update_dashboard_stats(Dashboard, State#state.stats);
+    UpdatedStats = update_dashboard_stats(Dashboard, State#state.stats),
 
     ?LOG_INFO("Created dashboard: ~s (~s)", [Name, Platform]),
 
@@ -289,10 +295,10 @@ handle_call({update_dashboard, Id, Config}, _From, State) ->
             end,
 
             %% Store updated dashboard
-            Dashboards = maps:put(Id, NewDashboard, State#state.dashboards);
+            Dashboards = maps:put(Id, NewDashboard, State#state.dashboards),
 
             %% Update stats
-            UpdatedStats = update_dashboard_stats(NewDashboard, State#state.stats);
+            UpdatedStats = update_dashboard_stats(NewDashboard, State#state.stats),
 
             ?LOG_INFO("Updated dashboard: ~s", [Id]),
 
@@ -311,10 +317,10 @@ handle_call({delete_dashboard, Id}, _From, State) ->
             {reply, {error, not_found}, State};
         _ ->
             %% Remove dashboard
-            Dashboards = maps:remove(Id, State#state.dashboards);
+            Dashboards = maps:remove(Id, State#state.dashboards),
 
             %% Update stats
-            UpdatedStats = decrement_dashboard_stats(Dashboard, State#state.stats);
+            UpdatedStats = decrement_dashboard_stats(Dashboard, State#state.stats),
 
             ?LOG_INFO("Deleted dashboard: ~s", [Id]),
 
@@ -338,19 +344,19 @@ handle_call({clone_dashboard, SourceId, NewName}, _From, State) ->
             {reply, {error, not_found}, State};
         _ ->
             %% Create clone
-            CloneId = generate_dashboard_id();
+            CloneId = generate_dashboard_id(),
             CloneDashboard = SourceDashboard#dashboard{
                 id = CloneId,
                 name = NewName,
                 created_at = erlang:system_time(millisecond),
                 updated_at = erlang:system_time(millisecond)
-            };
+            },
 
             %% Store clone
-            Dashboards = maps:put(CloneId, CloneDashboard, State#state.dashboards);
+            Dashboards = maps:put(CloneId, CloneDashboard, State#state.dashboards),
 
             %% Update stats
-            UpdatedStats = update_dashboard_stats(CloneDashboard, State#state.stats);
+            UpdatedStats = update_dashboard_stats(CloneDashboard, State#state.stats),
 
             ?LOG_INFO("Cloned dashboard: ~s -> ~s", [SourceId, CloneId]),
 
@@ -378,11 +384,11 @@ handle_call({import_dashboard, Id, Data}, _From, State) ->
             {reply, {error, invalid_data}, State};
         _ ->
             %% Import dashboard
-            ImportedDashboard = import_dashboard_data(Id, Data);
-            Dashboards = maps:put(Id, ImportedDashboard, State#state.dashboards);
+            ImportedDashboard = import_dashboard_data(Id, Data),
+            Dashboards = maps:put(Id, ImportedDashboard, State#state.dashboards),
 
             %% Update stats
-            UpdatedStats = update_dashboard_stats(ImportedDashboard, State#state.stats);
+            UpdatedStats = update_dashboard_stats(ImportedDashboard, State#state.stats),
 
             ?LOG_INFO("Imported dashboard: ~s", [Id]),
 
@@ -459,8 +465,8 @@ code_change(_OldVsn, State, _Extra) ->
 create_default_template(Platform) ->
     #dashboard_template{
         id = generate_template_id(),
-        name <<(atom_to_binary(Platform))/binary, "_default">>,
-        description => "Default template for " ++ atom_to_list(Platform),
+        name = <<(atom_to_binary(Platform))/binary, "_default">>,
+        description = "Default template for " ++ atom_to_list(Platform),
         platform = Platform,
         template = get_platform_template(Platform),
         variables = get_platform_variables(Platform),
@@ -549,7 +555,7 @@ export_dashboard_data(Dashboard) ->
 
 %% @brief Import dashboard data
 import_dashboard_data(Id, Data) ->
-    DashboardId = maps:get(id, Data, Id);
+    DashboardId = maps:get(id, Data, Id),
 
     #dashboard{
         id = DashboardId,
@@ -588,24 +594,24 @@ extract_prometheus_alerts(Data) ->
 
 %% @brief Format panels for Grafana
 format_grafana_panels(Data) ->
-    case Data#{panels} of
+    case maps:get(panels, Data, undefined) of
         undefined -> [];
         Panels -> lists:map(fun(Panel) ->
             #{
                 id => generate_panel_id(),
-                title => Panel#{title},
-                type => Panel#{type},
-                targets => Panel#{metrics}
+                title => maps:get(title, Panel),
+                type => maps:get(type, Panel),
+                targets => maps:get(metrics, Panel)
             }
         end, Panels)
     end.
 
 %% @brief Update dashboard statistics
 update_dashboard_stats(Dashboard, Stats) ->
-    Platform = Dashboard#dashboard.platform;
+    Platform = Dashboard#dashboard.platform,
 
     %% Update total count
-    Total = Stats#dashboard_stats.total_dashboards + 1;
+    Total = Stats#dashboard_stats.total_dashboards + 1,
 
     %% Update platform count
     PlatformCountMap = maps:update_with(
@@ -613,17 +619,17 @@ update_dashboard_stats(Dashboard, Stats) ->
         fun(C) -> C + 1 end,
         1,
         Stats#dashboard_stats.dashboards_by_platform
-    );
+    ),
 
     %% Update shared count
     SharedCount = case Dashboard#dashboard.shared of
         true -> Stats#dashboard_stats.shared_dashboards + 1;
         false -> Stats#dashboard_stats.shared_dashboards
-    end;
+    end,
 
     %% Update storage usage (estimate)
-    StorageEstimate = estimate_dashboard_size(Dashboard);
-    TotalStorage = Stats#dashboard_stats.storage_usage + StorageEstimate;
+    StorageEstimate = estimate_dashboard_size(Dashboard),
+    TotalStorage = Stats#dashboard_stats.storage_usage + StorageEstimate,
 
     Stats#dashboard_stats{
         total_dashboards = Total,
@@ -634,27 +640,27 @@ update_dashboard_stats(Dashboard, Stats) ->
 
 %% @brief Decrement dashboard statistics
 decrement_dashboard_stats(Dashboard, Stats) ->
-    Platform = Dashboard#dashboard.platform;
+    Platform = Dashboard#dashboard.platform,
 
     %% Update total count
-    Total = max(Stats#dashboard_stats.total_dashboards - 1, 0);
+    Total = max(Stats#dashboard_stats.total_dashboards - 1, 0),
 
     %% Update platform count
     PlatformCountMap = maps:update_with(
         Platform,
         fun(C) -> max(C - 1, 0) end,
         Stats#dashboard_stats.dashboards_by_platform
-    );
+    ),
 
     %% Update shared count
     SharedCount = case Dashboard#dashboard.shared of
         true -> max(Stats#dashboard_stats.shared_dashboards - 1, 0);
         false -> Stats#dashboard_stats.shared_dashboards
-    end;
+    end,
 
     %% Update storage usage
-    StorageEstimate = estimate_dashboard_size(Dashboard);
-    TotalStorage = max(Stats#dashboard_stats.storage_usage - StorageEstimate, 0);
+    StorageEstimate = estimate_dashboard_size(Dashboard),
+    TotalStorage = max(Stats#dashboard_stats.storage_usage - StorageEstimate, 0),
 
     Stats#dashboard_stats{
         total_dashboards = Total,
@@ -666,11 +672,11 @@ decrement_dashboard_stats(Dashboard, Stats) ->
 %% @brief Update access statistics
 update_access_stats(DashboardId, Stats) ->
     %% Update recent access time
-    Now = erlang:system_time(millisecond);
-    UpdatedAccess = maps:put(DashboardId, Now, Stats#dashboard_stats.recent_access);
+    Now = erlang:system_time(millisecond),
+    UpdatedAccess = maps:put(DashboardId, Now, Stats#dashboard_stats.recent_access),
 
     %% Keep only last 100 access records
-    if map_size(UpdatedAccess) > 100 ->
+    FinalAccess = if map_size(UpdatedAccess) > 100 ->
             Sorted = lists:sort(fun({_K1, V1}, {_K2, V2}) -> V1 > V2 end, maps:to_list(UpdatedAccess)),
             Truncated = lists:sublist(Sorted, 100),
             maps:from_list(Truncated);
@@ -678,7 +684,7 @@ update_access_stats(DashboardId, Stats) ->
             UpdatedAccess
     end,
 
-    Stats#dashboard_stats{recent_access = UpdatedAccess}.
+    Stats#dashboard_stats{recent_access = FinalAccess}.
 
 %% @brief Estimate dashboard size
 estimate_dashboard_size(Dashboard) ->
@@ -697,42 +703,42 @@ export_all_dashboards(State) ->
 load_default_templates() ->
     maps:from_list([
         {<<"prometheus_overview">>, #dashboard_template{
-            id => <<"prometheus_overview">>,
-            name => "Prometheus System Overview",
-            description => "Default Prometheus dashboard for erlmcp system monitoring",
-            platform => prometheus,
-            template => get_platform_template(prometheus),
-            variables => get_platform_variables(prometheus),
-            version => "1.0.0",
-            created_at => erlang:system_time(millisecond),
-            updated_at => erlang:system_time(millisecond),
-            author => "system"
+            id = <<"prometheus_overview">>,
+            name = "Prometheus System Overview",
+            description = "Default Prometheus dashboard for erlmcp system monitoring",
+            platform = prometheus,
+            template = get_platform_template(prometheus),
+            variables = get_platform_variables(prometheus),
+            version = "1.0.0",
+            created_at = erlang:system_time(millisecond),
+            updated_at = erlang:system_time(millisecond),
+            author = "system"
         }},
         {<<"grafana_erlmcp">>, #dashboard_template{
-            id => <<"grafana_erlmcp">>,
-            name => "erlmcp Grafana Dashboard",
-            description => "Grafana dashboard for erlmcp metrics and traces",
-            platform => grafana,
-            template => get_platform_template(grafana),
-            variables => get_platform_variables(grafana),
-            version => "1.0.0",
-            created_at => erlang:system_time(millisecond),
-            updated_at => erlang:system_time(millisecond),
-            author => "system"
+            id = <<"grafana_erlmcp">>,
+            name = "erlmcp Grafana Dashboard",
+            description = "Grafana dashboard for erlmcp metrics and traces",
+            platform = grafana,
+            template = get_platform_template(grafana),
+            variables = get_platform_variables(grafana),
+            version = "1.0.0",
+            created_at = erlang:system_time(millisecond),
+            updated_at = erlang:system_time(millisecond),
+            author = "system"
         }}
     ]).
 
 %% @brief Generate unique dashboard ID
 generate_dashboard_id() ->
-    Id = crypto:strong_rand_bytes(8);
+    Id = crypto:strong_rand_bytes(8),
     integer_to_binary(binary:decode_unsigned(Id), 16).
 
 %% @brief Generate unique template ID
 generate_template_id() ->
-    Id = crypto:strong_rand_bytes(8);
+    Id = crypto:strong_rand_bytes(8),
     integer_to_binary(binary:decode_unsigned(Id), 16).
 
 %% @brief Generate unique panel ID
 generate_panel_id() ->
-    Id = crypto:strong_rand_bytes(4);
+    Id = crypto:strong_rand_bytes(4),
     integer_to_binary(binary:decode_unsigned(Id), 16).

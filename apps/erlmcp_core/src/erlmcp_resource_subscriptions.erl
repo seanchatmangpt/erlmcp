@@ -14,8 +14,7 @@
 -include("erlmcp.hrl").
 
 %% API exports
--export([start_link/0, subscribe_to_resource/3, unsubscribe_from_resource/2,
-         list_resource_subscriptions/2, notify_resource_changed/2, set_rate_limit/2, get_stats/0]).
+-export([start_link/0, unsubscribe_from_resource/2, notify_resource_changed/2, set_rate_limit/2, get_stats/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 

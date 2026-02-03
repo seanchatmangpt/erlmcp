@@ -14,8 +14,7 @@
 %%% -module(erlmcp_plugin_s3_exporter).
 %%% -behaviour(erlmcp_plugin_exporter).
 %%%
-%%% -export([init/1, export/2, get_config_schema/0, metadata/0]).
-%%%
+%%% %%%
 %%% metadata() ->
 %%%     #{name => <<"s3_exporter">>,
 %%%       version => <<"1.0.0">>,

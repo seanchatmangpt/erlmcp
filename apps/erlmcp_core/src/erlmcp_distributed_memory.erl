@@ -72,13 +72,6 @@
 -type memory_domain() :: session | shared | registry | cache | ephemeral.
 -type consistency() :: eventual | bounded_stale | strong.
 -type vector_clock() :: #{node() => non_neg_integer()}.
--type memory_entry() :: #{key => memory_key(),
-                           value => memory_value(),
-                           version => vector_clock(),
-                           timestamp => integer(),
-                           ttl => integer() | infinity,
-                           domain => memory_domain(),
-                           checksum => binary()}.
 -type replication_factor() :: 1 | 2 | 3.
 
 -type agent_info() :: #{agent_id := binary(),
@@ -96,7 +89,7 @@
 
 -export_type([memory_key/0, memory_value/0, memory_domain/0,
               consistency/0, vector_clock/0, replication_factor/0,
-              memory_limit/0]).
+              agent_info/0, memory_limit/0]).
 
 %%====================================================================
 %% Constants
@@ -314,13 +307,13 @@ init(Opts) ->
                                           {read_concurrency, true},
                                           {write_concurrency, true}]),
 
-    MetadataTable = ets:new(erlmcp_memory_meta, [set, protected,
+    MetadataTable = ets:new(erlmcp_memory_meta, [set, protected, named_table,
                                                   {read_concurrency, true}]),
 
-    AgentTable = ets:new(erlmcp_agents, [bag, public,
+    AgentTable = ets:new(erlmcp_agents, [bag, public, named_table,
                                          {read_concurrency, true}]),
 
-    SubscriptionTable = ets:new(erlmcp_subscriptions, [bag, public]),
+    SubscriptionTable = ets:new(erlmcp_subscriptions, [bag, public, named_table]),
 
     %% Start sync timer
     SyncTimer = erlang:send_after(?SYNC_INTERVAL, self(), sync_tick),
@@ -501,6 +494,12 @@ terminate(_Reason, State) ->
 
     %% Leave process group
     pg:leave(erlmcp_memory, memory_nodes, self()),
+
+    %% Delete ETS tables (named tables)
+    ets:delete(erlmcp_memory),
+    ets:delete(erlmcp_memory_meta),
+    ets:delete(erlmcp_agents),
+    ets:delete(erlmcp_subscriptions),
 
     logger:info("Distributed memory terminating: ~p", [State#state.stats]),
     ok.
@@ -723,7 +722,7 @@ get_domain_stats_internal(Domain, State) ->
     TotalBytes = lists:foldl(fun([Entry], Acc) ->
                                 case is_entry_valid(Entry) of
                                     true ->
-                                        Acc += erts_debug:size(Entry);
+                                        Acc + erts_debug:size(Entry);
                                     false ->
                                         Acc
                                 end
@@ -777,9 +776,9 @@ perform_sync(State) ->
             PendingDomains = State1#state.pending_sync,
             State2 = State1#state{pending_sync = []},
 
-            {SyncResults, NewStats} = sync_domains(PendingDomains, State2),
+            {SyncResults, _} = sync_domains(PendingDomains, State2),
 
-            UpdatedStats = maps:fold(fun(Domain, Result, Acc) ->
+            UpdatedStats = maps:fold(fun(_Domain, Result, Acc) ->
                                            case Result of
                                                {ok, Bytes} ->
                                                    Acc#{syncs_completed =>
@@ -793,8 +792,9 @@ perform_sync(State) ->
                                    end, State2#state.stats, SyncResults),
 
             State2#state{sync_in_progress = false,
-                         stats => UpdatedStats#{
-                           last_sync_time => erlang:system_time(millisecond)}}
+                         stats = maps:put(last_sync_time,
+                                          erlang:system_time(millisecond),
+                                          UpdatedStats)}
     end.
 
 %% @private Sync specific domains
@@ -852,7 +852,7 @@ sync_domain(Domain, State, _Now) ->
 
 %% @private Process incoming sync data
 -spec process_sync_data(node(), map(), #state{}) -> #state{}.
-process_sync_data(FromNode, Data, State) ->
+process_sync_data(_FromNode, Data, State) ->
     Domain = maps:get(domain, Data),
     Entries = maps:get(entries, Data, []),
     RemoteClock = maps:get(vector_clock, Data, #{}),
@@ -947,7 +947,7 @@ compare_versions(V1, V2) ->
 %% @private Merge vector clocks
 -spec merge_vector_clocks(vector_clock(), vector_clock()) -> vector_clock().
 merge_vector_clocks(V1, V2) ->
-    maps:merge_with(fun(_K, V1, V2) -> max(V1, V2) end, V1, V2).
+    maps:merge_with(fun(_K, Val1, Val2) -> max(Val1, Val2) end, V1, V2).
 
 %% @private Replicate synchronously
 -spec replicate_sync(memory_domain(), memory_key(), map(), #state{}) ->
@@ -1213,7 +1213,7 @@ request_remote_node_stats(Node) ->
 
 %% @private Get cluster memory
 -spec get_cluster_memory_internal(#state{}) -> map().
-get_cluster_memory_internal(State) ->
+get_cluster_memory_internal(_State) ->
     Nodes = pg:get_members(erlmcp_memory, memory_nodes),
 
     MemoryData = lists:map(fun(Node) ->

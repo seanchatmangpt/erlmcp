@@ -3,8 +3,7 @@
 -behaviour(gen_statem).
 
 %% API
--export([start_link/0, start_link/1, start_link/2, call/2, call/3, call_with_fallback/3,
-         call_with_fallback/4, get_state/1, get_stats/1, reset/1, force_open/1, force_close/1,
+-export([start_link/0, start_link/1, start_link/2, call/2, call/3, call_with_fallback/3, get_state/1, get_stats/1, reset/1, force_open/1, force_close/1,
          stop/1, register_breaker/2, register_breaker/3, unregister_breaker/1, get_all_states/0,
          get_all_stats/0, reset_all/0]).
 

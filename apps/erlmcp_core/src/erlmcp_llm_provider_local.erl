@@ -7,7 +7,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, start_link/1, create_message/2, set_backend/1, get_backend/0, set_base_url/1,
+-export([start_link/0, start_link/1, create_message/2, get_backend/0, set_base_url/1,
          get_base_url/0, set_model/1, get_model/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -170,7 +170,7 @@ do_openai_compatible_request(Messages, Params, State) ->
     end.
 
 parse_ollama_response(ResponseBody) ->
-    try jsx:decode(ResponseBody, [return_maps]) of
+    try json:decode(ResponseBody) of
         #{<<"message">> := Message} ->
             Content = maps_get(<<"content">>, Message, <<>>),
             {ok,
@@ -194,7 +194,7 @@ parse_ollama_response(ResponseBody) ->
     end.
 
 parse_openai_compatible_response(ResponseBody) ->
-    try jsx:decode(ResponseBody, [return_maps]) of
+    try json:decode(ResponseBody) of
         #{<<"choices">> := [#{<<"message">> := Message} | _], <<"usage">> := Usage} ->
             {ok,
              #{<<"role">> => maps_get(<<"role">>, Message, <<"assistant">>),
@@ -222,7 +222,7 @@ http_post(Url, Headers, BodyMap, Timeout) ->
       port := Port} =
         uri_string:parse(Url),
     Path = maps_get(path, uri_string:parse(Url), <<"/">>),
-    Body = jsx:encode(BodyMap),
+    Body = json:encode(BodyMap),
 
     Transport =
         case Scheme of

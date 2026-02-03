@@ -41,10 +41,7 @@
     dependency_measure/3,
     split_mining/2,
     join_mining/2,
-    detect_loops/2,
-    to_causal_net/1,
-    to_petri_net/1
-]).
+    detect_loops/2]).
 
 %% Internal exports for testing
 -export([
@@ -119,7 +116,7 @@ discover(EventLog) ->
 %% @doc Discover process model from event log with custom configuration.
 -spec discover(EventLog :: event_log(), Config :: #heuristics_config{}) ->
     {ok, #swf_net{}} | {error, term()}.
-discover(EventLog, Config) when is_list(EventLog), is_record(Config, heuristics_config) ->
+discover(EventLog, #heuristics_config{} = Config) when is_list(EventLog) ->
     try
         %% Step 1: Build dependency graph
         DepGraph = dependency_graph(EventLog, Config),
@@ -357,7 +354,7 @@ to_petri_net(#causal_net{
 -spec extract_traces(EventLog :: event_log()) -> [trace()].
 extract_traces([]) ->
     [];
-extract_traces([First | _] = EventLog) when is_record(First, swf_event) ->
+extract_traces(#swf_event{} = First) ->
     %% Group events by case_id
     Grouped = lists:foldl(
         fun(#swf_event{case_id = CaseId, event_type = EventType,

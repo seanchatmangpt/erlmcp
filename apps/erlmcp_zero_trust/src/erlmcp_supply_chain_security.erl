@@ -6,8 +6,8 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, verify_package/2, scan_dependencies/1, create_policy/2]).
--export([get_verification_results/2, get_sbom/1, generate_attestation/1]).
+-export([start_link/0, verify_package/2, scan_dependencies/1]).
+-export([ get_sbom/1, generate_attestation/1]).
 -export([check_vulnerabilities/1, enforce_slsa/2, verify_provenance/2]).
 
 %% gen_server callbacks
@@ -107,10 +107,10 @@ verify_provenance(PackageId, ProvenanceData) ->
 
 init([]) ->
     %% Initialize supply chain security stores
-    VerificationStore = ets:new(package_verification_store, [set, protected, {keypos, #package_verification.id}]),
-    ScanStore = ets:new(dependency_scan_store, [set, protected, {keypos, #dependency_scan.id}]),
-    PolicyStore = ets:new(policy_store, [set, protected, {keypos, #security_policy.id}]),
-    SBOMStore = ets:new(sbom_store, [set, protected, {keypos, 2}]),
+    VerificationStore = ets:new(package_verification_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    ScanStore = ets:new(dependency_scan_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    PolicyStore = ets:new(policy_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    SBOMStore = ets:new(sbom_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
 
     %% Load configuration
     Config = load_supply_chain_config(),

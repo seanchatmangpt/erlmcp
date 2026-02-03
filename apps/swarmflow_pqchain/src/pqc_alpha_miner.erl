@@ -35,12 +35,7 @@
 %% API exports
 -export([
     discover/1,
-    footprint/1,
-    compute_places/1,
-    build_net/2,
-    footprint_to_matrix/1,
-    compare_footprints/2
-]).
+    footprint/1,]).
 
 %% Utility exports for testing
 -export([

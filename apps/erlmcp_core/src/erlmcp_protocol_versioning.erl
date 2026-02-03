@@ -1,5 +1,6 @@
 -module(erlmcp_protocol_versioning).
 -behaviour(gen_server).
+-compile({nowarn_unused_function, [transform_from_2_1_0/1, transform_from_3_0_0/1]}).
 
 %% API
 -export([start_link/0,

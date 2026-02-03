@@ -1,0 +1,73 @@
+{application, erlmcp_compliance,
+ [
+  {description, "erlmcp Compliance Framework - Fortune 500 Compliance Management"},
+  {vsn, "3.0.0"},
+  {modules, [
+            erlmcp_compliance_app,
+            erlmcp_compliance_sup,
+            erlmcp_compliance,
+            erlmcp_compliance_metrics,
+            erlmcp_compliance_policy_manager,
+            erlmcp_compliance_audit_logger,
+            erlmcp_compliance_monitor,
+            erlmcp_compliance_reporter,
+            erlmcp_compliance_enforcer,
+            erlmcp_compliance_analyzer,
+            erlmcp_compliance_app_resource
+           ]},
+  {registered, [
+                erlmcp_compliance_app,
+                erlmcp_compliance_sup,
+                erlmcp_compliance_metrics,
+                erlmcp_compliance_policy_manager,
+                erlmcp_compliance_audit_logger,
+                erlmcp_compliance_monitor,
+                erlmcp_compliance_reporter,
+                erlmcp_compliance_enforcer,
+                erlmcp_compliance_analyzer
+               ]},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  gproc,
+                  jesse,
+                  erlmcp_core,
+                  erlmcp_observability,
+                  erlmcp_transports
+                 ]},
+  {mod, {erlmcp_compliance_app, []}},
+  {start_phases, [
+                  {start_metrics, 10},
+                  {start_policy_manager, 20},
+                  {start_audit_logger, 30},
+                  {start_monitor, 40},
+                  {start_reporter, 50},
+                  {start_enforcer, 60},
+                  {start_analyzer, 70}
+                 ]},
+  {env, [
+         %% Compliance Frameworks Configuration
+         {frameworks, [soc2, hipaa, gdpr, iso27001]},
+         %% Audit Log Configuration
+         {audit_retention_days, 2555},  % 7 years (SOC2 requirement)
+         {audit_max_events, 1000000},   % 1M events
+         %% Monitoring Configuration
+         {check_interval, 300000},      % 5 minutes
+         {alert_threshold, 3},          % Severity level
+         %% Policy Management
+         {policy_versioning, true},
+         {approval_required, true},
+         %% Security
+         {encryption_required, true},
+         {audit_signature, true}
+        ]},
+  {applications, [
+                  kernel,
+                  stdlib,
+                  gproc,
+                  jesse,
+                  erlmcp_core,
+                  erlmcp_observability,
+                  erlmcp_transports
+                 ]}
+ ]}.

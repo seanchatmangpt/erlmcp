@@ -14,7 +14,7 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_bench_websocket).
 
--export([run/1, run_all/0, get_baseline/0]).
+-export([ run_all/0, get_baseline/0]).
 
 -include_lib("kernel/include/logger.hrl").
 
@@ -65,7 +65,7 @@ run(#{workload_id := WorkloadId,
     % This is a simplified benchmark measuring message creation overhead
     % Create test message
     TestMessage = create_test_message(MessageSize),
-    EncodedMessage = jsx:encode(TestMessage),
+    EncodedMessage = json:encode(TestMessage),
 
     % Measure frame encoding overhead
     StartEncode = erlang:monotonic_time(microsecond),
@@ -178,7 +178,7 @@ create_test_message(TargetSize) ->
           <<"params">> => #{<<"data">> => <<>>},
           <<"id">> => 1},
 
-    BaseSize = byte_size(jsx:encode(BaseMessage)),
+    BaseSize = byte_size(json:encode(BaseMessage)),
     PayloadSize = max(0, TargetSize - BaseSize - 100),
     Payload = binary:copy(<<"w">>, PayloadSize),
 

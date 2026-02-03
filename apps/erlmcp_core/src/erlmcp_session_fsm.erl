@@ -127,9 +127,9 @@ init([SessionId, Options]) ->
 
 -spec callback_mode() -> gen_statem:callback_mode_result().
 callback_mode() ->
-    %% Use handle_event_function for priority message handling
-    %% state_enter_calls for state entry actions
-    [handle_event_function, state_enter_calls].
+    %% Use handle_event_function for unified event handling
+    %% state_enter for state entry actions
+    [handle_event_function, state_enter].
 
 %%====================================================================
 %% State callback - handle_event function

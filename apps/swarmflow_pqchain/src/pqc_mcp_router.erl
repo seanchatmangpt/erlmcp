@@ -95,7 +95,7 @@
 handle_jsonrpc(JsonBin) when is_binary(JsonBin) ->
     try
         %% Parse JSON request
-        Request = jsx:decode(JsonBin, [return_maps]),
+        Request = json:decode(JsonBin),
 
         %% Validate JSON-RPC 2.0 structure
         case validate_jsonrpc_request(Request) of
@@ -109,26 +109,26 @@ handle_jsonrpc(JsonBin) when is_binary(JsonBin) ->
                 case handle(Method, Params) of
                     {ok, Result} ->
                         Response = format_response(Id, Result),
-                        jsx:encode(Response);
+                        json:encode(Response);
                     {error, Reason} ->
                         ErrorResponse = format_error(Id, Reason),
-                        jsx:encode(ErrorResponse)
+                        json:encode(ErrorResponse)
                 end;
             {error, Reason} ->
                 %% Invalid request structure
                 ErrorResponse = format_error(null, {invalid_request, Reason}),
-                jsx:encode(ErrorResponse)
+                json:encode(ErrorResponse)
         end
     catch
         error:badarg ->
             %% JSON parse error
             ErrorResponse = format_error(null, parse_error),
-            jsx:encode(ErrorResponse);
+            json:encode(ErrorResponse);
         error:Reason:Stack ->
             %% Internal error
             logger:error("MCP router internal error: ~p~n~p", [Reason, Stack]),
             ErrorResponse = format_error(null, {internal_error, Reason}),
-            jsx:encode(ErrorResponse)
+            json:encode(ErrorResponse)
     end.
 
 %% @doc Handle MCP method with params

@@ -32,7 +32,7 @@
 
 %% API
 -export([start_link/0, start_link/1]).
--export([new/3, new/4]).
+-export([new/3]).
 -export([insert/3, insert/4]).
 -export([search/3, search/4]).
 -export([delete/2]).

@@ -21,7 +21,6 @@
 %% API
 -export([start_link/0,
          start_case/2,
-         start_case/3,
          stop_case/1,
          list_cases/0,
          count_cases/0]).
@@ -130,6 +129,7 @@ count_cases() ->
 
 %% @private
 %% @doc Initialize the supervisor with simple_one_for_one strategy
+-spec init([]) -> {ok, {map(), [map()]}}.
 init([]) ->
     SupFlags = #{
         strategy => simple_one_for_one,
@@ -180,6 +180,7 @@ find_case_pid_by_scan(CaseId) ->
     find_case_in_list(CaseId, Cases).
 
 %% @private
+-spec find_case_in_list(binary(), [pid()]) -> {ok, pid()} | error.
 find_case_in_list(_CaseId, []) ->
     error;
 find_case_in_list(CaseId, [Pid | Rest]) ->

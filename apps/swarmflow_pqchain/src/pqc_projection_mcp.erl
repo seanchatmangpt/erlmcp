@@ -214,7 +214,7 @@ snapshot_to_mcp_resource(Snapshot) ->
         uri => iolist_to_binary([<<"case://">>, maps:get(case_id, Snapshot, <<"unknown">>), <<"/snapshot">>]),
         name => <<"Case Snapshot">>,
         mimeType => <<"application/json">>,
-        text => jsx:encode(Snapshot)
+        text => json:encode(Snapshot)
     }.
 
 %% @doc Convert Case artifacts to MCP resource
@@ -224,7 +224,7 @@ artifacts_to_mcp_resource(Artifacts) ->
         uri => <<"case://artifacts">>,
         name => <<"Case Artifacts">>,
         mimeType => <<"application/json">>,
-        text => jsx:encode(#{artifacts => Artifacts})
+        text => json:encode(#{artifacts => Artifacts})
     }.
 
 %% @doc Convert Case receipt to MCP resource
@@ -240,7 +240,7 @@ receipt_to_mcp_resource(Receipt) ->
         uri => <<"case://receipt">>,
         name => <<"Receipt Chain Head">>,
         mimeType => <<"application/json">>,
-        text => jsx:encode(ReceiptJson)
+        text => json:encode(ReceiptJson)
     }.
 
 %% @doc Convert Case history to MCP resource
@@ -250,7 +250,7 @@ history_to_mcp_resource(History) ->
         uri => <<"case://history">>,
         name => <<"Case Event History">>,
         mimeType => <<"application/json">>,
-        text => jsx:encode(#{history => History})
+        text => json:encode(#{history => History})
     }.
 
 %% @doc Parse resource URI into structured form
@@ -307,7 +307,7 @@ read_case_artifacts(CaseId) ->
                         uri => iolist_to_binary([<<"case://">>, CaseId, <<"/artifacts">>]),
                         name => <<"Case Artifacts">>,
                         mimeType => <<"application/json">>,
-                        text => jsx:encode(#{artifacts => Artifacts})
+                        text => json:encode(#{artifacts => Artifacts})
                     },
                     {ok, Resource};
                 {error, Reason} ->
@@ -345,7 +345,7 @@ read_case_history(CaseId) ->
                         uri => iolist_to_binary([<<"case://">>, CaseId, <<"/history">>]),
                         name => <<"Case History">>,
                         mimeType => <<"application/json">>,
-                        text => jsx:encode(#{
+                        text => json:encode(#{
                             case_id => CaseId,
                             history_length => HistoryLength,
                             note => <<"Full history available via Case API">>
@@ -372,7 +372,7 @@ read_chain_block(Height) ->
         uri => iolist_to_binary([<<"chain://block/">>, HeightBin]),
         name => <<"Blockchain Block">>,
         mimeType => <<"application/json">>,
-        text => jsx:encode(#{
+        text => json:encode(#{
             height => HeightBin,
             status => <<"not_implemented">>,
             note => <<"Blockchain queries coming soon">>
@@ -388,7 +388,7 @@ read_chain_tx(TxId) ->
         uri => iolist_to_binary([<<"chain://tx/">>, TxId]),
         name => <<"Transaction">>,
         mimeType => <<"application/json">>,
-        text => jsx:encode(#{
+        text => json:encode(#{
             tx_id => TxId,
             status => <<"not_implemented">>
         })
@@ -405,7 +405,7 @@ read_identity(Address) ->
                 uri => iolist_to_binary([<<"identity://">>, Address]),
                 name => <<"PQC Identity">>,
                 mimeType => <<"application/json">>,
-                text => jsx:encode(Identity)
+                text => json:encode(Identity)
             },
             {ok, Resource};
         {error, not_found} ->
@@ -415,7 +415,7 @@ read_identity(Address) ->
                 uri => iolist_to_binary([<<"identity://">>, Address]),
                 name => <<"PQC Identity">>,
                 mimeType => <<"application/json">>,
-                text => jsx:encode(#{
+                text => json:encode(#{
                     address => Address,
                     status => <<"not_found">>
                 })
@@ -520,7 +520,7 @@ workflow_prompts() ->
 %% @private
 -spec format_result(term()) -> binary().
 format_result(Result) when is_map(Result) ->
-    jsx:encode(Result);
+    json:encode(Result);
 format_result(Result) when is_binary(Result) ->
     Result;
 format_result(Result) ->

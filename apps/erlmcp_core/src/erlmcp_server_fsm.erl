@@ -16,7 +16,7 @@
 -export([start_link/1, start_link/2, accept_connections/1, drain/1, shutdown/1, state_name/1,
          stop/1]).
 %% gen_statem callbacks
--export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4, format_status/2]).
+-export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4, format_status/1]).
 
 %% State names for type specs
 -type server_state() :: initialization | accepting | drain | shutdown.
@@ -98,9 +98,9 @@ init([ServerId, Options]) ->
 
 -spec callback_mode() -> gen_statem:callback_mode_result().
 callback_mode() ->
-    %% Use handle_event_function for priority message handling
-    %% state_enter_calls for state entry actions
-    [handle_event_function, state_enter_calls].
+    %% Use handle_event_function for unified event handling
+    %% state_enter for state entry actions
+    [handle_event_function, state_enter].
 
 %%====================================================================
 %% State callback - handle_event function
@@ -226,10 +226,9 @@ terminate(Reason, State, Data) ->
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
--spec format_status(Opt, Status) -> term()
-    when Opt :: normal | terminate,
-         Status :: list().
-format_status(_Opt, [_PDict, State, Data]) ->
+-spec format_status(Status) -> term()
+    when Status :: list().
+format_status([_PDict, State, Data]) ->
     #{state => State,
       server_id => Data#data.server_id,
       active_connections => length(Data#data.active_connections),

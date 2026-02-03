@@ -13,7 +13,7 @@
 -module(erlmcp_transport_pipeline).
 
 %% API exports
--export([create_http2_pipeline/1, send_http2_batch/2, get_http2_stats/1, create_ws_pipeline/1,
+-export([create_http2_pipeline/1, send_http2_batch/2, create_ws_pipeline/1,
          send_ws_batch/2, flush_ws_pipeline/1, set_tcp_nodelay/2, set_tcp_buffer_size/2,
          get_tcp_info/1, send_pipelined/2, flush_pipeline/1]).
 

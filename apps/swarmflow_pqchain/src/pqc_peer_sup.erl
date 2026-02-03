@@ -21,7 +21,6 @@
 %% API
 -export([start_link/0,
          start_channel/2,
-         start_channel/3,
          stop_channel/1,
          list_channels/0,
          count_channels/0]).
@@ -67,10 +66,8 @@ start_channel(LocalPeer, RemotePeer) ->
 %%
 -spec start_channel(#peer_identity{}, #peer_identity{}, map()) ->
     {ok, pid()} | {error, term()}.
-start_channel(LocalPeer, RemotePeer, Options)
-  when is_record(LocalPeer, peer_identity),
-       is_record(RemotePeer, peer_identity),
-       is_map(Options) ->
+start_channel(#peer_identity{} = LocalPeer, #peer_identity{} = RemotePeer, Options)
+  when is_map(Options) ->
     supervisor:start_child(?SERVER, [LocalPeer, RemotePeer, Options]).
 
 %% @doc Stop a peer channel gracefully

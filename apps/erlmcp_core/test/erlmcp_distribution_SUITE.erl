@@ -52,14 +52,6 @@
 ]).
 
 %% Test groups
--export([
-    version_tests/0,
-    registry_tests/0,
-    manager_tests/0,
-    compatibility_tests/0,
-    integration_tests/0
-]).
-
 %%====================================================================
 %% Test specification
 %%====================================================================

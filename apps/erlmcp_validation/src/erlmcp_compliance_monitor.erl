@@ -659,7 +659,7 @@ update_score(Scores, Standard, NewScore) ->
             CurrentScore#compliance_score{
                 score = NewScore,
                 trend = Trend,
-                last_updated => erlang:timestamp(),
+                last_updated = erlang:timestamp(),
                 history = UpdatedHistory
             };
         error ->
@@ -709,16 +709,16 @@ generate_violation_id() ->
 
 update_metrics(Metrics, Results) ->
     %% Update monitoring metrics
-    TotalChecks = Metrics#total_checks + length(Results),
+    TotalChecks = maps:get(total_checks, Metrics, 0) + length(Results),
     Violations = length([R || R <- Results, maps:get(type, R, ok) =:= violation]),
     Alerts = length([R || R <- Results, maps:get(type, R, ok) =:= alert]),
 
-    Metrics#{
+    maps:merge(Metrics, #{
         total_checks => TotalChecks,
-        violations_detected => Metrics#violations_detected + Violations,
-        alerts_generated => Metrics#alerts_generated + Alerts,
+        violations_detected => maps:get(violations_detected, Metrics, 0) + Violations,
+        alerts_generated => maps:get(alerts_generated, Metrics, 0) + Alerts,
         last_check => erlang:timestamp()
-    }.
+    }).
 
 create_alert(Standard, AlertType, Details) ->
     AlertLevel = maps:get(level, Details, medium),
@@ -728,7 +728,7 @@ create_alert(Standard, AlertType, Details) ->
         level = AlertLevel,
         standard = Standard,
         message = maps:get(message, Details, "No message"),
-        timestamp => erlang:timestamp(),
+        timestamp = erlang:timestamp(),
         details = Details,
         acknowledged = false,
         resolved = false

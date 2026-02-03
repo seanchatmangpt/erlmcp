@@ -210,7 +210,7 @@ a2a_part_to_mcp_content(#a2a_part{url = Url, filename = Filename} = Part)
 a2a_part_to_mcp_content(#a2a_part{data = Data} = Part) when Data =/= undefined ->
     %% Convert arbitrary data to JSON text
     JsonText = try
-        jsx:encode(Data)
+        json:encode(Data)
     catch
         _:_ -> iolist_to_binary(io_lib:format("~p", [Data]))
     end,
@@ -345,7 +345,7 @@ execute_tool_as_task(ToolName, Args, Options) ->
 %% @doc Execute an MCP tool as an A2A task with caller process.
 -spec execute_tool_as_task(binary(), map(), map(), pid() | undefined) ->
     {ok, #a2a_task{}} | {error, term()}.
-execute_tool_as_task(ToolName, Args, Options, Caller) ->
+execute_tool_as_task(ToolName, Args, Options, _Caller) ->
     %% Generate task and context IDs
     TaskId = generate_uuid(),
     ContextId = maps:get(context_id, Options, generate_uuid()),
@@ -866,10 +866,10 @@ create_artifact_from_result(Result) ->
         Bin when is_binary(Bin) ->
             #a2a_part{text = Bin};
         Map when is_map(Map) ->
-            JsonText = try jsx:encode(Map) catch _:_ -> <<"{}">> end,
+            JsonText = try json:encode(Map) catch _:_ -> <<"{}">> end,
             #a2a_part{data = Map, text = JsonText, media_type = ?A2A_MIME_APPLICATION_JSON};
         List when is_list(List) ->
-            JsonText = try jsx:encode(List) catch _:_ -> <<"[]">> end,
+            JsonText = try json:encode(List) catch _:_ -> <<"[]">> end,
             #a2a_part{data = List, text = JsonText, media_type = ?A2A_MIME_APPLICATION_JSON};
         Other ->
             #a2a_part{text = iolist_to_binary(io_lib:format("~p", [Other]))}

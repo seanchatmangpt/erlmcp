@@ -5,7 +5,8 @@
 
 %% API
 -export([start_link/0, start_session/2, replicate_session/2,
-         failover_session/2, get_session/1, get_active_region/1]).
+         failover_session/2, get_session/1, get_active_region/1,
+         store_session/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -65,8 +66,8 @@ init([]) ->
     SessionStore = ets:new(?TAB, [
         set,
         public,
-        {keypos, #session_info.session_id},
-        named_table
+        named_table,
+        {keypos, #session_info.session_id}
     ]),
 
     %% Determine current region
@@ -87,7 +88,7 @@ init([]) ->
 
     {ok, State}.
 
-handle_call({start_session, ClientId, SessionData}, _From, State) ->
+handle_call({start_session, _ClientId, SessionData}, _From, State) ->
     SessionId = generate_session_id(),
     PrimaryNode = get_primary_node(),
     SecondaryNodes = get_secondary_nodes(),
@@ -105,7 +106,7 @@ handle_call({start_session, ClientId, SessionData}, _From, State) ->
     true = ets:insert(State#state.session_store, Session),
 
     %% Start replication process
-    Reply = replicate_session_async(SessionId, Session),
+    replicate_session_async(SessionId, Session),
 
     {reply, {ok, SessionId}, State};
 
@@ -237,7 +238,7 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) ->
-    %% Cleanup ETS table
+    %% Cleanup ETS table (named table, delete by name)
     ets:delete(?TAB),
     ok.
 
@@ -344,13 +345,13 @@ node_to_region(Node) ->
             tertiary
     end.
 
-spawn_session_cleanup(State) ->
+spawn_session_cleanup(_State) ->
     spawn(fun() ->
         timer:sleep(?SESSION_CLEANUP_INTERVAL),
         gen_server:cast(?MODULE, session_cleanup)
     end).
 
-spawn_replication_monitor(State) ->
+spawn_replication_monitor(_State) ->
     spawn(fun() ->
         timer:sleep(?SESSION_CLEANUP_INTERVAL),
         gen_server:cast(?MODULE, replication_monitor)

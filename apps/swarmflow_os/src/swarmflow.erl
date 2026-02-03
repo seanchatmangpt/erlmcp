@@ -171,7 +171,7 @@ version() ->
 %% The net is validated and compiled before storage.
 %% Returns the registered net with any auto-generated fields.
 -spec register_net(#swf_net{}) -> {ok, #swf_net{}} | {error, term()}.
-register_net(Net) when is_record(Net, swf_net) ->
+register_net(#swf_net{} = Net) ->
     swf_net_registry:register_net(Net).
 
 %% @doc Get a workflow net by ID.
@@ -693,7 +693,7 @@ remove_tool_binding(_TransitionId, _ToolName) ->
 %% @doc Register a new promotion policy.
 %% Policies define criteria for automatic patch promotion/rollback.
 -spec register_policy(#swf_promotion_policy{}) -> {ok, policy_id()} | {error, term()}.
-register_policy(Policy) when is_record(Policy, swf_promotion_policy) ->
+register_policy(#swf_promotion_policy{} = Policy) ->
     case erlang:whereis(swf_promotion_engine) of
         undefined -> {error, promotion_engine_not_running};
         _Pid -> swf_promotion_engine:register_policy(Policy)
@@ -735,7 +735,7 @@ delete_policy(PolicyId) when is_binary(PolicyId) ->
 %% Returns a promotion decision (promote, reject, or defer).
 -spec evaluate_patch(#swf_patch{}, policy_id()) ->
     {ok, #swf_promotion_decision{}} | {error, term()}.
-evaluate_patch(Patch, PolicyId) when is_record(Patch, swf_patch), is_binary(PolicyId) ->
+evaluate_patch(#swf_patch{} = Patch, PolicyId) when is_binary(PolicyId) ->
     case erlang:whereis(swf_promotion_engine) of
         undefined -> {error, promotion_engine_not_running};
         _Pid -> swf_promotion_engine:evaluate_patch(Patch, PolicyId)

@@ -66,8 +66,8 @@ remove_risk_factor(IdentityId, RiskFactor) ->
 
 init([]) ->
     %% Initialize identity store
-    IdentityStore = ets:new(identity_store, [set, protected, {keypos, #identity.id}]),
-    SessionStore = ets:new(session_store, [set, protected, {keypos, 2}]),
+    IdentityStore = ets:new(identity_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    SessionStore = ets:new(session_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
 
     %% Load identities from secure storage
     {ok, #{

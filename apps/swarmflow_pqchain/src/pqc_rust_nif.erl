@@ -23,18 +23,15 @@
     %% ML-DSA (FIPS 204) - Lattice-based signatures
     ml_dsa_keygen/1,
     ml_dsa_sign/3,
-    ml_dsa_verify/3,
     ml_dsa_batch_verify/1,
 
     %% SLH-DSA (FIPS 205) - Stateless hash-based signatures
     slh_dsa_keygen/1,
     slh_dsa_sign/3,
-    slh_dsa_verify/3,
 
     %% ML-KEM (FIPS 203) - Lattice-based key encapsulation
     ml_kem_keygen/1,
     ml_kem_encapsulate/2,
-    ml_kem_decapsulate/2,
 
     %% Hash functions
     sha3_256/1,

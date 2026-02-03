@@ -6,7 +6,7 @@
 -export([start_link/0, stop/0]).
 -export([register_service/2, unregister_service/1, get_service/1, list_services/1]).
 -export([register_resource/2, unregister_resource/1, get_resource/1, list_resources/1]).
--export([register_adapter/2, unregister_adapter/1, get_adapter/1, list_adapters/1]).
+-export([register_adapter/2, unregister_adapter/1, get_adapter/1]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("kernel/include/logger.hrl").

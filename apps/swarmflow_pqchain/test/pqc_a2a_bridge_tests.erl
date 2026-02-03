@@ -13,7 +13,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include("pqchain.hrl").
--include_lib("erlmcp_core/include/erlmcp_a2a.hrl").
+-include_lib("erlmcp_a2a.hrl").
 
 %%====================================================================
 %% Test Fixtures

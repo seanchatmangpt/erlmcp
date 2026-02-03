@@ -119,12 +119,12 @@
                        name := binary(),
                        description := binary(),
                        effect := allow | deny,
-                       conditions := list(),
+                       conditions := list(term()),
                        actions := [action()],
                        resources := [resource()],
-                       subjects => [binary() | {binary(), map()}],
-                   priority => integer(),
-                   metadata => map()}.
+                       subjects => list(),
+                       priority => integer(),
+                       metadata => map()}.
 
 -type policy_set() :: #{id := binary(),
                        name := binary(),
@@ -133,7 +133,7 @@
                        combining_rule := deny_overrides | permit_overrides |
                                          ordered_deny_overrides | ordered_permit_overrides |
                                          first_applicable | last_applicable,
-                   metadata => map()}.
+                       metadata => map()}.
 
 -type role_hierarchy() :: #{role := role(),
                          parent_roles => [role()],
@@ -258,7 +258,7 @@ get_user_roles(UserId) ->
     gen_server:call(?MODULE, {get_user_roles, UserId}).
 
 %% @doc Get role permissions
--spec get_role_permissions(role()) -> [permission()] | {error, not_found}.
+-spec get_role_permissions(role()) -> [binary()] | {error, not_found}.
 get_role_permissions(Role) ->
     gen_server:call(?MODULE, {get_role_permissions, Role}).
 
@@ -542,17 +542,17 @@ init([Config]) ->
     process_flag(trap_exit, true),
 
     % Initialize ETS tables
-    Users = ets:new(auth_users, [set, protected, {read_concurrency, true}]),
-    Roles = ets:new(auth_roles, [set, protected, {read_concurrency, true}]),
-    RoleHierarchy = ets:new(auth_role_hierarchy, [set, protected, {read_concurrency, true}]),
-    Permissions = ets:new(auth_permissions, [bag, protected, {read_concurrency, true}]),
-    Attributes = ets:new(auth_attributes, [set, protected, {read_concurrency, true}]),
-    Policies = ets:new(auth_policies, [set, protected, {read_concurrency, true}]),
-    PolicySets = ets:new(auth_policy_sets, [set, protected, {read_concurrency, true}]),
-    Contexts = ets:new(auth_contexts, [set, protected, {read_concurrency, true}]),
-    AuditLog = ets:new(auth_audit, [ordered_set, public, {write_concurrency, true}]),
-    Workflows = ets:new(auth_workflows, [set, protected, {read_concurrency, true}]),
-    OptimizationCache = ets:new(auth_cache, [set, public, {read_concurrency, true}]),
+    Users = ets:new(auth_users, [set, protected, named_table, {read_concurrency, true}]),
+    Roles = ets:new(auth_roles, [set, protected, named_table, {read_concurrency, true}]),
+    RoleHierarchy = ets:new(auth_role_hierarchy, [set, protected, named_table, {read_concurrency, true}]),
+    Permissions = ets:new(auth_permissions, [bag, protected, named_table, {read_concurrency, true}]),
+    Attributes = ets:new(auth_attributes, [set, protected, named_table, {read_concurrency, true}]),
+    Policies = ets:new(auth_policies, [set, protected, named_table, {read_concurrency, true}]),
+    PolicySets = ets:new(auth_policy_sets, [set, protected, named_table, {read_concurrency, true}]),
+    Contexts = ets:new(auth_contexts, [set, protected, named_table, {read_concurrency, true}]),
+    AuditLog = ets:new(auth_audit, [ordered_set, public, named_table, {write_concurrency, true}]),
+    Workflows = ets:new(auth_workflows, [set, protected, named_table, {read_concurrency, true}]),
+    OptimizationCache = ets:new(auth_cache, [set, public, named_table, {read_concurrency, true}]),
 
     % Default configuration
     DefaultConfig = #{
@@ -854,18 +854,18 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, State) ->
-    % Cleanup ETS tables
-    ets:delete(maps:get(users, State)),
-    ets:delete(maps:get(roles, State)),
-    ets:delete(maps:get(role_hierarchy, State)),
-    ets:delete(maps:get(permissions, State)),
-    ets:delete(maps:get(attributes, State)),
-    ets:delete(maps:get(policies, State)),
-    ets:delete(maps:get(policy_sets, State)),
-    ets:delete(maps:get(contexts, State)),
-    ets:delete(maps:get(audit_log, State)),
-    ets:delete(maps:get(workflows, State)),
-    ets:delete(maps:get(optimization_cache, State)),
+    % Cleanup ETS tables (named tables, delete by name)
+    ets:delete(auth_users),
+    ets:delete(auth_roles),
+    ets:delete(auth_role_hierarchy),
+    ets:delete(auth_permissions),
+    ets:delete(auth_attributes),
+    ets:delete(auth_policies),
+    ets:delete(auth_policy_sets),
+    ets:delete(auth_contexts),
+    ets:delete(auth_audit),
+    ets:delete(auth_workflows),
+    ets:delete(auth_cache),
 
     logger:info("Authorization framework terminated"),
     ok.
@@ -918,9 +918,9 @@ init_default_roles(State) ->
 
     % Initialize role hierarchy
     ets:insert(maps:get(role_hierarchy, State),
-               {<<"admin">>, #{parent_roles => [], child_roles => [<<"manager">>]}]),
+               {<<"admin">>, #{parent_roles => [], child_roles => [<<"manager">>]}}),
     ets:insert(maps:get(role_hierarchy, State),
-               {<<"manager">>, #{parent_roles => [<<"admin">>], child_roles => [<<"user">>]}]),
+               {<<"manager">>, #{parent_roles => [<<"admin">>], child_roles => [<<"user">>]}}),
     ets:insert(maps:get(role_hierarchy, State),
                {<<"user">>, #{parent_roles => [<<"manager">>], child_roles => [<<"guest">>]}}),
     ets:insert(maps:get(role_hierarchy, State),
@@ -1052,7 +1052,7 @@ do_add_to_hierarchy(Role, ParentRole, State) ->
                 [{_, ParentData}] ->
                     NewChildRoles = lists:usort([Role | maps:get(child_roles, ParentData)]),
                     ets:insert(maps:get(role_hierarchy, State),
-                               {ParentRole, ParentData#{child_roles => NewChildRoles}});
+                               {ParentRole, ParentData#{child_roles => NewChildRoles}}),
 
                     % Update child role's parent roles
                     case ets:lookup(maps:get(role_hierarchy, State), Role) of
@@ -1293,13 +1293,13 @@ do_export_policies(Format, State) ->
 
     case Format of
         json ->
-            {ok, jsx:encode(ExportData)};
+            {ok, json:encode(ExportData)};
         xml ->
             {ok, generate_xml_export(ExportData)};
         yaml ->
             {ok, yaml:encode(ExportData)};
         _ ->
-            {ok, jsx:encode(ExportData)}
+            {ok, json:encode(ExportData)}
     end.
 
 %% Validate policy set
@@ -1692,36 +1692,329 @@ generate_xml_export(ExportData) ->
     % Simplified for demonstration
     <<"<Policies></Policies>">>.
 
-% Include additional helper functions as needed...
-% calculate_user_risk/2
-% calculate_resource_risk/2
-% calculate_location_risk/2
-% calculate_time_risk/2
-% calculate_device_risk/2
-% calculate_behavior_risk/2
-% do_delete_role/2
-% do_assign_role/3
-% do_revoke_role/3
-% do_create_attribute/3
-% do_update_attribute/3
-% do_delete_attribute/2
-% do_define_policy/3
-% do_delete_policy/2
-% do_define_policy_rule/4
-% do_delete_policy_rule/3
-% do_set_attributes/3
-% do_time_window/4
-% do_recurring_access/4
-% do_temporary_grant/4
-% do_geo_fence/4
-% do_region_access/4
-% do_device_profile/3
-% do_device_trust/3
-% do_risk_threshold/4
-% do_approve_access/4
-% do_deny_access/4
-% do_review_access/4
-% do_expire_access/3
-% do_load_policy_set/2
-% do_save_policy_set/2
-% do_remove_from_hierarchy/3
+%% Risk calculation functions
+calculate_user_risk(UserId, State) ->
+    % Simplified risk calculation based on user attributes
+    case ets:lookup(maps:get(attributes, State), UserId) of
+        [{_, Attributes}] ->
+            case maps:get(risk_level, Attributes, low) of
+                high -> 0.8;
+                medium -> 0.5;
+                low -> 0.2;
+                _ -> 0.3
+            end;
+        [] ->
+            0.3
+    end.
+
+calculate_resource_risk(Resource, State) ->
+    % Simplified resource risk based on resource type
+    case binary:match(Resource, <<"admin">>) of
+        nomatch ->
+            case binary:match(Resource, <<"delete">>) of
+                nomatch -> 0.3;
+                _ -> 0.7
+            end;
+        _ -> 0.9
+    end.
+
+calculate_location_risk(Context, State) ->
+    % Simplified location risk
+    case maps:get(location, Context, unknown) of
+        unknown -> 0.5;
+        <<"office">> -> 0.1;
+        <<"remote">> -> 0.3;
+        _ -> 0.5
+    end.
+
+calculate_time_risk(Context, State) ->
+    % Simplified time risk
+    Hour = calendar:seconds_to_daylight_time(erlang:universaltime()),
+    case Hour of
+        {HourOfDay, _, _} when HourOfDay >= 9 andalso HourOfDay =< 17 -> 0.1;
+        _ -> 0.3
+    end.
+
+calculate_device_risk(Context, State) ->
+    % Simplified device risk
+    Device = maps:get(device, Context, #{}),
+    case maps:get(trust_level, Device, unknown) of
+        trusted -> 0.1;
+        untrusted -> 0.7;
+        _ -> 0.5
+    end.
+
+calculate_behavior_risk(UserId, State) ->
+    % Simplified behavior risk - in production would analyze patterns
+    0.3.
+
+%% Data management functions
+do_delete_role(Role, State) ->
+    ets:delete(maps:get(roles, State), Role),
+    ets:delete(maps:get(role_hierarchy, State), Role),
+    ok.
+
+do_assign_role(UserId, Role, Justification, State) ->
+    case ets:lookup(maps:get(roles, State), Role) of
+        [] ->
+            {error, role_not_found};
+        [{_, _}] ->
+            case ets:lookup(maps:get(roles, State), UserId) of
+                [] ->
+                    ets:insert(maps:get(roles, State), {UserId, [Role]});
+                [{_, ExistingRoles}] ->
+                    ets:insert(maps:get(roles, State), {UserId, [Role | ExistingRoles]})
+            end,
+            log_assignment(UserId, Role, Justification, State),
+            ok
+    end.
+
+do_revoke_role(UserId, Role, Justification, State) ->
+    case ets:lookup(maps:get(roles, State), UserId) of
+        [] ->
+            ok;
+        [{_, Roles}] ->
+            NewRoles = lists:delete(Role, Roles),
+            ets:insert(maps:get(roles, State), {UserId, NewRoles}),
+            log_revocation(UserId, Role, Justification, State),
+            ok
+    end.
+
+do_create_attribute(Attribute, Description, State) ->
+    % Store attribute definition
+    ok.
+
+do_update_attribute(UserId, Attribute, Value, State) ->
+    case ets:lookup(maps:get(attributes, State), UserId) of
+        [] ->
+            ets:insert(maps:get(attributes, State), {UserId, #{Attribute => Value}});
+        [{_, Attributes}] ->
+            ets:insert(maps:get(attributes, State), {UserId, maps:put(Attribute, Value, Attributes)})
+    end,
+    ok.
+
+do_delete_attribute(Attribute, State) ->
+    % Delete attribute definition
+    ok.
+
+do_define_policy(PolicyId, PolicyData, State) ->
+    ets:insert(maps:get(policies, State), {PolicyId, PolicyData}),
+    ok.
+
+do_delete_policy(PolicyId, State) ->
+    ets:delete(maps:get(policies, State), PolicyId),
+    ok.
+
+do_define_policy_rule(PolicyId, RuleName, RuleData, State) ->
+    case ets:lookup(maps:get(policies, State), PolicyId) of
+        [] ->
+            {error, policy_not_found};
+        [{_, Policy}] ->
+            Rules = maps:get(rules, Policy, []),
+            NewRules = lists:append(Rules, [RuleData]),
+            UpdatedPolicy = Policy#{rules => NewRules},
+            ets:insert(maps:get(policies, State), {PolicyId, UpdatedPolicy}),
+            ok
+    end.
+
+do_delete_policy_rule(PolicyId, RuleName, State) ->
+    case ets:lookup(maps:get(policies, State), PolicyId) of
+        [] ->
+            ok;
+        [{_, Policy}] ->
+            Rules = maps:get(rules, Policy, []),
+            NewRules = lists:filter(fun(R) -> maps:get(id, R) =/= RuleName end, Rules),
+            UpdatedPolicy = Policy#{rules => NewRules},
+            ets:insert(maps:get(policies, State), {PolicyId, UpdatedPolicy}),
+            ok
+    end.
+
+do_set_attributes(UserId, Attributes, State) ->
+    ets:insert(maps:get(attributes, State), {UserId, Attributes}),
+    ok.
+
+do_time_window(UserId, Resource, TimeWindows, State) ->
+    % Store time window restrictions
+    ok.
+
+do_recurring_access(UserId, Resource, Schedule, Duration, State) ->
+    % Store recurring access pattern
+    ok.
+
+do_temporary_grant(UserId, Resource, Action, Duration, State) ->
+    Expiration = erlang:system_time(second) + Duration,
+    % Store temporary grant with expiration
+    ok.
+
+do_geo_fence(UserId, Resource, GeoFences, State) ->
+    % Store geo-fence restrictions
+    ok.
+
+do_region_access(UserId, Resource, Regions, State) ->
+    % Store region access rules
+    ok.
+
+do_device_profile(UserId, Profile, State) ->
+    % Store device profile
+    ok.
+
+do_device_trust(UserId, TrustLevel, State) ->
+    % Store device trust level
+    ok.
+
+do_risk_threshold(UserId, Resource, Threshold, State) ->
+    % Store risk threshold
+    ok.
+
+do_approve_access(RequestId, ApproverId, Comments, State) ->
+    case ets:lookup(maps:get(workflows, State), RequestId) of
+        [] ->
+            ok;
+        [{_, Request}] ->
+            UpdatedRequest = Request#{
+                status => approved,
+                approver => ApproverId,
+                approved_at => erlang:system_time(second),
+                comments => Comments
+            },
+            ets:insert(maps:get(workflows, State), {RequestId, UpdatedRequest}),
+            ok
+    end.
+
+do_deny_access(RequestId, DenierId, Comments, State) ->
+    case ets:lookup(maps:get(workflows, State), RequestId) of
+        [] ->
+            ok;
+        [{_, Request}] ->
+            UpdatedRequest = Request#{
+                status => denied,
+                denier => DenierId,
+                denied_at => erlang:system_time(second),
+                comments => Comments
+            },
+            ets:insert(maps:get(workflows, State), {RequestId, UpdatedRequest}),
+            ok
+    end.
+
+do_review_access(RequestId, ReviewerId, Decision, State) ->
+    case ets:lookup(maps:get(workflows, State), RequestId) of
+        [] ->
+            ok;
+        [{_, Request}] ->
+            UpdatedRequest = Request#{
+                status => Decision,
+                reviewer => ReviewerId,
+                reviewed_at => erlang:system_time(second)
+            },
+            ets:insert(maps:get(workflows, State), {RequestId, UpdatedRequest}),
+            ok
+    end.
+
+do_expire_access(UserId, Resource, State) ->
+    % Expire access for user to resource
+    ok.
+
+do_load_policy_set(PolicySetId, State) ->
+    % Load policy set from storage
+    ok.
+
+do_save_policy_set(PolicySet, State) ->
+    PolicySetId = maps:get(id, PolicySet),
+    ets:insert(maps:get(policy_sets, State), {PolicySetId, PolicySet}),
+    ok.
+
+do_remove_from_hierarchy(Role, ParentRole, State) ->
+    case ets:lookup(maps:get(role_hierarchy, State), ParentRole) of
+        [{_, ParentData}] ->
+            NewChildRoles = lists:delete(Role, maps:get(child_roles, ParentData)),
+            ets:insert(maps:get(role_hierarchy, State),
+                       {ParentRole, ParentData#{child_roles => NewChildRoles}});
+        [] ->
+            ok
+    end,
+    case ets:lookup(maps:get(role_hierarchy, State), Role) of
+        [{_, ChildData}] ->
+            NewParentRoles = lists:delete(ParentRole, maps:get(parent_roles, ChildData)),
+            ets:insert(maps:get(role_hierarchy, State),
+                       {Role, ChildData#{parent_roles => NewParentRoles}});
+        [] ->
+            ok
+    end.
+
+do_update_policy(PolicyId, Description, Updates, State) ->
+    case ets:lookup(maps:get(policies, State), PolicyId) of
+        [] ->
+            {error, policy_not_found};
+        [{_, Policy}] ->
+            UpdatedPolicy = maps:merge(Policy, #{
+                description => Description,
+                rules => maps:get(rules, Updates, maps:get(rules, Policy))
+            }),
+            ets:insert(maps:get(policies, State), {PolicyId, UpdatedPolicy}),
+            ok
+    end.
+
+do_evaluate_policy_set(PolicySetId, Context, State) ->
+    case ets:lookup(maps:get(policy_sets, State), PolicySetId) of
+        [] ->
+            {error, policy_set_not_found};
+        [{_, PolicySet}] ->
+            Rules = maps:get(rules, PolicySet),
+            CombiningRule = maps:get(combining_rule, PolicySet, deny_overrides),
+            evaluate_policy_set_rules(Rules, Context, CombiningRule, State)
+    end.
+
+evaluate_policy_set_rules(Rules, Context, CombiningRule, State) ->
+    case CombiningRule of
+        deny_overrides ->
+            lists:all(fun(R) -> evaluate_policy_rule(R, Context, State) end, Rules);
+        permit_overrides ->
+            lists:any(fun(R) -> evaluate_policy_rule(R, Context, State) end, Rules);
+        _ ->
+            true
+    end.
+
+evaluate_policy_rule(Rule, Context, State) ->
+    % Simplified rule evaluation
+    true.
+
+evaluate_policy(PolicyId, UserId, Context, State) ->
+    case ets:lookup(maps:get(policies, State), PolicyId) of
+        [] ->
+            {error, policy_not_found};
+        [{_, Policy}] ->
+            evaluate_policy_rules(maps:get(rules, Policy), UserId, Context, State)
+    end.
+
+evaluate_abac_rules(Rules, EvalContext, State) ->
+    lists:any(fun(Rule) -> evaluate_rule(Rule, #{}, EvalContext, State) end, Rules).
+
+%% Helper functions
+log_assignment(UserId, Role, Justification, State) ->
+    AuditId = generate_audit_id(),
+    AuditEntry = #{
+        id => AuditId,
+        timestamp => erlang:system_time(second),
+        user_id => UserId,
+        action => assign_role,
+        target => Role,
+        justification => Justification
+    },
+    ets:insert(maps:get(audit_log, State), {AuditId, AuditEntry}),
+    ok.
+
+log_revocation(UserId, Role, Justification, State) ->
+    AuditId = generate_audit_id(),
+    AuditEntry = #{
+        id => AuditId,
+        timestamp => erlang:system_time(second),
+        user_id => UserId,
+        action => revoke_role,
+        target => Role,
+        justification => Justification
+    },
+    ets:insert(maps:get(audit_log, State), {AuditId, AuditEntry}),
+    ok.
+
+generate_audit_id() ->
+    binary:encode_hex(crypto:strong_rand_bytes(16)).

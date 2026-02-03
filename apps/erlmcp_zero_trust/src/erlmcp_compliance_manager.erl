@@ -3,12 +3,10 @@
 
 %% API
 -export([start_link/0, check_compliance/1, generate_compliance_report/2]).
--export([create_compliance_framework/2, update_compliance_framework/3, delete_compliance_framework/2]).
+-export([ delete_compliance_framework/2]).
 -export([get_compliance_frameworks/1, get_framework_details/1]).
 -export([run_compliance_scan/2, get_scan_results/1, export_compliance_data/2]).
 -export([schedule_compliance_check/3, get_compliance_schedule/1]).
--export([create_audit_trail/2, get_audit_trail/2, validate_audit_integrity/1]).
-
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 

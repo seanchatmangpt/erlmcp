@@ -54,9 +54,8 @@
          wait_for_response/2, generate_request_id/0, get_server_info/1, set_response_timeout/2,
          get_transport_type/1, get_connection_status/1, send_concurrent_requests/2, run_sequence/2,
          set_progress_handler/2, cancel_request/2, validate_response/2, validate_error_response/2,
-         validate_error_code/2, validate_initialize_response/2, validate_tool_response/1,
-         validate_tool_response/2, validate_resource_response/1, validate_resource_response/2,
-         validate_capabilities/2, validate_protocol_version/2, check_spec_compliance/1,
+         validate_error_code/2, validate_tool_response/1,
+         validate_tool_response/2, validate_resource_response/1, validate_resource_response/2,, check_spec_compliance/1,
          format_request/1, handle_transport_errors/1, format_mcp_error/1]).
 
                                                                                %% Lifecycle

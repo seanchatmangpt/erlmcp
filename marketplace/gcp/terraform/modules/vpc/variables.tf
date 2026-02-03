@@ -265,8 +265,8 @@ variable "internal_ranges" {
 
 variable "ssh_source_ranges" {
   type        = list(string)
-  description = "Source ranges allowed for SSH"
-  default     = ["0.0.0.0/0"]
+  description = "Source ranges allowed for SSH (WARNING: 0.0.0.0/0 allows all IPs - use IAP tunnel for production)"
+  default     = []  # Empty by default - use IAP tunnel or specify ranges
 }
 
 variable "health_check_ranges" {

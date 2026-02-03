@@ -158,7 +158,7 @@ init(Options) ->
     logger:info("Session audit logger initializing"),
 
     %% Create ETS table for audit events
-    Table = ets:new(?TABLE_NAME, [ordered_set, protected, {keypos, 2}]),
+    Table = ets:new(?TABLE_NAME, [ordered_set, protected, named_table, {keypos, 2}]),
 
     RetentionDays = maps:get(retention_days, Options, ?DEFAULT_RETENTION_DAYS),
     MaxEvents = maps:get(max_events, Options, ?DEFAULT_MAX_EVENTS),
@@ -399,7 +399,7 @@ generate_json_report(SessionId, Events, Options) ->
                       false -> [maps:remove(data, Event) || Event <- Events]
                   end
     },
-    jsx:encode(Report).
+    json:encode(Report).
 
 %% @private Generate CSV report
 -spec generate_csv_report(session_id(), [audit_event()], map()) -> binary().
@@ -412,7 +412,7 @@ generate_csv_report(_SessionId, Events, _Options) ->
                              SessionId = maps:get(session_id, Event),
                              EventType = atom_to_binary(maps:get(event_type, Event)),
                              Severity = atom_to_binary(maps:get(severity, Event)),
-                             Data = jsx:encode(maps:get(data, Event, #{})),
+                             Data = json:encode(maps:get(data, Event, #{})),
                              <<Timestamp/binary, ",",
                                SessionId/binary, ",",
                                EventType/binary, ",",

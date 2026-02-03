@@ -105,7 +105,7 @@ validate(#{certificate := CertDer}, _Config) when byte_size(CertDer) > ?MAX_CERT
 validate(#{certificate := CertDer}, Config) when is_map(Config) ->
     %% Decode certificate
     case public_key:der_decode('OTPCertificate', CertDer) of
-        OtpCert when is_record(OtpCert, 'OTPCertificate') ->
+        OtpCert when element(1, OtpCert) =:= 'OTPCertificate' ->
             %% Extract subject CN for user identity
             UserId = extract_subject_cn(OtpCert),
 

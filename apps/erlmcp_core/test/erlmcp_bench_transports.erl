@@ -27,8 +27,7 @@
 
 -module(erlmcp_bench_transports).
 
--export([run/1, run_all/0, all_workloads/0, benchmark_websocket/1, benchmark_sse/1,
-         benchmark_tls/1]).
+-export([run/1, run_all/0, all_workloads/0,]).
 
 -include_lib("kernel/include/logger.hrl").
 

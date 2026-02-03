@@ -357,7 +357,7 @@ encrypt_data(Data) ->
     %% Encrypt using AES-256-GCM
     Key = get_encryption_key(),
     IV = crypto:strong_rand_bytes(16),
-    {Ciphertext, Tag} = crypto:block_encrypt(aes_gcm, Key, IV, Data),
+    {Ciphertext, Tag} = crypto:crypto_one_time(aes_256_gcm, Key, IV, Data, true),
     #{iv => IV, ciphertext => Ciphertext, tag => Tag}.
 
 get_encryption_key() ->
@@ -423,7 +423,7 @@ decrypt_backup(Encrypted, MetaData) ->
     %% Decrypt backup
     Key = get_encryption_key(),
     #{iv := IV, ciphertext := Ciphertext, tag := Tag} = Encrypted,
-    crypto:block_decrypt(aes_gcm, Key, IV, Ciphertext, Tag).
+    crypto:crypto_one_time(aes_256_gcm, Key, IV, Ciphertext, false, Tag).
 
 restore_session_data(Data) ->
     %% Parse session data

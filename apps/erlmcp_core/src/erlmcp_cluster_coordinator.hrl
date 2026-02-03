@@ -181,11 +181,11 @@
 
 -type merge_strategy() ::
     last_write_wins   | %% Last write wins by timestamp
-        vector_clock    | %% Use vector clocks for causality
-        operational      | %% CRDT operational transforms
-        manual           | %% Manual conflict resolution
-        leader_decides   | %% Leader resolves conflicts
-        custom.           %% Custom merge strategy
+    vector_clock      | %% Use vector clocks for causality
+    operational       | %% CRDT operational transforms
+    manual            | %% Manual conflict resolution
+    leader_decides    | %% Leader resolves conflicts
+    custom.           %% %% Custom merge strategy
 
 -type sync_state() :: #{
         last_sync_index => non_neg_integer(),
@@ -326,5 +326,3 @@
        }.
 
 -type monitor_ref() :: reference().
--type join_request() :: #{}.
--type leave_request() :: #{}.

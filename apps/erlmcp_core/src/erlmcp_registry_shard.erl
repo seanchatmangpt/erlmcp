@@ -39,6 +39,7 @@
 -record(state, {
     shard_id :: shard_id(),
     ets_table :: ets:tid(),
+    monitors = #{} :: map(),  % Ref -> {Type, Id, Pid}
     server_count = 0 :: non_neg_integer(),
     transport_count = 0 :: non_neg_integer(),
     messages_processed = 0 :: non_neg_integer()
@@ -104,9 +105,9 @@ get_entries(ShardPid, Count) ->
 %% gen_server Callbacks
 %%====================================================================
 
-init([ShardId, Opts]) ->
+init([ShardId, _Opts]) ->
     %% Register with gproc for discovery
-    true = gproc:reg({n, l, {erlmcp_shard, ShardId}}),
+    ok = gproc:reg({n, l, {erlmcp_shard, ShardId}}),
 
     %% Create ETS table for fast lookups
     EtsOpts = [
@@ -114,7 +115,8 @@ init([ShardId, Opts]) ->
         set,
         {read_concurrency, true},
         {write_concurrency, true},
-        {decentralized_counters, true}
+        {decentralized_counters, true},
+        public
     ],
     TableName = binary_to_atom(<<"erlmcp_shard_", (integer_to_binary(ShardId))/binary>>, utf8),
     ets:new(TableName, EtsOpts),
@@ -132,9 +134,11 @@ handle_call({register_server, ServerId, ServerPid, Config}, _From, State) ->
             ets:insert(State#state.ets_table, {Key, ServerPid, Config, server}),
 
             %% Monitor process
-            monitor(process, ServerPid),
+            Ref = monitor(process, ServerPid),
+            Monitors = maps:put(Ref, {server, ServerId, ServerPid}, State#state.monitors),
 
             NewState = State#state{
+                monitors = Monitors,
                 server_count = State#state.server_count + 1,
                 messages_processed = State#state.messages_processed + 1
             },
@@ -148,9 +152,13 @@ handle_call({unregister_server, ServerId}, _From, State) ->
     case ets:lookup(State#state.ets_table, Key) of
         [{_, ServerPid, _, _}] ->
             ets:delete(State#state.ets_table, Key),
-            demonitor(ServerPid, [flush]),
+
+            %% Find and remove monitor reference
+            Monitors = maps:filter(fun(_Ref, {_Type, _Id, Pid}) -> Pid =/= ServerPid end,
+                                   State#state.monitors),
 
             NewState = State#state{
+                monitors = Monitors,
                 server_count = State#state.server_count - 1,
                 messages_processed = State#state.messages_processed + 1
             },
@@ -176,9 +184,12 @@ handle_call({register_transport, TransportId, TransportPid, Config}, _From, Stat
     case ets:lookup(State#state.ets_table, Key) of
         [] ->
             ets:insert(State#state.ets_table, {Key, TransportPid, Config, transport}),
-            monitor(process, TransportPid),
+
+            Ref = monitor(process, TransportPid),
+            Monitors = maps:put(Ref, {transport, TransportId, TransportPid}, State#state.monitors),
 
             NewState = State#state{
+                monitors = Monitors,
                 transport_count = State#state.transport_count + 1,
                 messages_processed = State#state.messages_processed + 1
             },
@@ -192,9 +203,13 @@ handle_call({unregister_transport, TransportId}, _From, State) ->
     case ets:lookup(State#state.ets_table, Key) of
         [{_, TransportPid, _, _}] ->
             ets:delete(State#state.ets_table, Key),
-            demonitor(TransportPid, [flush]),
+
+            %% Find and remove monitor reference
+            Monitors = maps:filter(fun(_Ref, {_Type, _Id, Pid}) -> Pid =/= TransportPid end,
+                                   State#state.monitors),
 
             NewState = State#state{
+                monitors = Monitors,
                 transport_count = State#state.transport_count - 1,
                 messages_processed = State#state.messages_processed + 1
             },
@@ -239,6 +254,7 @@ handle_call(get_stats, _From, State) ->
         shard_id => State#state.shard_id,
         server_count => State#state.server_count,
         transport_count => State#state.transport_count,
+        monitored_processes => maps:size(State#state.monitors),
         messages_processed => State#state.messages_processed,
         queue_depth => process_info(self(), message_queue_len)
     }, State};
@@ -254,17 +270,36 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({'DOWN', _Ref, process, Pid, _Reason}, State) ->
+handle_info({'DOWN', Ref, process, Pid, Reason}, State) ->
     %% Cleanup after monitored process
-    %% Find all entries for this PID and remove them
-    Pattern = [{{'$1', Pid, '$2', '$3'}}],
-    ets:select_delete(State#state.ets_table, Pattern),
+    case maps:get(Ref, State#state.monitors, undefined) of
+        {Type, Id, _Pid} ->
+            %% Remove from monitors map
+            Monitors = maps:remove(Ref, State#state.monitors),
 
-    NewState = State#state{
-        server_count = ets:select_count(State#state.ets_table, [{{{server, '_'}, '_', '_', '_'}}]),
-        transport_count = ets:select_count(State#state.ets_table, [{{{transport, '_'}, '_', '_', '_'}}])
-    },
-    {noreply, NewState};
+            %% Remove from ETS
+            Key = {Type, Id},
+            ets:delete(State#state.ets_table, Key),
+
+            %% Update counts
+            {ServerCount, TransportCount} = case Type of
+                server -> {State#state.server_count - 1, State#state.transport_count};
+                transport -> {State#state.server_count, State#state.transport_count - 1}
+            end,
+
+            ?LOG_DEBUG("Process ~p (~p) for ~p went down: ~p", [Pid, Type, Id, Reason]),
+
+            NewState = State#state{
+                monitors = Monitors,
+                server_count = max(0, ServerCount),
+                transport_count = max(0, TransportCount)
+            },
+            {noreply, NewState};
+        undefined ->
+            %% Spurious DOWN message or already cleaned up
+            ?LOG_WARNING("Received unexpected DOWN message for ref ~p, pid ~p", [Ref, Pid]),
+            {noreply, State}
+    end;
 
 handle_info(_Info, State) ->
     {noreply, State}.

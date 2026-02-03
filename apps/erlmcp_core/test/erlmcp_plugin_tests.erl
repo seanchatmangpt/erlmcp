@@ -264,14 +264,14 @@ create_crashing_plugin() ->
 
 create_invalid_plugin_no_metadata() ->
     Module = erlmcp_plugin_test_invalid,
-    Code = "-module(erlmcp_plugin_test_invalid).\n-export([init/1]).\ninit(_) -> {ok, #{}}.\n",
+    Code = "-module(erlmcp_plugin_test_invalid).\n\ninit(_) -> {ok, #{}}.\n",
     compile_and_load(Module, Code),
     Module.
 
 mock_plugin_code(Module, Type) ->
     io_lib:format("-module(~s).\n"
                   "-behaviour(erlmcp_plugin_~s).\n"
-                  "-export([metadata/0, init/1, ~s]).\n"
+                  "-export([ ~s]).\n"
                   "metadata() -> #{name => <<\"test\">>, version => <<\"1.0.0\">>, type => ~s, description => <<\"test\">>}.\n"
                   "init(_) -> {ok, #{}}.\n"
                   "~s",
@@ -280,7 +280,7 @@ mock_plugin_code(Module, Type) ->
 mock_middleware_code(Module) ->
     io_lib:format("-module(~s).\n"
                   "-behaviour(erlmcp_plugin_middleware).\n"
-                  "-export([metadata/0, init/1, pre_execute/2, post_execute/2]).\n"
+                  "\n"
                   "metadata() -> #{name => <<\"middleware_test\">>, version => <<\"1.0.0\">>, type => middleware, description => <<\"test\">>}.\n"
                   "init(_) -> {ok, #{}}.\n"
                   "pre_execute(Request, State) -> {ok, Request#{middleware_pre => true}, State}.\n"
@@ -290,7 +290,7 @@ mock_middleware_code(Module) ->
 mock_crashing_code(Module) ->
     io_lib:format("-module(~s).\n"
                   "-behaviour(erlmcp_plugin_command).\n"
-                  "-export([metadata/0, init/1, execute/2, help/0]).\n"
+                  "\n"
                   "metadata() -> #{name => <<\"crash\">>, version => <<\"1.0.0\">>, type => command, description => <<\"crash\">>}.\n"
                   "init(_) -> {ok, #{}}.\n"
                   "execute(crash, _State) -> error(intentional_crash);\n"
@@ -305,7 +305,7 @@ get_exports(validator) ->
 get_exports(exporter) ->
     "export/2, get_config_schema/0";
 get_exports(command) ->
-    "execute/2, help/0";
+    "execute/2,";
 get_exports(_) ->
     "".
 

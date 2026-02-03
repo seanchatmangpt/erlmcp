@@ -29,7 +29,7 @@
          % OIDC functions
          openid_configuration/1, jwks/1, id_token/3, claims/2,
          % Client management
-         register_client/2, update_client/2, get_client/1, list_clients/0,
+         register_client/2, update_client/1, get_client/1, list_clients/0,
          % Token management
          create_token/3, refresh_token/2, validate_token/2, revoke_token/1,
          % Configuration
@@ -86,12 +86,12 @@
                      auth_url := binary(),
                      token_url := binary(),
                      userinfo_url := binary(),
-                     jwks_url :: binary(),
+                     jwks_url => binary(),
                      issuer := binary(),
                      authorization_endpoint := binary(),
                      token_endpoint := binary(),
                      userinfo_endpoint := binary(),
-                     end_session_endpoint :: binary(),
+                     end_session_endpoint => binary(),
                      client_id := client_id(),
                      client_secret := client_secret(),
                      scopes := [binary()],
@@ -318,10 +318,10 @@ init([Config]) ->
     process_flag(trap_exit, true),
 
     % Initialize ETS tables
-    Tokens = ets:new(oauth_tokens, [set, protected, {read_concurrency, true}]),
-    Codes = ets:new(oauth_codes, [set, protected, {write_concurrency, true}]),
-    Sessions = ets:new(oauth_sessions, [set, protected, {read_concurrency, true}]),
-    RefreshTokens = ets:new(oauth_refresh_tokens, [set, protected, {read_concurrency, true}]),
+    Tokens = ets:new(oauth_tokens, [set, protected, named_table, {read_concurrency, true}]),
+    Codes = ets:new(oauth_codes, [set, protected, named_table, {write_concurrency, true}]),
+    Sessions = ets:new(oauth_sessions, [set, protected, named_table, {read_concurrency, true}]),
+    RefreshTokens = ets:new(oauth_refresh_tokens, [set, protected, named_table, {read_concurrency, true}]),
 
     % Default configuration
     DefaultConfig = #{
@@ -406,7 +406,7 @@ handle_call({get_client, ClientId}, _From, State) ->
     {reply, Result, State};
 
 handle_call(list_clients, _From, State) ->
-    {reply, State#{clients}, State};
+    {reply, maps:get(clients, State), State};
 
 handle_call({create_token, ClientId, UserId, Params}, _From, State) ->
     Result = do_create_token(ClientId, UserId, Params, State),
@@ -429,7 +429,7 @@ handle_call({get_provider, ProviderId}, _From, State) ->
     {reply, Result, State};
 
 handle_call(list_providers, _From, State) ->
-    {reply, State#{providers}, State};
+    {reply, maps:get(providers, State), State};
 
 handle_call({validate_redirect_uri, ClientId, RedirectUri}, _From, State) ->
     Result = do_validate_redirect_uri(ClientId, RedirectUri, State),
@@ -441,10 +441,10 @@ handle_call({validate_scope, ScopeString}, _From, State) ->
 
 handle_call(status, _From, State) ->
     Status = #{
-        clients => length(State#{clients}),
-        tokens => ets:info(State#{tokens}, size),
-        providers => length(State#{providers}),
-        memory => ets:info(State#{tokens}, memory),
+        clients => length(maps:get(clients, State)),
+        tokens => ets:info(maps:get(tokens, State), size),
+        providers => length(maps:get(providers, State)),
+        memory => ets:info(maps:get(tokens, State), memory),
         uptime => erlang:system_time(second) - element(2, process_info(self(), start_time))
     },
     {reply, Status, State};
@@ -455,11 +455,11 @@ handle_call(_Request, _From, State) ->
 -spec handle_cast(term(), state()) -> {noreply, state()}.
 handle_cast({add_provider, ProviderId, Config}, State) ->
     Provider = build_provider(ProviderId, Config),
-    Providers = [Provider | State#{providers}],
+    Providers = [Provider | maps:get(providers, State)],
     {noreply, State#{providers => Providers}};
 
 handle_cast({remove_provider, ProviderId}, State) ->
-    Providers = lists:filter(fun(P) -> P#{id} =/= ProviderId end, State#{providers}),
+    Providers = lists:filter(fun(P) -> maps:get(id, P) =/= ProviderId end, maps:get(providers, State)),
     {noreply, State#{providers => Providers}};
 
 handle_cast(_Request, State) ->
@@ -476,11 +476,11 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, State) ->
-    % Cleanup ETS tables
-    ets:delete(State#{tokens}),
-    ets:delete(State#{codes}),
-    ets:delete(State#{sessions}),
-    ets:delete(State#{refresh_tokens}),
+    % Cleanup ETS tables (named tables, delete by name)
+    ets:delete(oauth_tokens),
+    ets:delete(oauth_codes),
+    ets:delete(oauth_sessions),
+    ets:delete(oauth_refresh_tokens),
 
     logger:info("OAuth2 server terminated"),
     ok.
@@ -507,20 +507,20 @@ init_clients(State) ->
         token_auth_method => client_secret_basic,
         metadata => #{name => "Default Client", created => erlang:system_time(second)}
     },
-    State#{clients => [DefaultClient]}.
+    #{clients => [DefaultClient]}.
 
 %% OAuth2 authorization flow
 do_authorize(ClientId, RedirectUri, Params, State) ->
     case do_get_client(ClientId, State) of
         {ok, Client} ->
             % Validate redirect URI
-            case lists:member(RedirectUri, Client#{redirect_uris}) of
+            case lists:member(RedirectUri, maps:get(redirect_uris, Client)) of
                 true ->
                     % Get response type
                     ResponseType = maps:get(<<"response_type">>, Params, <<"code">>),
 
                     % Validate response type
-                    case lists:member(ResponseType, Client#{response_types}) of
+                    case lists:member(ResponseType, maps:get(response_types, Client)) of
                         true ->
                             % Generate authorization code
                             Code = generate_code(),
@@ -531,12 +531,12 @@ do_authorize(ClientId, RedirectUri, Params, State) ->
                                 code => Code,
                                 client_id => ClientId,
                                 redirect_uri => RedirectUri,
-                                scope => maps:get(<<"scope">>, Params, Client#{scope}),
+                                scope => maps:get(<<"scope">>, Params, maps:get(scope, Client)),
                                 state => maps:get(<<"state">>, Params, <<>>),
                                 created_at => Now,
-                                expires_at => Now + State#{config}#{code_lifetime}
+                                expires_at => Now + maps:get(code_lifetime, maps:get(config, State))
                             },
-                            ets:insert(State#{codes}, {Code, CodeData}),
+                            ets:insert(maps:get(codes, State), {Code, CodeData}),
 
                             % Build redirect URL
                             Redirect = build_redirect_uri(RedirectUri, Params, Code, State),
@@ -586,16 +586,16 @@ process_authorization_code(Params, Client, State) ->
     Code = maps:get(<<"code">>, Params, <<>>),
     RedirectUri = maps:get(<<"redirect_uri">>, Params, <<>>),
 
-    case ets:lookup(State#{codes}, Code) of
+    case ets:lookup(maps:get(codes, State), Code) of
         [{_, CodeData}] ->
             % Validate code
-            case validate_code(CodeData, Client#{id}, RedirectUri, State) of
+            case validate_code(CodeData, maps:get(id, Client), RedirectUri, State) of
                 true ->
                     % Generate tokens
-                    {ok, Tokens} = generate_tokens(CodeData#{client_id} = Client#{id}, State),
+                    {ok, Tokens} = generate_tokens(CodeData#{client_id => maps:get(id, Client)}, State),
 
                     % Delete code
-                    ets:delete(State#{codes}, Code),
+                    ets:delete(maps:get(codes, State), Code),
 
                     % Return token response
                     TokenResponse = build_token_response(Tokens),
@@ -611,16 +611,16 @@ process_authorization_code(Params, Client, State) ->
 process_refresh_token(Params, Client, State) ->
     RefreshToken = maps:get(<<"refresh_token">>, Params, <<>>),
 
-    case ets:lookup(State#{refresh_tokens}, RefreshToken) of
+    case ets:lookup(maps:get(refresh_tokens, State), RefreshToken) of
         [{_, RefreshData}] ->
             % Validate refresh token
-            case validate_refresh_token(RefreshData, Client#{id}, State) of
+            case validate_refresh_token(RefreshData, maps:get(id, Client), State) of
                 true ->
                     % Generate new tokens
-                    {ok, NewTokens} = generate_tokens(RefreshData#{client_id} = Client#{id}, State),
+                    {ok, NewTokens} = generate_tokens(RefreshData#{client_id => maps:get(id, Client)}, State),
 
                     % Delete old refresh token
-                    ets:delete(State#{refresh_tokens}, RefreshToken),
+                    ets:delete(maps:get(refresh_tokens, State), RefreshToken),
 
                     % Return token response
                     TokenResponse = build_token_response(NewTokens),
@@ -636,11 +636,11 @@ process_refresh_token(Params, Client, State) ->
 process_client_credentials(Client, State) ->
     % Generate tokens for client credentials
     TokenData = #{
-        client_id => Client#{id},
-        scope => Client#{scope},
+        client_id => maps:get(id, Client),
+        scope => maps:get(scope, Client),
         type => access_token,
         created_at => erlang:system_time(second),
-        expires_at => erlang:system_time(second) + State#{config}#{token_lifetime}
+        expires_at => erlang:system_time(second) + maps:get(token_lifetime, maps:get(config, State))
     },
     {ok, Tokens} = generate_tokens(TokenData, State),
 
@@ -648,31 +648,56 @@ process_client_credentials(Client, State) ->
     TokenResponse = build_token_response(Tokens),
     {ok, TokenResponse}.
 
+%% Process password grant (Resource Owner Password Credentials)
+process_password_grant(Params, Client, State) ->
+    Username = maps:get(<<"username">>, Params, <<>>),
+    Password = maps:get(<<"password">>, Params, <<>>),
+
+    % Validate username and password
+    % In production, this would check against a user database
+    case Username =/= <<>> andalso Password =/= <<>> of
+        true ->
+            TokenData = #{
+                client_id => maps:get(id, Client),
+                user_id => Username,
+                scope => maps:get(scope, Client),
+                type => access_token,
+                created_at => erlang:system_time(second),
+                expires_at => erlang:system_time(second) + maps:get(token_lifetime, maps:get(config, State))
+            },
+            {ok, Tokens} = generate_tokens(TokenData, State),
+            TokenResponse = build_token_response(Tokens),
+            {ok, TokenResponse};
+        false ->
+            {error, invalid_grant}
+    end.
+
 %% Generate access and refresh tokens
 generate_tokens(TokenData, State) ->
     AccessToken = generate_access_token(TokenData),
     RefreshToken = generate_refresh_token(TokenData),
-    ExpiresIn = TokenData#{expires_at} - erlang:system_time(second),
+    ExpiresIn = maps:get(expires_at, TokenData) - erlang:system_time(second),
 
     Token = #{
         id => crypto:strong_rand_bytes(16),
-        client_id => TokenData#{client_id},
+        client_id => maps:get(client_id, TokenData),
         user_id => maps:get(user_id, TokenData, <<>>),
         type => access_token,
         access_token => AccessToken,
         refresh_token => RefreshToken,
-        scope => TokenData#{scope},
-        expires_at => TokenData#{expires_at},
-        issued_at => TokenData#{created_at},
+        scope => maps:get(scope, TokenData),
+        expires_at => maps:get(expires_at, TokenData),
+        issued_at => maps:get(created_at, TokenData),
         claims => maps:get(claims, TokenData, #{}),
-        metadata => TokenData#{metadata}
+        metadata => maps:get(metadata, TokenData)
     },
 
     % Store tokens
-    ets:insert(State#{tokens}, {Token#{id}, Token}),
-    if TokenData#{type} == refresh_token ->
-            ets:insert(State#{refresh_tokens}, {RefreshToken, Token});
-       true ->
+    ets:insert(maps:get(tokens, State), {maps:get(id, Token), Token}),
+    case maps:get(type, TokenData) of
+        refresh_token ->
+            ets:insert(maps:get(refresh_tokens, State), {RefreshToken, Token});
+        _ ->
             ok
     end,
 
@@ -680,20 +705,20 @@ generate_tokens(TokenData, State) ->
 
 %% Token introspection
 do_introspect(Token, Config, State) ->
-    case ets:lookup(State#{tokens}, Token) of
+    case ets:lookup(maps:get(tokens, State), Token) of
         [{_, TokenData}] ->
             % Validate token is not expired
-            case erlang:system_time(second) < TokenData#{expires_at} of
+            case erlang:system_time(second) < maps:get(expires_at, TokenData) of
                 true ->
                     % Build introspection response
                     Response = #{
                         active => true,
-                        scope => TokenData#{scope},
-                        client_id => TokenData#{client_id},
-                        username => TokenData#{user_id},
-                        exp => TokenData#{expires_at},
-                        iat => TokenData#{issued_at},
-                        sub => TokenData#{user_id}
+                        scope => maps:get(scope, TokenData),
+                        client_id => maps:get(client_id, TokenData),
+                        username => maps:get(user_id, TokenData),
+                        exp => maps:get(expires_at, TokenData),
+                        iat => maps:get(issued_at, TokenData),
+                        sub => maps:get(user_id, TokenData)
                     },
                     {ok, Response};
                 false ->
@@ -705,23 +730,23 @@ do_introspect(Token, Config, State) ->
 
 %% Token revocation
 do_revoke(Token, Config, State) ->
-    case ets:lookup(State#{tokens}, Token) of
+    case ets:lookup(maps:get(tokens, State), Token) of
         [{_, TokenData}] ->
             % Delete access token
-            ets:delete(State#{tokens}, TokenData#{id}),
+            ets:delete(maps:get(tokens, State), maps:get(id, TokenData)),
             % Delete refresh token if present
             case maps:is_key(refresh_token, TokenData) of
                 true ->
-                    ets:delete(State#{refresh_tokens}, TokenData#{refresh_token});
+                    ets:delete(maps:get(refresh_tokens, State), maps:get(refresh_token, TokenData));
                 false ->
                     ok
             end,
             ok;
         [] ->
             % Check if it's a refresh token
-            case ets:lookup(State#{refresh_tokens}, Token) of
+            case ets:lookup(maps:get(refresh_tokens, State), Token) of
                 [{_, _}] ->
-                    ets:delete(State#{refresh_tokens}, Token),
+                    ets:delete(maps:get(refresh_tokens, State), Token),
                     ok;
                 [] ->
                     {error, invalid_token}
@@ -753,7 +778,7 @@ do_openid_configuration(Issuer, State) ->
         response_types_supported => [<<"code">>, <<"token">>, <<"id_token">>],
         subject_types_supported => [<<"public">>, <<"pairwise">>],
         id_token_signing_alg_values_supported => [<<"RS256">>],
-        scopes_supported => State#{config}#{allowed_scopes}
+        scopes_supported => maps:get(allowed_scopes, maps:get(config, State))
     },
     {ok, Config}.
 
@@ -779,7 +804,7 @@ do_id_token(ClientId, UserId, Claims, State) ->
         iat => Now,
         nonce => maps:get(nonce, Claims, <<>>),
         name => maps:get(name, Claims, <<>>),
-        email => maps:get(email, Claims, <<>>,
+        email => maps:get(email, Claims, <<>>),
         email_verified => maps:get(email_verified, Claims, false)
     },
     {ok, IDToken}.
@@ -812,7 +837,7 @@ do_register_client(ClientMetadata, Secret, State) ->
             },
 
             % Add to client list
-            NewClients = [Client | State#{clients}],
+            NewClients = [Client | maps:get(clients, State)],
             {ok, Client};
         {error, Reason} ->
             {error, Reason}
@@ -820,12 +845,12 @@ do_register_client(ClientMetadata, Secret, State) ->
 
 %% Update client
 do_update_client(Client, State) ->
-    ClientId = Client#{id},
+    ClientId = maps:get(id, Client),
 
     % Find and update client
-    case lists:keyfind(ClientId, 1, State#{clients}) of
+    case lists:keyfind(ClientId, 1, maps:get(clients, State)) of
         {_, _} ->
-            UpdatedClients = lists:keyreplace(ClientId, 1, State#{clients}, Client),
+            UpdatedClients = lists:keyreplace(ClientId, 1, maps:get(clients, State), Client),
             {ok, Client};
         false ->
             {error, client_not_found}
@@ -833,7 +858,7 @@ do_update_client(Client, State) ->
 
 %% Get client by ID
 do_get_client(ClientId, State) ->
-    case lists:keyfind(ClientId, 1, State#{clients}) of
+    case lists:keyfind(ClientId, 1, maps:get(clients, State)) of
         {_, Client} ->
             {ok, Client};
         false ->
@@ -846,10 +871,10 @@ do_refresh_token(RefreshToken, Params, State) ->
 
 %% Validate token
 do_validate_token(Token, Config, State) ->
-    case ets:lookup(State#{tokens}, Token) of
+    case ets:lookup(maps:get(tokens, State), Token) of
         [{_, TokenData}] ->
             % Check expiration
-            case erlang:system_time(second) < TokenData#{expires_at} of
+            case erlang:system_time(second) < maps:get(expires_at, TokenData) of
                 true ->
                     {ok, TokenData};
                 false ->
@@ -861,13 +886,13 @@ do_validate_token(Token, Config, State) ->
 
 %% Revoke token
 do_revoke_token(Token, State) ->
-    case ets:lookup(State#{tokens}, Token) of
+    case ets:lookup(maps:get(tokens, State), Token) of
         [{_, TokenData}] ->
-            ets:delete(State#{tokens}, TokenData#{id}),
+            ets:delete(maps:get(tokens, State), maps:get(id, TokenData)),
             % Also revoke refresh token
             case maps:is_key(refresh_token, TokenData) of
                 true ->
-                    ets:delete(State#{refresh_tokens}, TokenData#{refresh_token});
+                    ets:delete(maps:get(refresh_tokens, State), maps:get(refresh_token, TokenData));
                 false ->
                     ok
             end,
@@ -878,25 +903,42 @@ do_revoke_token(Token, State) ->
 
 %% Get provider
 do_get_provider(ProviderId, State) ->
-    case lists:keyfind(ProviderId, 1, State#{providers}) of
+    case lists:keyfind(ProviderId, 1, maps:get(providers, State)) of
         {_, Provider} ->
             {ok, Provider};
         false ->
             {error, not_found}
     end.
 
+%% Create token
+do_create_token(ClientId, UserId, Params, State) ->
+    case do_get_client(ClientId, State) of
+        {ok, Client} ->
+            TokenData = #{
+                client_id => ClientId,
+                user_id => UserId,
+                scope => maps:get(<<"scope">>, Params, maps:get(scope, Client)),
+                type => access_token,
+                created_at => erlang:system_time(second),
+                expires_at => erlang:system_time(second) + maps:get(token_lifetime, maps:get(config, State))
+            },
+            generate_tokens(TokenData, State);
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
 %% Validate redirect URI
 do_validate_redirect_uri(ClientId, RedirectUri, State) ->
     case do_get_client(ClientId, State) of
         {ok, Client} ->
-            lists:member(RedirectUri, Client#{redirect_uris});
+            lists:member(RedirectUri, maps:get(redirect_uris, Client));
         {error, _} ->
             false
     end.
 
 %% Validate scope
 do_validate_scope(ScopeString, State) ->
-    AllowedScopes = State#{config}#{allowed_scopes},
+    AllowedScopes = maps:get(allowed_scopes, maps:get(config, State)),
     Scopes = binary:split(ScopeString, <<" ">>, [global]),
     lists:all(fun(Scope) -> lists:member(Scope, AllowedScopes) end, Scopes).
 
@@ -931,14 +973,14 @@ build_redirect_uri(RedirectUri, Params, Code, State) ->
 %% Build token response
 build_token_response(Token) ->
     Response = #{
-        access_token => Token#{access_token},
+        access_token => maps:get(access_token, Token),
         token_type => <<"Bearer">>,
-        expires_in => Token#{expires_at} - erlang:system_time(second),
-        scope => Token#{scope}
+        expires_in => maps:get(expires_at, Token) - erlang:system_time(second),
+        scope => maps:get(scope, Token)
     },
     case maps:is_key(refresh_token, Token) of
         true ->
-            Response#{refresh_token => Token#{refresh_token}};
+            Response#{refresh_token => maps:get(refresh_token, Token)};
         false ->
             Response
     end.
@@ -946,13 +988,13 @@ build_token_response(Token) ->
 %% Validate authorization code
 validate_code(CodeData, ClientId, RedirectUri, State) ->
     % Check code expiration
-    case erlang:system_time(second) < CodeData#{expires_at} of
+    case erlang:system_time(second) < maps:get(expires_at, CodeData) of
         true ->
             % Check client ID matches
-            case CodeData#{client_id} =:= ClientId of
+            case maps:get(client_id, CodeData) =:= ClientId of
                 true ->
                     % Check redirect URI matches
-                    case CodeData#{redirect_uri} =:= RedirectUri of
+                    case maps:get(redirect_uri, CodeData) =:= RedirectUri of
                         true ->
                             true;
                         false ->
@@ -968,10 +1010,10 @@ validate_code(CodeData, ClientId, RedirectUri, State) ->
 %% Validate refresh token
 validate_refresh_token(RefreshData, ClientId, State) ->
     % Check expiration
-    case erlang:system_time(second) < RefreshData#{expires_at} of
+    case erlang:system_time(second) < maps:get(expires_at, RefreshData) of
         true ->
             % Check client ID matches
-            RefreshData#{client_id} =:= ClientId;
+            maps:get(client_id, RefreshData) =:= ClientId;
         false ->
             false
     end.
@@ -986,9 +1028,9 @@ generate_refresh_token(TokenData) ->
 
 %% Verify client credentials
 verify_client_credentials(ClientId, Secret, Client, State) ->
-    case State#{config}#{require_client_secret} of
+    case maps:get(require_client_secret, maps:get(config, State)) of
         true ->
-            Client#{secret} =:= Secret;
+            maps:get(secret, Client) =:= Secret;
         false ->
             true
     end.
@@ -1038,26 +1080,26 @@ cleanup_expired_tokens(State) ->
 
     % Cleanup access tokens
     ets:foldl(fun({TokenId, TokenData}, Acc) ->
-                 case TokenData#{expires_at} < Now of
+                 case maps:get(expires_at, TokenData) < Now of
                      true ->
-                         ets:delete(State#{tokens}, TokenId);
+                         ets:delete(maps:get(tokens, State), TokenId);
                      false ->
                          ok
                  end,
                  Acc
-              end, ok, State#{tokens}),
+              end, ok, maps:get(tokens, State)),
 
     % Refresh tokens are handled during token refresh
     % Codes have their own expiration
     ets:foldl(fun({CodeId, CodeData}, Acc) ->
-                 case CodeData#{expires_at} < Now of
+                 case maps:get(expires_at, CodeData) < Now of
                      true ->
-                         ets:delete(State#{codes}, CodeId);
+                         ets:delete(maps:get(codes, State), CodeId);
                      false ->
                          ok
                  end,
                  Acc
-              end, ok, State#{codes}).
+              end, ok, maps:get(codes, State)).
 
 %% Include additional helper functions as needed...
 % build_authorization_url/3

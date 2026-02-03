@@ -87,7 +87,7 @@ run(#{workload_id := WorkloadId, message_size := MessageSize} = Config) ->
 
     % Create test message
     TestMessage = create_test_message(MessageSize),
-    EncodedMessage = jsx:encode(TestMessage),
+    EncodedMessage = json:encode(TestMessage),
 
     % Warmup phase
     ct:pal("Warmup phase (~p seconds)...~n", [Warmup]),
@@ -197,7 +197,7 @@ create_test_message(TargetSize) ->
           <<"params">> => #{<<"data">> => <<>>},
           <<"id">> => 1},
 
-    BaseSize = byte_size(jsx:encode(BaseMessage)),
+    BaseSize = byte_size(json:encode(BaseMessage)),
     PayloadSize = max(0, TargetSize - BaseSize - 100), % Leave margin for JSON overhead
 
     Payload = binary:copy(<<"x">>, PayloadSize),

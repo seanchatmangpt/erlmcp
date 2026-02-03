@@ -217,7 +217,7 @@ a2a_state_to_case_status(State) ->
 %% gen_server callbacks
 %%====================================================================
 
--spec init(map()) -> {ok, #state{}, {continue, initialize}}.
+-spec init(map()) -> {ok, #state{}} | {ok, #state{}, {continue, initialize}}.
 init(Opts) ->
     process_flag(trap_exit, true),
 
@@ -304,11 +304,15 @@ handle_continue(initialize, State) ->
 
     logger:info("SwarmFlow A2A bridge initialized"),
     {noreply, NewState};
+
+%% @private
+-spec handle_continue(term(), #state{}) -> {noreply, #state{}}.
 handle_continue(_Continue, State) ->
     {noreply, State}.
 
--spec handle_call(term(), {pid(), term()}, #state{}) -> {reply, term(), #state{}}.
-%% Bind case to task
+%% @private
+-spec handle_call({bind, binary(), binary(), map()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, #swf_a2a_binding{}} | {error, term()}, #state{}}.
 handle_call({bind, CaseId, TaskId, Opts}, _From, State) ->
     %% Check if already bound
     case lookup_by_case(CaseId, State) of
@@ -348,6 +352,9 @@ handle_call({bind, CaseId, TaskId, Opts}, _From, State) ->
             end
     end;
 
+%% @private
+-spec handle_call({unbind, binary()}, {pid(), term()}, #state{}) ->
+    {reply, ok | {error, term()}, #state{}}.
 %% Unbind
 handle_call({unbind, Id}, _From, State) ->
     case do_unbind(Id, State) of
@@ -357,6 +364,9 @@ handle_call({unbind, Id}, _From, State) ->
             {reply, {error, Reason}, State}
     end;
 
+%% @private
+-spec handle_call({get_binding, binary()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, #swf_a2a_binding{}} | {error, not_found}, #state{}}.
 %% Get binding
 handle_call({get_binding, Id}, _From, State) ->
     Result = case lookup_by_case(Id, State) of
@@ -365,6 +375,9 @@ handle_call({get_binding, Id}, _From, State) ->
     end,
     {reply, Result, State};
 
+%% @private
+-spec handle_call(list_bindings, {pid(), term()}, #state{}) ->
+    {reply, [#swf_a2a_binding{}], #state{}}.
 %% List bindings
 handle_call(list_bindings, _From, State) ->
     Bindings = ets:foldl(
@@ -374,37 +387,58 @@ handle_call(list_bindings, _From, State) ->
     ),
     {reply, Bindings, State};
 
+%% @private
+-spec handle_call({sync_case_to_task, binary()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, #a2a_task{}} | {error, term()}, #state{}}.
 %% Sync case to task
 handle_call({sync_case_to_task, CaseId}, _From, State) ->
     Result = do_sync_case_to_task(CaseId, State),
     {reply, Result, State};
 
+%% @private
+-spec handle_call({sync_task_to_case, binary()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, #swf_case{}} | {error, term()}, #state{}}.
 %% Sync task to case
 handle_call({sync_task_to_case, TaskId}, _From, State) ->
     Result = do_sync_task_to_case(TaskId, State),
     {reply, Result, State};
 
+%% @private
+-spec handle_call({handle_a2a_message, binary(), #a2a_message{}}, {pid(), term()}, #state{}) ->
+    {reply, ok | {error, term()}, #state{}}.
 %% Handle A2A message
 handle_call({handle_a2a_message, TaskId, Message}, _From, State) ->
     Result = do_handle_a2a_message(TaskId, Message, State),
     {reply, Result, State};
 
+%% @private
+-spec handle_call({emit_artifact, binary(), binary(), map()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, #a2a_artifact{}} | {error, term()}, #state{}}.
 %% Emit artifact
 handle_call({emit_artifact, CaseId, ArtifactName, OutputData}, _From, State) ->
     Result = do_emit_artifact(CaseId, ArtifactName, OutputData, State),
     {reply, Result, State};
 
+%% @private
+-spec handle_call({subscribe, binary(), pid()}, {pid(), term()}, #state{}) ->
+    {reply, ok, #state{}}.
 %% Subscribe to case events
 handle_call({subscribe, CaseId, Pid}, _From, State) ->
     erlang:monitor(process, Pid),
     ets:insert(State#state.subscription_table, {CaseId, Pid}),
     {reply, ok, State};
 
+%% @private
+-spec handle_call({unsubscribe, binary(), pid()}, {pid(), term()}, #state{}) ->
+    {reply, ok, #state{}}.
 %% Unsubscribe from case events
 handle_call({unsubscribe, CaseId, Pid}, _From, State) ->
     ets:delete_object(State#state.subscription_table, {CaseId, Pid}),
     {reply, ok, State};
 
+%% @private
+-spec handle_call({create_context, binary()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, binary()}, #state{}}.
 %% Create context for case
 handle_call({create_context, CaseId}, _From, State) ->
     case ets:lookup(State#state.context_index, CaseId) of
@@ -417,6 +451,9 @@ handle_call({create_context, CaseId}, _From, State) ->
             {reply, {ok, ContextId}, State}
     end;
 
+%% @private
+-spec handle_call({get_context, binary()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, binary()} | {error, not_found}, #state{}}.
 %% Get context for case
 handle_call({get_context, CaseId}, _From, State) ->
     case lookup_by_case(CaseId, State) of
@@ -432,6 +469,9 @@ handle_call({get_context, CaseId}, _From, State) ->
             end
     end;
 
+%% @private
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, {error, unknown_request}, #state{}}.
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -446,7 +486,7 @@ handle_cast(_Msg, State) ->
 
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 %% Handle workflow events from event log
-handle_info({swf_event, Event}, State) when is_record(Event, swf_event) ->
+handle_info(#swf_event{} = Event) ->
     handle_workflow_event(Event, State),
     {noreply, State};
 

@@ -14,8 +14,7 @@
 %%% -module(my_custom_validator).
 %%% -behaviour(erlmcp_plugin_validator).
 %%%
-%%% -export([init/1, validate/2, get_schema/0, metadata/0]).
-%%%
+%%% %%%
 %%% metadata() ->
 %%%     #{name => <<"my_validator">>,
 %%%       version => <<"1.0.0">>,

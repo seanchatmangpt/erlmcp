@@ -75,7 +75,7 @@ validate_plan_file(Path) ->
     case file:read_file(Path) of
         {ok, Json} ->
             try
-                Plan = jsx:decode(Json, [return_maps]),
+                Plan = json:decode(Json),
                 validate_plan(Plan)
             catch
                 error:_ ->

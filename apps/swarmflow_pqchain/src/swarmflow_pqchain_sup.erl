@@ -136,7 +136,7 @@ init([]) ->
     %% Chain state manager - maintains current blockchain state
     %% Single source of truth for current height, validator set, etc.
     Chain = #{
-        id => pqc_chain,
+        id => pqc_block,
         start => {pqc_chain, start_link, []},
         restart => permanent,
         shutdown => 10000,  % Allow time to persist state

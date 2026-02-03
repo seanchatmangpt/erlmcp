@@ -241,7 +241,7 @@ handle_cast({histogram, Name, Value, Labels}, State) ->
     Key = {histogram, Name, Labels},
     Buckets = State#state.histogram_buckets,
     CurrentData = case ets:lookup(?METRICS_TABLE, Key) of
-        [{_, #metric{value = {_Count, _Sum, OldBuckets}}}] ->
+        [{_, #metric{value = {Count, Sum, OldBuckets}}}] ->
             {Count, Sum, OldBuckets};
         [] ->
             {0, 0.0, maps:from_list([{B, 0} || B <- Buckets])}
@@ -371,34 +371,30 @@ collect_vm_metrics(State) ->
 %%--------------------------------------------------------------------
 collect_connection_metrics(State) ->
     %% Get connection counts from gproc registry
-    try
-        ConnectionCount = case gproc:lookup_value({l, erlmcp_connections}) of
-            undefined -> 0;
-            N when is_integer(N) -> N;
-            _ -> 0
-        end,
-        scrape_gauge(<<"erlmcp_connections_total">>, ConnectionCount, #{
-            <<"transport">> => <<"all">>
-        })
+    ConnectionCount = try
+        gproc:lookup_value({l, erlmcp_connections})
     catch
-        _:_ -> ok
+        _:_ -> undefined
     end,
+    ConnCount = case ConnectionCount of
+        Val when is_integer(Val) -> Val;
+        _ -> 0
+    end,
+    scrape_gauge(<<"erlmcp_connections_total">>, ConnCount, #{<<"transport">> => <<"all">>}),
 
     %% Transport-specific counts
     Transports = [stdio, tcp, http, ws, sse],
     lists:foreach(fun(Transport) ->
-        try
-            Count = case gproc:lookup_value({l, {erlmcp_transport, Transport}}) of
-                undefined -> 0;
-                N when is_integer(N) -> N;
-                _ -> 0
-            end,
-            scrape_gauge(<<"erlmcp_connections_total">>, Count, #{
-                <<"transport">> => to_binary(Transport)
-            })
+        RawCount = try
+            gproc:lookup_value({l, {erlmcp_transport, Transport}})
         catch
-            _:_ -> ok
-        end
+            _:_ -> undefined
+        end,
+        Count = case RawCount of
+            TransportCount when is_integer(TransportCount) -> TransportCount;
+            _ -> 0
+        end,
+        scrape_gauge(<<"erlmcp_connections_total">>, Count, #{<<"transport">> => to_binary(Transport)})
     end, Transports),
 
     ok.
@@ -468,8 +464,8 @@ generate_prometheus_export(State) ->
     %% Add HELP and TYPE for each unique metric
     UniqueMetrics = lists:usort([Name || {_Key, #metric{name = Name}} <- ets:tab2list(?METRICS_TABLE)]),
     HeaderLines = lists:map(fun(Name) ->
-        Type = case ets:match_object(?METRICS_TABLE, {{'_', #metric{name = Name, type = T, value = '_', labels = '_', timestamp = '_'}}) of
-            [#metric{type = T}] -> T;
+        Type = case [M || {{_Type, N, _Labels}, #metric{type = T}} = M <- ets:tab2list(?METRICS_TABLE), N =:= Name] of
+            [{_, #metric{type = T}} | _] -> T;
             _ -> gauge
         end,
         [

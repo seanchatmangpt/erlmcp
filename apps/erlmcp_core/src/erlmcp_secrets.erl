@@ -108,7 +108,7 @@ init([Config]) ->
     % SECURITY FIX (P1): Move blocking file I/O to async init to prevent supervisor delays.
     % Generate or load encryption key asynchronously after init returns.
     State =
-        #state{cache = ets:new(secrets_cache, [set, protected]),
+        #state{cache = ets:new(secrets_cache, [set, protected, named_table]),
                backend = Backend,
                backend_config = BackendConfig,
                encryption_key = undefined,  % Will be set in async init
@@ -347,7 +347,7 @@ vault_set(Key, Value, Config) ->
             case ensure_authenticated(VaultState) of
                 {ok, AuthenticatedState} ->
                     Path = build_vault_path(<<"data">>, Key, AuthenticatedState),
-                    Body = jsx:encode(#{<<"data">> => #{<<"value">> => Value}}),
+                    Body = json:encode(#{<<"data">> => #{<<"value">> => Value}}),
                     case vault_http_request(post, Path, Body, AuthenticatedState) of
                         {ok, _ResponseBody} ->
                             logger:info("Vault SET succeeded for ~p", [Key]),
@@ -508,10 +508,10 @@ authenticate(#vault_state{auth_method = approle,
                           timeout = Timeout} =
                  State) ->
     Path = <<"/v1/auth/approle/login">>,
-    Body = jsx:encode(#{<<"role_id">> => RoleId, <<"secret_id">> => SecretId}),
+    Body = json:encode(#{<<"role_id">> => RoleId, <<"secret_id">> => SecretId}),
     case vault_http_request_raw(post, Url, Path, Body, #{}, Timeout) of
         {ok, ResponseBody} ->
-            case jsx:decode(ResponseBody, [return_maps]) of
+            case json:decode(ResponseBody) of
                 #{<<"auth">> :=
                       #{<<"client_token">> := Token, <<"lease_duration">> := LeaseDuration}} ->
                     Expiry = seconds_to_future_timestamp(LeaseDuration - 60), % Refresh 1min early
@@ -536,10 +536,10 @@ authenticate(#vault_state{auth_method = kubernetes,
                     {error, missing_k8s_role};
                 _ ->
                     Path = <<"/v1/auth/kubernetes/login">>,
-                    Body = jsx:encode(#{<<"jwt">> => Jwt, <<"role">> => Role}),
+                    Body = json:encode(#{<<"jwt">> => Jwt, <<"role">> => Role}),
                     case vault_http_request_raw(post, Url, Path, Body, #{}, Timeout) of
                         {ok, ResponseBody} ->
-                            case jsx:decode(ResponseBody, [return_maps]) of
+                            case json:decode(ResponseBody) of
                                 #{<<"auth">> :=
                                       #{<<"client_token">> := Token,
                                         <<"lease_duration">> := LeaseDuration}} ->
@@ -695,7 +695,7 @@ vault_http_request_raw(Method, VaultUrl, Path, Body, Headers, Timeout) ->
 %% @private Parse Vault secret response (KV v2 format).
 -spec parse_vault_secret_response(binary()) -> {ok, secret_value()} | {error, term()}.
 parse_vault_secret_response(ResponseBody) ->
-    try jsx:decode(ResponseBody, [return_maps]) of
+    try json:decode(ResponseBody) of
         #{<<"data">> := #{<<"data">> := Data}} ->
             case maps:get(<<"value">>, Data, undefined) of
                 undefined ->
@@ -716,7 +716,7 @@ parse_vault_secret_response(ResponseBody) ->
 %% @private Parse Vault list response.
 -spec parse_vault_list_response(binary()) -> {ok, [secret_key()]} | {error, term()}.
 parse_vault_list_response(ResponseBody) ->
-    try jsx:decode(ResponseBody, [return_maps]) of
+    try json:decode(ResponseBody) of
         #{<<"data">> := #{<<"keys">> := Keys}} when is_list(Keys) ->
             {ok, Keys};
         #{<<"errors">> := Errors} ->
@@ -762,7 +762,7 @@ aws_secrets_get(SecretId, Config) ->
         {ok, Creds} ->
             % Build request payload
             RequestBody =
-                jsx:encode(#{<<"SecretId">> => SecretId,
+                json:encode(#{<<"SecretId">> => SecretId,
                              <<"VersionStage">> => <<"AWSCURRENT">>}),  % Get current version
 
             case do_aws_request(Region,
@@ -801,7 +801,7 @@ aws_secrets_set(SecretId, SecretValue, Config) ->
                                 <<"secretsmanager">>,
                                 Creds,
                                 <<"secretsmanager.CreateSecret">>,
-                                jsx:encode(CreateParams),
+                                json:encode(CreateParams),
                                 Config)
             of
                 {ok, _ResponseBody} ->
@@ -840,7 +840,7 @@ aws_secrets_delete(SecretId, Config) ->
                                 <<"secretsmanager">>,
                                 Creds,
                                 <<"secretsmanager.DeleteSecret">>,
-                                jsx:encode(DeleteParams),
+                                json:encode(DeleteParams),
                                 Config)
             of
                 {ok, _ResponseBody} ->
@@ -886,11 +886,11 @@ list_all_secrets(Region, Creds, Config, Acc, NextToken) ->
                         <<"secretsmanager">>,
                         Creds,
                         <<"secretsmanager.ListSecrets">>,
-                        jsx:encode(ListParams),
+                        json:encode(ListParams),
                         Config)
     of
         {ok, ResponseBody} ->
-            try jsx:decode(ResponseBody, [return_maps]) of
+            try json:decode(ResponseBody) of
                 #{<<"SecretList">> := SecretList} = Response ->
                     Names = [maps:get(<<"Name">>, S) || S <- SecretList],
                     NewAcc = Acc ++ Names,
@@ -966,7 +966,7 @@ get_iam_role_credentials(Config) ->
 
             case httpc_request(get, {RoleUrl, []}, [], Config) of
                 {ok, {{_, 200, _}, _, CredsBody}} ->
-                    try jsx:decode(CredsBody, [return_maps]) of
+                    try json:decode(CredsBody) of
                         #{<<"AccessKeyId">> := AccessKey,
                           <<"SecretAccessKey">> := SecretKey,
                           <<"Token">> := Token,
@@ -1012,11 +1012,11 @@ assume_role(BaseCreds, RoleArn, Config) ->
                         <<"sts">>,
                         BaseCreds,
                         <<"sts.AssumeRole">>,
-                        jsx:encode(AssumeParams),
+                        json:encode(AssumeParams),
                         Config)
     of
         {ok, ResponseBody} ->
-            try jsx:decode(ResponseBody, [return_maps]) of
+            try json:decode(ResponseBody) of
                 #{<<"Credentials">> :=
                       #{<<"AccessKeyId">> := AccessKey,
                         <<"SecretAccessKey">> := SecretKey,
@@ -1245,7 +1245,7 @@ parse_aws_error(Status, Body, _Headers) ->
         <<>> ->
             {error, {http_error, Status, <<"No response body">>}};
         _ ->
-            try jsx:decode(Body, [return_maps]) of
+            try json:decode(Body) of
                 #{<<"__type">> := ErrorType, <<"message">> := ErrorMsg} ->
                     % Extract error type (remove prefix if present)
                     CleanType =
@@ -1283,7 +1283,7 @@ parse_aws_error(Status, Body, _Headers) ->
 %% @private Parse GetSecretValue response.
 -spec parse_get_secret_response(binary(), binary()) -> {ok, binary()} | {error, term()}.
 parse_get_secret_response(SecretId, ResponseBody) ->
-    try jsx:decode(ResponseBody, [return_maps]) of
+    try json:decode(ResponseBody) of
         #{<<"SecretString">> := SecretString} ->
             logger:info("AWS Secrets Manager: Retrieved SecretString for ~s", [SecretId]),
             {ok, SecretString};
@@ -1323,7 +1323,7 @@ update_aws_secret(SecretId, SecretValue, Region, Creds, Config) ->
                         <<"secretsmanager">>,
                         Creds,
                         <<"secretsmanager.UpdateSecret">>,
-                        jsx:encode(UpdateParams),
+                        json:encode(UpdateParams),
                         Config)
     of
         {ok, _ResponseBody} ->

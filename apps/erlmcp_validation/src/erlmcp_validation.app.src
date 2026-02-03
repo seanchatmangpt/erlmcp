@@ -5,10 +5,10 @@
   {applications, [
       kernel,
       stdlib,
-      % jsx,  % Removed - migrated to OTP 27+ native json module
       jesse,
       erlmcp_core,
-      erlmcp_transports
+      erlmcp_transports,
+      erlmcp_observability
   ]},
   {mod, {erlmcp_validation_app, []}},
   {env, [
@@ -45,10 +45,10 @@
     "erts-16.0.3",     % OTP 28 ERTS minimum
     "kernel-10.4",     % OTP 28 Kernel minimum
     "stdlib-6.0",      % OTP 28 STDLIB minimum
-    "jsx-3.1.0",       % JSON encoding (external)
     "jesse-1.8.1",     % JSON Schema validation (external)
     "erlmcp_core-2.1.0",       % Core application
-    "erlmcp_transports-2.1.0"  % Transports application
+    "erlmcp_transports-2.1.0",  % Transports application
+    "erlmcp_observability-2.1.0"  % Observability application
   ]},
   %% OTP Version Requirements
   {notes, [

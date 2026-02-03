@@ -48,11 +48,7 @@
 %% API exports
 -export([
     discover/1,
-    discover/2,
-    conformance_check/2,
-    evaluate_model/2,
-    compare_models/3,
-    enhance_model/2,
+    discover/2,,,
     filter_log/2,
     aggregate_stats/1,
     export_bpmn/1,
@@ -262,7 +258,7 @@ discover(EventLog, Options) when is_list(EventLog), is_map(Options) ->
 %%--------------------------------------------------------------------
 -spec conformance_check(Net :: #swf_net{}, EventLog :: event_log()) ->
     {ok, conformance_result()} | {error, term()}.
-conformance_check(Net, EventLog) when is_record(Net, swf_net), is_list(EventLog) ->
+conformance_check(#swf_net{} = Net) ->
     try
         %% Normalize event log
         Traces = normalize_event_log(EventLog),
@@ -324,7 +320,7 @@ conformance_check(Net, EventLog) when is_record(Net, swf_net), is_list(EventLog)
 %% @end
 %%--------------------------------------------------------------------
 -spec evaluate_model(Net :: #swf_net{}, EventLog :: event_log()) -> quality_metrics().
-evaluate_model(Net, EventLog) when is_record(Net, swf_net), is_list(EventLog) ->
+evaluate_model(#swf_net{} = Net) ->
     Traces = normalize_event_log(EventLog),
     evaluate_model_internal(Net, Traces).
 
@@ -339,7 +335,7 @@ evaluate_model(Net, EventLog) when is_record(Net, swf_net), is_list(EventLog) ->
 -spec compare_models(Net1 :: #swf_net{}, Net2 :: #swf_net{}, EventLog :: event_log()) ->
     comparison().
 compare_models(Net1, Net2, EventLog)
-  when is_record(Net1, swf_net), is_record(Net2, swf_net), is_list(EventLog) ->
+  when #swf_net{} = Net1, #swf_net{} = Net2, is_list(EventLog) ->(#swf_net{} = Net1) ->
 
     %% Evaluate both models
     Metrics1 = evaluate_model(Net1, EventLog),
@@ -379,7 +375,7 @@ compare_models(Net1, Net2, EventLog)
 %%--------------------------------------------------------------------
 -spec enhance_model(Net :: #swf_net{}, EventLog :: event_log()) ->
     {ok, #swf_net{}} | {error, term()}.
-enhance_model(Net, EventLog) when is_record(Net, swf_net), is_list(EventLog) ->
+enhance_model(#swf_net{} = Net) ->
     try
         Traces = normalize_event_log(EventLog),
 
@@ -460,7 +456,7 @@ aggregate_stats(EventLog) when is_list(EventLog) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec export_bpmn(Net :: #swf_net{}) -> iolist().
-export_bpmn(Net) when is_record(Net, swf_net) ->
+export_bpmn(#swf_net{} = Net) ->
     NetId = Net#swf_net.id,
     NetName = Net#swf_net.name,
 
@@ -485,7 +481,7 @@ export_bpmn(Net) when is_record(Net, swf_net) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec export_pnml(Net :: #swf_net{}) -> iolist().
-export_pnml(Net) when is_record(Net, swf_net) ->
+export_pnml(#swf_net{} = Net) ->
     NetId = Net#swf_net.id,
     NetName = Net#swf_net.name,
 
@@ -629,7 +625,7 @@ compute_log_statistics(Traces) ->
 -spec normalize_event_log(EventLog :: event_log()) -> [trace()].
 normalize_event_log([]) ->
     [];
-normalize_event_log([First | _] = EventLog) when is_record(First, swf_event) ->
+normalize_event_log(#swf_event{} = First) ->
     %% Group by case_id and extract transition sequences
     pqc_heuristics_miner:extract_traces(EventLog);
 normalize_event_log([First | _] = EventLog) when is_list(First) ->

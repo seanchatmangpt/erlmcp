@@ -23,8 +23,14 @@
 -module(erlmcp_plugin_loader).
 
 %% API
--export([discover_plugins/0, discover_plugins/1, load_plugin/1, unload_plugin/1, validate_plugin/1,
-         get_plugin_paths/0]).
+-export([
+    discover_plugins/0,
+    discover_plugins/1,
+    load_plugin/1,
+    unload_plugin/1,
+    validate_plugin/1,
+    get_plugin_paths/0
+]).
 
 -define(DEFAULT_PLUGIN_DIRS,
         ["~/.erlmcp/plugins", "/usr/local/lib/erlmcp/plugins", "/opt/erlmcp/plugins"]).

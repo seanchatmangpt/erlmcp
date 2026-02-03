@@ -462,9 +462,9 @@ execute_send_message(Request, Context) ->
 
     %% Delegate to task manager
     case call_task_manager(send_message, Request, Tenant) of
-        {ok, Task} when is_record(Task, a2a_task) ->
+        {ok, #a2a_task{} = Task} ->
             {ok, erlmcp_a2a_protocol:encode_task(Task)};
-        {ok, Message} when is_record(Message, a2a_message) ->
+        {ok, #a2a_message{} = Message} ->
             {ok, #{<<"message">> => erlmcp_a2a_protocol:encode_message(Message)}};
         {error, task_not_found} ->
             {error, {?A2A_ERROR_TASK_NOT_FOUND, ?A2A_MSG_TASK_NOT_FOUND}};
@@ -491,7 +491,7 @@ execute_streaming_message(Request, Context) ->
         {ok, StreamId} when is_binary(StreamId) ->
             %% Return stream ID for SSE connection
             {ok, #{<<"streamId">> => StreamId}};
-        {ok, Task} when is_record(Task, a2a_task) ->
+        {ok, #a2a_task{} = Task} ->
             {ok, erlmcp_a2a_protocol:encode_task(Task)};
         {error, Reason} ->
             {error, {?A2A_ERROR_STREAM_ERROR, format_error_reason(Reason)}}
@@ -506,7 +506,7 @@ execute_get_task(Request, Context) ->
     end,
 
     case call_task_manager(get_task, Request#a2a_get_task_request.id, Tenant) of
-        {ok, Task} ->
+        {ok, #a2a_task{} = Task} ->
             %% Apply history length limit if specified
             LimitedTask = case Request#a2a_get_task_request.history_length of
                 undefined -> Task;
@@ -528,7 +528,7 @@ execute_list_tasks(Request, Context) ->
     end,
 
     case call_task_manager(list_tasks, Request, Tenant) of
-        {ok, Response} when is_record(Response, a2a_list_tasks_response) ->
+        {ok, #a2a_list_tasks_response{} = Response} ->
             {ok, erlmcp_a2a_protocol:encode_list_tasks_response(Response)};
         {ok, Tasks} when is_list(Tasks) ->
             %% Convert list to response format
@@ -593,7 +593,7 @@ execute_create_push_config(Request, Context) ->
     end,
 
     case call_task_manager(create_push_config, Request, Tenant) of
-        {ok, Config} when is_record(Config, a2a_task_push_notification_config) ->
+        {ok, #a2a_task_push_notification_config{} = Config} ->
             {ok, #{
                 <<"id">> => Config#a2a_task_push_notification_config.id,
                 <<"taskId">> => Config#a2a_task_push_notification_config.task_id,
@@ -619,7 +619,7 @@ execute_get_push_config(Request, Context) ->
 
     case call_task_manager(get_push_config, {Request#a2a_get_push_config_request.task_id,
                                               Request#a2a_get_push_config_request.id}, Tenant) of
-        {ok, Config} when is_record(Config, a2a_task_push_notification_config) ->
+        {ok, #a2a_task_push_notification_config{} = Config} ->
             {ok, #{
                 <<"id">> => Config#a2a_task_push_notification_config.id,
                 <<"taskId">> => Config#a2a_task_push_notification_config.task_id,
@@ -642,7 +642,7 @@ execute_list_push_configs(Request, Context) ->
     end,
 
     case call_task_manager(list_push_configs, Request, Tenant) of
-        {ok, Response} when is_record(Response, a2a_list_push_configs_response) ->
+        {ok, #a2a_list_push_configs_response{} = Response} ->
             Configs = [#{
                 <<"id">> => C#a2a_task_push_notification_config.id,
                 <<"taskId">> => C#a2a_task_push_notification_config.task_id,
@@ -696,7 +696,7 @@ execute_get_extended_agent_card(Params, Context) ->
     end,
 
     case call_agent_card(get_extended, Tenant) of
-        {ok, Card} when is_record(Card, a2a_agent_card) ->
+        {ok, #a2a_agent_card{} = Card} ->
             {ok, erlmcp_a2a_protocol:encode_agent_card(Card)};
         {error, not_available} ->
             {error, {?A2A_ERROR_EXTENDED_CARD_NOT_AVAILABLE,

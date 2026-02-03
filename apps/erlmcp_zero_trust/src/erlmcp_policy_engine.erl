@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, evaluate/3, create_policy/2, update_policy/3]).
+-export([start_link/0, evaluate/3]).
 -export([delete_policy/2, get_policies/1, get_policy/1]).
 -export([enforce_least_privilege/1, validate_principle_of_least_privilege/1]).
 -export([simulate_policy_impact/2, audit_policy_compliance/1]).

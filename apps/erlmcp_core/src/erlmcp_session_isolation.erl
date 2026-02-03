@@ -175,10 +175,10 @@ init(Options) ->
     CleanupTimer = schedule_cleanup(CleanupInterval),
 
     {ok, #state{
-        sessions => #{},
-        global_limits => GlobalLimits,
-        cleanup_interval => CleanupInterval,
-        cleanup_timer => CleanupTimer
+        sessions = #{},
+        global_limits = GlobalLimits,
+        cleanup_interval = CleanupInterval,
+        cleanup_timer = CleanupTimer
     }}.
 
 -spec handle_call(term(), {pid(), term()}, #state{}) ->
@@ -561,7 +561,6 @@ do_check_resource_limits(Session) ->
         connections_exceeded => check_connection_limit(Session)
     },
 
-    HasViolations = maps:iterator(Violations),
     HasAnyViolation = lists:any(fun({_K, V}) -> V =:= true end,
                                   maps:to_list(Violations)),
 

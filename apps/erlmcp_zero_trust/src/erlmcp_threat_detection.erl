@@ -3,10 +3,10 @@
 
 %% API
 -export([start_link/0, detect_threat/2, investigate_threat/3]).
--export([create_detection_rule/2, update_detection_rule/3, delete_detection_rule/2]).
--export([get_detection_rules/1, get_threat_history/2]).
+-export([ delete_detection_rule/2]).
+-export([get_detection_rules/1]).
 -export([enable_detection/1, disable_detection/1]).
--export([configure_analytics/2, get_analytics_summary/1]).
+-export([ get_analytics_summary/1]).
 -export([create_incident/2, update_incident/3, resolve_incident/2]).
 
 %% gen_server callbacks

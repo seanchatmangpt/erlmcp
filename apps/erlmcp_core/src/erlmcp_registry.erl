@@ -479,7 +479,7 @@ handle_call({get_server_for_transport, TransportId}, _From, State) ->
     end;
 handle_call(get_all_state, _From, State) ->
     {reply, {ok, State}, State};
-handle_call({restore_state, NewState}, _From, _State) when is_record(NewState, registry_state) ->
+handle_call({restore_state, NewState}, _From, _State) when element(1, NewState) =:= registry_state ->
     logger:info("Restoring registry state"),
     {reply, ok, NewState};
 handle_call({restore_state, _InvalidState}, _From, State) ->

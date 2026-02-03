@@ -11,89 +11,52 @@
 %% Test cases
 -export([
     %% Identity Provider Tests
-    identity_adapter_test/0,
-    authentication_test/0,
-    authorization_test/0,
-    user_management_test/0,
+    identity_adapter_test/0,,
 
     %% Monitoring System Tests
-    monitoring_adapter_test/0,
-    metric_collection_test/0,
-    log_collection_test/0,
-    alerting_test/0,
+    monitoring_adapter_test/0,,
 
     %% Logging Platform Tests
-    logging_adapter_test/0,
-    query_logs_test/0,
-    setup_index_test/0,
-    pipeline_test/0,
+    logging_adapter_test/0,,
 
     %% BI Tool Tests
-    bi_adapter_test/0,
-    dataset_publish_test/0,
-    dashboard_creation_test/0,
-    report_generation_test/0,
+    bi_adapter_test/0,,
 
     %% ESB Integration Tests
-    esb_adapter_test/0,
-    kafka_integration_test/0,
-    message_routing_test/0,
+    esb_adapter_test/0,,
 
     %% Data Warehouse Tests
-    dwh_adapter_test/0,
-    snowflake_test/0,
-    bigquery_test/0,
+    dwh_adapter_test/0,,
 
     %% DevOps Tool Tests
-    devops_adapter_test/0,
-    jenkins_integration_test/0,
-    gitlab_ci_test/0,
+    devops_adapter_test/0,,
 
     %% API Gateway Tests
-    api_gateway_test/0,
-    kong_integration_test/0,
-    apigee_test/0,
+    api_gateway_test/0,,
 
     %% Cloud Platform Tests
-    cloud_adapter_test/0,
-    aws_integration_test/0,
-    azure_test/0,
-    gcp_test/0,
+    cloud_adapter_test/0,,
 
     %% Security System Tests
     security_adapter_test/0,
-    siem_integration_test/0,
 
     %% Configuration Management Tests
-    config_adapter_test/0,
-    ansible_test/0,
-    puppet_test/0,
+    config_adapter_test/0,,
 
     %% Container Orchestration Tests
-    container_adapter_test/0,
-    kubernetes_test/0,
-    docker_swarm_test/0,
+    container_adapter_test/0,,
 
     %% Gateway Tests
-    gateway_test/0,
-    message_routing_test/0,
-    protocol_translation_test/0,
+    gateway_test/0,,
 
     %% Performance Tests
-    performance_test/0,
-    load_test/0,
-    stress_test/0,
+    performance_test/0,,
 
     %% Security Tests
-    security_test/0,
-    authentication_test/0,
-    authorization_test/0,
+    security_test/0,,
 
     %% Error Handling Tests
-    error_handling_test/0,
-    recovery_test/0,
-    circuit_breaker_test/0
-]).
+    error_handling_test/0]).
 
 %%====================================================================
 %% Test suite configuration

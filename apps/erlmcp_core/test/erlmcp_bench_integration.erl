@@ -15,7 +15,7 @@
 -include("erlmcp.hrl").
 
 %% API exports
--export([benchmark_all/0, benchmark_workflow/1, run_single_workflow/1]).
+-export([benchmark_all/0, run_single_workflow/1]).
 %% Workflow definitions
 -export([workflows/0]).
 

@@ -398,32 +398,32 @@ init([Config]) ->
 
     % Create ETS tables for different event categories
     % Main audit table - ordered set for time-based queries
-    AuditTable = ets:new(audit_log_main, [ordered_set, public,
+    AuditTable = ets:new(audit_log_main, [ordered_set, public, named_table,
                                          {read_concurrency, true},
                                          {write_concurrency, true}]),
 
     % Violations table - for quick violation lookups
-    ViolationsTable = ets:new(audit_log_violations, [ordered_set, public,
+    ViolationsTable = ets:new(audit_log_violations, [ordered_set, public, named_table,
                                                       {read_concurrency, true},
                                                       {write_concurrency, true}]),
 
     % Security events table
-    SecurityTable = ets:new(audit_log_security, [ordered_set, public,
+    SecurityTable = ets:new(audit_log_security, [ordered_set, public, named_table,
                                                   {read_concurrency, true},
                                                   {write_concurrency, true}]),
 
     % Auth events table
-    AuthTable = ets:new(audit_log_auth, [ordered_set, public,
+    AuthTable = ets:new(audit_log_auth, [ordered_set, public, named_table,
                                           {read_concurrency, true},
                                           {write_concurrency, true}]),
 
     % Cluster events table
-    ClusterTable = ets:new(audit_log_cluster, [ordered_set, public,
+    ClusterTable = ets:new(audit_log_cluster, [ordered_set, public, named_table,
                                                 {read_concurrency, true},
                                                 {write_concurrency, true}]),
 
     % Index table for correlation lookups
-    IndexTable = ets:new(audit_log_index, [bag, public,
+    IndexTable = ets:new(audit_log_index, [bag, public, named_table,
                                             {read_concurrency, true},
                                             {write_concurrency, true}]),
 
@@ -571,13 +571,13 @@ terminate(_Reason, State) ->
             ok
     end,
 
-    % Delete ETS tables
-    ets:delete(maps:get(audit_table, State)),
-    ets:delete(maps:get(violations_table, State)),
-    ets:delete(maps:get(security_table, State)),
-    ets:delete(maps:get(auth_table, State)),
-    ets:delete(maps:get(cluster_table, State)),
-    ets:delete(maps:get(index_table, State)),
+    % Delete ETS tables (they're named tables, so we can delete by name)
+    ets:delete(audit_log_main),
+    ets:delete(audit_log_violations),
+    ets:delete(audit_log_security),
+    ets:delete(audit_log_auth),
+    ets:delete(audit_log_cluster),
+    ets:delete(audit_log_index),
 
     logger:info("Audit log framework terminated"),
     ok.
@@ -797,7 +797,7 @@ do_export_events(Events, Filename, State) ->
 
         Content = case Format of
             json ->
-                jsx:encode(Events);
+                json:encode(Events);
             csv ->
                 export_to_csv(Events)
         end,
@@ -829,8 +829,8 @@ export_to_csv(Events) ->
         EvType = maps:get(event_type, E),
         Sev = maps:get(severity, E),
         Node = maps:get(node, E),
-        Ctx = jsx:encode(maps:get(context, E, #{})),
-        Meta = jsx:encode(maps:get(metadata, E, #{})),
+        Ctx = json:encode(maps:get(context, E, #{})),
+        Meta = json:encode(maps:get(metadata, E, #{})),
         io_lib:format("~w,~s,~s,~s,~s,~w,~s,~s~n",
                      [TS, Id, Cat, EvType, Sev, Node, escape_csv(Ctx), escape_csv(Meta)])
     end, Events),

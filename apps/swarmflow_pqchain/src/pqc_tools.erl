@@ -800,7 +800,7 @@ register_with_gproc() ->
     case code:is_loaded(gproc) of
         false -> ok;
         _ ->
-            try gproc:reg({n, l, {pqc_tools, registry}})
+            try gproc:reg({n, l, {pqc_tools, registry}}), ok
             catch _:_ -> ok
             end
     end,

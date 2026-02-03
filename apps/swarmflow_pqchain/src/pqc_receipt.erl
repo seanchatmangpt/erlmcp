@@ -209,7 +209,7 @@ extend(_InvalidReceipt, _Event, _Ts, _SigningKey) ->
              PublicKey :: binary()) ->
     {ok, boolean()} | {error, term()}.
 verify(#{hash := Hash, signature := Signature} = _Receipt, PublicKey)
-    when is_binary(Hash), is_record(Signature, pqc_signature), is_binary(PublicKey) ->
+    when is_binary(Hash), #pqc_signature{} = Signature, is_binary(PublicKey) ->
     try
         % Verify ML-DSA signature
         pqc_crypto:verify(Hash, Signature, PublicKey)
@@ -518,7 +518,7 @@ is_valid_receipt_structure(#{hash := Hash,
                               ts := Ts,
                               sequence := Seq})
     when is_binary(Hash),
-         is_record(Sig, pqc_signature),
+         element(1, Sig) =:= pqc_signature,
          is_integer(Ts), Ts >= 0,
          is_integer(Seq), Seq >= 0 ->
     true;

@@ -1,7 +1,7 @@
 -module(erlmcp_api_gateway_lifecycle).
 -behaviour(gen_server).
 -export([start_link/0]).
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_info/2, terminate/2, code_change/3]).
 
 -export([
     create_api/1, deploy_api/2, update_api/2, retire_api/2, archive_api/2,

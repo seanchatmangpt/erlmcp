@@ -1208,7 +1208,7 @@ register_case(CaseId) ->
     case code:is_loaded(gproc) of
         false -> ok;
         _ ->
-            try gproc:reg({n, l, {swf_case, CaseId}})
+            try gproc:reg({n, l, {swf_case, CaseId}}), ok
             catch _:_ -> ok
             end
     end,

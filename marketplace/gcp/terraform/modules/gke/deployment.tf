@@ -117,7 +117,7 @@ resource "google_project_iam_member" "monitoring_metric_writer" {
   count   = var.deploy_helm_chart ? 1 : 0
   project = var.project_id
   role    = "roles/monitoring.metricWriter"
-  member  = "serviceAccount:${google_service_account.erlmcp[0].email}"
+  member  = "serviceAccount:${google_service_account.erlmcp_sa[0].email}"
 }
 
 # ============================================================================

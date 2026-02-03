@@ -14,8 +14,9 @@
       kernel,
       stdlib,
       crypto,
-      gproc,
-      erlmcp_core
+      gproc
+      % erlmcp_core removed - optional runtime dependency for umbrella project
+      % The core library is available at runtime but not required for compilation
   ]},
   {mod, {swarmflow_os_app, []}},
   {env, [
@@ -35,29 +36,7 @@
           min_confidence_threshold => 0.8
       }}
   ]},
-  {modules, [
-      %% Application
-      swarmflow_os_app,
-      swarmflow_os_sup,
-      %% Public API
-      swarmflow,
-      %% Workflow Engine
-      swf_net_registry,
-      swf_case,
-      swf_case_sup,
-      swf_event_log,
-      %% Process Mining
-      swf_conformance,
-      swf_patch_proposer,
-      %% Swarm Coordination
-      swf_swarm_coordinator,
-      swf_promotion_engine,
-      %% Protocol Integration
-      swf_a2a_bridge,
-      swf_mcp_bridge,
-      %% Rust NIFs
-      swf_rust_nif
-  ]},
+  {modules, []},
   {licenses, ["Apache-2.0"]},
   {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
   %% OTP 28+ Runtime Dependencies

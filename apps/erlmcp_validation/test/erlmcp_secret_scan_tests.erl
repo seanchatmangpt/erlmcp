@@ -379,7 +379,7 @@ clean_content_test_() ->
 test_clean_erlang_code() ->
     Content =
         <<"-module(my_module).\n"
-          "-export([func/1]).\n"
+          "\n"
           "func(X) -> X * 2.\n">>,
     Filename = create_test_file("clean_code_test.erl", Content),
     try

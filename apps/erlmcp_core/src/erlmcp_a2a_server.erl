@@ -675,8 +675,8 @@ execute_skill_handler(#a2a_send_message_request{message = Message} = _Request,
                     timestamp = iso8601_timestamp()
                 }
             },
-            NewTasks = maps:put(TaskId, FailedTask, State#a2a_server_state.tasks),
-            NewContexts = update_context(ContextId, TaskId, State#a2a_server_state.contexts),
+            _NewTasks = maps:put(TaskId, FailedTask, State#a2a_server_state.tasks),
+            _NewContexts = update_context(ContextId, TaskId, State#a2a_server_state.contexts),
             notify_task_update(TaskId, FailedTask, State),
             {error, Reason}
     end.
@@ -900,7 +900,7 @@ update_context(ContextId, TaskId, Contexts) ->
 
 %% @private Notify subscribers of task update
 -spec notify_task_update(binary(), #a2a_task{}, #a2a_server_state{}) -> ok.
-notify_task_update(TaskId, Task, State) ->
+notify_task_update(TaskId, Task, _State) ->
     Event = #a2a_task_status_update_event{
         task_id = TaskId,
         context_id = Task#a2a_task.context_id,

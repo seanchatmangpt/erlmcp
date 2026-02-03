@@ -337,7 +337,7 @@ format_reproducer_module(#reproducer{} = R) ->
     iolist_to_binary(["%% Automatically generated reproducer\n", "%% Created: ",
                       format_timestamp(R#reproducer.timestamp), "\n", "%% Rule ID: ",
                       R#reproducer.rule_id, "\n", "%% Description: ", R#reproducer.description,
-                      "\n\n", "-module(", ModuleName, ").\n", "-export([run/0, scenario/0]).\n\n",
+                      "\n\n", "-module(", ModuleName, ").\n", "\n\n",
                       "-include_lib(\"eunit/include/eunit.hrl\").\n\n",
                       "%% @doc Get scenario definition\n", "scenario() ->\n", "    #{", "\n",
                       "        rule_id => <<\"", R#reproducer.rule_id, "\">>,\n",

@@ -22,8 +22,29 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_pricing_plan).
 
--export([load_plan/1, validate_plan/1, get_envelope/1, check_refusal/2, list_available_plans/0,
-         get_plan_spec/1]).
+-export([
+    load_plan/1,
+    validate_plan/1,
+    get_envelope/1,
+    check_refusal/2,
+    list_available_plans/0,
+    get_plan_spec/1,
+    get_plan_file_path/1,
+    get_plans_dir/0,
+    get_project_root/0,
+    find_project_root/0,
+    find_build_marker/1,
+    normalize_plan/1,
+    normalize_value/1,
+    validate_spec_against_schema/1,
+    load_schema/0,
+    validate_envelope/1,
+    validate_limits/1,
+    validate_features/1,
+    validate_evidence/1,
+    check_required_fields/2,
+    parse_plan_filename/1
+]).
 
 -type tier() :: team | enterprise | gov.
 -type refusal_type() ::
@@ -80,7 +101,7 @@ load_plan(Tier) when Tier =:= team; Tier =:= enterprise; Tier =:= gov ->
         FilePath = get_plan_file_path(Tier),
         case file:read_file(FilePath) of
             {ok, Binary} ->
-                case jsx:decode(Binary, [return_maps]) of
+                case json:decode(Binary) of
                     PlanMap when is_map(PlanMap) ->
                         {ok, normalize_plan(PlanMap)};
                     _Error ->
@@ -348,7 +369,7 @@ load_schema() ->
         SchemaPath = filename:join([get_project_root(), "shapes", "pricing_plan.schema.json"]),
         case file:read_file(SchemaPath) of
             {ok, Binary} ->
-                case jsx:decode(Binary, [return_maps]) of
+                case json:decode(Binary) of
                     SchemaMap when is_map(SchemaMap) ->
                         {ok, SchemaMap};
                     _Error ->

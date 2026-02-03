@@ -138,7 +138,7 @@ close_peer_channels() ->
 %% @private
 %% @doc Persist current chain state to disk
 persist_chain_state() ->
-    case whereis(pqc_chain) of
+    case whereis(pqc_block) of
         undefined ->
             ok;
         Pid ->

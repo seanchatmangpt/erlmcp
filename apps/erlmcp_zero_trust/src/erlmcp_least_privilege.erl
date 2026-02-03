@@ -139,10 +139,10 @@ validate_principle_of_least_privilege(ResourceId) ->
 
 init([]) ->
     %% Initialize ETS tables
-    Identities = ets:new(?MODULE, [set, protected, {keypos, #identity_attributes.identity_id}]),
-    Policies = ets:new(?MODULE ++ "_policies", [set, protected, {keypos, #access_policy.id}]),
-    AccessDecisions = ets:new(?MODULE ++ "_decisions", [set, protected, {keypos, 2}]),
-    AuditLog = ets:new(?MODULE ++ "_audit", [set, protected, {keypos, 2}]),
+    Identities = ets:new(?MODULE, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    Policies = ets:new(?MODULE ++ "_policies", [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    AccessDecisions = ets:new(?MODULE ++ "_decisions", [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    AuditLog = ets:new(?MODULE ++ "_audit", [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
 
     %% Load initial configuration
     Config = load_config(),

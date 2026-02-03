@@ -103,11 +103,11 @@ export_metrics(MetricsFormat) ->
 
 init([]) ->
     %% Initialize integration context
-    ContextStore = ets:new(context_store, [set, protected, {keypos, 2}]),
-    EventStore = ets:new(event_store, [set, protected, {keypos, #security_event.id}]),
-    AuditStore = ets:new(audit_store, [set, protected, {keypos, record.audit_log.id}]),
-    PolicyStore = ets:new(policy_store, [set, protected, {keypos, 2}]),
-    MetricsStore = ets:new(metrics_store, [set, protected, {keypos, 2}]),
+    ContextStore = ets:new(context_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    EventStore = ets:new(event_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    AuditStore = ets:new(audit_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    PolicyStore = ets:new(policy_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    MetricsStore = ets:new(metrics_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
 
     %% Load configuration
     Config = load_integration_config(),

@@ -414,10 +414,10 @@ init([Config]) ->
     process_flag(trap_exit, true),
 
     % Initialize ETS tables
-    Assertions = ets:new(saml_assertions, [set, protected, {read_concurrency, true}]),
-    Artifacts = ets:new(saml_artifacts, [set, protected, {write_concurrency, true}]),
-    Sessions = ets:new(saml_sessions, [set, protected, {read_concurrency, true}]),
-    MetadataCache = ets:new(saml_metadata, [set, protected, {read_concurrency, true}]),
+    Assertions = ets:new(saml_assertions, [set, protected, named_table, {read_concurrency, true}]),
+    Artifacts = ets:new(saml_artifacts, [set, protected, named_table, {write_concurrency, true}]),
+    Sessions = ets:new(saml_sessions, [set, protected, named_table, {read_concurrency, true}]),
+    MetadataCache = ets:new(saml_metadata, [set, protected, named_table, {read_concurrency, true}]),
 
     % Default configuration
     DefaultConfig = #{
@@ -617,11 +617,11 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, State) ->
-    % Cleanup ETS tables
-    ets:delete(maps:get(assertions, State)),
-    ets:delete(maps:get(artifacts, State)),
-    ets:delete(maps:get(sessions, State)),
-    ets:delete(maps:get(metadata_cache, State)),
+    % Cleanup ETS tables (named tables, delete by name)
+    ets:delete(saml_assertions),
+    ets:delete(saml_artifacts),
+    ets:delete(saml_sessions),
+    ets:delete(saml_metadata),
 
     logger:info("SAML server terminated"),
     ok.

@@ -3,7 +3,7 @@
 -include("erlmcp.hrl").
 
 %% API exports
--export([validate_uri/1, validate_resource/1, validate_resource_template/1, encode_resource/1,
+-export([validate_uri/1, validate_resource/1, validate_resource_template/1,
          decode_resource/1]).
 
 %% Types

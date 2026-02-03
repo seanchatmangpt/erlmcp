@@ -22,6 +22,8 @@
     registered_at :: integer() | undefined
 }).
 
+-type metric_def() :: #metric_def{}.
+
 %%% Monitoring state record
 -record(monitoring_state, {
     scrape_interval :: pos_integer(),

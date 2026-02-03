@@ -182,7 +182,7 @@ sse_info({pqc_case_event, _CaseId, Event}, Req, State) ->
     A2AMessage = pqc_projection_a2a:case_to_a2a_message(Event),
 
     %% Encode as SSE event
-    EventData = jsx:encode(A2AMessage),
+    EventData = json:encode(A2AMessage),
     SSEData = [
         <<"event: message\n">>,
         <<"data: ">>, EventData, <<"\n\n">>
@@ -212,13 +212,13 @@ sse_terminate(_Reason, _Req, _State) ->
 handle_send_message(Body) ->
     try
         %% Parse JSON body
-        ReqMap = jsx:decode(Body, [return_maps]),
+        ReqMap = json:decode(Body),
 
         %% Call projection
         case pqc_projection_a2a:send_message(ReqMap) of
             {ok, TaskMap} ->
                 %% Return A2A task
-                ResponseBody = jsx:encode(#{<<"task">> => TaskMap}),
+                ResponseBody = json:encode(#{<<"task">> => TaskMap}),
                 {200, json_headers(), ResponseBody};
             {error, Reason} ->
                 error_response(400, Reason)
@@ -234,7 +234,7 @@ handle_send_message(Body) ->
 handle_streaming_message(Body) ->
     %% Return SSE stream URL
     try
-        ReqMap = jsx:decode(Body, [return_maps]),
+        ReqMap = json:decode(Body),
         Message = maps:get(<<"message">>, ReqMap),
         TaskId = maps:get(<<"taskId">>, Message, undefined),
 
@@ -244,7 +244,7 @@ handle_streaming_message(Body) ->
                 ActualTaskId = maps:get(<<"id">>, TaskMap),
                 StreamURL = <<"/tasks/", ActualTaskId/binary, "/stream">>,
 
-                ResponseBody = jsx:encode(#{
+                ResponseBody = json:encode(#{
                     <<"task">> => TaskMap,
                     <<"streamUrl">> => StreamURL
                 }),
@@ -267,7 +267,7 @@ handle_list_tasks() ->
 
         case pqc_projection_a2a:list_tasks(Params) of
             {ok, ResultMap} ->
-                ResponseBody = jsx:encode(ResultMap),
+                ResponseBody = json:encode(ResultMap),
                 {200, json_headers(), ResponseBody};
             {error, Reason} ->
                 error_response(500, Reason)
@@ -282,7 +282,7 @@ handle_get_task(TaskId) ->
     try
         case pqc_projection_a2a:get_task(TaskId) of
             {ok, TaskMap} ->
-                ResponseBody = jsx:encode(TaskMap),
+                ResponseBody = json:encode(TaskMap),
                 {200, json_headers(), ResponseBody};
             {error, task_not_found} ->
                 error_response(404, task_not_found);
@@ -299,7 +299,7 @@ handle_cancel_task(TaskId) ->
     try
         case pqc_projection_a2a:cancel_task(TaskId) of
             ok ->
-                ResponseBody = jsx:encode(#{<<"status">> => <<"canceled">>}),
+                ResponseBody = json:encode(#{<<"status">> => <<"canceled">>}),
                 {200, json_headers(), ResponseBody};
             {error, task_not_found} ->
                 error_response(404, task_not_found);
@@ -316,7 +316,7 @@ handle_subscribe_task(TaskId) ->
     try
         %% Return SSE stream URL
         StreamURL = <<"/tasks/", TaskId/binary, "/stream">>,
-        ResponseBody = jsx:encode(#{
+        ResponseBody = json:encode(#{
             <<"streamUrl">> => StreamURL,
             <<"protocol">> => <<"SSE">>
         }),
@@ -331,7 +331,7 @@ handle_agent_card() ->
     try
         %% Get PQC public keys
         AgentCard = create_agent_card(),
-        ResponseBody = jsx:encode(AgentCard),
+        ResponseBody = json:encode(AgentCard),
         {200, json_headers(), ResponseBody}
     catch
         error:Reason ->
@@ -416,7 +416,7 @@ json_headers() ->
 
 %% @private 404 Not Found response
 not_found_response() ->
-    ErrorBody = jsx:encode(#{
+    ErrorBody = json:encode(#{
         <<"error">> => <<"not_found">>,
         <<"message">> => <<"Endpoint not found">>
     }),
@@ -424,7 +424,7 @@ not_found_response() ->
 
 %% @private Error response
 error_response(StatusCode, Reason) ->
-    ErrorBody = jsx:encode(#{
+    ErrorBody = json:encode(#{
         <<"error">> => format_error(Reason),
         <<"message">> => format_error_message(Reason)
     }),

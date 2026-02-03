@@ -120,9 +120,8 @@
 %% @end
 -spec start_link(height(), round_number(), #validator_set{}) ->
     {ok, pid()} | {error, term()}.
-start_link(Height, Round, ValidatorSet) when is_integer(Height),
-                                              is_integer(Round),
-                                              is_record(ValidatorSet, validator_set) ->
+start_link(Height, Round, #validator_set{} = ValidatorSet) when is_integer(Height),
+                                              is_integer(Round) ->
     gen_statem:start_link(
         ?MODULE,
         {Height, Round, ValidatorSet},
@@ -139,7 +138,7 @@ start_link(Height, Round, ValidatorSet) when is_integer(Height),
 %%
 %% @end
 -spec propose(pid(), #pqc_block{}) -> ok | {error, term()}.
-propose(Pid, Block) when is_pid(Pid), is_record(Block, pqc_block) ->
+propose(Pid, #pqc_block{} = Block) when is_pid(Pid) ->
     gen_statem:call(Pid, {propose_block, Block}, 5000).
 
 %% @doc Submit a vote (prevote or precommit).
@@ -152,7 +151,7 @@ propose(Pid, Block) when is_pid(Pid), is_record(Block, pqc_block) ->
 %%
 %% @end
 -spec vote(pid(), #consensus_vote{}) -> ok | {error, term()}.
-vote(Pid, Vote) when is_pid(Pid), is_record(Vote, consensus_vote) ->
+vote(Pid, #consensus_vote{} = Vote) when is_pid(Pid) ->
     gen_statem:call(Pid, {submit_vote, Vote}, 5000).
 
 %% @doc Get current phase of the round.
@@ -196,7 +195,7 @@ init({Height, Round, ValidatorSet}) ->
 
     %% Register with gproc
     try
-        gproc:reg({n, l, {consensus_round, Height, Round}})
+        ok = gproc:reg({n, l, {consensus_round, Height, Round}})
     catch
         error:badarg ->
             %% Already registered (shouldn't happen)

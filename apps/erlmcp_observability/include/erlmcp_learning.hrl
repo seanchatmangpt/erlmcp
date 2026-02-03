@@ -55,7 +55,7 @@
 -type pattern_id() :: binary().
 -type trajectory_id() :: binary().
 -type session_id() :: binary().
--type embedding_vector() :: binary<float>().  % Float32 binary format
+-type embedding_vector() :: binary().  % Float32 binary format
 -type reward_value() :: float() | number().
 -type verdict() :: success | failure | partial.
 -type outcome() :: verdict() | {verdict(), reward_value()}.
@@ -71,20 +71,6 @@
 %%% Trajectory Tracking Records
 %%%====================================================================
 
-%% Trajectory represents a complete operational session
--record(trajectory,
-        {id :: trajectory_id(),
-         session_id :: session_id(),
-         agent_type :: agent_type(),
-         task_description :: binary() | undefined,
-         start_time :: integer(),           % microseconds since epoch
-         end_time :: integer() | undefined, % microseconds since epoch
-         steps = [] :: [trajectory_step()], % Ordered sequence of steps
-         verdict :: verdict() | undefined,
-         reward :: reward_value() | undefined,
-         metadata :: map(),                  % Arbitrary metadata
-         embedding :: embedding_vector() | undefined}).
-
 %% Individual step within a trajectory
 -record(trajectory_step,
         {step_id :: binary(),
@@ -95,6 +81,20 @@
          metrics :: feature_map(),
          error_reason :: term() | undefined,
          metadata :: map()}).
+
+%% Trajectory represents a complete operational session
+-record(trajectory,
+        {id :: trajectory_id(),
+         session_id :: session_id(),
+         agent_type :: agent_type(),
+         task_description :: binary() | undefined,
+         start_time :: integer(),           % microseconds since epoch
+         end_time :: integer() | undefined, % microseconds since epoch
+         steps = [] :: [#trajectory_step{}], % Ordered sequence of steps
+         verdict :: verdict() | undefined,
+         reward :: reward_value() | undefined,
+         metadata :: map(),                  % Arbitrary metadata
+         embedding :: embedding_vector() | undefined}).
 
 %% Trajectory verdict with confidence
 -record(verdict,
@@ -153,6 +153,7 @@
          distance_metric :: distance_metric(),
          entry_point :: binary() | undefined,
          layers :: [#hnsw_layer{}],
+         vectors = #{} :: #{binary() => embedding_vector()},  % node_id -> vector
          element_count = 0 :: non_neg_integer(),
          max_elements :: pos_integer()}).
 
@@ -230,7 +231,8 @@
          window_size :: pos_integer(),
          sigma_threshold :: float(),
          min_observations :: pos_integer(),
-         alert_handlers :: [pid()]})  % PIDs to notify of anomalies
+         alert_handlers :: [pid()],
+         recent_anomalies :: [#anomaly{}]}).  % PIDs to notify of anomalies
 
 %%%====================================================================
 %%% Adaptive Optimization Records

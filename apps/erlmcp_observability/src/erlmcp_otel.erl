@@ -59,7 +59,7 @@
          record_error/3, add_attributes/2, add_event/2, add_event/3, set_baggage/2, get_baggage/1,
          propagate_context/1, restore_context/1]).
 %% Enhanced Tracing API
--export([inject_rpc_span/3, inject_rpc_span/4, link_span/2, create_trace_ctx/1, restore_trace_ctx/1,
+-export([inject_rpc_span/3, inject_rpc_span/4, link_span/2, create_trace_ctx/1,
          propagate_baggage/2, get_all_baggage/0, sample_decision/2, tail_sample_decision/1]).
 %% Configuration and management
 -export([configure_exporter/2, set_sampling_rate/1, get_tracer_provider/0, shutdown/0]).

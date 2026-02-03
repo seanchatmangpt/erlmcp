@@ -27,9 +27,8 @@
 
 %% API
 -export([start_link/0]).
--export([register/2, register/3, cancel/1, cancel/2]).
+-export([register/2, cancel/1, cancel/2]).
 -export([check/1, is_cancelled/1]).
--export([set_cleanup_handler/2]).
 -export([get_operation_info/1, list_operations/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).

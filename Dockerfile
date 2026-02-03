@@ -72,6 +72,8 @@ COPY apps/erlmcp_transports/ ./apps/erlmcp_transports/
 COPY apps/erlmcp_observability/ ./apps/erlmcp_observability/
 COPY apps/erlmcp_validation/ ./apps/erlmcp_validation/
 COPY apps/erlmcp_zero_trust/ ./apps/erlmcp_zero_trust/
+COPY apps/swarmflow_os/ ./apps/swarmflow_os/
+COPY apps/swarmflow_pqchain/ ./apps/swarmflow_pqchain/
 
 # Download dependencies and compile (all in prod profile)
 RUN rebar3 as prod get-deps compile

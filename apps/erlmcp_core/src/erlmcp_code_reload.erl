@@ -264,7 +264,7 @@ migrate_state(CurrentState, ?STATE_VERSION) ->
 %% v0 state: Old record without version field
 %% v1 state: New record with version field and enhanced tracking
 -spec migrate_state_v0_to_v1(term()) -> {ok, state()}.
-migrate_state_v0_to_v1(V0State) when is_record(V0State, state) ->
+migrate_state_v0_to_v1(V0State) when element(1, V0State) =:= state ->
     % Check if v0 state already has version (forward compatibility)
     case V0State#state.version of
         undefined ->

@@ -375,7 +375,7 @@ get_stats() ->
 %% gen_server callbacks
 %%====================================================================
 
--spec init(map()) -> {ok, #state{}, {continue, initialize_tables}}.
+-spec init(map()) -> {ok, #state{}} | {ok, #state{}, {continue, initialize_tables}}.
 init(Opts) ->
     process_flag(trap_exit, true),
 

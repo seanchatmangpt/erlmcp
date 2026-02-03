@@ -31,6 +31,12 @@
     status :: 'active' | 'paused'
 }).
 
+-record(metrics, {
+    cpu :: float(),
+    memory :: float(),
+    io :: float()
+}).
+
 -define(TAB, erlmcp_autohealer).
 -define(MAX_ATTEMPTS, 3).
 -define(HEAL_DELAY, 5000). % 5 seconds
@@ -92,7 +98,7 @@ handle_call({handle_node_down, Node}, _From, State) ->
         attempts = 0,
         status = in_progress,
         actions = [],
-        next_action => restart_node
+        next_action = restart_node
     },
 
     true = ets:insert(State#state.healing_table, HealingInfo),
@@ -111,7 +117,7 @@ handle_call({handle_high_load, Node}, _From, State) ->
         attempts = 0,
         status = in_progress,
         actions = [],
-        next_action => scale_node
+        next_action = scale_node
     },
 
     true = ets:insert(State#state.healing_table, HealingInfo),
@@ -133,7 +139,7 @@ handle_call({start_healing_process, Node, IssueType}, _From, State) ->
                 attempts = 0,
                 status = in_progress,
                 actions = [],
-                next_action => determine_first_action(IssueType)
+                next_action = determine_first_action(IssueType)
             },
 
             true = ets:insert(State#state.healing_table, HealingInfo),
@@ -232,7 +238,7 @@ perform_healing(Node, IssueType, State) ->
                             %% Retry after delay
                             update_healing_info(Node, HealingInfo#healing_info{
                                 attempts = Attempts,
-                                next_action => Action,
+                                next_action = Action,
                                 actions = HealingInfo#healing_info.actions ++ [Action]
                             }),
                             timer:sleep(State#state.heal_delay),
@@ -388,7 +394,7 @@ determine_first_action(IssueType) ->
 
 check_healing_processes(State) ->
     %% Check all healing processes and retry if needed
-    HealingProcesses = ets:tab2list(State#state.hearding_table),
+    HealingProcesses = ets:tab2list(State#state.healing_table),
 
     lists:foreach(fun(HealingInfo) ->
         case HealingInfo#healing_info.status of

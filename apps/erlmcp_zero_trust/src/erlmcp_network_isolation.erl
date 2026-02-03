@@ -10,8 +10,6 @@
 -export([
     start_link/0,
     isolate_network/1,
-    create_micro_segment/2,
-    apply_network_policy/2,
     check_network_access/3,
     monitor_traffic/2,
     generate_network_report/1
@@ -111,10 +109,10 @@ generate_network_report(TimeRange) ->
 
 init([]) ->
     %% Initialize network isolation stores
-    SegmentStore = ets:new(segment_store, [set, protected, {keypos, #segment.id}]),
-    PolicyStore = ets:new(policy_store, [set, protected, {keypos, #network_policy.id}]),
-    TrafficStore = ets:new(traffic_store, [set, protected, {keypos, #traffic_flow.id}]),
-    FirewallStore = ets:new(firewall_store, [set, protected, {keypos, 2}]),
+    SegmentStore = ets:new(segment_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    PolicyStore = ets:new(policy_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    TrafficStore = ets:new(traffic_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    FirewallStore = ets:new(firewall_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
 
     %% Load configuration
     Config = load_network_config(),

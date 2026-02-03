@@ -9,7 +9,6 @@
          get_server_capabilities/1, get_client_capabilities/0, has_capability/2,
          has_capability_feature/3, format_capability_error/1, is_feature_enabled/3,
          disable_feature/3, enable_feature/3, get_enabled_features/2, apply_graceful_degradation/2,
-         validate_client_capability_record/1, validate_server_capability_record/1,
          validate_model_preferences/1, negotiate_capability_enhanced/3, supports_flag/2,
          validate_flag/3, apply_graceful_degradation_enhanced/2, extract_flag_from_map/3,
          build_capability_map/2, negotiate_subscribe_flag/2, get_required_capabilities/0,
@@ -294,18 +293,18 @@ apply_graceful_degradation(ClientCaps, ServerCaps) ->
 %% @doc Merge a specific capability with client preferences
 -spec merge_capability(atom(), term(), term()) -> term().
 merge_capability(resources, _ClientVal, ServerVal)
-    when is_record(ServerVal, mcp_resources_capability) ->
+    when element(1, ServerVal) =:= mcp_resources_capability ->
     ServerVal;
-merge_capability(tools, _ClientVal, ServerVal) when is_record(ServerVal, mcp_tools_capability) ->
+merge_capability(tools, _ClientVal, ServerVal) when element(1, ServerVal) =:= mcp_tools_capability ->
     ServerVal;
 merge_capability(prompts, _ClientVal, ServerVal)
-    when is_record(ServerVal, mcp_prompts_capability) ->
+    when element(1, ServerVal) =:= mcp_prompts_capability ->
     ServerVal;
 merge_capability(logging, _ClientVal, ServerVal)
-    when is_record(ServerVal, mcp_logging_capability) ->
+    when element(1, ServerVal) =:= mcp_logging_capability ->
     ServerVal;
 merge_capability(sampling, ClientVal, ServerVal)
-    when is_record(ServerVal, mcp_sampling_capability) ->
+    when element(1, ServerVal) =:= mcp_sampling_capability ->
     %% For sampling, merge model preferences from client
     case ClientVal of
         #mcp_sampling_capability{modelPreferences = ClientPrefs} when ClientPrefs =/= undefined ->
@@ -313,7 +312,7 @@ merge_capability(sampling, ClientVal, ServerVal)
         _ ->
             ServerVal
     end;
-merge_capability(roots, _ClientVal, ServerVal) when is_record(ServerVal, mcp_roots_capability) ->
+merge_capability(roots, _ClientVal, ServerVal) when element(1, ServerVal) =:= mcp_roots_capability ->
     ServerVal;
 merge_capability(_Key, _ClientVal, ServerVal) ->
     ServerVal.
@@ -348,7 +347,7 @@ get_client_capabilities() ->
 
 %% @doc Check if a capability is supported
 -spec has_capability(#mcp_server_capabilities{}, atom()) -> boolean().
-has_capability(Caps, resources) when is_record(Caps, mcp_server_capabilities) ->
+has_capability(Caps, resources) when element(1, Caps) =:= mcp_server_capabilities ->
     %% Check if the capability record is not the default empty one
     case Caps#mcp_server_capabilities.resources of
         #mcp_resources_capability{} ->
@@ -356,7 +355,7 @@ has_capability(Caps, resources) when is_record(Caps, mcp_server_capabilities) ->
         _ ->
             false
     end;
-has_capability(Caps, tools) when is_record(Caps, mcp_server_capabilities) ->
+has_capability(Caps, tools) when element(1, Caps) =:= mcp_server_capabilities ->
     %% Check if the capability record is not the default empty one
     case Caps#mcp_server_capabilities.tools of
         #mcp_tools_capability{} ->
@@ -364,28 +363,28 @@ has_capability(Caps, tools) when is_record(Caps, mcp_server_capabilities) ->
         _ ->
             false
     end;
-has_capability(Caps, prompts) when is_record(Caps, mcp_server_capabilities) ->
+has_capability(Caps, prompts) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.prompts of
         #mcp_prompts_capability{} ->
             true;
         _ ->
             false
     end;
-has_capability(Caps, logging) when is_record(Caps, mcp_server_capabilities) ->
+has_capability(Caps, logging) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.logging of
         #mcp_logging_capability{} ->
             true;
         _ ->
             false
     end;
-has_capability(Caps, sampling) when is_record(Caps, mcp_server_capabilities) ->
+has_capability(Caps, sampling) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.sampling of
         #mcp_sampling_capability{} ->
             true;
         _ ->
             false
     end;
-has_capability(Caps, roots) when is_record(Caps, mcp_server_capabilities) ->
+has_capability(Caps, roots) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.roots of
         #mcp_roots_capability{} ->
             true;
@@ -397,7 +396,7 @@ has_capability(_, _) ->
 
 %% @doc Check if a capability has a specific feature enabled
 -spec has_capability_feature(#mcp_server_capabilities{}, atom(), atom()) -> boolean().
-has_capability_feature(Caps, resources, subscribe) when is_record(Caps, mcp_server_capabilities) ->
+has_capability_feature(Caps, resources, subscribe) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.resources of
         #mcp_resources_capability{subscribe = true} ->
             true;
@@ -405,21 +404,21 @@ has_capability_feature(Caps, resources, subscribe) when is_record(Caps, mcp_serv
             false
     end;
 has_capability_feature(Caps, resources, listChanged)
-    when is_record(Caps, mcp_server_capabilities) ->
+    when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.resources of
         #mcp_resources_capability{listChanged = true} ->
             true;
         _ ->
             false
     end;
-has_capability_feature(Caps, tools, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+has_capability_feature(Caps, tools, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.tools of
         #mcp_tools_capability{listChanged = true} ->
             true;
         _ ->
             false
     end;
-has_capability_feature(Caps, prompts, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+has_capability_feature(Caps, prompts, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.prompts of
         #mcp_prompts_capability{listChanged = true} ->
             true;
@@ -432,35 +431,35 @@ has_capability_feature(_, _, _) ->
 %% @doc Check if a feature flag is enabled for a capability
 %% Used for graceful degradation when client doesn't support a feature
 -spec is_feature_enabled(#mcp_server_capabilities{}, atom(), atom()) -> boolean().
-is_feature_enabled(Caps, resources, subscribe) when is_record(Caps, mcp_server_capabilities) ->
+is_feature_enabled(Caps, resources, subscribe) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.resources of
         #mcp_resources_capability{subscribe = true} ->
             true;
         _ ->
             false
     end;
-is_feature_enabled(Caps, resources, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+is_feature_enabled(Caps, resources, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.resources of
         #mcp_resources_capability{listChanged = true} ->
             true;
         _ ->
             false
     end;
-is_feature_enabled(Caps, tools, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+is_feature_enabled(Caps, tools, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.tools of
         #mcp_tools_capability{listChanged = true} ->
             true;
         _ ->
             false
     end;
-is_feature_enabled(Caps, prompts, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+is_feature_enabled(Caps, prompts, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.prompts of
         #mcp_prompts_capability{listChanged = true} ->
             true;
         _ ->
             false
     end;
-is_feature_enabled(Caps, roots, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+is_feature_enabled(Caps, roots, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     %% Roots is a client capability, but server can check if client supports it
     case Caps#mcp_server_capabilities.roots of
         #mcp_roots_capability{} ->
@@ -474,16 +473,16 @@ is_feature_enabled(_, _, _) ->
 %% @doc Disable a specific feature flag in a capability
 %% Used for graceful degradation
 -spec disable_feature(#mcp_server_capabilities{}, atom(), atom()) -> #mcp_server_capabilities{}.
-disable_feature(Caps, resources, subscribe) when is_record(Caps, mcp_server_capabilities) ->
+disable_feature(Caps, resources, subscribe) when element(1, Caps) =:= mcp_server_capabilities ->
     ResCaps = Caps#mcp_server_capabilities.resources,
     Caps#mcp_server_capabilities{resources = ResCaps#mcp_resources_capability{subscribe = false}};
-disable_feature(Caps, resources, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+disable_feature(Caps, resources, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     ResCaps = Caps#mcp_server_capabilities.resources,
     Caps#mcp_server_capabilities{resources = ResCaps#mcp_resources_capability{listChanged = false}};
-disable_feature(Caps, tools, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+disable_feature(Caps, tools, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     ToolsCaps = Caps#mcp_server_capabilities.tools,
     Caps#mcp_server_capabilities{tools = ToolsCaps#mcp_tools_capability{listChanged = false}};
-disable_feature(Caps, prompts, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+disable_feature(Caps, prompts, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     PromptsCaps = Caps#mcp_server_capabilities.prompts,
     Caps#mcp_server_capabilities{prompts = PromptsCaps#mcp_prompts_capability{listChanged = false}};
 disable_feature(Caps, _, _) ->
@@ -492,16 +491,16 @@ disable_feature(Caps, _, _) ->
 %% @doc Enable a specific feature flag in a capability
 %% Used when client explicitly requests a feature
 -spec enable_feature(#mcp_server_capabilities{}, atom(), atom()) -> #mcp_server_capabilities{}.
-enable_feature(Caps, resources, subscribe) when is_record(Caps, mcp_server_capabilities) ->
+enable_feature(Caps, resources, subscribe) when element(1, Caps) =:= mcp_server_capabilities ->
     ResCaps = Caps#mcp_server_capabilities.resources,
     Caps#mcp_server_capabilities{resources = ResCaps#mcp_resources_capability{subscribe = true}};
-enable_feature(Caps, resources, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+enable_feature(Caps, resources, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     ResCaps = Caps#mcp_server_capabilities.resources,
     Caps#mcp_server_capabilities{resources = ResCaps#mcp_resources_capability{listChanged = true}};
-enable_feature(Caps, tools, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+enable_feature(Caps, tools, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     ToolsCaps = Caps#mcp_server_capabilities.tools,
     Caps#mcp_server_capabilities{tools = ToolsCaps#mcp_tools_capability{listChanged = true}};
-enable_feature(Caps, prompts, listChanged) when is_record(Caps, mcp_server_capabilities) ->
+enable_feature(Caps, prompts, listChanged) when element(1, Caps) =:= mcp_server_capabilities ->
     PromptsCaps = Caps#mcp_server_capabilities.prompts,
     Caps#mcp_server_capabilities{prompts = PromptsCaps#mcp_prompts_capability{listChanged = true}};
 enable_feature(Caps, _, _) ->
@@ -510,7 +509,7 @@ enable_feature(Caps, _, _) ->
 %% @doc Get all enabled features for a capability
 %% Returns a list of feature atoms that are enabled
 -spec get_enabled_features(#mcp_server_capabilities{}, atom()) -> [atom()].
-get_enabled_features(Caps, resources) when is_record(Caps, mcp_server_capabilities) ->
+get_enabled_features(Caps, resources) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.resources of
         #mcp_resources_capability{subscribe = S, listChanged = L} ->
             Features = [],
@@ -532,14 +531,14 @@ get_enabled_features(Caps, resources) when is_record(Caps, mcp_server_capabiliti
         _ ->
             []
     end;
-get_enabled_features(Caps, tools) when is_record(Caps, mcp_server_capabilities) ->
+get_enabled_features(Caps, tools) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.tools of
         #mcp_tools_capability{listChanged = true} ->
             [listChanged];
         _ ->
             []
     end;
-get_enabled_features(Caps, prompts) when is_record(Caps, mcp_server_capabilities) ->
+get_enabled_features(Caps, prompts) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.prompts of
         #mcp_prompts_capability{listChanged = true} ->
             [listChanged];
@@ -1265,21 +1264,21 @@ reset_negotiated_capabilities() ->
 %% @doc Get all capability flags for a given capability
 %% Returns a map of feature flag names to boolean values
 -spec get_capability_flags(#mcp_server_capabilities{}, atom()) -> map().
-get_capability_flags(Caps, resources) when is_record(Caps, mcp_server_capabilities) ->
+get_capability_flags(Caps, resources) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.resources of
         #mcp_resources_capability{subscribe = S, listChanged = L} ->
             #{<<"subscribe">> => S, <<"listChanged">> => L};
         _ ->
             #{}
     end;
-get_capability_flags(Caps, tools) when is_record(Caps, mcp_server_capabilities) ->
+get_capability_flags(Caps, tools) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.tools of
         #mcp_tools_capability{listChanged = L} ->
             #{<<"listChanged">> => L};
         _ ->
             #{}
     end;
-get_capability_flags(Caps, prompts) when is_record(Caps, mcp_server_capabilities) ->
+get_capability_flags(Caps, prompts) when element(1, Caps) =:= mcp_server_capabilities ->
     case Caps#mcp_server_capabilities.prompts of
         #mcp_prompts_capability{listChanged = L} ->
             #{<<"listChanged">> => L};

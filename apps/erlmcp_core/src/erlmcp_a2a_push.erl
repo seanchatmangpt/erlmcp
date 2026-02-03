@@ -209,11 +209,11 @@ init([Config]) ->
     process_flag(trap_exit, true),
 
     State = #state{
-        configs = ets:new(a2a_push_configs, [set, protected]),
-        rate_limits = ets:new(a2a_push_rate_limits, [set, protected]),
-        delivery_status = ets:new(a2a_push_delivery_status, [set, protected]),
-        pending_retries = ets:new(a2a_push_pending_retries, [set, protected]),
-        tokens = ets:new(a2a_push_tokens, [set, protected]),
+        configs = ets:new(a2a_push_configs, [set, protected, named_table]),
+        rate_limits = ets:new(a2a_push_rate_limits, [set, protected, named_table]),
+        delivery_status = ets:new(a2a_push_delivery_status, [set, protected, named_table]),
+        pending_retries = ets:new(a2a_push_pending_retries, [set, protected, named_table]),
+        tokens = ets:new(a2a_push_tokens, [set, protected, named_table]),
         config = Config,
         failure_callback = maps:get(failure_callback, Config, undefined)
     },
@@ -464,7 +464,7 @@ deliver_notification(TaskId, ConfigId, PushConfig, Payload, State) ->
     end.
 
 %% @private Handle delivery failure with retry logic
-handle_delivery_failure(TaskId, ConfigId, PushConfig, Payload, Reason, Attempt, State) ->
+handle_delivery_failure(TaskId, ConfigId, _PushConfig, Payload, Reason, Attempt, State) ->
     MaxRetries = maps_get(max_retries, State#state.config, ?DEFAULT_MAX_RETRIES),
 
     if

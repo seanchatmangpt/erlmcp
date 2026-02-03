@@ -21,14 +21,11 @@
     create/3,
     sign/2,
     verify/1,
-    validate/2,
     hash/1,
     encode/1,
     decode/1,
     merkle_root/1,
-    execute/2,
-    genesis/1
-]).
+    execute/2]).
 
 %%% Type Exports
 -export_type([

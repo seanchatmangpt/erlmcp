@@ -46,8 +46,6 @@
     format_response/2,
     format_task_response/1,
     format_message_response/1,
-    format_list_tasks_response/1,
-    format_list_push_configs_response/1,
     format_agent_card_response/1,
 
     %% Error formatting
@@ -56,8 +54,6 @@
 
     %% Notification formatting
     format_notification/2,
-    format_task_status_update_notification/1,
-    format_task_artifact_update_notification/1,
 
     %% Utility functions
     is_a2a_method/1,

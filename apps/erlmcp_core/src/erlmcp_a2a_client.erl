@@ -42,7 +42,6 @@
     send_message/2,
     send_message/3,
     send_streaming_message/3,
-    send_streaming_message/4,
     %% Task operations
     get_task/2,
     get_task/3,
@@ -56,10 +55,7 @@
     unsubscribe/2,
     %% Push notification configuration
     create_push_config/3,
-    get_push_config/3,
-    list_push_configs/2,
-    delete_push_config/3
-]).
+    list_push_configs/2]).
 
 %% gen_statem callbacks
 -export([
@@ -263,7 +259,7 @@ send_message(Client, Message) ->
 
 -spec send_message(pid() | atom(), #a2a_message{}, map()) ->
     {ok, #a2a_send_message_response{}} | {error, term()}.
-send_message(Client, Message, Opts) when is_record(Message, a2a_message) ->
+send_message(Client, #a2a_message{} = Message, Opts) ->
     gen_statem:call(Client, {send_message, Message, Opts}, ?DEFAULT_TIMEOUT).
 
 %% @doc Send message with streaming response
@@ -274,8 +270,8 @@ send_streaming_message(Client, Message, Callback) ->
 
 -spec send_streaming_message(pid() | atom(), #a2a_message{}, stream_callback(), map()) ->
     {ok, binary()} | {error, term()}.
-send_streaming_message(Client, Message, Callback, Opts)
-  when is_record(Message, a2a_message), is_function(Callback, 1) ->
+send_streaming_message(Client, #a2a_message{} = Message, Callback, Opts)
+  when is_function(Callback, 1) ->
     gen_statem:call(Client, {send_streaming_message, Message, Callback, Opts}, ?DEFAULT_TIMEOUT).
 
 %% @doc Get task status
@@ -325,8 +321,8 @@ unsubscribe(Client, TaskId) when is_binary(TaskId) ->
 %% @doc Create push notification configuration
 -spec create_push_config(pid() | atom(), binary(), #a2a_push_notification_config{}) ->
     {ok, #a2a_task_push_notification_config{}} | {error, term()}.
-create_push_config(Client, TaskId, Config)
-  when is_binary(TaskId), is_record(Config, a2a_push_notification_config) ->
+create_push_config(Client, TaskId, #a2a_push_notification_config{} = Config)
+  when is_binary(TaskId) ->
     gen_statem:call(Client, {create_push_config, TaskId, Config}, ?DEFAULT_TIMEOUT).
 
 %% @doc Get push notification configuration
@@ -814,7 +810,7 @@ fetch_agent_card(AgentUrl) ->
     case httpc:request(get, {binary_to_list(CardUrl), []},
                        [{timeout, 10000}, {connect_timeout, 5000}], []) of
         {ok, {{_, 200, _}, _Headers, Body}} ->
-            case jsx:decode(list_to_binary(Body), [return_maps]) of
+            case json:decode(list_to_binary(Body)) of
                 Map when is_map(Map) ->
                     erlmcp_a2a_protocol:decode_agent_card(Map);
                 _ ->
@@ -899,7 +895,7 @@ do_authenticate(#state{auth_config = #{type := oauth2} = Config} = State) ->
                               Body},
                        [{timeout, 10000}], []) of
         {ok, {{_, 200, _}, _, RespBody}} ->
-            case jsx:decode(list_to_binary(RespBody), [return_maps]) of
+            case json:decode(list_to_binary(RespBody)) of
                 #{<<"access_token">> := Token} = TokenResp ->
                     ExpiresIn = maps:get(<<"expires_in">>, TokenResp, 3600),
                     ExpiresAt = erlang:system_time(millisecond) +
@@ -943,7 +939,7 @@ do_rpc_request(Method, Request, From, State) ->
         <<"method">> => Method,
         <<"params">> => Params
     },
-    Body = jsx:encode(JsonRpcRequest),
+    Body = json:encode(JsonRpcRequest),
 
     %% Build path from interface
     Path = get_interface_path(Interface),
@@ -992,7 +988,7 @@ do_streaming_request(Method, Request, Callback, From, State) ->
         <<"method">> => Method,
         <<"params">> => Params
     },
-    Body = jsx:encode(JsonRpcRequest),
+    Body = json:encode(JsonRpcRequest),
 
     %% Build path and headers for SSE
     Path = get_interface_path(Interface),
@@ -1046,7 +1042,7 @@ do_subscription_request(Method, Request, TaskId, Callback, From, State) ->
                 <<"method">> => Method,
                 <<"params">> => Params
             },
-            Body = jsx:encode(JsonRpcRequest),
+            Body = json:encode(JsonRpcRequest),
 
             %% Build path and headers for SSE
             Path = get_interface_path(Interface),
@@ -1108,7 +1104,7 @@ handle_gun_response(StreamRef, Status, _Headers, Body,
     end.
 
 parse_json_rpc_response(Body, Method) ->
-    try jsx:decode(Body, [return_maps]) of
+    try json:decode(Body) of
         #{<<"result">> := Result} ->
             decode_response(Method, Result);
         #{<<"error">> := Error} ->
@@ -1209,7 +1205,7 @@ parse_sse_lines([Line | Rest], Acc) ->
 
 handle_stream_event(#{data := Data} = Event, Callback) ->
     EventType = maps:get(event, Event, <<"message">>),
-    try jsx:decode(Data, [return_maps]) of
+    try json:decode(Data) of
         JsonData ->
             ParsedEvent = case EventType of
                 <<"taskStatusUpdate">> ->

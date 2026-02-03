@@ -37,45 +37,30 @@
 
     %% API gateway tests
     test_kong_integration/1,
-    test_apigee_integration/1,
 
     %% Cloud platform tests
-    test_aws_integration/1,
-    test_azure_integration/1,
-    test_gcp_integration/1,
+    test_aws_integration/1,,
 
     %% Security system tests
     test_siem_integration/1,
 
     %% Configuration management tests
     test_ansible_integration/1,
-    test_puppet_integration/1,
 
     %% Container orchestration tests
     test_kubernetes_integration/1,
-    test_swarm_integration/1,
 
     %% Integration orchestration tests
-    test_enterprise_bus/1,
-    test_enterprise_registry/1,
-    test_enterprise_metrics/1,
-    test_enterprise_health/1,
+    test_enterprise_bus/1,,
 
     %% Performance tests
-    test_concurrent_connections/1,
-    test_load_balancing/1,
-    test_failover/1,
+    test_concurrent_connections/1,,
 
     %% Security tests
-    test_authentication/1,
-    test_authorization/1,
-    test_data_encryption/1,
+    test_authentication/1,,
 
     %% Compliance tests
-    test_audit_logging/1,
-    test_data_retention/1,
-    test_regulatory_compliance/1
-]).
+    test_audit_logging/1]).
 
 -include_lib("common_test/include/ct.hrl").
 

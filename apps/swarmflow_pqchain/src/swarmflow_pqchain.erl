@@ -15,8 +15,7 @@
 
 %% Identity management
 -export([create_identity/1,
-         get_identity/1,
-         rotate_key/3]).
+         get_identity/1]).
 
 %% Transaction operations
 -export([send_transaction/1,
@@ -35,8 +34,7 @@
          get_account_state/1]).
 
 %% Smart contract operations
--export([deploy_contract/3,
-         call_contract/4,
+-export([
          get_contract_state/1]).
 
 %% Crypto policy operations
@@ -49,7 +47,7 @@
          get_validator_set/0]).
 
 %% Peer network
--export([connect_peer/2,
+-export([
          disconnect_peer/1,
          list_peers/0]).
 
@@ -96,9 +94,8 @@ get_identity(Address) when is_binary(Address) ->
 %% @doc Rotate identity key
 -spec rotate_key(binary(), #pqc_keypair{}, non_neg_integer()) ->
     {ok, #key_rotation{}} | {error, term()}.
-rotate_key(Address, NewKey, EffectiveHeight)
+rotate_key(Address, #pqc_keypair{} = NewKey, EffectiveHeight)
   when is_binary(Address),
-       is_record(NewKey, pqc_keypair),
        is_integer(EffectiveHeight) ->
     pqc_identity:rotate_key(Address, NewKey, EffectiveHeight).
 
@@ -108,7 +105,7 @@ rotate_key(Address, NewKey, EffectiveHeight)
 
 %% @doc Send a transaction to the network
 -spec send_transaction(#pqc_transaction{}) -> {ok, binary()} | {error, term()}.
-send_transaction(Transaction) when is_record(Transaction, pqc_transaction) ->
+send_transaction(#pqc_transaction{} = Transaction) ->
     case whereis(pqc_mempool) of
         undefined ->
             {error, mempool_not_available};
@@ -316,7 +313,7 @@ get_contract_state(ContractAddress) when is_binary(ContractAddress) ->
 
 %% @doc Propose a new crypto policy
 -spec propose_policy(#crypto_policy{}) -> {ok, binary()} | {error, term()}.
-propose_policy(Policy) when is_record(Policy, crypto_policy) ->
+propose_policy(#crypto_policy{} = Policy) ->
     case whereis(pqc_crypto_policy) of
         undefined ->
             {error, crypto_policy_not_available};
@@ -375,7 +372,7 @@ get_validator_set() ->
 %% @doc Connect to a peer
 -spec connect_peer(#peer_identity{}, map()) -> {ok, pid()} | {error, term()}.
 connect_peer(RemotePeer, Options)
-  when is_record(RemotePeer, peer_identity), is_map(Options) ->
+  when #peer_identity{} = RemotePeer, is_map(Options) ->(#peer_identity{} = RemotePeer) ->
     case whereis(pqc_peer_sup) of
         undefined ->
             {error, peer_supervisor_not_available};

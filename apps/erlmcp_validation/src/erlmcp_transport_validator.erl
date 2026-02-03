@@ -24,7 +24,7 @@
 -export([start_link/0, validate_all/1, run/1, validate_callbacks/1, validate_framing/2,
          validate_registry/1, validate_lifecycle/1, generate_report/0, get_results/0,
          validate_transport_module/1, validate_init/3, validate_send/3, validate_close/2,
-         validate_message_format/2, validate_round_trip/3, validate_concurrent_connections/3]).
+         validate_message_format/2]).
 
     %% Runtime validation functions
 

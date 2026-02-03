@@ -13,8 +13,7 @@
 %%% -module(erlmcp_plugin_csv_formatter).
 %%% -behaviour(erlmcp_plugin_formatter).
 %%%
-%%% -export([init/1, format/2, supports_format/0, metadata/0]).
-%%%
+%%% %%%
 %%% metadata() ->
 %%%     #{name => <<"csv_formatter">>,
 %%%       version => <<"1.0.0">>,

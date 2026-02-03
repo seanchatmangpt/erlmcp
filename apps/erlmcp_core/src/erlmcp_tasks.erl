@@ -21,7 +21,7 @@
 
 %% Client API
 -export([start_link/0]).
--export([create_task/3, create_task/4, create/3, create/4]).
+-export([create_task/3, create_task/4, create/3]).
 -export([list_tasks/2, list_tasks/3]).
 -export([get_task/2, get/2]).
 -export([cancel_task/3, cancel/3, cancel_task/2]).

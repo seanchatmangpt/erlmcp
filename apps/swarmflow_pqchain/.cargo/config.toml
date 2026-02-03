@@ -1,0 +1,20 @@
+[build]
+# Build Rust NIF for the target architecture
+target = ""
+
+[env]
+# Default to musl for Alpine Linux compatibility
+CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER = "aarch64-linux-musl-gcc"
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER = "x86_64-linux-musl-gcc"
+
+# Rust flags for optimization
+[term]
+verbose = false
+color = "auto"
+
+[net]
+git-fetch-with-cli = true
+offline = false
+
+[http]
+timeout = 30

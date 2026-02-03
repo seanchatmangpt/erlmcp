@@ -30,7 +30,6 @@
     unsubscribe/1,
     format_event/1,
     to_json/1,
-    from_json/1,
     get_rate_limiter/1,
     check_rate/2
 ]).

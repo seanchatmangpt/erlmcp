@@ -68,7 +68,6 @@
     get_health/1,
     isolate_failure/2,
     escalate/3,
-    apply_circuit_breaker/3,
     hot_code_upgrade/3,
     get_child_tier/2,
     set_escalation_policy/2
@@ -178,9 +177,9 @@
 %% - peripheral: one_for_one with transient restart
 %%
 %% @end
--spec start_link(Name :: atom(), Policy :: #supervision_policy{}) ->
+-spec start_link(Name :: atom(), Policy :: supervisor:supervisor_spec()) ->
     {ok, pid()} | {error, term()}.
-start_link(Name, Policy) when is_atom(Name), is_record(Policy, supervision_policy) ->
+start_link(Name, Policy) when is_atom(Name), element(1, Policy) =:= supervisor ->
     supervisor:start_link({local, Name}, ?MODULE, {Name, Policy}).
 
 %% @doc Add child dynamically with tier classification
@@ -319,7 +318,7 @@ escalate(Sup, ChildId, Reason) ->
 %% @end
 -spec apply_circuit_breaker(Sup :: atom() | pid(), ChildId :: atom(),
                            Config :: #circuit_breaker_config{}) -> ok.
-apply_circuit_breaker(Sup, ChildId, Config) when is_record(Config, circuit_breaker_config) ->
+apply_circuit_breaker(#circuit_breaker_config{} = Config) ->
     logger:info("Applying circuit breaker to ~p in ~p: threshold=~p",
                [ChildId, Sup, Config#circuit_breaker_config.failure_threshold]),
 

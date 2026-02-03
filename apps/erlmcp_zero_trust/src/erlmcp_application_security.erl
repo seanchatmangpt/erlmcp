@@ -120,11 +120,11 @@ implement_security_controls(ApplicationId, Controls, Context) ->
 
 init([]) ->
     %% Initialize security stores
-    ProfileStore = ets:new(security_profile_store, [set, protected, {keypos, #security_profile.id}]),
-    VulnerabilityStore = ets:new(vulnerability_store, [set, protected, {keypos, #security_vulnerability.id}]),
-    ControlStore = ets:new(control_store, [set, protected, {keypos, #security_control.id}]),
-    AssessmentStore = ets:new(assessment_store, [set, protected, {keypos, record.security_assessment.id}]),
-    ApplicationStore = ets:new(application_store, [set, protected, {keypos, 2}]),
+    ProfileStore = ets:new(security_profile_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    VulnerabilityStore = ets:new(vulnerability_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    ControlStore = ets:new(control_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    AssessmentStore = ets:new(assessment_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
+    ApplicationStore = ets:new(application_store, [set, protected, named_table, {keypos, element(2, record_info(state, 2))}]),
 
     %% Load configuration
     Config = load_appsec_config(),

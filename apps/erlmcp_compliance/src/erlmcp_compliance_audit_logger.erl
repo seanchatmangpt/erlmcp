@@ -6,7 +6,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, log_event/4, log_event/5, get_audit_trail/2, get_audit_trail/3,
+-export([start_link/0, log_event/5, get_audit_trail/2, get_audit_trail/3,
          search_audit_events/3, generate_audit_report/2, get_compliance_events/1,
          create_audit_schedule/3, run_audit/2]).
 

@@ -20,7 +20,6 @@
 
 %% API
 -export([start_link/0,
-         start_round/3,
          stop_round/1,
          list_rounds/0,
          count_rounds/0]).
@@ -56,7 +55,7 @@ start_link() ->
 start_round(Height, Round, ValidatorSet)
   when is_integer(Height), Height >= 0,
        is_integer(Round), Round >= 0,
-       is_record(ValidatorSet, validator_set) ->
+       element(1, ValidatorSet) =:= validator_set ->
     supervisor:start_child(?SERVER, [Height, Round, ValidatorSet]).
 
 %% @doc Stop a consensus round gracefully

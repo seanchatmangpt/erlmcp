@@ -139,6 +139,12 @@ variable "domain_mapping" {
   description = "Custom domain mapping (e.g., 'erlmcp.example.com')"
 }
 
+variable "allow_public_access" {
+  type        = bool
+  default     = false
+  description = "Allow public unauthenticated access (WARNING: security risk - requires explicit enablement)"
+}
+
 # Generate random suffix for resource names
 resource "random_string" "suffix" {
   length  = 8
@@ -280,8 +286,10 @@ resource "google_cloud_run_service" "erlmcp" {
   })
 }
 
-# IAM configuration (allow public access by default)
+# IAM configuration (restrict access by default - users must explicitly grant access)
+# To allow public access, set var.allow_public_access = true
 resource "google_cloud_run_service_iam_member" "public_invoker" {
+  count    = var.allow_public_access ? 1 : 0
   location = google_cloud_run_service.erlmcp.location
   project  = google_cloud_run_service.erlmcp.project
   service  = google_cloud_run_service.erlmcp.name

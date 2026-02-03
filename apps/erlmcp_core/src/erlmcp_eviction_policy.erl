@@ -230,7 +230,7 @@ init(Opts) ->
     process_flag(trap_exit, true),
 
     %% Create ETS table for tracking access
-    AccessTable = ets:new(erlmcp_access, [ordered_set, protected]),
+    AccessTable = ets:new(erlmcp_access, [ordered_set, protected, named_table]),
 
     InitialPolicy = maps:get(initial_policy, Opts, ?DEFAULT_POLICY),
 

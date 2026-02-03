@@ -18,7 +18,7 @@
          get_error_requirements/1, list_error_codes/0, get_transport_requirements/0,
          get_transport_requirements/1, list_transports/0, get_capability_requirements/0,
          get_capability_requirements/1, list_capabilities/0, validate_message/1,
-         validate_method_call/2, validate_error_code/1, check_capability_support/2,
+         validate_method_call/2, validate_error_code/1,
          generate_validation_rules/0, spec_version/0, protocol_version/0, supported_capabilities/0,
          supported_transports/0, required_error_codes/0, message_schema/1, resource_schema/0,
          tool_schema/0, prompt_schema/0, is_valid_error_code/1, is_valid_request_type/1,

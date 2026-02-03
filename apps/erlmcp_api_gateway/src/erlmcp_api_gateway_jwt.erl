@@ -6,7 +6,7 @@ generate_token(Payload, Secret) ->
     PayloadWithExp = maps:put(<<"exp">>, erlang:system_time(second) + 3600, Payload),
     EncodedHeader = base64url(jsx:encode(Headers)),
     EncodedPayload = base64url(jsx:encode(PayloadWithExp)),
-    Signature = crypto:hmac(sha256, Secret, <<EncodedHeader/binary, ".", EncodedPayload/binary>>),
+    Signature = crypto:mac(hmac, sha256, Secret, <<EncodedHeader/binary, ".", EncodedPayload/binary>>),
     EncodedSignature = base64url(Signature),
     <<EncodedHeader/binary, ".", EncodedPayload/binary, ".", EncodedSignature/binary>>.
 

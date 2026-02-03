@@ -38,7 +38,7 @@
          get_patch_status/1]).
 -export([get_decisions/1,
          get_decision/1]).
--export([set_canary_percentage/2,
+-export([
          get_canary_percentage/1,
          get_canary_status/1]).
 -export([request_approval/2,
@@ -46,7 +46,7 @@
          reject/2,
          get_pending_approvals/0,
          get_pending_approvals/1]).
--export([start_ab_test/3,
+-export([
          stop_ab_test/1,
          get_ab_test_results/1]).
 
@@ -129,7 +129,7 @@ start_link() ->
 
 %% @doc Register a new promotion policy
 -spec register_policy(#swf_promotion_policy{}) -> {ok, policy_id()} | {error, term()}.
-register_policy(Policy) when is_record(Policy, swf_promotion_policy) ->
+register_policy(#swf_promotion_policy{} = Policy) ->
     gen_server:call(?MODULE, {register_policy, Policy}).
 
 %% @doc Update an existing promotion policy
@@ -155,7 +155,7 @@ list_policies() ->
 %% @doc Evaluate a patch against a policy
 -spec evaluate_patch(#swf_patch{}, policy_id()) ->
     {ok, #swf_promotion_decision{}} | {error, term()}.
-evaluate_patch(Patch, PolicyId) when is_record(Patch, swf_patch), is_binary(PolicyId) ->
+evaluate_patch(#swf_patch{} = Patch, PolicyId) when is_binary(PolicyId) ->
     gen_server:call(?MODULE, {evaluate_patch, Patch, PolicyId}).
 
 %% @doc Promote a patch (apply to net)

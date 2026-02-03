@@ -3,18 +3,18 @@
 %%% Comprehensive MCP Protocol Session Lifecycle State Machine for erlmcp v3
 %%%
 %%% == State Model ==
-%%%   - idle: Initial state, no connections
-%%%   - connecting: Establishing transport connection
+%%%   - new: Initial state, session created but not initialized
+%%%   - auth: Authentication in progress
+%%%   - idle: Idle state, authenticated but no active requests
 %%%   - active: Normal operation, processing requests
 %%%   - suspended: Temporarily suspended (idle timeout, admin action, rate limit)
-%%%   - error_recovery: Recovering from error, attempting reconnection
-%%%   - closed: Terminated state
+%%%   - terminated: Terminated state
 %%%
 %%% == Features ==
 %%%   - State transitions with guards and invariants (Armstrong principles)
 %%%   - History tracking with configurable max size
 %%%   - State persistence (ETS/DETS/Mnesia backends)
-%%%   - Exponential backoff retry with configurable strategies
+%%%   - Session fixation protection via cryptographic binding
 %%%   - OTEL integration for observability
 %%%   - Session monitoring and metrics
 %%%   - Resource quota enforcement
@@ -61,7 +61,7 @@
 
 %% gen_statem callbacks
 -export([init/1, callback_mode/0, handle_event/4,
-         terminate/3, code_change/4, format_status/2]).
+         terminate/3, code_change/4, format_status/1]).
 
 %% Types
 -type session_id() :: binary().
@@ -69,12 +69,12 @@
 
 %% Session states for MCP protocol lifecycle
 -type session_state() ::
-    idle |                 %% Initial state, no connections
-    connecting |           %% Establishing transport connection
+    new |                  %% Initial state, session created
+    auth |                 %% Authentication in progress
+    idle |                 %% Idle state, no active requests
     active |               %% Normal operation, processing requests
     suspended |            %% Temporarily suspended
-    error_recovery |       %% Recovering from error
-    closed.                %% Terminated state
+    terminated.            %% Terminated state
 
 %% Reason for suspension
 -type suspend_reason() ::
@@ -416,7 +416,7 @@ init({SessionId, Options, Config}) ->
 
     Data = #data{
         session_id = BoundSessionId,
-        current_state = idle,
+        current_state = new,
         user_id = UserId,
         protocol_version = maps:get(protocol_version, Options, ?MCP_VERSION),
         capabilities = maps:get(capabilities, Options, undefined),
@@ -462,7 +462,7 @@ init({SessionId, Options, Config}) ->
     try_register_session(BoundSessionId),
 
     %% Emit initial state transition (4-arg version for init)
-    emit_state_transition_init(undefined, idle, Data, init),
+    emit_state_transition_init(undefined, new, Data, init),
 
     %% Log session fixation protection applied
     case UserId of
@@ -473,11 +473,11 @@ init({SessionId, Options, Config}) ->
                        [BoundSessionId, UserId])
     end,
 
-    {ok, idle, Data}.
+    {ok, new, Data}.
 
 -spec callback_mode() -> gen_statem:callback_mode_result().
 callback_mode() ->
-    [handle_event_function, state_enter_calls].
+    [handle_event_function, state_enter].
 
 %%====================================================================
 %% State enter events
@@ -876,8 +876,8 @@ terminate(_Reason, _State, Data) ->
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
--spec format_status(normal | terminate, list()) -> map().
-format_status(_Opt, [_PDict, State, Data]) ->
+-spec format_status(term()) -> map().
+format_status([_PDict, State, Data]) ->
     #{state => State,
       session_id => Data#data.session_id,
       created_at => Data#data.created_at,

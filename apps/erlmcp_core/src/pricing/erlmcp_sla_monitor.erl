@@ -188,7 +188,7 @@ handle_call({check_failover, Plan}, _From, State) ->
     {reply, Reply, State};
 handle_call({export_metrics, Plan, Filename}, _From, State) ->
     Metrics = prepare_export_metrics(Plan, State),
-    JsonContent = jsx:encode(Metrics),
+    JsonContent = json:encode(Metrics),
     Reply = file:write_file(Filename, JsonContent),
     {reply, Reply, State};
 handle_call({get_status, Plan}, _From, State) ->

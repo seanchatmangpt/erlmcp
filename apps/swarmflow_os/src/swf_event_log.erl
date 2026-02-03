@@ -119,7 +119,7 @@ start_link(Config) ->
 %% @doc Append a single event to the log.
 %% Generates ULID, assigns sequence number, and notifies subscribers.
 -spec append(#swf_event{}) -> {ok, #swf_event{}} | {error, term()}.
-append(Event) when is_record(Event, swf_event) ->
+append(#swf_event{} = Event) ->
     gen_server:call(?MODULE, {append, Event}, 10000).
 
 %% @doc Append multiple events atomically.

@@ -28,7 +28,7 @@
 
 %% API
 -export([start_link/0, start_link/1]).
--export([observe/3, observe/4]).
+-export([observe/3]).
 -export([check/2]).
 -export([get_baseline/1, get_all_baselines/0]).
 -export([set_threshold/2]).

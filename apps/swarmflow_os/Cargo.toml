@@ -1,0 +1,22 @@
+[package]
+name = "swf_rust_nif"
+version = "1.0.0"
+edition = "2021"
+authors = ["erlmcp"]
+description = "SwarmFlow OS Rust NIF - High-performance process mining compute kernels"
+
+[lib]
+name = "swf_rust_nif"
+path = "c_src/swf_rust_nif.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.34"
+# SIMD is enabled via rustc flags in .cargo/config.toml
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

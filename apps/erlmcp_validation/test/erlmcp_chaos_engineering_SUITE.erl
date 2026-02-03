@@ -42,10 +42,7 @@
     fault_inject_network_jitter/1,
 
     % Resource Faults
-    fault_inject_memory_pressure/1,
-    fault_inject_cpu_saturation/1,
-    fault_inject_disk_exhaustion/1
-]).
+    fault_inject_memory_pressure/1]).
 
 %% Test Cases - Network Partitions
 -export([

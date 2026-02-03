@@ -1,10 +1,10 @@
 -module(erlmcp_data_protection).
 -export([start_link/0, classify_data/2, encrypt_data/3, decrypt_data/3]).
--export([set_retention_policy/3, get_retention_policy/2]).
+-export([set_retention_policy/3]).
 -export([audit_data_access/2, monitor_data_flow/2]).
 -export([mask_sensitive_data/2, anonymize_data/2]).
--export([create_data_classification/2, get_classification_rules/1]).
--export([apply_dlp_policy/3, audit_dlp_violations/2]).
+-export([ get_classification_rules/1]).
+-export([apply_dlp_policy/3]).
 
 -record.data_classification, {
     id :: binary(),

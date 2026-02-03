@@ -271,7 +271,7 @@ store(#pqc_identity{address = Address} = Identity) ->
 
             %% Register with gproc for distributed lookup
             try
-                gproc:reg({n, l, {pqc_identity, Address}}, Identity),
+                ok = gproc:reg({n, l, {pqc_identity, Address}}),
                 ok
             catch
                 error:badarg ->

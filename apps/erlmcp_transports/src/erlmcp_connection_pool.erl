@@ -31,7 +31,7 @@
          drain/0]).
 
 %% gen_server callbacks
--export([init/1,
+-export([
          handle_call/3,
          handle_cast/2,
          handle_info/2,
@@ -41,8 +41,8 @@
 -include("erlmcp.hrl").
 -include("erlmcp_connection_state.hrl").
 
-%% Pool configuration
--record(pool_config,
+%% Pool configuration (module-specific to avoid conflict with header)
+-record(conn_pool_config,
         {name :: atom(),
          transport_type :: transport_type(),
          host :: inet:hostname() | inet:ip_address(),
@@ -54,7 +54,7 @@
          idle_timeout :: pos_integer(),
          connection_opts :: map()}).
 
--type pool_config() :: #pool_config{}.
+-type conn_pool_config() :: #conn_pool_config{}.
 
 %% Pool metrics
 -record(pool_metrics,
@@ -80,7 +80,7 @@
 
 %% Server state
 -record(state,
-        {config :: pool_config(),
+        {config :: conn_pool_config(),
          metrics :: pool_metrics(),
          status :: pool_status(),
          monitor_refs :: #{pid() => reference()},
@@ -102,8 +102,8 @@
 %%====================================================================
 
 %% @doc Start a connection pool
--spec start_link(pool_config()) -> {ok, pid()} | {error, term()}.
-start_link(Config) when is_record(Config, pool_config) ->
+-spec start_link(conn_pool_config()) -> {ok, pid()} | {error, term()}.
+start_link(Config) when is_record(Config, conn_pool_config) ->
     gen_server:start_link(?MODULE, Config, []).
 
 %% @doc Check out a connection from the pool
@@ -220,7 +220,7 @@ drain() ->
 %%====================================================================
 
 %% @private
-init(#pool_config{name = Name,
+init(#conn_pool_config{name = Name,
                    transport_type = TransportType,
                    host = Host,
                    port = Port,
@@ -308,7 +308,7 @@ handle_call(get_status, _From, #state{status = Status} = State) ->
 handle_call(get_metrics, _From, #state{metrics = Metrics} = State) ->
     {reply, {ok, Metrics}, State};
 
-handle_call(reset_circuit_breaker, _From, #state{config = #pool_config{name = Name}} = State) ->
+handle_call(reset_circuit_breaker, _From, #state{config = #conn_pool_config{name = Name}} = State) ->
     %% Reset circuit breaker for all connections in pool
     case poolboy:status(Name) of
         {_, Ready, _, _} ->
@@ -334,24 +334,24 @@ handle_call({update_config, Config}, _From, #state{config = PoolConfig} = State)
     %% Update pool configuration
     NewPoolConfig = case maps:get(size, Config, undefined) of
         undefined -> PoolConfig;
-        NewSize -> PoolConfig#pool_config{size = NewSize}
+        NewSize -> PoolConfig#conn_pool_config{size = NewSize}
     end,
 
     NewPoolConfig2 = case maps:get(max_overflow, Config, undefined) of
         undefined -> NewPoolConfig;
-        NewMaxOverflow -> NewPoolConfig#pool_config{max_overflow = NewMaxOverflow}
+        NewMaxOverflow -> NewPoolConfig#conn_pool_config{max_overflow = NewMaxOverflow}
     end,
 
     NewPoolConfig3 = case maps:get(lease_timeout, Config, undefined) of
         undefined -> NewPoolConfig2;
-        NewLeaseTimeout -> NewPoolConfig2#pool_config{lease_timeout = NewLeaseTimeout}
+        NewLeaseTimeout -> NewPoolConfig2#conn_pool_config{lease_timeout = NewLeaseTimeout}
     end,
 
     logger:info("Pool config updated: ~p", [NewPoolConfig3]),
 
     {reply, ok, State#state{config = NewPoolConfig3}};
 
-handle_call(drain, _From, #state{config = #pool_config{name = Name}} = State) ->
+handle_call(drain, _From, #state{config = #conn_pool_config{name = Name}} = State) ->
     %% Stop accepting new checkouts, wait for existing leases to return
     logger:info("Draining pool ~p", [Name]),
 
@@ -387,7 +387,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
-handle_info(health_monitor, #state{config = #pool_config{name = Name}} = State) ->
+handle_info(health_monitor, #state{config = #conn_pool_config{name = Name}} = State) ->
     %% Perform health monitoring for all connections
     case poolboy:status(Name) of
         {AllReady, Ready, _, _} ->
@@ -431,8 +431,6 @@ handle_info(health_monitor, #state{config = #pool_config{name = Name}} = State) 
 
             NewStatus = State#state.status#pool_status{
                 connections = Workers,
-                active_connections = ActiveConns,
-                idle_connections = Ready,
                 circuit_breaker_state = CircuitState,
                 health_status = HealthStatus
             },
@@ -500,7 +498,7 @@ handle_info(Info, State) ->
     {noreply, State}.
 
 %% @private
-terminate(_Reason, #state{config = #pool_config{name = Name}}) ->
+terminate(_Reason, #state{config = #conn_pool_config{name = Name}}) ->
     %% Stop poolboy pool
     case supervisor:terminate_child(erlmcp_transport_sup, Name) of
         ok -> ok;

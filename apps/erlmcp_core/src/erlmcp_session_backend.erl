@@ -501,7 +501,7 @@ create_fallback_iterator(_State) ->
             case ProcessList of
                 [] ->
                     none;
-                [Pid | Rest] ->
+                [Pid | _Rest] ->
                     {Pid, fun() -> create_fallback_iterator(#state{}) end}
             end
     end.
@@ -517,8 +517,10 @@ validate_utf8_ids(SessionIds) ->
                        nomatch ->
                            %% Check for valid UTF-8 sequences
                            try
-                               unicode:characters_to_list(SessionId, utf8) =/= {error, <<>>},
-                               true
+                               case unicode:characters_to_list(SessionId, utf8) of
+                                   {error, <<>>} -> false;
+                                   _List -> true
+                               end
                            catch
                                _:_ ->
                                    logger:warning("Invalid UTF-8 session ID: ~p", [SessionId]),

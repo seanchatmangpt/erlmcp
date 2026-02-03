@@ -62,50 +62,31 @@
 
 %% Structural Patterns (10-11)
 -export([
-    arbitrary_cycles/3,
     implicit_termination/1
 ]).
 
 %% Multiple Instance Patterns (12-15)
 -export([
     mi_without_sync/2,
-    mi_with_sync/2,
-    mi_without_runtime_knowledge/3,
-    mi_with_runtime_knowledge/3
-]).
+    mi_with_sync/2]).
 
 %% State-based Patterns (16-18)
 -export([
-    deferred_choice/2,
-    interleaved_parallel/1,
-    milestone/3
-]).
+    interleaved_parallel/1]).
 
 %% Cancellation Patterns (19-20)
--export([
-    cancel_activity/2,
-    cancel_region/2
-]).
-
 %% Iteration Patterns (21-22)
 -export([
-    structured_loop/3,
     recursion/2
 ]).
 
 %% Trigger Patterns (25)
--export([
-    persistent_trigger/2
-]).
-
 %% Advanced Patterns (26-30)
 -export([
     cancel_multiple_instance/2,
     complete_multiple_instance/2,
     blocking_discriminator/2,
-    cancelling_discriminator/2,
-    structured_partial_join/3
-]).
+    cancelling_discriminator/2]).
 
 %% Pattern Analysis and Validation
 -export([

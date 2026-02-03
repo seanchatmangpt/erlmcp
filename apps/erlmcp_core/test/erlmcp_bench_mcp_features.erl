@@ -14,7 +14,7 @@
 
 -module(erlmcp_bench_mcp_features).
 
--export([run/0, run/1, run_all/0, workloads/0, benchmark_tool_calls/1, benchmark_subscriptions/1,
+-export([run/0, run/1, run_all/0, workloads/0, benchmark_tool_calls/1,
          benchmark_prompt_rendering/1, benchmark_sampling/1]).
 
 -include_lib("kernel/include/logger.hrl").

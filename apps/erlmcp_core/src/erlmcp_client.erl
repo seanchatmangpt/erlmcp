@@ -8,7 +8,7 @@
 -export([start_link/1, start_link/2, initialize/2, initialize/3, list_resources/1,
          list_resource_templates/1, read_resource/2, subscribe_to_resource/2,
          unsubscribe_from_resource/2, list_prompts/1, get_prompt/2, get_prompt/3, list_tools/1,
-         call_tool/3, complete/3, complete/4, with_batch/2, send_batch_request/4,
+         call_tool/3, complete/3, with_batch/2,
          set_notification_handler/3, remove_notification_handler/2, set_sampling_handler/2,
          remove_sampling_handler/1, list_roots/1, add_root/2, remove_root/2, stop/1,
          cleanup_stale_correlations/0]).

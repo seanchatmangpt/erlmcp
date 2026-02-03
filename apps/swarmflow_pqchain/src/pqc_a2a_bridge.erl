@@ -43,7 +43,6 @@
     send_task/3,
     receive_task/2,
     create_message/3,
-    verify_message/1,
 
     %% On-chain Anchoring
     anchor_artifact/2,
@@ -55,7 +54,6 @@
 
     %% Agent Identity
     get_agent_card/1,
-    verify_agent_card/1,
 
     %% Secure Channel Management
     establish_secure_channel/2,
@@ -313,6 +311,7 @@ get_statistics(ServerRef) ->
 %%====================================================================
 
 %% @private
+-spec init(map()) -> {ok, #state{}}.
 init(Config) ->
     process_flag(trap_exit, true),
 
@@ -344,7 +343,7 @@ init(Config) ->
     ]),
 
     %% Register with gproc
-    gproc:reg({n, l, {pqc_a2a_bridge, Address}}),
+    ok = gproc:reg({n, l, {pqc_a2a_bridge, Address}}),
 
     State = #state{
         validator_keypair = ValidatorKeypair,
@@ -368,6 +367,9 @@ init(Config) ->
     {ok, State}.
 
 %% @private
+%% @private
+-spec handle_call({send_task, #a2a_task{}, binary()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, #pqc_a2a_task{}} | {error, term()}, #state{}}.
 handle_call({send_task, Task, RemoteAgent}, _From, State) ->
     case do_send_task(Task, RemoteAgent, State) of
         {ok, PQCTask, NewState} ->
@@ -376,6 +378,9 @@ handle_call({send_task, Task, RemoteAgent}, _From, State) ->
             {reply, {error, Reason}, State}
     end;
 
+%% @private
+-spec handle_call({receive_task, #pqc_a2a_task{}}, {pid(), term()}, #state{}) ->
+    {reply, {ok, #pqc_a2a_task{}} | {error, term()}, #state{}}.
 handle_call({receive_task, PQCTask}, _From, State) ->
     case do_receive_task(PQCTask, State) of
         {ok, VerifiedTask, NewState} ->
@@ -384,6 +389,9 @@ handle_call({receive_task, PQCTask}, _From, State) ->
             {reply, {error, Reason}, State}
     end;
 
+%% @private
+-spec handle_call({create_message, #a2a_message{}, map()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, #pqc_a2a_message{}} | {error, term()}, #state{}}.
 handle_call({create_message, Message, Metadata}, _From, State) ->
     case do_create_message(Message, Metadata, State) of
         {ok, PQCMessage, NewState} ->
@@ -392,6 +400,9 @@ handle_call({create_message, Message, Metadata}, _From, State) ->
             {reply, {error, Reason}, State}
     end;
 
+%% @private
+-spec handle_call({anchor_artifact, #a2a_artifact{}}, {pid(), term()}, #state{}) ->
+    {reply, {ok, binary()} | {error, term()}, #state{}}.
 handle_call({anchor_artifact, Artifact}, _From, State) ->
     case do_anchor_artifact(Artifact, State) of
         {ok, TxId, NewState} ->
@@ -400,21 +411,36 @@ handle_call({anchor_artifact, Artifact}, _From, State) ->
             {reply, {error, Reason}, State}
     end;
 
+%% @private
+-spec handle_call({verify_artifact, binary()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, exists} | {error, term()}, #state{}}.
 handle_call({verify_artifact, ArtifactHash}, _From, State) ->
     Result = do_verify_artifact(ArtifactHash, State),
     {reply, Result, State};
 
+%% @private
+-spec handle_call({subscribe_tasks, [binary()]}, {pid(), term()}, #state{}) ->
+    {reply, ok, #state{}}.
 handle_call({subscribe_tasks, TaskIds}, {From, _}, State) ->
     NewState = do_subscribe_tasks(From, TaskIds, State),
     {reply, ok, NewState};
 
+%% @private
+-spec handle_call({unsubscribe_tasks, [binary()]}, {pid(), term()}, #state{}) ->
+    {reply, ok, #state{}}.
 handle_call({unsubscribe_tasks, TaskIds}, {From, _}, State) ->
     NewState = do_unsubscribe_tasks(From, TaskIds, State),
     {reply, ok, NewState};
 
+%% @private
+-spec handle_call(get_agent_card, {pid(), term()}, #state{}) ->
+    {reply, {ok, #pqc_agent_card{}}, #state{}}.
 handle_call(get_agent_card, _From, #state{agent_card = Card} = State) ->
     {reply, {ok, Card}, State};
 
+%% @private
+-spec handle_call({establish_secure_channel, binary()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, binary()} | {error, term()}, #state{}}.
 handle_call({establish_secure_channel, RemoteAgent}, _From, State) ->
     case do_establish_secure_channel(RemoteAgent, State) of
         {ok, ChannelId, NewState} ->
@@ -423,10 +449,16 @@ handle_call({establish_secure_channel, RemoteAgent}, _From, State) ->
             {reply, {error, Reason}, State}
     end;
 
+%% @private
+-spec handle_call({close_secure_channel, binary()}, {pid(), term()}, #state{}) ->
+    {reply, ok, #state{}}.
 handle_call({close_secure_channel, ChannelId}, _From, State) ->
     NewState = do_close_secure_channel(ChannelId, State),
     {reply, ok, NewState};
 
+%% @private
+-spec handle_call({get_task, binary()}, {pid(), term()}, #state{}) ->
+    {reply, {ok, #pqc_a2a_task{}} | {error, not_found}, #state{}}.
 handle_call({get_task, TaskId}, _From, #state{tasks_table = Table} = State) ->
     case ets:lookup(Table, TaskId) of
         [{TaskId, PQCTask}] ->
@@ -435,6 +467,9 @@ handle_call({get_task, TaskId}, _From, #state{tasks_table = Table} = State) ->
             {reply, {error, not_found}, State}
     end;
 
+%% @private
+-spec handle_call(list_tasks, {pid(), term()}, #state{}) ->
+    {reply, {ok, [#pqc_a2a_task{}]}, #state{}}.
 handle_call(list_tasks, _From, #state{tasks_table = Table} = State) ->
     Tasks = ets:foldl(
         fun({_TaskId, PQCTask}, Acc) -> [PQCTask | Acc] end,
@@ -443,32 +478,49 @@ handle_call(list_tasks, _From, #state{tasks_table = Table} = State) ->
     ),
     {reply, {ok, Tasks}, State};
 
+%% @private
+-spec handle_call(get_statistics, {pid(), term()}, #state{}) ->
+    {reply, {ok, map()}, #state{}}.
 handle_call(get_statistics, _From, #state{stats = Stats} = State) ->
     {reply, {ok, Stats}, State};
 
+%% @private
+-spec handle_call(term(), {pid(), term()}, #state{}) ->
+    {reply, {error, unknown_request}, #state{}}.
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 %% @private
+%% @private
+-spec handle_cast(term(), #state{}) -> {noreply, #state{}}.
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @private
+%% @private
+-spec handle_info({'DOWN', reference(), process, pid(), term()}, #state{}) ->
+    {noreply, #state{}}.
 handle_info({'DOWN', _Ref, process, Pid, _Reason}, State) ->
     %% Remove subscriptions for dead processes
     NewState = remove_subscriber(Pid, State),
     {noreply, NewState};
 
+%% @private
+-spec handle_info(term(), #state{}) -> {noreply, #state{}}.
 handle_info(_Info, State) ->
     {noreply, State}.
 
 %% @private
+%% @private
+-spec terminate(term(), #state{}) -> ok.
 terminate(_Reason, #state{tasks_table = Table}) ->
     %% Clean up ETS table
     ets:delete(Table),
     ok.
 
 %% @private
+%% @private
+-spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 

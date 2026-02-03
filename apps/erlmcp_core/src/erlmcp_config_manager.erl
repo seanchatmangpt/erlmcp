@@ -170,7 +170,7 @@ export_config() ->
 %% @doc Import configuration
 -spec import_config(binary() | map()) -> ok | {error, term()}.
 import_config(JSON) when is_binary(JSON) ->
-    try jsx:decode(JSON, [return_maps]) of
+    try json:decode(JSON) of
         Config -> import_config(Config)
     catch
         error:_ -> {error, invalid_json}
@@ -287,8 +287,13 @@ handle_call({subscribe, Subscriber}, _From, State) ->
     {reply, ok, State};
 
 handle_call({unsubscribe, Subscriber}, _From, State) ->
-    ets:delete_object(?SUBSCRIBERS_TABLE, {Subscriber, self()}),
-    {reply, ok, State};
+    try
+        ets:delete_object(?SUBSCRIBERS_TABLE, {Subscriber, self()}),
+        {reply, ok, State}
+    catch
+        error:badarg ->
+            {reply, ok, State}
+    end;
 
 handle_call(export_config, _From, State = #state{config = Config}) ->
     Export = #{
@@ -297,7 +302,7 @@ handle_call(export_config, _From, State = #state{config = Config}) ->
         config => Config
     },
     try
-        JSON = jsx:encode(Export),
+        JSON = json:encode(Export),
         {reply, {ok, JSON}, State}
     catch
         error:_ ->
@@ -388,7 +393,7 @@ parse_config(Content) ->
         _:_ ->
             try
                 % Try to parse as JSON
-                jsx:decode(Content, [return_maps])
+                json:decode(Content)
             catch
                 _:_ ->
                     logger:error("Failed to parse configuration"),
@@ -410,7 +415,7 @@ load_config(Path) when is_list(Path) ->
     {ok, maps:merge(load_from_env(), Config)};
 load_config(JSON) when is_binary(JSON) ->
     try
-        Config = jsx:decode(JSON, [return_maps]),
+        Config = json:decode(JSON),
         {ok, maps:merge(load_from_env(), Config)}
     catch
         _:_ -> {error, invalid_json}

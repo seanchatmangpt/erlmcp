@@ -758,21 +758,19 @@ perform_encryption(Data, Context, State) ->
         true ->
             %% Use strong encryption for sensitive data
             CryptoKey = get_encryption_key(Context),
-            case crypto:block_encrypt(aes_gcm_256, CryptoKey, Data) of
-                {ok, Encrypted, IV} ->
-                    {ok, Encrypted};
+            IV = crypto:strong_rand_bytes(12),
+            case crypto:crypto_one_time(aes_256_gcm, CryptoKey, IV, Data, true) of
+                {Ciphertext, Tag} ->
+                    {ok, <<IV/binary, Ciphertext/binary, Tag/binary>>};
                 Error ->
                     Error
             end;
         false ->
             %% Basic encryption for non-sensitive data
             CryptoKey = get_encryption_key(Context),
-            case crypto:block_encrypt(aes_cbc_256, CryptoKey, Data) of
-                {ok, Encrypted} ->
-                    {ok, Encrypted};
-                Error ->
-                    Error
-            end
+            IV = crypto:strong_rand_bytes(16),
+            Ciphertext = crypto:crypto_one_time(aes_256_cbc, CryptoKey, IV, Data, true),
+            {ok, <<IV/binary, Ciphertext/binary>>}
     end.
 
 perform_decryption(EncryptedData, Context, State) ->
@@ -780,11 +778,19 @@ perform_decryption(EncryptedData, Context, State) ->
     EncryptionContext = State#compliance_state.encryption_context,
     CryptoKey = get_encryption_key(Context),
 
-    case crypto:block_decrypt(aes_cbc_256, CryptoKey, EncryptedData) of
-        {ok, Decrypted} ->
-            {ok, Decrypted};
-        Error ->
-            Error
+    %% Try AES-256-GCM first (hipaa/gdpr), then fallback to CBC
+    try
+        <<IV:12/binary, CiphertextAndTag/binary>> = EncryptedData,
+        CiphertextSize = byte_size(CiphertextAndTag) - 16,
+        <<Ciphertext:CiphertextSize/binary, Tag:16/binary>> = CiphertextAndTag,
+        Decrypted = crypto:crypto_one_time(aes_256_gcm, CryptoKey, IV, Ciphertext, false, Tag),
+        {ok, Decrypted}
+    catch
+        error:_ ->
+            %% Fallback to CBC
+            <<IV:16/binary, Ciphertext/binary>> = EncryptedData,
+            Decrypted = crypto:crypto_one_time(aes_256_cbc, CryptoKey, IV, Ciphertext, false),
+            {ok, Decrypted}
     end.
 
 generate_compliance_report(all, State) ->

@@ -136,8 +136,8 @@ init([Config]) ->
     process_flag(trap_exit, true),
 
     State =
-        #state{quotas = ets:new(cpu_quotas, [set, protected]),
-               client_stats = ets:new(cpu_client_stats, [set, protected]),
+        #state{quotas = ets:new(cpu_quotas, [set, protected, named_table]),
+               client_stats = ets:new(cpu_client_stats, [set, protected, named_table]),
                config = Config},
 
     % Start cleanup timer

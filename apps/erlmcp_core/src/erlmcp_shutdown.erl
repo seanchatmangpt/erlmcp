@@ -356,7 +356,7 @@ phase_initiation(Reason, State) ->
 
     %% 1. Set global shutdown flag via gproc
     try
-        gproc:reg({n, l, erlmcp_shutdown_in_progress}, Reason),
+        ok = gproc:set_value({n, l, erlmcp_shutdown_in_progress}, Reason),
         logger:debug("Set global shutdown flag")
     catch
         _:_ ->

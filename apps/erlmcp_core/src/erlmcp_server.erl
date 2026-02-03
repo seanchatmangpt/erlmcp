@@ -16,13 +16,10 @@
 ]).
 
 %% API exports
--export([start_link/2, add_resource/3, add_resource_template/4, add_tool/3,
-         add_tool_with_description/4, add_tool_with_schema/4, add_tool_full/5, add_prompt/3,
-         add_prompt_with_args/4, add_prompt_with_args_and_schema/5, delete_resource/2,
+-export([start_link/2, add_resource/3, add_tool/3, add_prompt/3, delete_resource/2,
          delete_tool/2, delete_prompt/2, subscribe_resource/3, unsubscribe_resource/2,
          report_progress/4, notify_resource_updated/3, notify_resources_changed/1,
-         encode_resource_link/2, encode_resource_link/4, validate_resource_link_uri/1,
-         register_notification_handler/3, unregister_notification_handler/2,
+         encode_resource_link/2, encode_resource_link/4, validate_resource_link_uri/1, unregister_notification_handler/2,
          unregister_all_handlers/1, stop/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,

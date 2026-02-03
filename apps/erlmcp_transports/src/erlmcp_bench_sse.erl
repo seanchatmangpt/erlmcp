@@ -56,7 +56,7 @@ run(#{workload_id := WorkloadId, message_size := MessageSize} = Config) ->
     % Full end-to-end requires HTTP server setup
     % Create test event
     TestMessage = create_test_message(MessageSize),
-    EncodedMessage = jsx:encode(TestMessage),
+    EncodedMessage = json:encode(TestMessage),
 
     % Measure SSE event formatting overhead
     StartFormat = erlang:monotonic_time(microsecond),
@@ -192,7 +192,7 @@ create_test_message(TargetSize) ->
           <<"method">> => <<"benchmark/sse">>,
           <<"params">> => #{<<"data">> => <<>>}},
 
-    BaseSize = byte_size(jsx:encode(BaseMessage)),
+    BaseSize = byte_size(json:encode(BaseMessage)),
     PayloadSize = max(0, TargetSize - BaseSize - 100),
     Payload = binary:copy(<<"s">>, PayloadSize),
 

@@ -1,0 +1,88 @@
+{application, erlmcp_zero_trust,
+ [{description, "Zero Trust Security Framework for ERLMCP - Enterprise-grade security with least privilege, micro-segmentation, continuous verification"},
+  {vsn, "3.0.0"},
+  {registered, [
+      erlmcp_zero_trust_sup,
+      erlmcp_policy_engine,
+      erlmcp_access_control,
+      erlmcp_identity_manager,
+      erlmcp_security_monitor
+  ]},
+  {applications, [
+      kernel,
+      stdlib,
+      crypto,
+      public_key,
+      ssl,
+      gproc,
+      erlmcp_core,
+      erlmcp_observability
+  ]},
+  {mod, {erlmcp_zero_trust_app, []}},
+  {env, [
+      {policy_engine, #{
+          enforcement_mode => strict,
+          default_action => deny,
+          cache_ttl => 300000
+      }},
+      {access_control, #{
+          auth_timeout => 5000,
+          session_timeout => 3600000,
+          max_failed_attempts => 5
+      }},
+      {identity, #{
+          mfa_required => false,
+          mfa_timeout => 300000,
+          token_expiry => 3600000
+      }},
+      {monitoring, #{
+          alert_threshold => 100,
+          analysis_window => 300000
+      }}
+  ]},
+  {modules, [
+    erlmcp_zero_trust_app,
+    erlmcp_zero_trust_sup,
+    erlmcp_access_control,
+    erlmcp_application_security,
+    erlmcp_behavioral_analytics,
+    erlmcp_compliance_automation,
+    erlmcp_compliance_manager,
+    erlmcp_continuous_verification,
+    erlmcp_crypto,
+    erlmcp_data_protection,
+    erlmcp_identity_manager,
+    erlmcp_identity_provider,
+    erlmcp_least_privilege,
+    erlmcp_mfa_provider,
+    erlmcp_micro_segmentation,
+    erlmcp_network_isolation,
+    erlmcp_policy_engine,
+    erlmcp_security_monitor,
+    erlmcp_supply_chain_security,
+    erlmcp_threat_intelligence,
+    erlmcp_zero_trust_audit
+  ]},
+  {licenses, ["Apache-2.0"]},
+  {links, [
+    {"GitHub", "https://github.com/erlmcp/erlmcp_zero_trust"}
+  ]},
+  %% OTP 28+ Runtime Dependencies
+  {runtime_dependencies, [
+    "erts-16.0.3",     % OTP 28 ERTS minimum
+    "kernel-10.4",     % OTP 28 Kernel minimum
+    "stdlib-6.0",      % OTP 28 STDLIB minimum
+    "crypto-5.3",      % Crypto (OTP 27+)
+    "public_key-1.5",  % Public key cryptography
+    "ssl-11.0",        % SSL/TLS (OTP 28)
+    "gproc-0.9.0",     % Process registry (external)
+    "erlmcp_core-2.1.0",       % Core application
+    "erlmcp_observability-2.1.0"  % Observability application
+  ]},
+  %% OTP Version Requirements
+  {notes, [
+      "Requires: Erlang/OTP 28+ (STRICT)",
+      "Zero Trust Security Framework with least privilege, micro-segmentation, continuous verification",
+      "Dependencies: erlmcp_core (registry, protocol), erlmcp_observability (monitoring)"
+  ]}
+ ]}.

@@ -196,7 +196,7 @@ test_stdio_resources() ->
                 #{<<"jsonrpc">> => <<"2.0">>,
                   <<"method">> => <<"resources/list">>,
                   <<"id">> => 1},
-            ok = erlmcp_transport_stdio:send(Pid, jsx:encode(Request)),
+            ok = erlmcp_transport_stdio:send(Pid, json:encode(Request)),
             erlmcp_transport_stdio:close(Pid),
             pass;
         {error, _} ->
@@ -212,7 +212,7 @@ test_stdio_tools() ->
                 #{<<"jsonrpc">> => <<"2.0">>,
                   <<"method">> => <<"tools/list">>,
                   <<"id">> => 2},
-            ok = erlmcp_transport_stdio:send(Pid, jsx:encode(Request)),
+            ok = erlmcp_transport_stdio:send(Pid, json:encode(Request)),
             erlmcp_transport_stdio:close(Pid),
             pass;
         {error, _} ->
@@ -228,7 +228,7 @@ test_stdio_prompts() ->
                 #{<<"jsonrpc">> => <<"2.0">>,
                   <<"method">> => <<"prompts/list">>,
                   <<"id">> => 3},
-            ok = erlmcp_transport_stdio:send(Pid, jsx:encode(Request)),
+            ok = erlmcp_transport_stdio:send(Pid, json:encode(Request)),
             erlmcp_transport_stdio:close(Pid),
             pass;
         {error, _} ->
@@ -244,7 +244,7 @@ test_stdio_roots() ->
                 #{<<"jsonrpc">> => <<"2.0">>,
                   <<"method">> => <<"roots/list">>,
                   <<"id">> => 4},
-            ok = erlmcp_transport_stdio:send(Pid, jsx:encode(Request)),
+            ok = erlmcp_transport_stdio:send(Pid, json:encode(Request)),
             erlmcp_transport_stdio:close(Pid),
             pass;
         {error, _} ->
@@ -276,7 +276,7 @@ test_tcp_resources() ->
                                 #{<<"jsonrpc">> => <<"2.0">>,
                                   <<"method">> => <<"resources/list">>,
                                   <<"id">> => 10},
-                            ok = erlmcp_transport_tcp:send(ClientState, jsx:encode(Request)),
+                            ok = erlmcp_transport_tcp:send(ClientState, json:encode(Request)),
                             erlmcp_transport_tcp:close(ClientState),
                             gen_server:stop(ServerPid),
                             pass
@@ -313,7 +313,7 @@ test_tcp_tools() ->
                                 #{<<"jsonrpc">> => <<"2.0">>,
                                   <<"method">> => <<"tools/list">>,
                                   <<"id">> => 11},
-                            ok = erlmcp_transport_tcp:send(ClientState, jsx:encode(Request)),
+                            ok = erlmcp_transport_tcp:send(ClientState, json:encode(Request)),
                             erlmcp_transport_tcp:close(ClientState),
                             gen_server:stop(ServerPid),
                             pass
@@ -350,7 +350,7 @@ test_tcp_prompts() ->
                                 #{<<"jsonrpc">> => <<"2.0">>,
                                   <<"method">> => <<"prompts/list">>,
                                   <<"id">> => 12},
-                            ok = erlmcp_transport_tcp:send(ClientState, jsx:encode(Request)),
+                            ok = erlmcp_transport_tcp:send(ClientState, json:encode(Request)),
                             erlmcp_transport_tcp:close(ClientState),
                             gen_server:stop(ServerPid),
                             pass
@@ -387,7 +387,7 @@ test_tcp_roots() ->
                                 #{<<"jsonrpc">> => <<"2.0">>,
                                   <<"method">> => <<"roots/list">>,
                                   <<"id">> => 13},
-                            ok = erlmcp_transport_tcp:send(ClientState, jsx:encode(Request)),
+                            ok = erlmcp_transport_tcp:send(ClientState, json:encode(Request)),
                             erlmcp_transport_tcp:close(ClientState),
                             gen_server:stop(ServerPid),
                             pass

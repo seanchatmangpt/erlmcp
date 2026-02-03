@@ -24,9 +24,9 @@
 -include("erlmcp.hrl").
 
 %% Public API
--export([init/1, export_spans/2, shutdown/1]).
+-export([init/1, export_spans/2]).
 %% Internal API
--export([format_span/1, encode_batch/1, send_batch/2]).
+-export([ encode_batch/1]).
 
 %% =============================================================================
 %% Type Definitions

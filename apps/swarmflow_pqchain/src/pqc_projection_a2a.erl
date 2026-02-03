@@ -39,7 +39,6 @@
 
     %% Conversion functions
     case_to_a2a_task/1,
-    case_to_a2a_message/1,
     a2a_message_to_signal/1,
     case_status_to_a2a_state/1
 ]).
@@ -290,13 +289,13 @@ case_to_a2a_message(#{
             SignalName = maps:get(name, Data, <<"unknown">>),
             SignalPayload = maps:get(payload, Data, #{}),
             [#{
-                <<"text">> => <<SignalName/binary, ": ", (jsx:encode(SignalPayload))/binary>>
+                <<"text">> => <<SignalName/binary, ": ", (json:encode(SignalPayload))/binary>>
             }];
         status_change ->
             StatusMsg = maps:get(message, Data, <<"Status changed">>),
             [#{<<"text">> => StatusMsg}];
         _ ->
-            [#{<<"text">> => jsx:encode(Data)}]
+            [#{<<"text">> => json:encode(Data)}]
     end,
 
     #{

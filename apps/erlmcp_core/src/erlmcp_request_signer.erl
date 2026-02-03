@@ -313,7 +313,7 @@ get_signature_ttl() ->
 -spec init([map()]) -> {ok, state()}.
 init([Config]) ->
     %% Create ETS table for nonce tracking
-    Nonces = ets:new(?MODULE, [set, protected, {read_concurrency, true}]),
+    Nonces = ets:new(?MODULE, [set, protected, named_table, {read_concurrency, true}]),
 
     %% Get configuration
     SignatureTTL = maps:get(signature_ttl, Config, 300),

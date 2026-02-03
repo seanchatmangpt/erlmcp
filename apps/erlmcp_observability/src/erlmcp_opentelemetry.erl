@@ -13,7 +13,7 @@
 -export([start_link/0,
          start_link/1,
          instrument_request/3,
-         instrument_span/2,
+         instrument_span/3,
          record_metric/3,
          record_exception/3,
          get_tracer/1,
@@ -332,9 +332,9 @@ init_http_instrumentation() ->
 
     %% Common HTTP attributes
     otel_http_instrumenter:set_attributes(#{
-        http.method => <<"GET">>,
-        http.status_code => 200,
-        network.protocol_name => <<"http">>
+        http_method => <<"GET">>,
+        http_status_code => 200,
+        network_protocol_name => <<"http">>
     }).
 
 init_db_instrumentation() ->
@@ -346,8 +346,8 @@ init_db_instrumentation() ->
 
     %% Common DB attributes
     otel_db_instrumenter:set_attributes(#{
-        db.system => <<"erlang">>,
-        db.operation => <<"query">>
+        db_system => <<"erlang">>,
+        db_operation => <<"query">>
     }).
 
 init_mq_instrumentation() ->
@@ -359,8 +359,8 @@ init_mq_instrumentation() ->
 
     %% Common MQ attributes
     otel_mq_instrumenter:set_attributes(#{
-        messaging.system => <<"rabbitmq">>,
-        messaging.destination_kind => <<"queue">>
+        messaging_system => <<"rabbitmq">>,
+        messaging_destination_kind => <<"queue">>
     }).
 
 %%====================================================================

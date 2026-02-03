@@ -16,7 +16,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 -include("pqchain.hrl").
--include("swarmflow.hrl").
+-include_lib("swarmflow.hrl").
 
 %%%===================================================================
 %%% Test Fixtures

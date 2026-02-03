@@ -180,17 +180,17 @@ init([Config]) ->
     RateLimiterEnabled = maps:get(rate_limiter_enabled, Config, true),
 
     State =
-        #state{sessions = ets:new(auth_sessions, [set, protected, {read_concurrency, true}]),
-               api_keys = ets:new(auth_api_keys, [set, protected, {read_concurrency, true}]),
-               jwt_keys = ets:new(auth_jwt_keys, [set, protected, {read_concurrency, true}]),
+        #state{sessions = ets:new(auth_sessions, [set, protected, named_table, {read_concurrency, true}]),
+               api_keys = ets:new(auth_api_keys, [set, protected, named_table, {read_concurrency, true}]),
+               jwt_keys = ets:new(auth_jwt_keys, [set, protected, named_table, {read_concurrency, true}]),
                jwt_config = maps:get(jwt, Config, #{}),
                oauth2_config = maps:get(oauth2, Config, #{}),
                mtls_config = maps:get(mtls, Config, #{}),
-               rbac_roles = ets:new(auth_rbac_roles, [set, protected, {read_concurrency, true}]),
-               user_roles = ets:new(auth_user_roles, [set, protected, {read_concurrency, true}]),
+               rbac_roles = ets:new(auth_rbac_roles, [set, protected, named_table, {read_concurrency, true}]),
+               user_roles = ets:new(auth_user_roles, [set, protected, named_table, {read_concurrency, true}]),
                acls = ets:new(auth_acls, [bag, protected, {read_concurrency, true}]),  % bag for multiple roles per resource
-               revoked_tokens = ets:new(auth_revoked_tokens, [set, protected, {read_concurrency, true}]),
-               oauth2_cache = ets:new(auth_oauth2_cache, [set, protected, {read_concurrency, true}]),
+               revoked_tokens = ets:new(auth_revoked_tokens, [set, protected, named_table, {read_concurrency, true}]),
+               oauth2_cache = ets:new(auth_oauth2_cache, [set, protected, named_table, {read_concurrency, true}]),
                rate_limiter_enabled = RateLimiterEnabled},
 
     % Initialize default roles
@@ -319,14 +319,15 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), state()) -> ok.
 terminate(_Reason, State) ->
-    ets:delete(State#state.sessions),
-    ets:delete(State#state.api_keys),
-    ets:delete(State#state.jwt_keys),
-    ets:delete(State#state.rbac_roles),
-    ets:delete(State#state.user_roles),
-    ets:delete(State#state.acls),
-    ets:delete(State#state.revoked_tokens),
-    ets:delete(State#state.oauth2_cache),
+    % Cleanup ETS tables (named tables, delete by name)
+    ets:delete(auth_sessions),
+    ets:delete(auth_api_keys),
+    ets:delete(auth_jwt_keys),
+    ets:delete(auth_rbac_roles),
+    ets:delete(auth_user_roles),
+    ets:delete(auth_acls),
+    ets:delete(auth_revoked_tokens),
+    ets:delete(auth_oauth2_cache),
     ok.
 
 -spec code_change(term(), state(), term()) -> {ok, state()}.
