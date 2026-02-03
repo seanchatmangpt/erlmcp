@@ -1,0 +1,213 @@
+%% -*- erlang -*-
+%% erlmcp sys.config for GCP Simulation Environment
+%% ============================================================================
+%% This configuration connects to the local GCP simulation services
+%% started via: gcp/simulation/start-gcp-sim.sh
+%%
+%% Usage:
+%%   1. Start GCP simulation: cd gcp/simulation && ./start-gcp-sim.sh start
+%%   2. Run erlmcp: ERLMCP_PROFILE=gcp-sim rebar3 shell
+%%
+%% DOCKER-ONLY CONSTITUTION: For Docker execution, use:
+%%   docker compose run --rm erlmcp-build \
+%%     ERLMCP_PROFILE=gcp-sim rebar3 shell
+%% ============================================================================
+
+[
+  %% =========================================================================
+  %% erlmcp_core - Core MCP functionality
+  %% =========================================================================
+  {erlmcp_core, [
+    {env, gcp_simulation},
+    {server, [
+      {name, <<"erlmcp-gcp-sim">>},
+      {version, <<"3.0.0">>}
+    ]},
+    {protocol, [
+      {version, <<"2024-11-05">>},
+      {strict_validation, true}
+    ]},
+    {capabilities, [
+      {resources, #{subscribe => true, list_changed => true}},
+      {tools, #{list_changed => true}},
+      {prompts, #{list_changed => true}},
+      {logging, #{}},
+      {experimental, #{}}
+    ]},
+    %% Registry configuration (using gproc)
+    {registry, [
+      {backend, gproc},
+      {scope, l}  % local scope
+    ]}
+  ]},
+
+  %% =========================================================================
+  %% erlmcp_transports - Transport layer
+  %% =========================================================================
+  {erlmcp_transports, [
+    {default_transport, http},
+    {transports, [
+      {stdio, [
+        {enabled, false}
+      ]},
+      {tcp, [
+        {enabled, true},
+        {port, 9100},
+        {max_connections, 1000}
+      ]},
+      {http, [
+        {enabled, true},
+        {port, 8080},
+        {ip, {0, 0, 0, 0}},
+        {max_connections, 10000},
+        {idle_timeout, 60000},
+        {request_timeout, 30000}
+      ]},
+      {websocket, [
+        {enabled, true},
+        {path, "/ws"}
+      ]},
+      {sse, [
+        {enabled, true},
+        {path, "/sse"}
+      ]}
+    ]}
+  ]},
+
+  %% =========================================================================
+  %% erlmcp_observability - Metrics, Logging, Tracing
+  %% =========================================================================
+  {erlmcp_observability, [
+    {metrics, [
+      {enabled, true},
+      {port, 9090},
+      {path, "/metrics"},
+      {namespace, <<"erlmcp">>},
+      {labels, [
+        {environment, <<"gcp-simulation">>},
+        {region, <<"us-central1">>}
+      ]}
+    ]},
+    {logging, [
+      {level, debug},
+      {format, json},
+      %% Send logs to Loki (Cloud Logging simulation)
+      {backends, [
+        {console, [{level, info}]},
+        {loki, [
+          {enabled, true},
+          {url, "http://localhost:3100"},
+          {labels, #{
+            app => <<"erlmcp">>,
+            env => <<"gcp-sim">>
+          }}
+        ]}
+      ]}
+    ]},
+    {tracing, [
+      {enabled, true},
+      {exporter, otlp},
+      {endpoint, "http://localhost:4317"}
+    ]},
+    {health, [
+      {enabled, true},
+      {port, 9091},
+      {path, "/health"}
+    ]}
+  ]},
+
+  %% =========================================================================
+  %% Database Configuration (Cloud SQL Simulation)
+  %% =========================================================================
+  {erlmcp_storage, [
+    {backend, postgres},
+    {postgres, [
+      {host, "localhost"},
+      {port, 5432},
+      {database, "erlmcp"},
+      {username, "erlmcp"},
+      {password, "erlmcp_secure"},
+      {pool_size, 10},
+      {ssl, false}
+    ]},
+    %% Redis cache (Memorystore simulation)
+    {cache, [
+      {backend, redis},
+      {redis, [
+        {host, "localhost"},
+        {port, 6379},
+        {database, 0},
+        {pool_size, 5}
+      ]}
+    ]}
+  ]},
+
+  %% =========================================================================
+  %% GCP Services Configuration (Simulation Endpoints)
+  %% =========================================================================
+  {erlmcp_gcp, [
+    {project_id, "erlmcp-local"},
+    {region, "us-central1"},
+    {simulation_mode, true},
+
+    %% Cloud Storage (MinIO simulation)
+    {cloud_storage, [
+      {endpoint, "http://localhost:9000"},
+      {access_key_id, "admin"},
+      {secret_access_key, "admin_secret"},
+      {default_bucket, "erlmcp-artifacts"}
+    ]},
+
+    %% Secret Manager (Vault simulation)
+    {secret_manager, [
+      {endpoint, "http://localhost:8200"},
+      {token, "root"},
+      {secrets_path, "erlmcp"}
+    ]},
+
+    %% Pub/Sub (Emulator)
+    {pubsub, [
+      {emulator_host, "localhost:8085"},
+      {project_id, "erlmcp-local"}
+    ]},
+
+    %% Firestore (Emulator)
+    {firestore, [
+      {emulator_host, "localhost:8086"},
+      {project_id, "erlmcp-local"}
+    ]},
+
+    %% Metadata Server (Simulation)
+    {metadata, [
+      {endpoint, "http://localhost:8082"},
+      {enabled, true}
+    ]}
+  ]},
+
+  %% =========================================================================
+  %% Kernel Configuration
+  %% =========================================================================
+  {kernel, [
+    {logger_level, info},
+    {logger, [
+      {handler, default, logger_std_h, #{
+        level => info,
+        config => #{
+          type => standard_io
+        },
+        formatter => {logger_formatter, #{
+          template => [time, " ", level, " ", msg, "\n"],
+          single_line => true
+        }}
+      }}
+    ]}
+  ]},
+
+  %% =========================================================================
+  %% SASL Configuration
+  %% =========================================================================
+  {sasl, [
+    {sasl_error_logger, false},
+    {errlog_type, error}
+  ]}
+].

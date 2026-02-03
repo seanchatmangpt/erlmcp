@@ -1,0 +1,524 @@
+# GCP Services Simulation for Local Development
+# ============================================================================
+# This stack simulates GCP services for local development and testing
+# without requiring actual GCP credentials or billing.
+#
+# Simulated Services:
+#   - Cloud SQL        → PostgreSQL 16
+#   - Memorystore      → Redis 7
+#   - Cloud Storage    → MinIO (S3-compatible)
+#   - Pub/Sub          → Google Pub/Sub Emulator
+#   - Secret Manager   → Berglas/Vault simulation
+#   - Firestore        → Firestore Emulator
+#   - Cloud Functions  → Functions Framework
+#
+# Usage:
+#   docker compose -f docker-compose.gcp-sim.yml up -d
+#   docker compose -f docker-compose.gcp-sim.yml --profile full up -d
+#
+# DOCKER-ONLY CONSTITUTION: This is the approved local GCP simulation.
+# ============================================================================
+
+version: '3.8'
+
+x-gcp-common: &gcp-common
+  restart: unless-stopped
+  networks:
+    - gcp-simulation
+
+services:
+  # ==========================================================================
+  # Cloud SQL Simulation (PostgreSQL)
+  # ==========================================================================
+  # Simulates: google_sql_database_instance
+  # Connection: postgresql://erlmcp:erlmcp_secure@cloudsql-sim:5432/erlmcp
+  # ==========================================================================
+  cloudsql-sim:
+    <<: *gcp-common
+    image: postgres:16-alpine
+    container_name: gcp-cloudsql-sim
+    hostname: cloudsql-sim
+    environment:
+      POSTGRES_DB: erlmcp
+      POSTGRES_USER: erlmcp
+      POSTGRES_PASSWORD: erlmcp_secure
+      PGDATA: /var/lib/postgresql/data/pgdata
+      # Simulate Cloud SQL settings
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    volumes:
+      - cloudsql-data:/var/lib/postgresql/data
+      - ./init/cloudsql-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    ports:
+      - "${CLOUDSQL_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erlmcp -d erlmcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+
+  # ==========================================================================
+  # Cloud SQL Proxy Simulation
+  # ==========================================================================
+  # Simulates: Cloud SQL Auth Proxy behavior
+  # Applications connect here as if using real Cloud SQL Proxy
+  # ==========================================================================
+  cloudsql-proxy-sim:
+    <<: *gcp-common
+    image: alpine/socat:latest
+    container_name: gcp-cloudsql-proxy-sim
+    hostname: cloudsql-proxy
+    command: TCP-LISTEN:5432,fork,reuseaddr TCP:cloudsql-sim:5432
+    ports:
+      - "${CLOUDSQL_PROXY_PORT:-15432}:5432"
+    depends_on:
+      cloudsql-sim:
+        condition: service_healthy
+
+  # ==========================================================================
+  # Memorystore Simulation (Redis)
+  # ==========================================================================
+  # Simulates: google_redis_instance
+  # Connection: redis://memorystore-sim:6379
+  # ==========================================================================
+  memorystore-sim:
+    <<: *gcp-common
+    image: redis:7-alpine
+    container_name: gcp-memorystore-sim
+    hostname: memorystore-sim
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --tcp-keepalive 300
+      --timeout 0
+    volumes:
+      - memorystore-data:/data
+    ports:
+      - "${MEMORYSTORE_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ==========================================================================
+  # Cloud Storage Simulation (MinIO - S3 Compatible)
+  # ==========================================================================
+  # Simulates: google_storage_bucket
+  # Console: http://localhost:9001 (admin/admin_secret)
+  # S3 API: http://localhost:9000
+  # ==========================================================================
+  gcs-sim:
+    <<: *gcp-common
+    image: minio/minio:latest
+    container_name: gcp-gcs-sim
+    hostname: gcs-sim
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin_secret
+      MINIO_DOMAIN: gcs-sim
+      # Simulate GCS bucket naming
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+    volumes:
+      - gcs-data:/data
+    ports:
+      - "${GCS_PORT:-9000}:9000"
+      - "${GCS_CONSOLE_PORT:-9001}:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # Create default buckets on startup
+  gcs-init:
+    <<: *gcp-common
+    image: minio/mc:latest
+    container_name: gcp-gcs-init
+    depends_on:
+      gcs-sim:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      mc alias set gcs http://gcs-sim:9000 admin admin_secret;
+      mc mb --ignore-existing gcs/erlmcp-artifacts;
+      mc mb --ignore-existing gcs/erlmcp-backups;
+      mc mb --ignore-existing gcs/erlmcp-terraform-state;
+      mc mb --ignore-existing gcs/erlmcp-logs;
+      mc anonymous set download gcs/erlmcp-artifacts;
+      echo 'GCS buckets initialized';
+      exit 0;
+      "
+    profiles:
+      - init
+
+  # ==========================================================================
+  # Pub/Sub Emulator
+  # ==========================================================================
+  # Simulates: google_pubsub_topic, google_pubsub_subscription
+  # Endpoint: http://localhost:8085
+  # ==========================================================================
+  pubsub-sim:
+    <<: *gcp-common
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    container_name: gcp-pubsub-sim
+    hostname: pubsub-sim
+    command: >
+      gcloud beta emulators pubsub start
+      --host-port=0.0.0.0:8085
+      --project=erlmcp-local
+    environment:
+      PUBSUB_PROJECT_ID: erlmcp-local
+    ports:
+      - "${PUBSUB_PORT:-8085}:8085"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8085 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ==========================================================================
+  # Firestore Emulator
+  # ==========================================================================
+  # Simulates: google_firestore_database
+  # Endpoint: http://localhost:8086
+  # ==========================================================================
+  firestore-sim:
+    <<: *gcp-common
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    container_name: gcp-firestore-sim
+    hostname: firestore-sim
+    command: >
+      gcloud beta emulators firestore start
+      --host-port=0.0.0.0:8086
+      --project=erlmcp-local
+    environment:
+      FIRESTORE_PROJECT_ID: erlmcp-local
+    ports:
+      - "${FIRESTORE_PORT:-8086}:8086"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8086 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    profiles:
+      - full
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ==========================================================================
+  # Secret Manager Simulation (Vault)
+  # ==========================================================================
+  # Simulates: google_secret_manager_secret
+  # UI: http://localhost:8200
+  # Token: root
+  # ==========================================================================
+  secretmanager-sim:
+    <<: *gcp-common
+    image: hashicorp/vault:1.15
+    container_name: gcp-secretmanager-sim
+    hostname: secretmanager-sim
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: root
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://0.0.0.0:8200
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # Initialize Vault with erlmcp secrets
+  secretmanager-init:
+    <<: *gcp-common
+    image: hashicorp/vault:1.15
+    container_name: gcp-secretmanager-init
+    depends_on:
+      secretmanager-sim:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: http://secretmanager-sim:8200
+      VAULT_TOKEN: root
+    entrypoint: >
+      /bin/sh -c "
+      sleep 5;
+      vault secrets enable -path=erlmcp kv-v2 || true;
+      vault kv put erlmcp/database \
+        host=cloudsql-sim \
+        port=5432 \
+        database=erlmcp \
+        username=erlmcp \
+        password=erlmcp_secure;
+      vault kv put erlmcp/redis \
+        host=memorystore-sim \
+        port=6379;
+      vault kv put erlmcp/api \
+        erlang_cookie=erlmcp_cluster_cookie \
+        jwt_secret=local_jwt_secret_key_for_testing;
+      vault kv put erlmcp/gcs \
+        endpoint=http://gcs-sim:9000 \
+        access_key=admin \
+        secret_key=admin_secret;
+      echo 'Secrets initialized';
+      exit 0;
+      "
+    profiles:
+      - init
+
+  # ==========================================================================
+  # Cloud Logging Simulation (Loki)
+  # ==========================================================================
+  # Simulates: Cloud Logging / Stackdriver
+  # Endpoint: http://localhost:3100
+  # ==========================================================================
+  logging-sim:
+    <<: *gcp-common
+    image: grafana/loki:2.9.2
+    container_name: gcp-logging-sim
+    hostname: logging-sim
+    command: -config.file=/etc/loki/local-config.yaml
+    volumes:
+      - ./loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - logging-data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ==========================================================================
+  # Cloud Monitoring Simulation (Prometheus + Grafana)
+  # ==========================================================================
+  # Simulates: Cloud Monitoring / Stackdriver Metrics
+  # Prometheus: http://localhost:9090
+  # Grafana: http://localhost:3000 (admin/admin)
+  # ==========================================================================
+  monitoring-sim:
+    <<: *gcp-common
+    image: prom/prometheus:v2.48.0
+    container_name: gcp-monitoring-sim
+    hostname: monitoring-sim
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ./prometheus-gcp.yml:/etc/prometheus/prometheus.yml:ro
+      - monitoring-data:/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  grafana-sim:
+    <<: *gcp-common
+    image: grafana/grafana:10.2.2
+    container_name: gcp-grafana-sim
+    hostname: grafana-sim
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    depends_on:
+      - monitoring-sim
+    profiles:
+      - monitoring
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ==========================================================================
+  # IAM Simulation (Simple OAuth Mock)
+  # ==========================================================================
+  # Simulates: Google OAuth / IAM tokens
+  # ==========================================================================
+  iam-sim:
+    <<: *gcp-common
+    image: ghcr.io/navikt/mock-oauth2-server:2.1.0
+    container_name: gcp-iam-sim
+    hostname: iam-sim
+    environment:
+      SERVER_PORT: 8080
+      JSON_CONFIG: |
+        {
+          "interactiveLogin": true,
+          "httpServer": "NettyWrapper",
+          "tokenCallbacks": [
+            {
+              "issuerId": "google",
+              "tokenExpiry": 3600,
+              "requestMappings": [
+                {
+                  "requestParam": "grant_type",
+                  "match": "client_credentials",
+                  "claims": {
+                    "sub": "erlmcp-service-account@erlmcp-local.iam.gserviceaccount.com",
+                    "aud": "https://erlmcp.local"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+    ports:
+      - "${IAM_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/google/.well-known/openid-configuration || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - full
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ==========================================================================
+  # Load Balancer Simulation (Traefik)
+  # ==========================================================================
+  # Simulates: Google Cloud Load Balancer
+  # Dashboard: http://localhost:8081
+  # ==========================================================================
+  loadbalancer-sim:
+    <<: *gcp-common
+    image: traefik:v2.10
+    container_name: gcp-loadbalancer-sim
+    hostname: loadbalancer-sim
+    command:
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--metrics.prometheus=true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "${LB_HTTP_PORT:-80}:80"
+      - "${LB_HTTPS_PORT:-443}:443"
+      - "${LB_DASHBOARD_PORT:-8081}:8080"
+    profiles:
+      - full
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ==========================================================================
+  # GCP Metadata Server Simulation
+  # ==========================================================================
+  # Simulates: GCE Metadata Server (169.254.169.254)
+  # Used by applications to get instance metadata and credentials
+  # ==========================================================================
+  metadata-sim:
+    <<: *gcp-common
+    build:
+      context: .
+      dockerfile: Dockerfile.metadata
+    container_name: gcp-metadata-sim
+    hostname: metadata
+    environment:
+      PROJECT_ID: erlmcp-local
+      ZONE: us-central1-a
+      REGION: us-central1
+      INSTANCE_NAME: erlmcp-dev-instance
+      SERVICE_ACCOUNT: erlmcp-service-account@erlmcp-local.iam.gserviceaccount.com
+    ports:
+      - "${METADATA_PORT:-8082}:80"
+    profiles:
+      - full
+    deploy:
+      resources:
+        limits:
+          cpus: '0.25'
+          memory: 128M
+
+networks:
+  gcp-simulation:
+    name: gcp-simulation
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+
+volumes:
+  cloudsql-data:
+    name: gcp-cloudsql-data
+  memorystore-data:
+    name: gcp-memorystore-data
+  gcs-data:
+    name: gcp-gcs-data
+  logging-data:
+    name: gcp-logging-data
+  monitoring-data:
+    name: gcp-monitoring-data
+  grafana-data:
+    name: gcp-grafana-data

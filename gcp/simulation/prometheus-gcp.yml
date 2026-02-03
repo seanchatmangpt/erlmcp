@@ -1,0 +1,120 @@
+# Prometheus Configuration for GCP Cloud Monitoring Simulation
+# ============================================================================
+# Simulates Google Cloud Monitoring metrics collection
+# ============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    project_id: 'erlmcp-local'
+    location: 'us-central1'
+    cluster: 'erlmcp-dev'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # erlmcp application metrics
+  - job_name: 'erlmcp'
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+        labels:
+          service: 'erlmcp'
+          environment: 'development'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+  # Cloud SQL simulation (PostgreSQL)
+  - job_name: 'cloudsql'
+    static_configs:
+      - targets: ['cloudsql-sim:5432']
+        labels:
+          service: 'cloudsql'
+          database_id: 'erlmcp-local:us-central1:erlmcp-dev'
+
+  # Memorystore simulation (Redis)
+  - job_name: 'memorystore'
+    static_configs:
+      - targets: ['memorystore-sim:6379']
+        labels:
+          service: 'memorystore'
+          instance_id: 'erlmcp-local-cache'
+
+  # MinIO (GCS simulation) metrics
+  - job_name: 'gcs'
+    static_configs:
+      - targets: ['gcs-sim:9000']
+        labels:
+          service: 'cloud-storage'
+    metrics_path: '/minio/v2/metrics/cluster'
+
+  # Traefik (Load Balancer simulation) metrics
+  - job_name: 'loadbalancer'
+    static_configs:
+      - targets: ['loadbalancer-sim:8080']
+        labels:
+          service: 'load-balancer'
+    metrics_path: '/metrics'
+
+  # Vault (Secret Manager simulation) metrics
+  - job_name: 'secretmanager'
+    static_configs:
+      - targets: ['secretmanager-sim:8200']
+        labels:
+          service: 'secret-manager'
+    metrics_path: '/v1/sys/metrics'
+    params:
+      format: ['prometheus']
+    bearer_token: 'root'
+
+  # Docker container metrics (via cAdvisor if available)
+  - job_name: 'containers'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+        labels:
+          service: 'cadvisor'
+    metrics_path: '/metrics'
+
+# Recording rules for GCP-style metrics
+# These transform raw metrics into GCP Cloud Monitoring format
+recording_rules:
+  - name: gcp_simulation_rules
+    rules:
+      # Request rate (simulates Cloud Monitoring request_count)
+      - record: erlmcp:request_rate:5m
+        expr: rate(erlmcp_http_requests_total[5m])
+
+      # Error rate (simulates Cloud Monitoring error_count)
+      - record: erlmcp:error_rate:5m
+        expr: rate(erlmcp_http_errors_total[5m])
+
+      # Latency percentiles (simulates Cloud Monitoring latency)
+      - record: erlmcp:latency_p50:5m
+        expr: histogram_quantile(0.50, rate(erlmcp_http_request_duration_seconds_bucket[5m]))
+
+      - record: erlmcp:latency_p95:5m
+        expr: histogram_quantile(0.95, rate(erlmcp_http_request_duration_seconds_bucket[5m]))
+
+      - record: erlmcp:latency_p99:5m
+        expr: histogram_quantile(0.99, rate(erlmcp_http_request_duration_seconds_bucket[5m]))
+
+      # Memory utilization
+      - record: erlmcp:memory_utilization
+        expr: erlmcp_erlang_memory_bytes_total / erlmcp_erlang_memory_limit_bytes
+
+      # Process count
+      - record: erlmcp:process_count
+        expr: erlmcp_erlang_process_count

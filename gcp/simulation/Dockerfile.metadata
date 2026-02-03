@@ -1,0 +1,26 @@
+# GCP Metadata Server Simulation
+# ============================================================================
+# Simulates the GCE metadata server (169.254.169.254) for local development
+# Applications can query this for instance metadata, service account tokens, etc.
+# ============================================================================
+
+FROM python:3.11-alpine
+
+LABEL maintainer="erlmcp contributors"
+LABEL description="GCP Metadata Server Simulation for local development"
+
+RUN apk add --no-cache curl && \
+    pip install --no-cache-dir flask gunicorn pyjwt
+
+WORKDIR /app
+
+COPY metadata-server.py /app/
+
+EXPOSE 80
+
+ENV PYTHONUNBUFFERED=1
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -f -H "Metadata-Flavor: Google" http://localhost/computeMetadata/v1/ || exit 1
+
+CMD ["gunicorn", "-b", "0.0.0.0:80", "-w", "2", "--timeout", "30", "metadata-server:app"]
