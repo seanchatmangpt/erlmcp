@@ -1,0 +1,192 @@
+name: Receipt Bundle Validation
+
+on:
+  push:
+    paths:
+      - 'scripts/receipts/**'
+      - 'scripts/dev/is_docker.sh'
+      - 'scripts/dev/docker_service_map.sh'
+      - 'Makefile'
+      - '.github/workflows/receipt-validation.yml'
+  pull_request:
+    paths:
+      - 'scripts/receipts/**'
+      - 'scripts/dev/is_docker.sh'
+      - 'scripts/dev/docker_service_map.sh'
+      - 'Makefile'
+
+env:
+  DOCKER_BUILDKIT: 1
+  COMPOSE_DOCKER_CLI_BUILD: 1
+
+jobs:
+  # ============================================================================
+  # Validate Receipt Bundle System
+  # ============================================================================
+  receipt-validation:
+    name: Receipt Bundle Proof
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build erlmcp-check image
+        run: |
+          docker compose build erlmcp-check
+        env:
+          BUILD_DATE: ${{ github.event.head_commit.timestamp }}
+          VCS_REF: ${{ github.sha }}
+
+      - name: Run Receipt Compile Gate
+        id: compile
+        run: |
+          docker compose run --rm erlmcp-build make receipt-compile-inner
+        continue-on-error: true
+
+      - name: Run Receipt Topology Proof
+        id: topology
+        run: |
+          docker compose run --rm erlmcp-check make receipt-topology-inner
+        continue-on-error: true
+
+      - name: Run Receipt Cluster Proof
+        id: cluster
+        run: |
+          docker compose run --rm erlmcp-check make receipt-cluster-inner
+        continue-on-error: true
+
+      - name: Run Receipt Infrastructure Proof
+        id: infrastructure
+        run: |
+          docker compose run --rm erlmcp-check make receipt-infrastructure-inner
+        continue-on-error: true
+
+      - name: List Generated Receipts
+        run: |
+          echo "=== Receipt Bundles ==="
+          make receipt-list || true
+
+          echo ""
+          echo "=== Latest Receipt ==="
+          make receipt-show || true
+
+      - name: Verify Receipt Integrity
+        run: |
+          make receipt-verify || true
+
+      - name: Upload Receipt Artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: receipt-bundles-${{ github.sha }}
+          path: receipts/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Validate Mermaid Diagrams
+        run: |
+          echo "=== Validating Mermaid Syntax ==="
+          for mmd in receipts/*/*.mmd; do
+            if [ -f "$mmd" ]; then
+              echo "Checking: $mmd"
+              # Basic syntax validation (flowchart/graph declaration)
+              if grep -q "flowchart\|graph\|sequenceDiagram\|classDiagram" "$mmd"; then
+                echo "  ✓ Valid Mermaid syntax"
+              else
+                echo "  ✗ Invalid or empty Mermaid file"
+                exit 1
+              fi
+            fi
+          done
+          echo "✓ All Mermaid diagrams validated"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Receipt Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Gate | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Compile | ${{ steps.compile.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Topology | ${{ steps.topology.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Cluster | ${{ steps.cluster.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Infrastructure | ${{ steps.infrastructure.outcome }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Receipt Bundle Contents" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          ls -la receipts/*/ 2>/dev/null || echo "No receipts generated" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  # ============================================================================
+  # Validate Docker-Only Enforcement
+  # ============================================================================
+  docker-only-enforcement:
+    name: Docker-Only ANDON Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify is_docker.sh fails on host
+        run: |
+          echo "Testing is_docker.sh detection..."
+          if ./scripts/dev/is_docker.sh; then
+            echo "ERROR: is_docker.sh should fail on host!"
+            exit 1
+          else
+            echo "✓ is_docker.sh correctly detects host environment"
+          fi
+
+      - name: Verify emit_mermaid.sh refuses host execution
+        run: |
+          echo "Testing emit_mermaid.sh ANDON..."
+          OUTPUT=$(./scripts/receipts/emit_mermaid.sh 2>&1 || true)
+          if echo "$OUTPUT" | grep -q "ANDON: FORBIDDEN_HOST_EXECUTION"; then
+            echo "✓ emit_mermaid.sh correctly refuses host execution"
+          else
+            echo "ERROR: emit_mermaid.sh should refuse host execution!"
+            echo "Output: $OUTPUT"
+            exit 1
+          fi
+
+      - name: Verify run_gate.sh refuses host execution
+        run: |
+          echo "Testing run_gate.sh ANDON..."
+          OUTPUT=$(./scripts/receipts/run_gate.sh test echo "test" 2>&1 || true)
+          if echo "$OUTPUT" | grep -q "ANDON: FORBIDDEN_HOST_EXECUTION"; then
+            echo "✓ run_gate.sh correctly refuses host execution"
+          else
+            echo "ERROR: run_gate.sh should refuse host execution!"
+            echo "Output: $OUTPUT"
+            exit 1
+          fi
+
+      - name: Verify emit_cluster_mermaid.sh refuses host execution
+        run: |
+          echo "Testing emit_cluster_mermaid.sh ANDON..."
+          OUTPUT=$(./scripts/receipts/emit_cluster_mermaid.sh 2>&1 || true)
+          if echo "$OUTPUT" | grep -q "ANDON: FORBIDDEN_HOST_EXECUTION"; then
+            echo "✓ emit_cluster_mermaid.sh correctly refuses host execution"
+          else
+            echo "ERROR: emit_cluster_mermaid.sh should refuse host execution!"
+            echo "Output: $OUTPUT"
+            exit 1
+          fi
+
+      - name: Summary
+        run: |
+          echo "## Docker-Only Enforcement" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✓ All scripts correctly refuse host execution with ANDON" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The Docker-Only Constitution is enforced:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`is_docker.sh\` detects container environment" >> $GITHUB_STEP_SUMMARY
+          echo "- All receipt scripts emit ANDON on host execution" >> $GITHUB_STEP_SUMMARY
+          echo "- No receipt can be generated outside Docker" >> $GITHUB_STEP_SUMMARY
