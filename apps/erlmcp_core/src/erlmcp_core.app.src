@@ -8,7 +8,9 @@
       erlmcp_registry,
       erlmcp_cluster_discovery,
       erlmcp_db_pool,
-      erlmcp_db_pool_sup
+      erlmcp_db_pool_sup,
+      erlmcp_advisor,
+      erlmcp_advisor_sup
   ]},
   {applications, [
       kernel,
@@ -165,7 +167,14 @@
     %% Cluster Service Discovery (v3)
     erlmcp_cluster_discovery,
     %% Cluster Coordination (v3)
-    erlmcp_cluster_coordinator
+    erlmcp_cluster_coordinator,
+    %% MCP Advisor Service (v3)
+    erlmcp_advisor,
+    erlmcp_advisor_sup,
+    erlmcp_advisor_provider,
+    erlmcp_advisor_provider_registry,
+    erlmcp_advisor_provider_offline,
+    erlmcp_advisor_mcp_server
 ]},
   {licenses, ["Apache-2.0"]},
   {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},

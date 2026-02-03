@@ -131,6 +131,21 @@ init([]) ->
             false ->
                 %% Skip cluster supervisor when disabled to prevent zombie process
                 []
+        end ++
+        %% Conditionally include advisor supervisor
+        case application:get_env(erlmcp_core, enable_advisor, true) of
+            true ->
+                [%% ================================================================
+                 %% ADVISOR: MCP server discovery and recommendation service
+                 %% ================================================================
+                 #{id => erlmcp_advisor_sup,
+                   start => {erlmcp_advisor_sup, start_link, []},
+                   restart => permanent,
+                   shutdown => 5000,
+                   type => supervisor,
+                   modules => [erlmcp_advisor_sup]}];
+            false ->
+                []
         end,
 
     {ok, {SupFlags, ChildSpecs}}.
