@@ -1,0 +1,302 @@
+# OpenTelemetry Collector Configuration for erlmcp v3
+# =====================================================
+# Comprehensive observability pipeline with traces, metrics, and logs
+#
+# Receivers:
+# - OTLP (gRPC/HTTP) for native telemetry
+# - Prometheus for scraping metrics
+#
+# Processors:
+# - Batch: Efficient data batching
+# - Memory Limiter: Prevents OOM
+# - Resource: Service resource attributes
+# - Attributes: Sensitive data filtering
+#
+# Exporters:
+# - Prometheus Remote Write: Metrics
+# - Jaeger: Distributed traces
+# - Logging: Debug output
+#
+# Endpoints:
+# - OTLP gRPC: 0.0.0.0:4317
+# - OTLP HTTP: 0.0.0.0:4318
+# - Health check: 0.0.0.0:8888
+# - Metrics: 0.0.0.0:8888/metrics
+
+# ============================================
+# Receivers
+# ============================================
+receivers:
+  # OTLP gRPC receiver (primary for traces/metrics)
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        # TLS configuration (optional)
+        tls:
+          cert_file: /etc/otel/certs/tls.crt
+          key_file: /etc/otel/certs/tls.key
+          # ca_file: /etc/otel/certs/ca.crt
+          # client_ca_file: /etc/otel/certs/client-ca.crt
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "http://*"
+            - "https://*"
+          allowed_headers:
+            - "*"
+          max_age: 7200
+
+  # Prometheus receiver for scraping
+  prometheus/erlmcp:
+    config:
+      scrape_configs:
+        # erlmcp application metrics
+        - job_name: 'erlmcp'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['erlmcp:9100']
+              labels:
+                service: 'erlmcp'
+                environment: 'production'
+          metrics_path: /metrics
+
+        # erlmcp transport metrics
+        - job_name: 'erlmcp-transports'
+          scrape_interval: 5s
+          static_configs:
+            - targets: ['erlmcp:9100']
+              labels:
+                component: 'transports'
+          metrics_path: /transport/metrics
+
+        # erlmcp cluster metrics
+        - job_name: 'erlmcp-cluster'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['erlmcp:9100']
+              labels:
+                component: 'cluster'
+          metrics_path: /cluster/metrics
+
+        # Collector self-monitoring
+        - job_name: 'otel-collector'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['localhost:8888']
+              labels:
+                service: 'otel-collector'
+
+  # Jaeger receiver (for direct Jaeger traces)
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:14250
+      thrift_http:
+        endpoint: 0.0.0.0:14268
+      thrift_compact:
+        endpoint: 0.0.0.0:6831
+
+  # Zipkin receiver (legacy Zipkin traces)
+  zipkin:
+    endpoint: 0.0.0.0:9411
+
+# ============================================
+# Processors
+# ============================================
+processors:
+  # Batch processing for improved throughput
+  batch:
+    timeout: 5s
+    send_batch_size: 10000
+    send_batch_max_size: 11000
+    max_traces: 1000
+
+  # Memory limiter to prevent OOM
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 15
+    limit_mib: 512
+
+  # Resource detection and enrichment
+  resource:
+    attributes:
+      - key: service.name
+        value: erlmcp-otel-collector
+        action: upsert
+      - key: service.version
+        value: "3.0.0"
+        action: upsert
+      - key: deployment.environment
+        value: production
+        action: upsert
+      - key: telemetry.sdk.language
+        value: erlang
+        action: upsert
+
+  # Attributes processing
+  attributes/erlmcp:
+    actions:
+      # Remove sensitive attributes
+      - key: password
+        action: delete
+      - key: token
+        action: delete
+      - key: secret
+        action: delete
+      - key: api_key
+        action: delete
+      # Mask sensitive patterns
+      - key:.*
+        pattern: "password|secret|token|api_key|auth"
+        action: redact
+      # Add service name
+      - key: service.name
+        value: erlmcp
+        action: upsert
+
+  # Span filtering (reduce cardinality)
+  span:
+    name:
+      # Exclude health check spans
+      exclude:
+        - "^health"
+        - "^ping"
+        - "^metrics"
+
+  # Metric filtering
+  filter/metrics:
+    metrics:
+      include:
+        match_type: regexp
+        metric_names:
+          - erlmcp_.*
+          - runtime_.*
+          - process_.*
+      exclude:
+        match_type: regexp
+        metric_names:
+          - .*_debug
+          - .*_test
+
+# ============================================
+# Extensions
+# ============================================
+extensions:
+  # Health check endpoint
+  health_check:
+    endpoint: 0.0.0.0:8888
+    path: /health
+    response_body:
+      healthy: "true"
+
+  # Pprof for profiling
+  pprof:
+    endpoint: localhost:1777
+
+  # z-pages for debugging
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+# ============================================
+# Exporters
+# ============================================
+exporters:
+  # Prometheus Remote Write for metrics
+  prometheusremotewrite:
+    endpoint: http://prometheus:9090/api/v1/write
+    tls:
+      insecure: true
+    send_builtin_metrics: true
+    add_metric_suffixes: true
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Prometheus exporter (scrape target)
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    metric_expiration: 5m
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Jaeger exporter for traces
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      queue_size: 10000
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 300s
+
+  # Logging exporter (for debugging)
+  logging:
+    loglevel: info
+    sampling_initial: 10
+    sampling_thereafter: 100
+
+  # OTLP exporter (for forwarding to another OTLP endpoint)
+  otlp/forward:
+    endpoint: http://opentelemetry-collector:4317
+    tls:
+      insecure: true
+    sending_queue:
+      enabled: true
+
+# ============================================
+# Service Configuration
+# ============================================
+service:
+  extensions: [health_check, pprof, zpages]
+
+  pipelines:
+    # Traces pipeline
+    traces:
+      receivers: [otlp, jaeger, zipkin]
+      processors:
+        - memory_limiter
+        - batch
+        - resource
+        - attributes/erlmcp
+        - span
+      exporters:
+        - otlp/jaeger
+        - logging
+
+    # Metrics pipeline
+    metrics:
+      receivers: [otlp, prometheus/erlmcp]
+      processors:
+        - memory_limiter
+        - batch
+        - resource
+        - filter/metrics
+      exporters:
+        - prometheusremotewrite
+        - prometheus
+        - logging
+
+    # Logs pipeline (optional, for future use)
+    logs:
+      receivers: [otlp]
+      processors:
+        - memory_limiter
+        - batch
+        - resource
+      exporters:
+        - logging
+
+# ============================================
+# Telemetry Configuration
+# ============================================
+telemetry:
+  metrics:
+    address: 0.0.0.0:8888
+    level: detailed

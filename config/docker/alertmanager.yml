@@ -1,0 +1,176 @@
+# Alertmanager Configuration for erlmcp v3
+# ============================================
+# Alert routing and notification configuration
+#
+# Receives alerts from Prometheus and routes to various receivers
+# based on severity, tier, and other labels.
+
+global:
+  # Global SMTP settings
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alertmanager@erlmcp.dev'
+  smtp_auth_username: 'alertmanager@erlmcp.dev'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_require_tls: true
+
+  # Slack settings
+  slack_api_url: '${SLACK_WEBHOOK_URL:-https://hooks.slack.com/services/YOUR/WEBHOOK/URL}'
+
+  # PagerDuty settings
+  pagerduty_url: 'https://events.pagerduty.com/v2/enqueue'
+
+  # Resolve timeout
+  resolve_timeout: 5m
+
+# Templates for alert formatting
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route configuration
+route:
+  # Default receiver for all alerts
+  receiver: 'default'
+
+  # Group alerts by these labels
+  group_by: ['alertname', 'cluster', 'service']
+
+  # How long to wait before sending first notification
+  group_wait: 10s
+
+  # How long to wait before sending notification about new alerts in group
+  group_interval: 10s
+
+  # How long to wait before sending notification after an alert is resolved
+  repeat_interval: 12h
+
+  # Child routes with specific matching
+  routes:
+    # Critical alerts go to PagerDuty
+    - match:
+        severity: critical
+      receiver: 'pagerduty-critical'
+      continue: true
+
+    # Cluster tier alerts go to dedicated receiver
+    - match:
+        tier: cluster
+      receiver: 'cluster-team'
+      group_wait: 30s
+      repeat_interval: 5m
+
+    # Performance alerts go to performance team
+    - match:
+        tier: performance
+      receiver: 'performance-team'
+      group_wait: 5m
+      repeat_interval: 1h
+
+    # Availability alerts go to on-call
+    - match:
+        tier: availability
+      receiver: 'on-call'
+      group_wait: 0s
+      repeat_interval: 5m
+
+    # Resource warnings go to slack only
+    - match:
+        severity: warning
+      receiver: 'slack-warnings'
+
+# Inhibition rules - suppress certain alerts when others are firing
+inhibit_rules:
+  # Inhibit warnings if critical alert is firing for same instance
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['instance', 'alertname']
+
+  # Inhibit node down alerts if cluster partition is detected
+  - source_match:
+      alertname: 'ErlmcpClusterPartition'
+    target_match_re:
+      alertname: 'ErlmcpClusterNodeDown.*'
+    equal: ['cluster']
+
+# Receivers - notification destinations
+receivers:
+  # Default receiver
+  - name: 'default'
+    slack_configs:
+      - channel: '#erlmcp-alerts'
+        title: '{{ .GroupLabels.alertname }}'
+        text: >-
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Severity:* {{ .Labels.severity }}
+          *Instance:* {{ .Labels.instance }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          {{ end }}
+        send_resolved: true
+
+  # On-call receiver (SMS/Call)
+  - name: 'on-call'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        severity: '{{ .Labels.severity }}'
+        description: '{{ .GroupLabels.alertname }}: {{ .CommonAnnotations.summary }}'
+        client: 'erlmcp-alertmanager'
+        client_url: 'http://localhost:9093'
+        send_resolved: true
+
+  # PagerDuty critical
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY_CRITICAL}'
+        severity: 'critical'
+        description: 'CRITICAL: {{ .GroupLabels.alertname }}'
+        send_resolved: true
+
+  # Slack warnings
+  - name: 'slack-warnings'
+    slack_configs:
+      - channel: '#erlmcp-warnings'
+        title: '[WARNING] {{ .GroupLabels.alertname }}'
+        color: 'warning'
+        text: >-
+          {{ range .Alerts }}
+          *Alert:* {{ .Labels.alertname }}
+          *Instance:* {{ .Labels.instance }}
+          *Summary:* {{ .Annotations.summary }}
+          {{ end }}
+        send_resolved: true
+
+  # Cluster team
+  - name: 'cluster-team'
+    slack_configs:
+      - channel: '#erlmcp-cluster'
+        title: '[CLUSTER] {{ .GroupLabels.alertname }}'
+        color: '{{ if eq .Labels.severity "critical" }}danger{{ else }}warning{{ end }}'
+        send_resolved: true
+
+  # Performance team
+  - name: 'performance-team'
+    slack_configs:
+      - channel: '#erlmcp-performance'
+        title: '[PERFORMANCE] {{ .GroupLabels.alertname }}'
+        color: 'warning'
+        send_resolved: true
+
+# Time intervals for routing
+time_intervals:
+  - name: 'business-hours'
+    time_intervals:
+      - times:
+          - start_time: '09:00'
+            end_time: '17:00'
+        weekdays: ['monday:friday']
+
+  - name: 'after-hours'
+    time_intervals:
+      - times:
+          - start_time: '17:00'
+            end_time: '09:00'
+        weekdays: ['monday:friday']
+      - weekdays: ['saturday', 'sunday']

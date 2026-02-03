@@ -1,0 +1,253 @@
+# Loki configuration for log aggregation and analysis
+
+auth_enabled: false
+
+# Storage configuration
+storage:
+  # Backend configuration
+  filesystem:
+    chunks_directory: /data/loki/chunks
+    rules_directory: /data/loki/rules
+
+  # Schema configuration
+  schema_config:
+    configs:
+      - from: 2023-01-01
+        store: boltdb-shipper
+        object_store: filesystem
+        schema: v11
+        index:
+          prefix: index_
+          period: 24h
+
+  # Retention configuration
+  retention:
+    period: 720h  # 30 days
+    delete_every: 24h
+    rules:
+      - matcher: '{app="erlmcp"}'
+        selector: '{app="erlmcp"}'
+        period: 168h  # 7 days
+      - matcher: '{app="redis"}'
+        selector: '{app="redis"}'
+        period: 168h  # 7 days
+      - matcher: '{app="postgres"}'
+        selector: '{app="postgres"}'
+        period: 336h  # 14 days
+      - matcher: '{level="debug"}'
+        selector: '{level="debug"}'
+        period: 24h  # 1 day
+
+# Limits configuration
+limits_config:
+  # Query configuration
+  query:
+    max_entries_limit_per_query: 5000000
+    max_series_per_query: 10000
+    max_total_bytes_per_query: 1000000000  # 1GB
+    timeout: 5m
+
+  # ingestion configuration
+  ingestion:
+    max_line_length: 100000
+    max_bytes_per_log_entry: 1MB
+    max_global_log_entries: 10000000
+
+# Server configuration
+server:
+  # HTTP configuration
+  http_listen_port: 3100
+
+  # gRPC configuration
+  grpc_listen_port: 9095
+
+  # Metrics configuration
+  http_listen_address: 0.0.0.0
+  grpc_listen_address: 0.0.0.0
+
+# Configuration for the read and write sections
+ruler:
+  # Ruler configuration
+  alertmanager_url: http://localhost:9093
+  external_url: http://loki:3100
+
+  # Rule storage
+  storage:
+    type: local
+    local:
+      directory: /data/loki/rules
+
+  # Rule evaluation
+  evaluation_interval: 1m
+  rule_path: /data/loki/rules
+  alertmanager: {}
+
+  # Rule concurrency
+  concurrency: 10
+
+# Query scheduler configuration
+query_scheduler:
+  max_outstanding_per_tenant: 1000
+  max_outstanding_total: 5000
+
+# Query range configuration
+query_range:
+  max_retries: 5
+  split_interval: 24h
+  align_queries_with_step: true
+  cache_results: true
+  cache_results_ttl: 30m
+
+# Backend configuration for the querier
+backend:
+  # Backend type
+  type: local
+
+  # Local backend configuration
+  local:
+    # Object storage
+    object_store: filesystem
+    directory: /data/loki/chunks
+
+    # Index storage
+    index:
+      prefix: index_
+      period: 24h
+
+# Frontend configuration
+frontend:
+  # Frontend log level
+  log_level: info
+
+  # Frontend metrics
+  metrics:
+    enabled: true
+    enable_tenant_limits: true
+    enable_tenant_labels: true
+    enable_tenant_metrics: true
+    enable_user_labels: true
+    enable_user_metrics: true
+
+# Chunk configuration
+chunk:
+  # Chunk encoding
+  encoding: zstd
+
+  # Chunk cache
+  chunk_cache:
+    enabled: true
+    cache_directory: /data/loki/chunk_cache
+    chunk_cache_size: 1024MB
+
+  # Index cache
+  index_cache:
+    enabled: true
+    index_cache_size: 512MB
+
+# Table manager configuration
+table_manager:
+  retention_deletes_enabled: true
+  retention_period: 720h  # 30 days
+
+# Compactor configuration
+compactor:
+  working_directory: /data/loki/compactor
+  chunk_cleanup_interval: 5m
+  compaction_interval: 10m
+  retention_deletes_enabled: true
+  retention_period: 720h  # 30 days
+  max_compaction_parallel: 10
+
+# Observability configuration
+memberlist:
+  join_members: []
+  left_interval: 1m
+  left_timeout: 5m
+  retransmit_interval: 10s
+  push_pull_interval: 30s
+  gossip_interval: 1s
+  suspect_timeout: 1s
+  verify_join: true
+  secret_key: ${LOKI_SECRET_KEY}
+
+# Tracing configuration
+tracing:
+  enabled: true
+  service_name: loki
+  sampling_rate: 1.0
+  batch:
+    max_batch_size: 1000
+    timeout: 30s
+    max_queue_size: 10000
+
+# Metrics configuration
+metrics:
+  enabled: true
+  disable_target_info_metric: false
+  disable_component_label: false
+  disable_metric_by_method_label: false
+
+# Common configuration
+common:
+  path_prefix: /loki
+  replication_factor: 1
+  ring:
+    instance_addr: localhost
+    kvstore:
+      store: memberlist
+      prefix: _replication
+      consul:
+        host: localhost
+        port: 8500
+
+# Ingester configuration
+ingester:
+  wal:
+    dir: /data/loki/wal
+    encoding: snappy
+    max_retries: 5
+    flush_on_shutdown: true
+
+  lifecycler:
+    ring:
+      kvstore:
+        store: memberlist
+        prefix: _replication
+        consul:
+          host: localhost
+          port: 8500
+      replication_factor: 1
+      instance_addr: localhost
+    join_after: 0s
+    final_sleep: 0s
+
+  chunk_encoding: snappy
+  max_chunk_age: 1h
+  max_chunk_size_bytes: 1536000  # 1.5MB
+  max_transfer_retries: 0
+
+# querier configuration
+querier:
+  query_ingesters_within: 15m
+  max_concurrent_queries: 1000
+  max_retries: 5
+  timeout: 2m
+
+# distributor configuration
+distributor:
+  ring:
+    kvstore:
+      store: memberlist
+      prefix: _replication
+      consul:
+        host: localhost
+        port: 8500
+    replication_factor: 1
+    instance_addr: localhost
+  ingestion_rate_mb: 100
+  max_ingestion_rate_mb: 0
+  max_retries: 3
+
+# Target configuration
+target_config:
+  sync_period: 15s

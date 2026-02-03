@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erlmcp-staging
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp-staging
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/component: erlmcp
+    environment: staging
+    istio-injection: enabled

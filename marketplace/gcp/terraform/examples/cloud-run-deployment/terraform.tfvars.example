@@ -1,0 +1,65 @@
+# ============================================================================
+# Cloud Run Deployment Example - Terraform Variables
+# ============================================================================
+
+# Project Configuration
+project_id = "your-project-id"
+region     = "us-central1"
+
+# Service Configuration
+service_name = "erlmcp"
+
+# Container Image
+image_repository = "us-central1-docker.pkg.dev"
+image_name       = "erlmcp/erlmcp"
+image_tag        = "3.0.0"
+
+# Resource Configuration
+cpu        = "1"
+memory     = "512Mi"
+cpu_idle   = true
+timeout    = 300
+
+# Scaling
+min_instances = 0
+max_instances = 10
+
+# Health Check
+health_check_path = "/health"
+
+# Networking
+ingress_setting     = "INGRESS_TRAFFIC_ALL"
+allow_public_access = false
+invoker_service_account = ""
+custom_domain       = ""
+enable_tls          = false
+
+# Environment
+environment = "production"
+
+# Labels
+labels = {
+  app        = "erlmcp"
+  managed-by = "terraform"
+  environment = "production"
+}
+
+# Observability
+create_uptime_check        = true
+create_slos                = true
+enable_error_rate_alert    = true
+enable_latency_alert       = true
+enable_memory_alert        = true
+
+# Notification Channels (optional)
+# notification_channels = {
+#   email = {
+#     enabled = true
+#     address = "admin@example.com"
+#   }
+#   slack = {
+#     enabled     = true
+#     channel_name = "#alerts"
+#     auth_token   = "xoxb-your-token"
+#   }
+# }

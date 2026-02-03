@@ -1,0 +1,86 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: erlmcp
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    # Allow traffic from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - port: 8081
+          protocol: TCP
+    # Allow traffic from same namespace
+    - from:
+        - podSelector: {}
+      ports:
+        - port: 8080
+          protocol: TCP
+        - port: 8081
+          protocol: TCP
+        - port: 8082
+          protocol: TCP
+        - port: 8083
+          protocol: TCP
+        - port: 9100
+          protocol: TCP
+    # Allow traffic from monitoring
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 9090
+          protocol: TCP
+    # Allow Erlang distribution traffic
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: erlmcp
+      ports:
+        - port: 4369
+          protocol: TCP
+        - port: 9100
+          protocol: TCP
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # Allow traffic to same namespace
+    - to:
+        - podSelector: {}
+    # Allow OpenTelemetry export
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: observability
+      ports:
+        - port: 4317
+          protocol: TCP
+    # Allow external API calls
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 80
+          protocol: TCP

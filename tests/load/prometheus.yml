@@ -1,0 +1,24 @@
+# Prometheus configuration for load testing
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+  external_labels:
+    test: 'erlmcp-load'
+
+scrape_configs:
+  # erlmcp metrics endpoint
+  - job_name: 'erlmcp'
+    static_configs:
+      - targets: ['erlmcp:9100']
+    metrics_path: '/metrics'
+
+  # k6 metrics (if using Prometheus remote write)
+  - job_name: 'k6'
+    static_configs:
+      - targets: ['localhost:9090']
+
+remote_write:
+  # Optional: Push metrics to external Prometheus
+  # - url: 'http://prometheus-pushgateway:9091/metrics'
+  #   queue_config:
+  #     capacity: 10000

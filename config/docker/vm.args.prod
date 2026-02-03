@@ -1,0 +1,81 @@
+## VM Arguments for erlmcp v3 Production
+## Optimized for Docker Swarm deployment
+
+%% Name and cookie
+-name $ERLMCP_NODE_NAME@$(hostname)
+-setcookie $ERLMCP_COOKIE
+
+%% Memory settings - 512MB for production
+-erl +pc unicode
+-erl +hms 128000000
+-erl +hmsz 128000000
+-erl +hmbs 128000000
+-erl +hmbks 128000000
+-erl +hmtbs 128000000
+-erl +hmtlts 10000
+-erl +hmtavg 128000000
+-erl +hmaxmb 512
+
+%% Memory allocator settings for cgroups compatibility
+-erl +MBas aobf
+-erl +MBlmbcs 512
+-erl +MBsmbcs 1024
+-erl +MBsbct 2048
+
+%% Cgroups-aware memory detection (OTP 26+)
+%% +MBacul 0: Disable carrier utilization limit for cgroups v2
+%% +Msbagf 512: Set carrier size alignment to 512 bytes
+%% +MBacgs 0: Auto-detect cgroups memory limits
+-erl +MBacul 0
+-erl +Msbagf 512
+-erl +MBacgs 0
+
+%% Async threads - optimized for network I/O
+-erl +A 64
+-erl +SDio 256
+-erl +SDcpu 8
+-erl +SDsbtio 256
+
+%% Process limits
+-erl +P 262144
+-erl +Q 131072
+-erl +Z 8192
+-erl +SDio 256
+-erl +SDcpu 8
+
+%% ETS settings
+-erl +ets 256000000
+
+%% Kernel poll - enabled for high-performance networking
+-erl +K true
+
+%% SMP - enabled for multi-core
+-erl +smp auto +subprocs 8
+
+%% Crash dump
+-erl crash_dump /var/log/erlmcp/crash.dump
+-erl elog_max_size 10485760
+
+%% Distribution
+-erl inet_dist_listen_min 9000
+-erl inet_dist_listen_max 9005
+-erl inet_dist_use_interface 0.0.0.0
+-erl inet_dist_listen_all true
+
+%% Logger configuration
+-erl logger_sasl_compatible true
+-erl logger_user_identity true
+
+%% Heartbeat for health monitoring
+-heartbeat_interval 30
+-heartbeat_timeout 10
+-heartbeat_fail_threshold 3
+
+%% ZDBE - async database operations
++zdbbl 64
++zdb max 64
++zdb att 1000
++zdb pdef 1
++zdb batch 8
++zdb async 8
++zdb res 10

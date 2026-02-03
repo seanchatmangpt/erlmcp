@@ -1,0 +1,170 @@
+{{/*
+  Services for erlmcp deployment
+  Includes HTTP service, cluster service, metrics service, and OTEL service
+*/}}
+
+{{/*
+  HTTP Service (LoadBalancer for external access)
+*/}}
+{{- if .Values.services.http.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-http
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    service: http
+  annotations:
+    {{- include "erlmcp.serviceAnnotations" . | nindent 4 }}
+    # External DNS annotation
+    external-dns.alpha.kubernetes.io/hostname: {{ .Values.ingress.hosts[0].host }}
+    # Load balancer annotations
+    {{- if .Values.services.http.annotations }}
+    {{- toYaml .Values.services.http.annotations | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.services.http.type }}
+  externalTrafficPolicy: {{ .Values.services.http.externalTrafficPolicy | default "Local" }}
+  {{- if .Values.services.http.healthCheckNodePort }}
+  healthCheckNodePort: {{ .Values.services.http.healthCheckNodePort }}
+  {{- end }}
+  {{- if .Values.services.http.sessionAffinity }}
+  sessionAffinity: {{ .Values.services.http.sessionAffinity }}
+  {{- if .Values.services.http.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml .Values.services.http.sessionAffinityConfig | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  ports:
+    - name: http
+      port: {{ .Values.services.http.port }}
+      targetPort: http
+      {{- if .Values.services.http.type }}
+      protocol: TCP
+      {{- end }}
+      {{- if and .Values.services.http.type (eq .Values.services.http.type "NodePort") }}
+      nodePort: {{ .Values.services.http.nodePort }}
+      {{- end }}
+    {{- range .Values.services.http.additionalPorts }}
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .targetPort | default .name }}
+      protocol: {{ .protocol | default "TCP" }}
+      {{- if and $.Values.services.http.type (eq $.Values.services.http.type "NodePort") }}
+      nodePort: {{ .nodePort | default .port }}
+      {{- end }}
+    {{- end }}
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: erlmcp-node
+{{- end }}
+
+{{/*
+  Cluster Service (ClusterIP for internal communication)
+*/}}
+{{- if .Values.services.cluster.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.clusterServiceName" . }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    service: cluster
+  annotations:
+    {{- if .Values.services.cluster.annotations }}
+    {{- toYaml .Values.services.cluster.annotations | nindent 4 }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for StatefulSet
+  ports:
+    - name: cluster
+      port: {{ .Values.services.cluster.port }}
+      targetPort: cluster
+      protocol: TCP
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: erlmcp-node
+{{- end }}
+
+{{/*
+  Metrics Service (for Prometheus)
+*/}}
+{{- if .Values.services.metrics.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-metrics
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    service: metrics
+    {{- if .Values.monitoring.prometheus.enabled }}
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{ .Values.services.metrics.port }}"
+    prometheus.io/path: "/metrics"
+    {{- end }}
+  annotations:
+    {{- if .Values.services.metrics.annotations }}
+    {{- toYaml .Values.services.metrics.annotations | nindent 4 }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: {{ .Values.services.metrics.port }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: erlmcp-node
+{{- end }}
+
+{{/*
+  OpenTelemetry Service (for OTEL collectors)
+*/}}
+{{- if .Values.services.otel.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-otel
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    service: otel
+  annotations:
+    {{- if .Values.services.otel.annotations }}
+    {{- toYaml .Values.services.otel.annotations | nindent 4 }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: otel
+      port: {{ .Values.services.otel.port }}
+      targetPort: otel
+      protocol: TCP
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: erlmcp-node
+{{- end }}
+
+{{/*
+  Additional services
+*/}}
+{{- range .Values.services.additionalPorts }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-{{ .name }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    service: {{ .name }}
+spec:
+  type: {{ .type | default "ClusterIP" }}
+  ports:
+    - name: {{ .name }}
+      port: {{ .port }}
+      targetPort: {{ .targetPort | default .name }}
+      protocol: {{ .protocol | default "TCP" }}
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: erlmcp-node
+{{- end }}

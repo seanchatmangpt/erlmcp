@@ -1,0 +1,38 @@
+# Grafana for erlmcp v3 visualization
+FROM grafana/grafana:10.4.2-alpine
+
+# Install additional plugins
+ENV GF_INSTALL_PLUGINS="grafana-piechart-panel,grafana-worldmap-panel,grafana-clock-panel,grafana-simple-json-datasource"
+
+# Create grafana user
+RUN addgroup -g 1004 -S grafana && \
+    adduser -S grafana -u 1004
+
+# Create directories
+RUN mkdir -p /var/lib/grafana /var/log/grafana /etc/grafana && \
+    chown -R grafana:grafana /var/lib/grafana /var/log/grafana /etc/grafana
+
+# Copy Grafana configuration
+COPY config/docker/grafana.ini /etc/grafana/grafana.ini
+COPY config/docker/dashboards /etc/grafana/dashboards
+COPY config/docker/provisioning /etc/grafana/provisioning
+
+# Create dashboards
+COPY config/docker/dashboards/erlmcp-dashboard.json /etc/grafana/dashboards/erlmcp-dashboard.json
+COPY config/docker/dashboards/redis-dashboard.json /etc/grafana/dashboards/redis-dashboard.json
+COPY config/docker/dashboards/system-dashboard.json /etc/grafana/dashboards/system-dashboard.json
+
+# Health check
+HEALTHCHECK --interval: 30s --timeout: 10s --start-period: 40s --retries: 3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1
+
+# Expose ports
+EXPOSE 3000
+
+# Storage
+VOLUME ["/var/lib/grafana"]
+
+# Command
+USER grafana
+ENTRYPOINT ["/usr/sbin/grafana-server"]
+CMD ["--config=/etc/grafana/grafana.ini", "--homepath=/usr/share/grafana", "--packaging=docker", "--pidfile=/var/run/grafana/grafana-server.pid"]

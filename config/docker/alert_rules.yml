@@ -1,0 +1,147 @@
+# Alert rules for erlmcp v3
+
+groups:
+  - name: erlmcp-availability
+    interval: 15s
+    rules:
+      - alert: erlmcp_down
+        expr: up{job="erlmcp-core"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: erlmcp
+        annotations:
+          summary: "erlmcp instance {{ $labels.instance }} is down"
+          description: "erlmcp instance {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: redis_down
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: erlmcp
+        annotations:
+          summary: "Redis instance {{ $labels.instance }} is down"
+          description: "Redis instance {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: high_error_rate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: erlmcp
+        annotations:
+          summary: "High error rate detected on {{ $labels.instance }}"
+          description: "Error rate is {{ $value }} requests per second for the last 5 minutes"
+
+  - name: erlmcp-performance
+    interval: 15s
+    rules:
+      - alert: high_memory_usage
+        expr: (process_resident_memory_bytes / process_virtual_memory_bytes) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: erlmcp
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is at {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: high_cpu_usage
+        expr: 100 - (avg by(instance) (rate(process_cpu_seconds_total[5m])) * 100) > 90
+        for: 5m
+        labels:
+          severity: warning
+          team: erlmcp
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is at {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: slow_requests
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: erlmcp
+        annotations:
+          summary: "Slow requests detected on {{ $labels.instance }}"
+          description: "95th percentile response time is {{ $value }} seconds on {{ $labels.instance }}"
+
+  - name: erlmcp-connections
+    interval: 15s
+    rules:
+      - alert: connection_pool_full
+        expr: erlmcp_connections_current / erlmcp_connections_max > 0.9
+        for: 5m
+        labels:
+          severity: critical
+          team: erlmcp
+        annotations:
+          summary: "Connection pool nearly full on {{ $labels.instance }}"
+          description: "Connection pool usage is at {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: high_connection_rate
+        expr: rate(erlmcp_connections_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          team: erlmcp
+        annotations:
+          summary: "High connection rate on {{ $labels.instance }}"
+          description: "Connection rate is {{ $value }} connections per second on {{ $labels.instance }}"
+
+  - name: redis-performance
+    interval: 15s
+    rules:
+      - alert: redis_high_memory_usage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: erlmcp
+        annotations:
+          summary: "High memory usage on Redis {{ $labels.instance }}"
+          description: "Redis memory usage is at {{ $value }}% on {{ $labels.instance }}"
+
+      - alert: redis_slow_commands
+        expr: rate(redis_slowlog_length[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: erlmcp
+        annotations:
+          summary: "Slow Redis commands detected on {{ $labels.instance }}"
+          description: "There are {{ $value }} slow commands in Redis {{ $labels.instance }}"
+
+      - alert: redis_connected_clients_high
+        expr: redis_connected_clients > 10000
+        for: 5m
+        labels:
+          severity: warning
+          team: erlmcp
+        annotations:
+          summary: "High number of connected clients on Redis {{ $labels.instance }}"
+          description: "Redis {{ $labels.instance }} has {{ $value }} connected clients"
+
+  - name: system-health
+    interval: 15s
+    rules:
+      - alert: node_disk_full
+        expr: (node_filesystem_avail_bytes / node_filesystem_size_bytes) * 100 < 10
+        for: 5m
+        labels:
+          severity: critical
+          team: erlmcp
+        annotations:
+          summary: "Disk space critically low on {{ $labels.instance }}"
+          description: "Only {{ $value }}% disk space remaining on {{ $labels.instance }}"
+
+      - alert: node_high_load
+        expr: node_load1 > 2 * count(node_cpu_seconds_total{mode="system"} + node_cpu_seconds_total{mode="user"})
+        for: 5m
+        labels:
+          severity: warning
+          team: erlmcp
+        annotations:
+          summary: "High system load on {{ $labels.instance }}"
+          description: "1-minute load average is {{ $value }} on {{ $labels.instance }}"

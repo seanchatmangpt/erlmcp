@@ -1,0 +1,208 @@
+groups:
+  - name: erlmcp-request-rates
+    interval: 30s
+    rules:
+      # Request rates by endpoint
+      - record: erlmcp_request_rate:sum_rate5m
+        expr: sum(rate(erlmcp_requests_total[5m]))
+        labels:
+          metric: request_rate_5m
+
+      - record: erlmcp_request_rate:sum_rate1h
+        expr: sum(rate(erlmcp_requests_total[1h]))
+        labels:
+          metric: request_rate_1h
+
+      # Request rates by status code
+      - record: erlmcp_request_rate_by_status:sum_rate5m
+        expr: sum(rate(erlmcp_requests_total[5m])) by (status)
+        labels:
+          metric: request_rate_by_status_5m
+
+      # Request rates by component
+      - record: erlmcp_request_rate_by_component:sum_rate5m
+        expr: sum(rate(erlmcp_requests_total[5m])) by (component)
+        labels:
+          metric: request_rate_by_component_5m
+
+  - name: erlmcp-latency-aggregations
+    interval: 30s
+    rules:
+      # P95 latency by endpoint
+      - record: erlmcp_latency:p95_endpoint
+        expr: histogram_quantile(0.95, sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le, endpoint))
+        labels:
+          quantile: p95
+
+      # P99 latency by endpoint
+      - record: erlmcp_latency:p99_endpoint
+        expr: histogram_quantile(0.99, sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le, endpoint))
+        labels:
+          quantile: p99
+
+      # P50 latency by component
+      - record: erlmcp_latency:p50_component
+        expr: histogram_quantile(0.50, sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le, component))
+        labels:
+          quantile: p50
+
+  - name: erlmcp-session-aggregations
+    interval: 30s
+    rules:
+      # Session metrics
+      - record: erlmcp_sessions:active_count
+        expr: sum(erlmcp_active_sessions)
+        labels:
+          metric: active_sessions
+
+      - record: erlmcp_sessions:created_rate5m
+        expr: sum(rate(erlmcp_sessions_created_total[5m]))
+        labels:
+          metric: sessions_created_rate_5m
+
+      - record: erlmcp_sessions:closed_rate5m
+        expr: sum(rate(erlmcp_sessions_closed_total[5m]))
+        labels:
+          metric: sessions_closed_rate_5m
+
+      # Session duration statistics
+      - record: erlmcp_sessions:avg_duration
+        expr: sum(erlmcp_session_duration_seconds_total) / sum(erlmcp_session_duration_seconds_count)
+        labels:
+          metric: avg_session_duration
+
+      - record: erlmcp_sessions:p95_duration
+        expr: histogram_quantile(0.95, sum(rate(erlmcp_session_duration_seconds_bucket[5m])) by (le))
+        labels:
+          quantile: p95
+
+  - name: erlmcp-registry-aggregations
+    interval: 30s
+    rules:
+      # Registry metrics
+      - record: erlmcp_registry:registered_count
+        expr: sum(erlmcp_resources_registered_total)
+        labels:
+          metric: resources_registered
+
+      - record: erlmcp_registry:unregistered_count
+        expr: sum(erlmcp_resources_unregistered_total)
+        labels:
+          metric: resources_unregistered
+
+      - record: erlmcp_registry:subscription_count
+        expr: sum(erlmcp_active_subscriptions)
+        labels:
+          metric: active_subscriptions
+
+      - record: erlmcp_registry:subscription_rate5m
+        expr: sum(rate(erlmcp_subscriptions_created_total[5m]))
+        labels:
+          metric: subscriptions_created_rate_5m
+
+  - name: erlmcp-transport-aggregations
+    interval: 30s
+    rules:
+      # Transport metrics by type
+      - record: erlmcp_transport:connection_count_by_type
+        expr: sum(erlmcp_active_connections) by (transport_type)
+        labels:
+          metric: active_connections_by_type
+
+      - record: erlmcp_transport:connection_rate5m_by_type
+        expr: sum(rate(erlmcp_connections_created_total[5m])) by (transport_type)
+        labels:
+          metric: connections_created_rate_by_type_5m
+
+      - record: erlmcp_transport:error_rate5m_by_type
+        expr: sum(rate(erlmcp_transport_errors_total[5m])) by (transport_type)
+        labels:
+          metric: error_rate_by_type_5m
+
+  - name: erlmcp-error-aggregations
+    interval: 30s
+    rules:
+      # Error rates by status code
+      - record: erlmcp_errors:rate_5m_by_status
+        expr: sum(rate(erlmcp_requests_total{status=~"5.."}[5m])) by (status)
+        labels:
+          metric: error_rate_by_status_5m
+
+      # Error rates by component
+      - record: erlmcp_errors:rate_5m_by_component
+        expr: sum(rate(erlmcp_requests_total{status=~"5.."}[5m])) by (component)
+        labels:
+          metric: error_rate_by_component_5m
+
+      # Total errors
+      - record: erlmcp_errors:total_rate5m
+        expr: sum(rate(erlmcp_requests_total{status=~"5.."}[5m]))
+        labels:
+          metric: total_error_rate_5m
+
+  - name: erlmcp-business-metrics
+    interval: 5m
+    rules:
+      # Business metrics
+      - record: erlmcp_business:api_quota_usage_rate
+        expr: sum(rate(erlmcp_api_quota_usage_total[5m]))
+        labels:
+          metric: api_quota_usage_rate_5m
+
+      - record: erlmcp_business:auth_success_rate
+        expr: sum(rate(erlmcp_auth_success_total[5m])) / (sum(rate(erlmcp_auth_success_total[5m])) + sum(rate(erlmcp_auth_failures_total[5m])))
+        labels:
+          metric: auth_success_rate
+
+      - record: erlmcp_business:tool_execution_rate
+        expr: sum(rate(erlmcp_tool_executions_total[5m]))
+        labels:
+          metric: tool_execution_rate_5m
+
+      - record: erlmcp_business:prompt_execution_rate
+        expr: sum(rate(erlmcp_prompt_executions_total[5m]))
+        labels:
+          metric: prompt_execution_rate_5m
+
+  - name: erlmcp-resource-usage
+    interval: 30s
+    rules:
+      # Resource usage metrics
+      - record: erlmcp_resources:memory_usage_bytes
+        expr: sum(erlmcp_memory_usage_bytes)
+        labels:
+          metric: total_memory_usage
+
+      - record: erlmcp_resources:cpu_usage_percentage
+        expr: sum(rate(erlmcp_cpu_usage_seconds_total[5m])) * 100
+        labels:
+          metric: total_cpu_usage_percent
+
+      - record: erlmcp_resources:disk_usage_bytes
+        expr: sum(erlmcp_disk_usage_bytes)
+        labels:
+          metric: total_disk_usage
+
+      - record: erlmcp_resources:connection_utilization
+        expr: sum(erlmcp_active_connections) / sum(erlmcp_max_connections)
+        labels:
+          metric: connection_utilization_ratio
+
+  - name: erlmcp-sla-metrics
+    interval: 5m
+    rules:
+      # SLA metrics
+      - record: erlmcp_sla:uptime_percentage
+        expr: (1 - sum(rate(erlmcp_requests_total{status=~"5.."}[1h])) / sum(rate(erlmcp_requests_total[1h]))) * 100
+        labels:
+          metric: uptime_percentage_1h
+
+      - record: erlmcp_sla:response_time_p99_seconds
+        expr: histogram_quantile(0.99, sum(rate(erlmcp_request_duration_seconds_bucket[1h])) by (le))
+        labels:
+          metric: response_time_p99_1h
+
+      - record: erlmcp_sla:error_rate_percentage
+        expr: (sum(rate(erlmcp_requests_total{status=~"5.."}[1h])) / sum(rate(erlmcp_requests_total[1h]))) * 100
+        labels:
+          metric: error_rate_percentage_1h

@@ -1,0 +1,174 @@
+{{/*
+  ERLMCP Enterprise ServiceMonitor
+  Prometheus Operator integration for metrics scraping
+*/}}
+{{- if and .Values.monitoring.prometheus.enabled .Values.monitoring.prometheus.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: servicemonitor
+    {{- with .Values.monitoring.prometheus.serviceMonitor.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    "erlmcp.io/monitoring": "prometheus"
+spec:
+  {{- /* Namespace selector */}}
+  namespaceSelector:
+    matchNames:
+      - {{ .Release.Namespace }}
+    {{- with .Values.monitoring.prometheus.serviceMonitor.namespaceSelector }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+  {{- /* Selector */}}
+  selector:
+    matchLabels:
+      {{- include "erlmcp-enterprise.selectorLabels" . | nindent 6 }}
+      component: metrics
+
+  {{- /* Endpoints */}}
+  endpoints:
+    - port: metrics
+      path: {{ .Values.monitoring.prometheus.serviceMonitor.path | default "/metrics" }}
+      scheme: {{ .Values.monitoring.prometheus.serviceMonitor.scheme | default "http" }}
+      interval: {{ .Values.monitoring.prometheus.serviceMonitor.interval | default "30s" }}
+      scrapeTimeout: {{ .Values.monitoring.prometheus.serviceMonitor.scrapeTimeout | default "10s" }}
+      {{- if .Values.monitoring.prometheus.serviceMonitor.honorLabels }}
+      honorLabels: {{ .Values.monitoring.prometheus.serviceMonitor.honorLabels }}
+      {{- end }}
+      {{- with .Values.monitoring.prometheus.serviceMonitor.relabelings }}
+      relabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.monitoring.prometheus.serviceMonitor.metricRelabelings }}
+      metricRelabelings:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
+---
+{{/*
+  ERLMCP Enterprise PrometheusRule
+  Alerting rules for Prometheus
+*/}}
+{{- if and .Values.monitoring.prometheus.enabled .Values.monitoring.prometheus.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: prometheus-rule
+    app.kubernetes.io/prometheus: {{ .Values.monitoring.prometheus.prometheusRule.prometheus | default "kube-prometheus" }}
+  annotations:
+    "erlmcp.io/monitoring": "prometheus-rules"
+spec:
+  groups:
+    {{- /* Critical alerts */}}
+    - name: erlmcp.critical
+      interval: 30s
+      rules:
+        - alert: ERLMCPDown
+          expr: up{job=~"erlmcp.*"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "ERLMCP instance is down"
+            description: "ERLMCP instance has been down for more than 2 minutes."
+
+        - alert: ERLMCPHighMemoryUsage
+          expr: |
+            (process_resident_memory_bytes{job=~"erlmcp.*"} /
+            container_spec_memory_limit_bytes{job=~"erlmcp.*"}) > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "ERLMCP high memory usage"
+            description: "ERLMCP pod memory usage is above 90% for 5 minutes."
+
+        - alert: ERLMCPSessionCrashLooping
+          expr: rate(kube_pod_container_status_restarts_total{job=~"erlmcp.*"}[15m]) > 0
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "ERLMCP pod is crash looping"
+            description: "ERLMCP pod is restarting frequently."
+
+    {{- /* Warning alerts */}}
+    - name: erlmcp.warning
+      interval: 1m
+      rules:
+        - alert: ERLMCPHighCPUUsage
+          expr: |
+            (rate(container_cpu_usage_seconds_total{job=~"erlmcp.*"}[5m]) /
+            container_spec_cpu_quota{job=~"erlmcp.*"} * container_spec_cpu_period{job=~"erlmcp.*"}) > 0.8
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "ERLMCP high CPU usage"
+            description: "ERLMCP pod CPU usage is above 80% for 10 minutes."
+
+        - alert: ERLMCPHighRequestLatency
+          expr: |
+            histogram_quantile(0.99,
+              rate(erlmcp_http_request_duration_seconds_bucket{job=~"erlmcp.*"}[5m])
+            ) > 1
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "ERLMCP high request latency"
+            description: "ERLMCP pod P99 request latency is above 1 second."
+
+        - alert: ERLMCPHighErrorRate
+          expr: |
+            (rate(erlmcp_http_requests_total{job=~"erlmcp.*",status=~"5.."}[5m]) /
+            rate(erlmcp_http_requests_total{job=~"erlmcp.*"}[5m])) > 0.05
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "ERLMCP high error rate"
+            description: "ERLMCP pod error rate is above 5%."
+
+        - alert: ERLMCPSessionSaturation
+          expr: |
+            (erlmcp_sessions_active{job=~"erlmcp.*"} /
+            erlmcp_sessions_max{job=~"erlmcp.*"}) > 0.9
+          for: 10m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "ERLMCP session capacity near saturation"
+            description: "ERLMCP pod has more than 90% of sessions active."
+
+    {{- /* Info alerts */}}
+    - name: erlmcp.info
+      interval: 5m
+      rules:
+        - alert: ERLMCPVersionMismatch
+          expr: |
+            count by (version) (erlmcp_build_info{job=~"erlmcp.*"}) > 1
+          labels:
+            severity: info
+            team: platform
+          annotations:
+            summary: "ERLMCP version mismatch detected"
+            description: "Multiple ERLMCP versions are running in the cluster."
+{{- end }}

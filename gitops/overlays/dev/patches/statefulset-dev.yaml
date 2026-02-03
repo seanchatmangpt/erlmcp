@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: erlmcp
+  namespace: erlmcp-dev
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: erlmcp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          env:
+            - name: ERLMCP_LOG_LEVEL
+              value: "debug"

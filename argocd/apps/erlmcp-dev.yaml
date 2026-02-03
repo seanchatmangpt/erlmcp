@@ -1,0 +1,124 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: erlmcp-dev
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: erlmcp
+    environment: dev
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: erlmcp
+  source:
+    repoURL: https://github.com/seanchatmangpt/erlmcp.git
+    targetRevision: main
+    path: gitops/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: erlmcp-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 10m
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/volumeClaimTemplates
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: erlmcp-staging
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: erlmcp
+    environment: staging
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: erlmcp
+  source:
+    repoURL: https://github.com/seanchatmangpt/erlmcp.git
+    targetRevision: main
+    path: gitops/overlays/staging
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: erlmcp-staging
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+      pruneLast: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 10m
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/volumeClaimTemplates
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: erlmcp-production
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: erlmcp
+    environment: production
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: erlmcp
+  source:
+    repoURL: https://github.com/seanchatmangpt/erlmcp.git
+    targetRevision: main
+    path: gitops/overlays/production
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: erlmcp-prod
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+      pruneLast: true
+    syncOptions:
+      - CreateNamespace=true
+      - PrunePropagationPolicy=foreground
+      - RespectIgnoreDifferences=true
+    retry:
+      limit: 10
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 10m
+  ignoreDifferences:
+    - group: apps
+      kind: StatefulSet
+      jsonPointers:
+        - /spec/volumeClaimTemplates
+    - group: ""
+      kind: Secret
+      jsonPointers:
+        - /data
+  revisionHistoryLimit: 10

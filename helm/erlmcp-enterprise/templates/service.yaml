@@ -1,0 +1,133 @@
+{{/*
+  ERLMCP Enterprise Service
+  Main service for external access
+*/}}
+{{- if .Values.service.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: service
+  annotations:
+    {{- with .Values.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    "erlmcp.io/service-type": "main"
+spec:
+  type: {{ .Values.service.type }}
+  {{- if and (eq .Values.service.type "LoadBalancer") .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
+  {{- if and (eq .Values.service.type "LoadBalancer") .Values.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml .Values.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  {{- if .Values.service.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  {{- if .Values.service.sessionAffinity }}
+  sessionAffinity: {{ .Values.service.sessionAffinity }}
+  {{- if .Values.service.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml .Values.service.sessionAffinityConfig | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  ports:
+    {{- if .Values.service.ports.http }}
+    - name: http
+      port: {{ .Values.service.ports.http.port }}
+      targetPort: {{ .Values.service.ports.http.targetPort }}
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.ports.http.nodePort }}
+      nodePort: {{ .Values.service.ports.http.nodePort }}
+      {{- end }}
+      protocol: TCP
+    {{- end }}
+    {{- if .Values.service.ports.https }}
+    - name: https
+      port: {{ .Values.service.ports.https.port }}
+      targetPort: {{ .Values.service.ports.https.targetPort }}
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.ports.https.nodePort }}
+      nodePort: {{ .Values.service.ports.https.nodePort }}
+      {{- end }}
+      protocol: TCP
+    {{- end }}
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    {{- include "erlmcp-enterprise.selectorLabels" . | nindent 4 }}
+    component: core
+{{- end }}
+---
+{{/*
+  ERLMCP Enterprise Headless Service
+  For cluster communication
+*/}}
+{{- if .Values.statefulset.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-headless
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: headless
+  annotations:
+    "erlmcp.io/service-type": "headless"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  publishNotReadyAddresses: true
+  ports:
+    - name: http
+      port: {{ .Values.service.ports.http.port }}
+      targetPort: {{ .Values.service.ports.http.targetPort }}
+      protocol: TCP
+    - name: epmd
+      port: 4369
+      targetPort: 4369
+      protocol: TCP
+    - name: distribution
+      port: 9100
+      targetPort: 9100
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    {{- include "erlmcp-enterprise.selectorLabels" . | nindent 4 }}
+    component: cluster
+{{- end }}
+---
+{{/*
+  ERLMCP Enterprise Metrics Service
+  For Prometheus scraping
+*/}}
+{{- if .Values.monitoring.prometheus.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: metrics
+  annotations:
+    "prometheus.io/scrape": "true"
+    "prometheus.io/path": "/metrics"
+    "prometheus.io/port": "9090"
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    {{- include "erlmcp-enterprise.selectorLabels" . | nindent 4 }}
+{{- end }}

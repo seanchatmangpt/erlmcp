@@ -1,0 +1,43 @@
+# Dockerfile for Prometheus with erlmcp configuration
+# This Dockerfile builds Prometheus with custom rules and configurations
+
+FROM prom/prometheus:v2.45.0
+
+# Create directories for configuration and data
+RUN mkdir -p /etc/prometheus /prometheus /prometheus/rules /prometheus/recording_rules
+
+# Copy configuration files
+COPY prometheus/prometheus.yml /etc/prometheus/prometheus.yml
+COPY prometheus/rules /etc/prometheus/rules
+COPY prometheus/recording_rules /etc/prometheus/recording_rules
+
+# Create Prometheus configuration directory
+RUN mkdir -p /etc/prometheus/console_libraries \
+             /etc/prometheus/consoles
+
+# Set working directory
+WORKDIR /etc/prometheus
+
+# Add non-root user
+RUN useradd -u 65534 -l -g nogroup -s /bin/false -d /etc/prometheus prometheus
+
+# Copy configuration files as non-root user
+COPY --chown=prometheus:nogroup prometheus/prometheus.yml /etc/prometheus/prometheus.yml
+COPY --chown=prometheus:nogroup prometheus/rules /etc/prometheus/rules
+COPY --chown=prometheus:nogroup prometheus/recording_rules /etc/prometheus/recording_rules
+
+# Expose ports
+EXPOSE 9090 9091
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:9090/-/healthy || exit 1
+
+# Command to run Prometheus
+CMD ["--config.file=/etc/prometheus/prometheus.yml", \
+     "--storage.tsdb.path=/prometheus", \
+     "--storage.tsdb.retention.time=15d", \
+     "--web.console.libraries=/etc/prometheus/console_libraries", \
+     "--web.console.templates=/etc/prometheus/consoles", \
+     "--web.enable-lifecycle", \
+     "--web.route-prefix=/prometheus"]

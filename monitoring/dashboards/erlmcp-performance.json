@@ -1,0 +1,502 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "panels": [],
+      "title": "Performance Dashboard",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Throughput metrics",
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 1},
+      "id": 2,
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "7.5.0",
+      "targets": [
+        {
+          "expr": "sum(rate(erlmcp_requests_total[5m]))",
+          "instant": true,
+          "interval": "30s",
+          "legendFormat": "Requests/sec"
+        }
+      ],
+      "title": "Throughput",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Average response time",
+      "gridPos": {"h": 8, "w": 6, "x": 6, "y": 1},
+      "id": 3,
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 0.1},
+            {"color": "red", "value": 1}
+          ]
+        }
+      },
+      "pluginVersion": "7.5.0",
+      "targets": [
+        {
+          "expr": "sum(rate(erlmcp_request_duration_seconds_sum[5m])) / sum(rate(erlmcp_request_duration_seconds_count[5m]))",
+          "instant": true,
+          "interval": "30s",
+          "legendFormat": "Avg response time"
+        }
+      ],
+      "title": "Avg Response Time",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Queue depth",
+      "gridPos": {"h": 8, "w": 6, "x": 12, "y": 1},
+      "id": 4,
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 100},
+            {"color": "red", "value": 500}
+          ]
+        }
+      },
+      "pluginVersion": "7.5.0",
+      "targets": [
+        {
+          "expr": "sum(erlmcp_queue_depth)",
+          "instant": true,
+          "interval": "30s",
+          "legendFormat": "Queue depth"
+        }
+      ],
+      "title": "Queue Depth",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Error rate",
+      "gridPos": {"h": 8, "w": 6, "x": 18, "y": 1},
+      "id": 5,
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "thresholds": {
+          "mode": "absolute",
+          "steps": [
+            {"color": "green", "value": null},
+            {"color": "yellow", "value": 0.01},
+            {"color": "red", "value": 0.1}
+          ]
+        }
+      },
+      "pluginVersion": "7.5.0",
+      "targets": [
+        {
+          "expr": "sum(rate(erlmcp_requests_total{status=~\"5..\"}[5m])) / sum(rate(erlmcp_requests_total[5m])) * 100",
+          "instant": true,
+          "interval": "30s",
+          "legendFormat": "Error rate %"
+        }
+      ],
+      "title": "Error Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 9},
+      "id": 6,
+      "options": {
+        "legend": {
+          "avg": false,
+          "current": false,
+          "max": false,
+          "min": false,
+          "show": true,
+          "total": false,
+          "values": false
+        },
+        "tooltip": {
+          "shared": true,
+          "sort": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(erlmcp_requests_total[5m]))",
+          "interval": "30s",
+          "legendFormat": "Total requests"
+        },
+        {
+          "expr": "sum(rate(erlmcp_requests_total{status=~\"2..\"}[5m]))",
+          "interval": "30s",
+          "legendFormat": "2xx"
+        },
+        {
+          "expr": "sum(rate(erlmcp_requests_total{status=~\"4..\"}[5m]))",
+          "interval": "30s",
+          "legendFormat": "4xx"
+        },
+        {
+          "expr": "sum(rate(erlmcp_requests_total{status=~\"5..\"}[5m]))",
+          "interval": "30s",
+          "legendFormat": "5xx"
+        }
+      ],
+      "title": "Request Rate by Status",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 17},
+      "id": 7,
+      "options": {
+        "legend": {
+          "avg": false,
+          "current": false,
+          "max": false,
+          "min": false,
+          "show": true,
+          "total": false,
+          "values": false
+        },
+        "tooltip": {
+          "shared": true,
+          "sort": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(erlmcp_request_duration_seconds_sum{component=\"core\"}[5m]) / rate(erlmcp_request_duration_seconds_count{component=\"core\"}[5m])",
+          "interval": "30s",
+          "legendFormat": "Core avg"
+        },
+        {
+          "expr": "rate(erlmcp_request_duration_seconds_sum{component=\"registry\"}[5m]) / rate(erlmcp_request_duration_seconds_count{component=\"registry\"}[5m])",
+          "interval": "30s",
+          "legendFormat": "Registry avg"
+        },
+        {
+          "expr": "rate(erlmcp_request_duration_seconds_sum{component=\"sessions\"}[5m]) / rate(erlmcp_request_duration_seconds_count{component=\"sessions\"}[5m])",
+          "interval": "30s",
+          "legendFormat": "Sessions avg"
+        },
+        {
+          "expr": "rate(erlmcp_request_duration_seconds_sum{component=\"transports\"}[5m]) / rate(erlmcp_request_duration_seconds_count{component=\"transports\"}[5m])",
+          "interval": "30s",
+          "legendFormat": "Transports avg"
+        }
+      ],
+      "title": "Response Time by Component",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 25},
+      "id": 8,
+      "options": {
+        "legend": {
+          "avg": false,
+          "current": false,
+          "max": false,
+          "min": false,
+          "show": true,
+          "total": false,
+          "values": false
+        },
+        "tooltip": {
+          "shared": true,
+          "sort": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le))",
+          "interval": "30s",
+          "legendFormat": "P50"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le))",
+          "interval": "30s",
+          "legendFormat": "P90"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le))",
+          "interval": "30s",
+          "legendFormat": "P95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le))",
+          "interval": "30s",
+          "legendFormat": "P99"
+        }
+      ],
+      "title": "Response Time Percentiles",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 33},
+      "id": 9,
+      "options": {
+        "legend": {
+          "avg": false,
+          "current": false,
+          "max": false,
+          "min": false,
+          "show": true,
+          "total": false,
+          "values": false
+        },
+        "tooltip": {
+          "shared": true,
+          "sort": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(erlmcp_tool_executions_total[5m]))",
+          "interval": "30s",
+          "legendFormat": "Tool executions"
+        },
+        {
+          "expr": "sum(rate(erlmcp_prompt_executions_total[5m]))",
+          "interval": "30s",
+          "legendFormat": "Prompt executions"
+        },
+        {
+          "expr": "sum(rate(erlmcp_api_quota_usage_total[5m]))",
+          "interval": "30s",
+          "legendFormat": "API quota usage"
+        }
+      ],
+      "title": "Business Activity",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 33},
+      "id": 10,
+      "options": {
+        "legend": {
+          "avg": false,
+          "current": false,
+          "max": false,
+          "min": false,
+          "show": true,
+          "total": false,
+          "values": false
+        },
+        "tooltip": {
+          "shared": true,
+          "sort": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(erlmcp_active_connections)",
+          "interval": "30s",
+          "legendFormat": "Active connections"
+        },
+        {
+          "expr": "sum(rate(erlmcp_connections_created_total[5m]))",
+          "interval": "30s",
+          "legendFormat": "Connections created rate"
+        },
+        {
+          "expr": "sum(rate(erlmcp_connections_closed_total[5m]))",
+          "interval": "30s",
+          "legendFormat": "Connections closed rate"
+        }
+      ],
+      "title": "Connection Metrics",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 41},
+      "id": 11,
+      "options": {
+        "legend": {
+          "avg": false,
+          "current": false,
+          "max": false,
+          "min": false,
+          "show": true,
+          "total": false,
+          "values": false
+        },
+        "tooltip": {
+          "shared": true,
+          "sort": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(erlmcp_cpu_usage_seconds_total[5m])) * 100",
+          "interval": "30s",
+          "legendFormat": "CPU usage"
+        },
+        {
+          "expr": "sum(rate(erlmcp_system_cpu_usage[5m])) * 100",
+          "interval": "30s",
+          "legendFormat": "System CPU"
+        }
+      ],
+      "title": "CPU Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 41},
+      "id": 12,
+      "options": {
+        "legend": {
+          "avg": false,
+          "current": false,
+          "max": false,
+          "min": false,
+          "show": true,
+          "total": false,
+          "values": false
+        },
+        "tooltip": {
+          "shared": true,
+          "sort": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(erlmcp_memory_usage_bytes) / 1024 / 1024",
+          "interval": "30s",
+          "legendFormat": "Memory usage"
+        },
+        {
+          "expr": "sum(erlmcp_memory_limit_bytes) / 1024 / 1024",
+          "interval": "30s",
+          "legendFormat": "Memory limit"
+        },
+        {
+          "expr": "sum(erlmcp_memory_usage_bytes) / sum(erlmcp_memory_limit_bytes) * 100",
+          "interval": "30s",
+          "legendFormat": "Memory %"
+        }
+      ],
+      "title": "Memory Usage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 49},
+      "id": 13,
+      "options": {
+        "legend": {
+          "avg": false,
+          "current": false,
+          "max": false,
+          "min": false,
+          "show": true,
+          "total": false,
+          "values": false
+        },
+        "tooltip": {
+          "shared": true,
+          "sort": 0
+        }
+      },
+      "targets": [
+        {
+          "expr": "rate(erlmcp_queue_operations_total[5m])",
+          "interval": "30s",
+          "legendFormat": "Queue operations"
+        },
+        {
+          "expr": "sum(erlmcp_queue_depth)",
+          "interval": "30s",
+          "legendFormat": "Queue depth"
+        },
+        {
+          "expr": "sum(erlmcp_queue_wait_time_seconds_sum[5m]) / sum(erlmcp_queue_wait_time_seconds_count[5m])",
+          "interval": "30s",
+          "legendFormat": "Avg queue wait time"
+        }
+      ],
+      "title": "Queue Performance",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 27,
+  "style": "dark",
+  "tags": ["performance", "erlmcp"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"]
+  },
+  "timezone": "browser",
+  "title": "erlmcp Performance Monitoring",
+  "uid": "erlmcp-performance",
+  "version": 1
+}

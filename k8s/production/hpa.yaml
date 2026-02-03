@@ -1,0 +1,409 @@
+---
+# ============================================================================
+# ErlMCP v3.0.0 - Production Horizontal Pod Autoscaler
+# ============================================================================
+# Horizontal Pod Autoscaler configuration for ErlMCP production deployment
+# Provides automatic scaling based on CPU, memory, and custom metrics
+# ============================================================================
+# Usage:
+#   kubectl apply -f k8s/production/hpa.yaml
+#   kubectl get hpa -n erlmcp-production
+#   kubectl describe hpa erlmcp -n erlmcp-production
+# ============================================================================
+
+---
+# ============================================================================
+# HPA - CPU and Memory based scaling
+# ============================================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: erlmcp
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    environment: production
+    component: autoscaling
+  annotations:
+    description: "ErlMCP horizontal pod autoscaler - CPU, memory, and custom metrics"
+spec:
+  # --------------------------------------------------------------------------
+  # SCALE TARGET - Deployment to scale
+  # --------------------------------------------------------------------------
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: erlmcp
+
+  # --------------------------------------------------------------------------
+  # REPLICA RANGE - Min/max pods
+  # --------------------------------------------------------------------------
+  minReplicas: 5
+  maxReplicas: 50
+
+  # --------------------------------------------------------------------------
+  # METRICS - Scaling triggers
+  # --------------------------------------------------------------------------
+  metrics:
+    # CPU utilization - scale when pods average 70% CPU
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # Memory utilization - scale when pods average 80% memory
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+    # Active connections - scale when each pod has 1000+ connections
+    - type: Pods
+      pods:
+        metric:
+          name: erlmcp_active_connections
+        target:
+          type: AverageValue
+          averageValue: "1000"
+
+    # Request rate - scale when request rate exceeds threshold
+    - type: Pods
+      pods:
+        metric:
+          name: erlmcp_request_rate
+        target:
+          type: AverageValue
+          averageValue: "100"
+
+    # Response time P99 - scale when P99 latency exceeds threshold
+    - type: Pods
+      pods:
+        metric:
+          name: erlmcp_response_time_p99
+        target:
+          type: AverageValue
+          averageValue: "500"  # 500ms
+
+  # --------------------------------------------------------------------------
+  # SCALING BEHAVIOR - Control scale up/down rates
+  # --------------------------------------------------------------------------
+  behavior:
+    # Scale down behavior - conservative to prevent oscillation
+    scaleDown:
+      # Stabilization window - wait 5 minutes before scaling down
+      stabilizationWindowSeconds: 300
+      policies:
+        # Max 25% of pods per 60 seconds
+        - type: Percent
+          value: 25
+          periodSeconds: 60
+        # Max 2 pods per 60 seconds
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      selectPolicy: Min
+
+    # Scale up behavior - aggressive for response to load spikes
+    scaleUp:
+      # No stabilization - scale up immediately
+      stabilizationWindowSeconds: 0
+      policies:
+        # Max 100% of pods per 30 seconds
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        # Max 5 pods per 30 seconds
+        - type: Pods
+          value: 5
+          periodSeconds: 30
+      selectPolicy: Max
+
+---
+# ============================================================================
+# VPA - Vertical Pod Autoscaler (optional)
+# ============================================================================
+# Vertical Pod Autoscaler for automatic resource requests/limits adjustment
+# WARNING: Use with caution in production - can cause pod restarts
+# ============================================================================
+# Uncomment to enable VPA
+# ----------------------------------------------------------------------------
+#apiVersion: autoscaling.k8s.io/v1
+#kind: VerticalPodAutoscaler
+#metadata:
+#  name: erlmcp-vpa
+#  namespace: erlmcp-production
+#  labels:
+#    app: erlmcp
+#    component: vertical-autoscaling
+#spec:
+#  targetRef:
+#    apiVersion: apps/v1
+#    kind: Deployment
+#    name: erlmcp
+#  updatePolicy:
+#    updateMode: "Off"  # Options: Off, Initial, Recreate, Auto
+#  resourcePolicy:
+#    containerPolicies:
+#      - containerName: erlmcp
+#        mode: "Off"  # Don't auto-adjust erlmcp container
+#        minAllowed:
+#          cpu: 500m
+#          memory: 1Gi
+#        maxAllowed:
+#          cpu: 4000m
+#          memory: 8Gi
+#      - containerName: log-collector
+#        mode: "Auto"  # Auto-adjust log collector
+#        minAllowed:
+#          cpu: 50m
+#          memory: 64Mi
+#        maxAllowed:
+#          cpu: 200m
+#          memory: 256Mi
+
+---
+# ============================================================================
+# POD DISRUPTION BUDGET - Availability during maintenance
+# ============================================================================
+# Ensures minimum number of pods remain available during voluntary disruptions
+# ============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-pdb
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    component: pod-disruption-budget
+  annotations:
+    description: "Ensures at least 3 pods remain available during maintenance"
+spec:
+  # Minimum available pods - absolute number
+  minAvailable: 3
+  # Alternative: use percentage
+  # minAvailable: 60%
+
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: production
+      component: server
+
+---
+# ============================================================================
+# CUSTOM METRICS - ServiceMonitor for Prometheus Adapter
+# ============================================================================
+# Defines custom metrics for HPA scaling
+# Requires Prometheus Adapter installed
+# ============================================================================
+#apiVersion: metrics.api.k8s.io/v1alpha1
+#kind: MetricMetadata
+#metadata:
+#  name: erlmcp_active_connections
+#  labels:
+#    app: erlmcp
+#spec:
+#  description: "Number of active connections per pod"
+#  type: Gauge
+#
+#---
+#apiVersion: metrics.api.k8s.io/v1alpha1
+#kind: MetricMetadata
+#metadata:
+#  name: erlmcp_request_rate
+#  labels:
+#    app: erlmcp
+#spec:
+#  description: "Request rate per pod (requests/second)"
+#  type: Gauge
+#
+#---
+#apiVersion: metrics.api.k8s.io/v1alpha1
+#kind: MetricMetadata
+#metadata:
+#  name: erlmcp_response_time_p99
+#  labels:
+#    app: erlmcp
+#spec:
+#  description: "P99 response time in milliseconds"
+#  type: Gauge
+
+---
+# ============================================================================
+# PROMETHEUS RULES - Metrics aggregation for HPA
+# ============================================================================
+# Prometheus rules for aggregating metrics per pod for HPA consumption
+# ============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: erlmcp-hpa-metrics
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    component: prometheus-rules
+    release: prometheus
+spec:
+  groups:
+    - name: erlmcp_hpa_metrics
+      interval: 30s
+      rules:
+        # Active connections per pod
+        - record: erlmcp_active_connections
+          expr: |
+            sum(erlmcp_connections_active{namespace="erlmcp-production",pod=~"erlmcp-.*"})
+            by (pod)
+
+        # Request rate per pod (requests per second)
+        - record: erlmcp_request_rate
+          expr: |
+            sum(rate(erlmcp_http_requests_total{namespace="erlmcp-production",pod=~"erlmcp-.*"}[5m]))
+            by (pod)
+
+        # P99 response time per pod
+        - record: erlmcp_response_time_p99
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(erlmcp_http_request_duration_seconds_bucket{namespace="erlmcp-production",pod=~"erlmcp-.*"}[5m]))
+              by (pod, le)
+            )
+
+        # Error rate per pod
+        - record: erlmcp_error_rate
+          expr: |
+            sum(rate(erlmcp_http_requests_total{namespace="erlmcp-production",pod=~"erlmcp-.*",status=~"5.."}[5m]))
+            by (pod)
+            /
+            sum(rate(erlmcp_http_requests_total{namespace="erlmcp-production",pod=~"erlmcp-.*"}[5m]))
+            by (pod)
+            * 100
+
+---
+# ============================================================================
+# SERVICE MONITOR - Prometheus scraping configuration
+# ============================================================================
+# Configures Prometheus to scrape ErlMCP metrics
+# ============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: erlmcp
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    component: metrics
+spec:
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: production
+  endpoints:
+    - port: metrics
+      interval: 15s
+      path: /metrics
+      scheme: http
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+  namespaceSelector:
+    matchNames:
+      - erlmcp-production
+
+---
+# ============================================================================
+# SCALING POLICY DOCUMENTATION
+# ============================================================================
+# ConfigMap documenting the scaling policies and thresholds
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-scaling-policy
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    component: documentation
+data:
+  scaling-policy.md: |
+    # ErlMCP Production Scaling Policy
+
+    ## Horizontal Pod Autoscaler (HPA)
+
+    ### Target Metrics
+    - **CPU**: 70% utilization
+    - **Memory**: 80% utilization
+    - **Active Connections**: 1000 per pod
+    - **Request Rate**: 100 req/s per pod
+    - **P99 Latency**: 500ms
+
+    ### Replica Range
+    - **Minimum**: 5 pods
+    - **Maximum**: 50 pods
+    - **Default**: 5 pods
+
+    ### Scale Down Behavior
+    - **Stabilization Window**: 5 minutes (prevents flapping)
+    - **Max Down**: 25% or 2 pods per minute
+    - **Policy**: Conservative (selects minimum change)
+
+    ### Scale Up Behavior
+    - **Stabilization Window**: 0 seconds (immediate response)
+    - **Max Up**: 100% or 5 pods per 30 seconds
+    - **Policy**: Aggressive (selects maximum change)
+
+    ## Pod Disruption Budget (PDB)
+
+    - **Minimum Available**: 3 pods
+    - **Purpose**: Ensure availability during node maintenance
+
+    ## Manual Scaling
+
+    ### Scale to specific replica count:
+    ```bash
+    kubectl scale deployment erlmcp --replicas=10 -n erlmcp-production
+    ```
+
+    ### Temporarily disable autoscaler:
+    ```bash
+    kubectl autoscale deployment erlmcp --min=5 --max=50 --cpu-percent=70 -n erlmcp-production
+    ```
+
+    ## Monitoring
+
+    ### Check HPA status:
+    ```bash
+    kubectl get hpa erlmcp -n erlmcp-production
+    kubectl describe hpa erlmcp -n erlmcp-production
+    ```
+
+    ### View scaling events:
+    ```bash
+    kubectl get events -n erlmcp-production --field-selector reason=SuccessfulCreate,reason=SuccessfulDelete
+    ```
+
+    ## Troubleshooting
+
+    ### HPA not scaling:
+    1. Check metrics server is running: `kubectl get apiservice v1beta1.metrics.k8s.io`
+    2. Verify resource requests are set on pods
+    3. Check current vs target metrics in `kubectl describe hpa`
+
+    ### Scaling oscillation:
+    1. Increase stabilization window
+    2. Adjust metric thresholds
+    3. Consider custom metrics instead of CPU/memory
+
+    ## Alerts
+
+    ### Recommended Prometheus Alerts:
+    - Scale limit reached (max replicas)
+    - Scale down events occurring too frequently
+    - Pods consistently at resource limits

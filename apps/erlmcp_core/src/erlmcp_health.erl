@@ -701,7 +701,7 @@ check_system_memory() ->
                 undefined ->
                     %% Fallback to a reasonable default
                     16 * 1024 * 1024 * 1024;  % 16GB
-                _ when is_pid(_) ->
+                Pid when is_pid(Pid) ->
                     %% Try to get stats from memory monitor
                     case erlmcp_memory_monitor:get_memory_stats() of
                         Stats when is_map(Stats) ->

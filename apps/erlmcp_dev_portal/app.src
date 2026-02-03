@@ -1,0 +1,91 @@
+{application, erlmcp_dev_portal,
+ [{description, "Enterprise Developer Portal for erlmcp"},
+  {vsn, "3.0.0"},
+  {modules, [erlmcp_dev_portal,
+             erlmcp_dev_portal_app,
+             erlmcp_dev_portal_sup,
+             erlmcp_dev_portal_home,
+             erlmcp_dev_portal_docs,
+             erlmcp_dev_portal_explorer,
+             erlmcp_dev_portal_dashboard,
+             erlmcp_dev_portal_test,
+             erlmcp_dev_portal_auth,
+             erlmcp_dev_portal_community,
+             erlmcp_dev_portal_support,
+             erlmcp_dev_portal_analytics,
+             erlmcp_dev_portal_health,
+             erlmcp_dev_portal_assets,
+             erlmcp_dev_portal_config,
+             erlmcp_dev_portal_users,
+             erlmcp_dev_portal_sessions,
+             erlmcp_dev_portal_forums,
+             erlmcp_dev_portal_tutorials]},
+  {registered, []},
+  {applications, [kernel, stdlib, mnesia, jsx, cowboy, erlmcp_api_gateway, erlmcp_api_management]},
+  {mod, {erlmcp_dev_portal_app, []}},
+  {start_phases, []},
+  {env, [
+         %% Portal Configuration
+         {portal_title, "erlmcp Developer Portal"},
+         {portal_description, "Enterprise API Management Platform"},
+         {theme, "default"},
+         {features, [
+             {api_explorer, true},
+             {api_testing, true},
+             {documentation, true},
+             {analytics, true},
+             {community, true},
+             {support, true}
+         ]},
+
+         %% Authentication
+         {auth, [
+             {enabled, true},
+             {providers, ["developer"]},
+             {session_timeout, 86400}
+         ]},
+
+         %% Analytics
+         {analytics, [
+             {enabled, true},
+             {collection_interval, 60000},
+             {retention_period, 2592000}
+         ]},
+
+         %% Rate Limiting
+         {rate_limiting, [
+             {enabled, true},
+             {default_limit, 100},
+             {burst_limit, 200}
+         ]},
+
+         %% Caching
+         {caching, [
+             {enabled, true},
+             {ttl, 3600},
+             {max_size, 1000}
+         ]},
+
+         %% Database
+         {database, [
+             {type, mnesia},
+             {nodes, [node()]},
+             {backup_interval, 86400}
+         ]},
+
+         %% Logging
+         {logging, [
+             {level, info},
+             {file, "erlmcp_dev_portal.log"},
+             {size, 10485760}, % 10MB
+             {count, 5}
+         ]},
+
+         %% Monitoring
+         {monitoring, [
+             {enabled, true},
+             {health_check_interval, 30000},
+             {metrics_interval, 60000}
+         ]}
+        ]}
+ ]}.

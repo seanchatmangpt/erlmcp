@@ -1,0 +1,119 @@
+[
+    {kernel, [
+        {logger_level, info},
+        {logger, [
+            {handler, default, logger_std_h, #{
+                level => info,
+                formatter => logger_formatter,
+                config => #{
+                    date => "$date $time",
+                    metadata => #[
+                        {node, node},
+                        {line, line},
+                        {module, module},
+                        {function, function}
+                    ],
+                    single_line => true
+                }
+            }}
+        ]}
+    ]},
+    {sasl, [
+        {sasl_error_logger, {file, "/var/log/erlmcp/sasl.log"}}
+    ]},
+    {mnesia, [
+        {dir, "/data/sessions"},
+        {dump_log_load_regulation, true},
+        {auto_repair, true},
+        {backup_type, incremental}
+    ]},
+    {erlmcp, [
+        %% Core Configuration
+        {log_level, info},
+        {log_dir, "/var/log/erlmcp"},
+        {cache_dir, "/data/cache"},
+        {session_backend, ets},
+        {session_ttl, 3600},
+        {max_connections, 50000},
+        {connection_timeout, 30000},
+        {request_timeout, 30000},
+
+        %% Transport Configuration
+        {transports, [
+            {stdio, #{enabled => false}},
+            {tcp, #{enabled => true, port => 8080, backlog => 1024}},
+            {http, #{enabled => true, port => 8081, ssl => false,
+                     cowboy_opts => #{env => dispatch: cowboy:compile([])}}},
+            {websocket, #{enabled => true, port => 8081, cowboy_opts => #{}}},
+            {sse, #{enabled => true, port => 8081, path => "/sse"}}
+        ]},
+
+        %% Observability
+        {observability, [
+            {enabled, true},
+            {opentelemetry_enabled, true},
+            {metrics_port, 9090},
+            {metrics_interval, 5000},
+            {tracing_enabled, true},
+            {tracing_exporter, otlp},
+            {tracing_endpoint, "localhost:4317"}
+        ]},
+
+        %% Security
+        {auth, [
+            {enabled, true},
+            {jwt_secret, "$ERLMCP_JWT_SECRET"},
+            {oauth_providers, []},
+            {rate_limiting, [
+                {enabled, true},
+                {limit, 10000},
+                {window_ms, 60000}
+            ]}
+        ]},
+
+        %% Cluster Configuration
+        {cluster, [
+            {enabled, true},
+            {discovery_strategy, swarm},
+            {node_name, "$ERLMCP_NODE_NAME@$(hostname)"},
+            {cookie, "$ERLMCP_COOKIE"},
+            {cluster_port, 9000},
+            {heartbeat_interval, 10000}
+        ]},
+
+        %% Resource Management
+        {resources, [
+            {enabled, true},
+            {subscription_backlog, 1000},
+            {event_buffer_size, 10000},
+            {queue_timeout, 5000}
+        ]},
+
+        %% Health Monitoring
+        {health, [
+            {enabled, true},
+            {check_interval, 5000},
+            {response_timeout, 2000},
+            {max_restarts, 3},
+            {restart_delay, 5000}
+        ]}
+    ]},
+    {opentelemetry, [
+        {exporters, [
+            {otlp, #{
+                endpoint => "localhost:4317",
+                headers => #{},
+                ssl => #{
+                    verify => verify_none,
+                    server_name_indication => disable
+                }
+            }}
+        ]},
+        {processors, [
+            {batch, #{
+                max_export_batch_size => 512,
+                max_export_timeout => 5000
+            }}
+        ]}
+    ]}
+].

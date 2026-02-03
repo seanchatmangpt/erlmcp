@@ -1,0 +1,40 @@
+{application, erlmcp_api_management,
+ [{description, "Enterprise API Management System for erlmcp"},
+  {vsn, "3.0.0"},
+  {modules, [erlmcp_api_management,
+             erlmcp_api_registry,
+             erlmcp_api_consumer,
+             erlmcp_api_plugin,
+             erlmcp_api_lifecycle,
+             erlmcp_api_documentation,
+             erlmcp_api_versioning,
+             erlmcp_api_testing,
+             erlmcp_api_compliance,
+             erlmcp_api_performance]},
+  {registered, []},
+  {applications, [kernel, stdlib, mnesia, jsx, erlmcp_api_gateway]},
+  {mod, {erlmcp_api_management_app, []}},
+  {start_phases, []},
+  {env, [
+         %% Management Configuration
+         {registry_enabled, true},
+         {lifecycle_enabled, true},
+         {documentation_enabled, true},
+
+         %% API Registry
+         {registry_type, mnesia},
+         {registry_retention, 604800}, %% 7 days
+
+         %% Lifecycle Management
+         {versioning_enabled, true},
+         {max_versions, 10},
+
+         %% Documentation
+         {docs_format, openapi},
+         {docs_auto_generate, true},
+
+         %% Compliance
+         {compliance_framework, iso27001},
+         {audit_logging, true}
+        ]}
+ ]}.

@@ -1,0 +1,21 @@
+apiVersion: v2
+name: erlmcp-enterprise
+description: A Helm chart for ERLMCP v3 Enterprise deployment
+version: 3.0.0
+appVersion: "3.0.0"
+home: https://github.com/erlang-mcp/erlmcp
+sources:
+  - https://github.com/erlang-mcp/erlmcp
+keywords:
+  - erlang
+  - mcp
+  - chat
+  - enterprise
+  - scalable
+maintainers:
+  - name: erlmcp-team
+    email: team@erlmcp.com
+annotations:
+  category: Enterprise
+  complexity: advanced
+icon: https://erlang.org/doc/img/erlang.png

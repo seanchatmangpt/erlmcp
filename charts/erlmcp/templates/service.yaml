@@ -1,0 +1,31 @@
+{{- if .Values.erlmcp.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.erlmcp.service.annotations }}
+    {{- toYaml .Values.erlmcp.service.annotations | nindent 4 }}
+    {{- end }}
+    {{- if .Values.global.common.tls.enabled }}
+    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "{{ .Values.global.tls.secretArn }}"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "HTTP"
+    service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
+    {{- end }}
+    {{- if .Values.global.common.domain }}
+    external-dns.alpha.kubernetes.io/hostname: {{ .Values.erlmcp.service.port }}.{{ include "erlmcp.fullname" . }}.{{ .Release.Namespace }}.{{ .Values.global.common.domain }}
+    external-dns.alpha.kubernetes.io/ttl: "300"
+    {{- end }}
+spec:
+  type: {{ .Values.erlmcp.service.type }}
+  ports:
+    - port: {{ .Values.erlmcp.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+{{- end }}

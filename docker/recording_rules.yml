@@ -1,0 +1,275 @@
+# ==============================================================================
+# erlmcp v3 Prometheus Recording Rules
+# Pre-computed metrics for dashboard queries
+# ==============================================================================
+
+groups:
+  - name: erlmcp_metrics
+    interval: 15s
+    rules:
+      # ================================================================
+      # Request Metrics
+      # ================================================================
+      - record: erlmcp:request_rate
+        expr: rate(erlmcp_requests_total[5m])
+
+      - record: erlmcp:request_rate_1m
+        expr: rate(erlmcp_requests_total[1m])
+
+      - record: erlmcp:request_rate_by_method
+        expr: rate(erlmcp_requests_total[5m]) by (method)
+
+      - record: erlmcp:request_rate_by_transport
+        expr: rate(erlmcp_requests_total[5m]) by (transport)
+
+      - record: erlmcp:requests_5m
+        expr: increase(erlmcp_requests_total[5m])
+
+      - record: erlmcp:requests_1h
+        expr: increase(erlmcp_requests_total[1h])
+
+      # ================================================================
+      # Error Metrics
+      # ================================================================
+      - record: erlmcp:error_rate
+        expr: |
+          rate(erlmcp_errors_total[5m]) /
+          rate(erlmcp_requests_total[5m])
+
+      - record: erlmcp:error_rate_by_type
+        expr: |
+          rate(erlmcp_errors_total[5m]) by (error_type) /
+          rate(erlmcp_requests_total[5m])
+
+      - record: erlmcp:success_rate
+        expr: 1 - erlmcp:error_rate
+
+      # ================================================================
+      # Latency Metrics
+      # ================================================================
+      - record: erlmcp:p50_latency
+        expr: |
+          histogram_quantile(0.50,
+            rate(erlmcp_request_duration_seconds_bucket[5m])
+          )
+
+      - record: erlmcp:p95_latency
+        expr: |
+          histogram_quantile(0.95,
+            rate(erlmcp_request_duration_seconds_bucket[5m])
+          )
+
+      - record: erlmcp:p99_latency
+        expr: |
+          histogram_quantile(0.99,
+            rate(erlmcp_request_duration_seconds_bucket[5m])
+          )
+
+      - record: erlmcp:avg_latency
+        expr: |
+          rate(erlmcp_request_duration_seconds_sum[5m]) /
+          rate(erlmcp_request_duration_seconds_count[5m])
+
+      - record: erlmcp:p95_latency_by_method
+        expr: |
+          histogram_quantile(0.95,
+            rate(erlmcp_request_duration_seconds_bucket[5m])
+          ) by (method)
+
+      # ================================================================
+      # Connection Metrics
+      # ================================================================
+      - record: erlmcp:connections_active
+        expr: erlmcp_connections_total - erlmcp_connections_closed_total
+
+      - record: erlmcp:connection_rate
+        expr: rate(erlmcp_connections_total[5m])
+
+      - record: erlmcp:connection_close_rate
+        expr: rate(erlmcp_connections_closed_total[5m])
+
+      # ================================================================
+      # Session Metrics
+      # ================================================================
+      - record: erlmcp:sessions_active
+        expr: erlmcp_active_sessions
+
+      - record: erlmcp:session_create_rate
+        expr: rate(erlmcp_sessions_created_total[5m])
+
+      - record: erlmcp:session_close_rate
+        expr: rate(erlmcp_sessions_closed_total[5m])
+
+      - record: erlmcp:session_duration_avg
+        expr: |
+          histogram_quantile(0.50,
+            rate(erlmcp_session_duration_seconds_bucket[5m])
+          )
+
+      # ================================================================
+      # Transport Metrics
+      # ================================================================
+      - record: erlmcp:transport_request_rate
+        expr: rate(erlmcp_transport_requests_total[5m]) by (transport)
+
+      - record: erlmcp:transport_error_rate
+        expr: |
+          rate(erlmcp_transport_errors_total[5m]) by (transport) /
+          rate(erlmcp_transport_requests_total[5m]) by (transport)
+
+      - record: erlmcp:transport_latency
+        expr: |
+          histogram_quantile(0.95,
+            rate(erlmcp_transport_duration_seconds_bucket[5m])
+          ) by (transport)
+
+      # ================================================================
+      # Resource Metrics
+      # ================================================================
+      - record: erlmcp:memory_total_gb
+        expr: erlmcp_memory_bytes{type="total"} / 1073741824
+
+      - record: erlmcp:memory_processes_gb
+        expr: erlmcp_memory_bytes{type="processes"} / 1073741824
+
+      - record: erlmcp:memory_system_gb
+        expr: erlmcp_memory_bytes{type="system"} / 1073741824
+
+      - record: erlmcp:memory_usage_percent
+        expr: |
+          (erlmcp_memory_bytes{type="total"} /
+           erlmcp_memory_limit_bytes) * 100
+
+      - record: erlmcp:cpu_usage_percent
+        expr: erlmcp_cpu_usage_percent
+
+      # ================================================================
+      # Process Metrics
+      # ================================================================
+      - record: erlmcp:process_count
+        expr: erlmcp_process_count
+
+      - record: erlmcp:reduction_count
+        expr: rate(erlmcp_reductions_total[5m])
+
+      - record: erlmcp:gc_count
+        expr: rate(erlmcp_gc_count[5m])
+
+      - record: erlmcp:gc_words_reclaimed
+        expr: rate(erlmcp_gc_words_reclaimed[5m])
+
+      # ================================================================
+      # Queue Metrics
+      # ================================================================
+      - record: erlmcp:queue_size
+        expr: erlmcp_queue_size
+
+      - record: erlmcp:queue_latency
+        expr: |
+          histogram_quantile(0.95,
+            rate(erlmcp_queue_wait_seconds_bucket[5m])
+          )
+
+      # ================================================================
+      # Security Metrics
+      # ================================================================
+      - record: erlmcp:auth_success_rate
+        expr: |
+          1 - (rate(erlmcp_auth_failures_total[5m]) /
+               rate(erlmcp_auth_attempts_total[5m]))
+
+      - record: erlmcp:auth_attempt_rate
+        expr: rate(erlmcp_auth_attempts_total[5m])
+
+      - record: erlmcp:security_event_rate
+        expr: rate(erlmcp_security_events_total[5m])
+
+      - record: erlmcp:rate_limit_hit_rate
+        expr: rate(erlmcp_rate_limit_exceeded_total[5m])
+
+      # ================================================================
+      # Database Metrics (if applicable)
+      # ================================================================
+      - record: erlmcp:db_connections_active
+        expr: erlmcp_db_connections_active
+
+      - record: erlmcp:db_query_rate
+        expr: rate(erlmcp_db_queries_total[5m])
+
+      - record: erlmcp:db_error_rate
+        expr: |
+          rate(erlmcp_db_errors_total[5m]) /
+          rate(erlmcp_db_queries_total[5m])
+
+      - record: erlmcp:db_query_latency_p95
+        expr: |
+          histogram_quantile(0.95,
+            rate(erlmcp_db_query_duration_seconds_bucket[5m])
+          )
+
+      # ================================================================
+      # Business Metrics
+      # ================================================================
+      - record: erlmcp:tool_invocation_rate
+        expr: rate(erlmcp_tools_invoked_total[5m])
+
+      - record: erlmcp:tool_invocation_rate_by_tool
+        expr: rate(erlmcp_tools_invoked_total[5m]) by (tool)
+
+      - record: erlmcp:resource_access_rate
+        expr: rate(erlmcp_resources_accessed_total[5m])
+
+      - record: erlmcp:message_rate
+        expr: rate(erlmcp_messages_processed_total[5m])
+
+      # ================================================================
+      # SLA Metrics
+      # ================================================================
+      - record: erlmcp:sla_uptime
+        expr: |
+          avg_over_time(up{job="erlmcp-core"}[30d])
+
+      - record: erlmcp:sla_error_budget
+        expr: |
+          (1 - erlmcp:error_rate) / 0.999
+
+      - record: erlmcp:sla_latency_compliance
+        expr: |
+          (
+            count(
+              erlmcp:p95_latency < 0.5
+            ) /
+            count(erlmcp:p95_latency)
+          ) * 100
+
+  - name: erlmcp_aggregations
+    interval: 1m
+    rules:
+      # ================================================================
+      # Multi-instance Aggregations
+      # ================================================================
+      - record: erlmcp:cluster_request_rate
+        expr: sum(rate(erlmcp_requests_total[5m]))
+
+      - record: erlmcp:cluster_error_rate
+        expr: |
+          sum(rate(erlmcp_errors_total[5m])) /
+          sum(rate(erlmcp_requests_total[5m]))
+
+      - record: erlmcp:cluster_p95_latency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le)
+          )
+
+      - record: erlmcp:cluster_connections_total
+        expr: sum(erlmcp_connections_total)
+
+      - record: erlmcp:cluster_sessions_total
+        expr: sum(erlmcp_active_sessions)
+
+      - record: erlmcp:cluster_memory_total_gb
+        expr: sum(erlmcp_memory_bytes{type="total"}) / 1073741824
+
+      - record: erlmcp:cluster_cpu_avg
+        expr: avg(erlmcp_cpu_usage_percent)

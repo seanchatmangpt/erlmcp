@@ -1,0 +1,151 @@
+---
+# Blue-Green Ingress with Traffic Splitting
+# Supports automated switching between blue and green deployments
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-blue-green-ingress
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    deployment-type: blue-green
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/upstream-vhost: "staging.erlmcp.com"
+    nginx.ingress.kubernetes.io/load-balance: "least_conn"
+    nginx.ingress.kubernetes.io/connections-limit: "1000"
+    # Canary configuration - set to true when testing new deployment
+    nginx.ingress.kubernetes.io/canary: "false"
+    nginx.ingress.kubernetes.io/canary-by-header: "X-Blue-Green"
+    nginx.ingress.kubernetes.io/canary-by-header-value: "green"
+    nginx.ingress.kubernetes.io/canary-weight: "0"
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - staging.erlmcp.com
+    - preview.staging.erlmcp.com
+    secretName: erlmcp-staging-tls
+  rules:
+  # Main ingress - routes to active deployment
+  - host: staging.erlmcp.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-active
+            port:
+              number: 8080
+      - path: /mcp
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-active
+            port:
+              number: 8080
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-active
+            port:
+              number: 8080
+  # Preview ingress - routes to staging deployment
+  - host: preview.staging.erlmcp.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-preview
+            port:
+              number: 8080
+---
+# Canary Ingress for Gradual Traffic Shift
+# This allows A/B testing and gradual rollout
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-canary-ingress
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    deployment-type: canary
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: "/"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    # Canary annotations - modify these to control traffic split
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "10"
+    nginx.ingress.kubernetes.io/canary-by-header: "X-Canary"
+    nginx.ingress.kubernetes.io/canary-by-header-value: "true"
+    nginx.ingress.kubernetes.io/canary-by-cookie: "canary"
+    nginx.ingress.kubernetes.io/canary-by-cookie-value: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - canary.staging.erlmcp.com
+    secretName: erlmcp-staging-canary-tls
+  rules:
+  - host: canary.staging.erlmcp.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-canary
+            port:
+              number: 8080
+---
+# Split Ingress for Testing Both Deployments
+# Access blue on port 8081, green on port 8082
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-split-ingress
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    role: split-testing
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: "/"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/server-snippets: |
+      more_set_headers "X-Deployment-Color: $upstream_addr";
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: split.staging.erlmcp.com
+    http:
+      paths:
+      - path: /blue
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-active
+            port:
+              number: 8080
+      - path: /green
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-preview
+            port:
+              number: 8080

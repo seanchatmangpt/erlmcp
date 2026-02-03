@@ -1,0 +1,44 @@
+{{ define "email.from" }}alerts@erlmcp.com{{ end }}
+{{ define "email.subject" }}[{{ if eq .Status "firing" }}FIRING{{ else }}RESOLVED{{ end }}] {{ .GroupLabels.alertname }}{{ end }}
+
+{{ define "email.body" }}
+{{ if eq .Status "firing" }}
+Alert: {{ .GroupLabels.alertname }}
+Status: FIRING
+Priority: {{ .GroupLabels.priority }}
+Cluster: {{ .GroupLabels.cluster }}
+Environment: {{ .GroupLabels.environment }}
+Region: {{ .GroupLabels.region }}
+
+{{ range .Alerts }}
+Alert: {{ .Annotations.summary }}
+Description: {{ .Annotations.description }}
+Priority: {{ .Labels.priority }}
+Instance: {{ .Labels.instance }}
+Severity: {{ .Labels.severity }}
+Started At: {{ .StartsAt }}
+Labels:
+  {{ range .Labels }}{{ .Name }} = {{ .Value }}
+  {{ end }}
+{{ end }}
+
+Recommended Actions:
+{{ if .GroupLabels.priority }}P0 - Critical: Engage on-call engineer immediately
+{{ else if .GroupLabels.priority }}P1 - High: Investigate and resolve within 1 hour
+{{ else if .GroupLabels.priority }}P2 - Medium: Investigate and resolve within 4 hours
+{{ else if .GroupLabels.priority }}P3 - Low: Investigate and resolve within 24 hours
+{{ end }}
+
+Runbook: {{ .GroupAnnotations.runbook_url | default "Not available" }}
+Dashboard: {{ .GroupAnnotations.dashboard_url | default "Not available" }}
+
+{{ else }}
+Alert: {{ .GroupLabels.alertname }}
+Status: RESOLVED
+Priority: {{ .GroupLabels.priority }}
+Cluster: {{ .GroupLabels.cluster }}
+Duration: {{ .EndsAt.Sub .StartsAt }}
+
+Summary: The alert has been resolved.
+{{ end }}
+{{ end }}

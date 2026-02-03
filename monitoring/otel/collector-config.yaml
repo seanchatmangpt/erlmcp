@@ -1,0 +1,135 @@
+# OpenTelemetry Collector Configuration for erlmcp v3
+
+receivers:
+  # Prometheus receiver for pulling metrics
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'erlmcp'
+          scrape_interval: 15s
+          honor_labels: true
+          metrics_path: /metrics
+          static_configs:
+            - targets:
+              - erlmcp-core:8080
+              - erlmcp-transports:8081
+              - erlmcp-sessions:8082
+              - erlmcp-registry:8083
+          relabel_configs:
+            - source_labels: [__address__]
+              target_label: instance
+
+  # OTLP receiver for metrics and traces
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Jaeger receiver for traces
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:14250
+      thrift_compact:
+        endpoint: 0.0.0.0:6831
+      thrift_http:
+        endpoint: 0.0.0.0:14268
+
+  # Prometheus receiver for Push Gateway
+  prometheus_pushgateway:
+    endpoint: 0.0.0.0:9091
+    add_metric_suffix: true
+
+processors:
+  # Batch processor for batching
+  batch:
+    timeout: 1s
+    send_batch_max_size: 10000
+
+  # Memory processor for resource metrics
+  memory:
+    attributes:
+      host.name: ${HOSTNAME}
+      host.id: ${HOST_ID}
+
+  # Resource detection
+  resource:
+    attributes:
+      service.name: erlmcp
+      service.instance.id: ${HOSTNAME}
+      service.version: 3.0.0
+      service.namespace: monitoring
+      service.environment: ${ENVIRONMENT:-production}
+
+  # Span processor for traces
+  trace:
+    attributes:
+      _otelLibraryName: "erlmcp"
+
+exporters:
+  # Prometheus exporter for metrics
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: erlmcp
+
+  # Jaeger exporter for traces
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+
+  # OTLP exporter to backend
+  otlp:
+    endpoint: "otlp-collector:4317"
+    compression: gzip
+
+  # Loki exporter for logs
+  loki:
+    endpoint: http://loki:3100/loki/api/v1/push
+    labels:
+      job: erlmcp
+      host: ${HOSTNAME}
+
+  # Elasticsearch exporter for logs
+  elasticsearch:
+    hosts: ["elasticsearch:9200"]
+    index: erlmcp-logs
+    compress: true
+    tls:
+      insecure: true
+
+  # File exporter for debugging
+  file:
+    path: /tmp/otel-erlmcp.json
+
+extensions:
+  # Health check extension
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  # Zpages extension
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+service:
+  extensions: [health_check, zpages]
+  pipelines:
+    # Metrics pipeline
+    metrics:
+      receivers: [prometheus, otlp, prometheus_pushgateway]
+      processors: [memory, batch]
+      exporters: [prometheus, otlp]
+
+    # Traces pipeline
+    traces:
+      receivers: [otlp, jaeger]
+      processors: [memory, trace, batch]
+      exporters: [jaeger, otlp]
+
+    # Logs pipeline
+    logs:
+      receivers: [otlp]
+      processors: [memory, batch]
+      exporters: [loki, elasticsearch, file]

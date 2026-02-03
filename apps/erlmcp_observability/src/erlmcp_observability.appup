@@ -1,0 +1,106 @@
+%% -*- erlang -*-
+%% vim: set ft=erlang ts=4 sw=4 et:
+%%%
+%%% erlmcp_observability.appup - Hot Code Upgrade Instructions
+%%%
+%%% Purpose: Zero-downtime upgrade for observability layer
+%%% Version: 2.1.0 -> 3.0.0
+%%%
+%%% Upgrade Strategy:
+%%%   1. Pause metrics collection (non-critical)
+%%%   2. Reload OTEL instrumentation
+%%%   3. Resume monitoring
+%%%
+%%% Supported Versions:
+%%%   - From: 2.1.0
+%%%   - To: 3.0.0
+%%%   - Downgrade: 3.0.0 -> 2.1.0
+%%%
+%%% State Changes:
+%%%   - Added: OTEL span attributes for upgrade phases
+%%%   - Added: Metrics for upgrade duration
+%%%   - Modified: Dashboard schema for upgrade monitoring
+%%%
+%%% Dependencies:
+%%%   - Requires opentelemetry 1.7.0+
+%%%   - Requires opentelemetry_exporter 1.10.0+
+%%%
+%%% See: docs/HOT_CODE_UPGRADE.md
+
+{"3.0.0",
+ [
+  %% Upgrade from 2.1.0 to 3.0.0
+  {"2.1.0",
+   [
+    %% Step 1: Suspend observability supervisor
+    {apply, {supervisor, suspend, [erlmcp_observability_sup]}},
+
+    %% Step 2: Pause metrics collection (non-critical, safe to pause)
+    {apply, {erlmcp_metrics, pause, []}},
+
+    %% Step 3: Load new observability modules
+    {load_module, erlmcp_observability_app, brutal_purge, purge},
+    {load_module, erlmcp_observability_sup, brutal_purge, purge},
+    {load_module, erlmcp_otel, brutal_purge, purge},
+    {load_module, erlmcp_metrics, brutal_purge, purge},
+    {load_module, erlmcp_tracing, brutal_purge, purge},
+    {load_module, erlmcp_dashboard_server, brutal_purge, purge},
+    {load_module, erlmcp_chaos, brutal_purge, purge},
+    {load_module, erlmcp_upgrade_monitor, brutal_purge, purge},
+
+    %% Step 4: Apply code_change to upgrade state
+    {apply, {erlmcp_otel, code_change, [3.0.0]}},
+    {apply, {erlmcp_metrics, code_change, [3.0.0]}},
+    {apply, {erlmcp_tracing, code_change, [3.0.0]}},
+    {apply, {erlmcp_dashboard_server, code_change, [3.0.0]}},
+    {apply, {erlmcp_chaos, code_change, [3.0.0]}},
+
+    %% Step 5: Start upgrade monitoring
+    {apply, {erlmcp_upgrade_monitor, start_upgrade_span, [3.0.0]}},
+
+    %% Step 6: Resume metrics collection
+    {apply, {erlmcp_metrics, resume, []}},
+
+    %% Step 7: Resume supervisor
+    {apply, {supervisor, resume, [erlmcp_observability_sup]}},
+
+    %% Step 8: Log successful upgrade
+    {apply, {logger, info, ["erlmcp_observability upgraded from 2.1.0 to 3.0.0", []]}}
+   ],
+   [
+    %% Downgrade from 3.0.0 to 2.1.0
+    {"3.0.0",
+     [
+      %% Step 1: Suspend observability supervisor
+      {apply, {supervisor, suspend, [erlmcp_observability_sup]}},
+
+      %% Step 2: Pause metrics collection
+      {apply, {erlmcp_metrics, pause, []}},
+
+      %% Step 3: Load old observability modules
+      {load_module, erlmcp_observability_app, brutal_purge, purge},
+      {load_module, erlmcp_observability_sup, brutal_purge, purge},
+      {load_module, erlmcp_otel, brutal_purge, purge},
+      {load_module, erlmcp_metrics, brutal_purge, purge},
+      {load_module, erlmcp_tracing, brutal_purge, purge},
+      {load_module, erlmcp_dashboard_server, brutal_purge, purge},
+      {load_module, erlmcp_chaos, brutal_purge, purge},
+
+      %% Step 4: Apply code_change to downgrade state
+      {apply, {erlmcp_otel, code_change, [2.1.0]}},
+      {apply, {erlmcp_metrics, code_change, [2.1.0]}},
+      {apply, {erlmcp_tracing, code_change, [2.1.0]}},
+      {apply, {erlmcp_dashboard_server, code_change, [2.1.0]}},
+      {apply, {erlmcp_chaos, code_change, [2.1.0]}},
+
+      %% Step 5: Resume metrics collection
+      {apply, {erlmcp_metrics, resume, []}},
+
+      %% Step 6: Resume supervisor
+      {apply, {supervisor, resume, [erlmcp_observability_sup]}},
+
+      %% Step 7: Log successful downgrade
+      {apply, {logger, info, ["erlmcp_observability downgraded from 3.0.0 to 2.1.0", []]}}
+     ]}
+   ]}
+ ]}.

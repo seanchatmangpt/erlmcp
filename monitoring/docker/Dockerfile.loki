@@ -1,0 +1,23 @@
+# Dockerfile for Loki with custom configuration
+# This Dockerfile builds Loki with erlmcp-specific log configuration
+
+FROM grafana/loki:2.8.0
+
+# Create directories for configuration and data
+RUN mkdir -p /etc/loki /loki/data /loki/index /loki/cache
+
+# Copy custom configuration
+COPY logging/loki-config.yml /etc/loki/loki-config.yml
+
+# Set working directory
+WORKDIR /etc/loki
+
+# Expose ports
+EXPOSE 3100 9095 3101
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3100/ready || exit 1
+
+# Command to run Loki
+CMD ["-config.file=/etc/loki/loki-config.yml"]

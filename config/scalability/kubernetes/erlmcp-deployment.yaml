@@ -1,0 +1,243 @@
+# Kubernetes Deployment Configuration for erlmcp v3
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erlmcp-api
+  namespace: erlmcp
+  labels:
+    app: erlmcp-api
+    component: api-gateway
+    version: v3.0.0
+spec:
+  replicas: 10
+  selector:
+    matchLabels:
+      app: erlmcp-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  template:
+    metadata:
+      labels:
+        app: erlmcp-api
+        component: api-gateway
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: erlmcp-api
+        image: erlmcp/erlmcp:v3.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          protocol: TCP
+        - containerPort: 8443
+          protocol: TCP
+        env:
+        - name: ERLMCP_ENV
+          value: "production"
+        - name: ERLMCP_CLUSTER_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: erlmcp-config
+              key: cluster-name
+        - name: ERLMCP_REPLICA_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        - name: ERLMCP_PEER_NODES
+          valueFrom:
+            configMapKeyRef:
+              name: erlmcp-config
+              key: peer-nodes
+        - name: ERLMCP_DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-secrets
+              key: database-url
+        - name: ERLMCP_REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-secrets
+              key: redis-url
+        - name: ERLMCP_KAFKA_BROKERS
+          valueFrom:
+            configMapKeyRef:
+              name: erlmcp-config
+              key: kafka-brokers
+        resources:
+          limits:
+            cpu: "2"
+            memory: "4Gi"
+          requests:
+            cpu: "500m"
+            memory: "2Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: config
+          mountPath: /etc/erlmcp
+        - name: data
+          mountPath: /var/lib/erlmcp
+      - name: sidecar-proxy
+        image: istio/proxy:1.19.3
+        ports:
+        - containerPort: 15090
+          name: http-envoy-prom
+          protocol: TCP
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1337
+        env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        volumeMounts:
+        - name: istio-data
+          mountPath: /var/lib/istio/data
+        - name: istio-podinfo
+          mountPath: /var/run/istio/podinfo
+      volumes:
+      - name: config
+        configMap:
+          name: erlmcp-api-config
+      - name: data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-api-config
+  namespace: erlmcp
+data:
+  erlmcp.conf: |
+    {erlmcp, [
+        {env, production},
+        {cluster_name, "erlmcp-cluster"},
+        {replica_id, "{{REPLICA_ID}}"},
+        {peer_nodes, ["node1@192.168.1.1", "node2@192.168.1.2"]},
+        {database_url, "postgresql://user:pass@postgres:5432/erlmcp"},
+        {redis_url, "redis://redis-cluster:6379/0"},
+        {kafka_brokers, ["kafka-1:9092", "kafka-2:9092", "kafka-3:9092"]},
+
+        % Scalability configuration
+        {max_connections, 50000},
+        {connection_timeout, 30000},
+        {session_timeout, 3600000},
+        {tool_timeout, 300000},
+
+        % Caching configuration
+        {cache_enabled, true},
+        {cache_ttl, 3600},
+        {cache_size, 1000000},
+
+        % Queue configuration
+        {queue_workers, 10},
+        {queue_batch_size, 100},
+        {queue_timeout, 5000},
+
+        % Sharding configuration
+        {sharding_enabled, true},
+        {shard_count, 16},
+        {shard_type, consistent_hash},
+
+        % Load balancing
+        {load_balancer, least_loaded},
+        {health_check_interval, 10000},
+
+        % Auto-scaling
+        {auto_scaling_enabled, true},
+        {scale_up_threshold, 70},
+        {scale_down_threshold, 30},
+        {min_replicas, 5},
+        {max_replicas, 100},
+
+        % Monitoring
+        {metrics_enabled, true},
+        {tracing_enabled, true}
+    ]}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: erlmcp-api-hpa
+  namespace: erlmcp
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: erlmcp-api
+  minReplicas: 5
+  maxReplicas: 100
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: erlmcp_active_sessions
+      target:
+        type: AverageValue
+        averageValue: "50000"
+  - type: Pods
+    pods:
+      metric:
+        name: erlmcp_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "10000"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+      - type: Pods
+        value: 5
+        periodSeconds: 60

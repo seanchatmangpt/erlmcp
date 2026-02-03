@@ -1,0 +1,828 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "datasource": "prometheus",
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 96, 96, 1)",
+        "name": "Security Events",
+        "query": "rate(erlmcp_security_events_total[5m])",
+        "showIn": 0,
+        "tags": [],
+        "type": "dashboard"
+      },
+      {
+        "datasource": "prometheus",
+        "enable": true,
+        "hide": false,
+        "iconColor": "rgba(255, 165, 0, 1)",
+        "name": "Errors",
+        "query": "rate(erlmcp_errors_total[5m])",
+        "showIn": 0,
+        "tags": [],
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [
+    {
+      "asDropdown": true,
+      "icon": "external link",
+      "includeVars": true,
+      "keepTime": true,
+      "tags": [],
+      "title": "Dashboards",
+      "type": "dashboards"
+    }
+  ],
+  "panels": [
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "hiddenSeries": false,
+      "id": 1,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "data": [
+          {
+            "drawStyle": "line",
+            "fill": 0,
+            "lineColor": "rgb(75, 192, 192)",
+            "lineStyle": "solid",
+            "lineWidth": 1,
+            "pointColor": "rgb(75, 192, 192)",
+            "pointStyle": "circle",
+            "showPoints": false,
+            "spanNulls": true
+          }
+        ],
+        "orientation": "auto",
+        "percentage": false,
+        "pluginVersion": "7.5.7",
+        "showFrom": false,
+        "showTo": false,
+        "value": false
+      },
+      "percentage": false,
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(erlmcp_requests_total[5m])",
+          "legendFormat": "{{method}}",
+          "interval": "",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Request Rate by Method",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "req/s",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "position": "left"
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "position": "right"
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "cacheTimeout": null,
+      "colorMode": "value",
+      "colors": [
+        "#299c46",
+        "#fafafa",
+        "#eb8a90"
+      ],
+      "datasource": "prometheus",
+      "format": "none",
+      "gauge": {
+        "maxValue": 100,
+        "minValue": 0,
+        "show": true,
+        "thresholdLabels": false,
+        "thresholdMarkers": true
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "interval": null,
+      "links": [],
+      "mappingType": 1,
+      "maxDataPoints": 100,
+      "minVizHeight": 10,
+      "minVizWidth": 8,
+      "options": {
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "7.5.7",
+      "rangeMaps": [
+        {
+          "from": "null",
+          "text": "N/A",
+          "to": "null"
+        }
+      ],
+      "valueFontSize": "80%",
+      "valueMaps": [
+        {
+          "op": "=",
+          "text": "OK",
+          "value": "1"
+        },
+        {
+          "op": "=",
+          "text": "Error",
+          "value": "0"
+        }
+      ],
+      "valueName": "current",
+      "valueType": "individual",
+      "visualization": "gauge",
+      "targets": [
+        {
+          "expr": "avg(rate(erlmcp_request_duration_seconds_bucket[5m]))",
+          "legendFormat": "",
+          "interval": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "alert": {
+        "alertRuleTags": {},
+        "conditions": [
+          {
+            "evaluator": {
+              "params": [
+                5
+              ],
+              "type": "gt"
+            },
+            "operator": {
+              "type": "and"
+            }
+          }
+        ],
+        "executionErrorState": "alerting",
+        "for": "2m",
+        "frequency": "1m",
+        "handler": "default",
+        "message": "High request duration detected",
+        "name": "Request Duration Alert",
+        "noDataState": "no_data",
+        "notifications": []
+      },
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "hiddenSeries": false,
+      "id": 3,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "data": [
+          {
+            "drawStyle": "line",
+            "fill": 0,
+            "lineColor": "rgb(75, 192, 192)",
+            "lineStyle": "solid",
+            "lineWidth": 1,
+            "pointColor": "rgb(75, 192, 192)",
+            "pointStyle": "circle",
+            "showPoints": false,
+            "spanNulls": true
+          }
+        ],
+        "orientation": "auto",
+        "percentage": false,
+        "pluginVersion": "7.5.7",
+        "showFrom": false,
+        "showTo": false,
+        "value": false
+      },
+      "percentage": false,
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(erlmcp_request_duration_seconds_bucket[5m]))",
+          "legendFormat": "95th percentile",
+          "interval": "",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(erlmcp_request_duration_seconds_bucket[5m]))",
+          "legendFormat": "50th percentile",
+          "interval": "",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, rate(erlmcp_request_duration_seconds_bucket[5m]))",
+          "legendFormat": "99th percentile",
+          "interval": "",
+          "refId": "C"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Request Duration Percentiles",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "s",
+          "label": "Duration",
+          "logBase": 1,
+          "max": null,
+          "min": 0,
+          "position": "left"
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "position": "right"
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "cacheTimeout": null,
+      "colorMode": "none",
+      "colors": [
+        "#299c46",
+        "#fafafa",
+        "#eb8a90"
+      ],
+      "datasource": "prometheus",
+      "format": "none",
+      "gauge": {
+        "maxValue": 100,
+        "minValue": 0,
+        "show": true,
+        "thresholdLabels": false,
+        "thresholdMarkers": true
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "interval": null,
+      "links": [],
+      "mappingType": 1,
+      "maxDataPoints": 100,
+      "minVizHeight": 10,
+      "minVizWidth": 8,
+      "options": {
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true
+      },
+      "pluginVersion": "7.5.7",
+      "rangeMaps": [
+        {
+          "from": "null",
+          "text": "N/A",
+          "to": "null"
+        }
+      ],
+      "valueFontSize": "50%",
+      "valueMaps": [
+        {
+          "op": "=",
+          "text": "Healthy",
+          "value": "1"
+        },
+        {
+          "op": "=",
+          "text": "Unhealthy",
+          "value": "0"
+        }
+      ],
+      "valueName": "current",
+      "valueType": "individual",
+      "visualization": "gauge",
+      "targets": [
+        {
+          "expr": "erlmcp_healthy",
+          "legendFormat": "",
+          "interval": "",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 16
+      },
+      "hiddenSeries": false,
+      "id": 5,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "data": [
+          {
+            "drawStyle": "line",
+            "fill": 0,
+            "lineColor": "rgb(75, 192, 192)",
+            "lineStyle": "solid",
+            "lineWidth": 1,
+            "pointColor": "rgb(75, 192, 192)",
+            "pointStyle": "circle",
+            "showPoints": false,
+            "spanNulls": true
+          }
+        ],
+        "orientation": "auto",
+        "percentage": false,
+        "pluginVersion": "7.5.7",
+        "showFrom": false,
+        "showTo": false,
+        "value": false
+      },
+      "percentage": false,
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(erlmcp_connections_total[5m])",
+          "legendFormat": "{{transport}}",
+          "interval": "",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Connection Rate by Transport",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "conn/s",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": 0,
+          "position": "left"
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "position": "right"
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "datasource": "prometheus",
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 16
+      },
+      "id": 6,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "text": {}
+      },
+      "pluginVersion": "7.5.7",
+      "targets": [
+        {
+          "expr": "erlmcp_memory_bytes{type=\"processes\"}",
+          "legendFormat": "Processes",
+          "interval": "",
+          "refId": "A"
+        },
+        {
+          "expr": "erlmcp_memory_bytes{type=\"system\"}",
+          "legendFormat": "System",
+          "interval": "",
+          "refId": "B"
+        },
+        {
+          "expr": "erlmcp_memory_bytes{type=\"total\"}",
+          "legendFormat": "Total",
+          "interval": "",
+          "refId": "C"
+        }
+      ],
+      "title": "Memory Usage",
+      "type": "bargauge"
+    },
+    {
+      "aliasColors": {},
+      "bars": false,
+      "dashLength": 10,
+      "dashes": false,
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 24
+      },
+      "hiddenSeries": false,
+      "id": 7,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": true,
+        "total": false,
+        "values": false
+      },
+      "lines": true,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "data": [
+          {
+            "drawStyle": "line",
+            "fill": 0,
+            "lineColor": "rgb(75, 192, 192)",
+            "lineStyle": "solid",
+            "lineWidth": 1,
+            "pointColor": "rgb(75, 192, 192)",
+            "pointStyle": "circle",
+            "showPoints": false,
+            "spanNulls": true
+          }
+        ],
+        "orientation": "auto",
+        "percentage": false,
+        "pluginVersion": "7.5.7",
+        "showFrom": false,
+        "showTo": false,
+        "value": false
+      },
+      "percentage": false,
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "rate(erlmcp_errors_total[5m])",
+          "legendFormat": "{{error_type}}",
+          "interval": "",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "Error Rate by Type",
+      "tooltip": {
+        "shared": true,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "time",
+        "name": null,
+        "show": true,
+        "values": []
+      },
+      "yaxes": [
+        {
+          "format": "req/s",
+          "label": "Errors per second",
+          "logBase": 1,
+          "max": null,
+          "min": 0,
+          "position": "left"
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "position": "right"
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
+    {
+      "datasource": "prometheus",
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 12,
+        "y": 24
+      },
+      "id": 8,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "text": {}
+      },
+      "pluginVersion": "7.5.7",
+      "targets": [
+        {
+          "expr": "erlmcp_process_count",
+          "legendFormat": "Total",
+          "interval": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Process Count",
+      "type": "bargauge"
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 27,
+  "style": "dark",
+  "tags": [
+    "erlmcp",
+    "enterprise",
+    "monitoring"
+  ],
+  "templating": {
+    "list": [
+      {
+        "allValue": null,
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "prometheus",
+        "definition": "label_values(erlmcp_requests_total, transport)",
+        "description": null,
+        "error": null,
+        "hide": 0,
+        "includeAll": true,
+        "label": "Transport",
+        "multi": true,
+        "name": "transport",
+        "options": [],
+        "query": {
+          "query": "label_values(erlmcp_requests_total, transport)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      },
+      {
+        "allValue": null,
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": "prometheus",
+        "definition": "label_values(erlmcp_requests_total, method)",
+        "description": null,
+        "error": null,
+        "hide": 0,
+        "includeAll": true,
+        "label": "Method",
+        "multi": true,
+        "name": "method",
+        "options": [],
+        "query": {
+          "query": "label_values(erlmcp_requests_total, method)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 1,
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m",
+      "15m",
+      "30m",
+      "1h",
+      "2h",
+      "1d"
+    ]
+  },
+  "timezone": "browser",
+  "title": "erlmcp Enterprise Dashboard",
+  "uid": "erlmcp-enterprise",
+  "version": 1
+}

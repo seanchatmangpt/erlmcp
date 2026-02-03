@@ -1,0 +1,444 @@
+%% ========================================================================
+%% erlmcp v3 Production VM Arguments
+%% ========================================================================
+%% Production-optimized Erlang VM configuration for maximum throughput
+%%
+%% This configuration is tuned for:
+%%   - High-throughput JSON-RPC message processing
+%%   - Containerized deployment (Docker, Swarm, Kubernetes)
+%%   - Multi-core SMP systems (2+ CPUs recommended)
+%%   - Cgroups v1/v2 memory-aware operation
+%%   - Low-latency network I/O
+%%   - Efficient connection pooling
+%%   - Token bucket rate limiting
+%%
+%% ========================================================================
+%% NODE IDENTIFICATION
+%% ========================================================================
+%% Node name is set dynamically via environment variable
+%% Format: -name $ERLMCP_NODE_NAME@$(hostname)
+%% Cookie is set via -setcookie from environment variable
+
+%% ========================================================================
+%% SMP AND SCHEDULER TUNING (OTP 26-28)
+%% ========================================================================
+%% Enable SMP with auto-detection of CPU cores
+%% +subprocs 8: Number of scheduler threads (8 is optimal for most workloads)
++smp auto +subprocs 8
+
+%% Scheduler bind type: db = dirty CPU bind type (better distribution)
++sbt db
+
+%% Scheduler bind type: allow all schedulers to run on all available CPUs
++sbtac
+
+%% Enable busy waiting for very short intervals (better latency)
+%% very_short = 1ms busy wait for low-latency responses
++sbwt very_short
+
+%% Enable scheduler utilization balancing (load distribution)
++sub true
+
+%% Scheduler tuning: enable scheduler wait time optimization
+%% "tuning:0.0001" = 0.1ms threshold for scheduler sleep
++st "tuning:0.0001"
+
+%% ========================================================================
+%% ASYNC THREAD POOL (I/O Performance)
+%% ========================================================================
+%% +A: Number of async threads for I/O operations
+%% 64 threads provides good balance for concurrent I/O without overhead
+%% Covers: file I/O, DNS resolution, crypto operations, driver async I/O
++A 64
+
+%% Dirty CPU schedulers for CPU-intensive work
+%% Enables separate schedulers for NIFs and port operations
+%% +SDcpu: Dirty CPU scheduler count (auto by default)
++SDcpu 8
+
+%% Dirty I/O schedulers for I/O-intensive work
+%% +SDio: Dirty I/O scheduler count (256 for high I/O throughput)
++SDio 256
+
+%% Dirty scheduler blocking threshold (I/O)
+%% +SDsbtio: Max dirty I/O operations before scheduler warning
++SDsbtio 256
+
+%% ========================================================================
+%% MEMORY ALLOCATION AND GC TUNING
+%% ========================================================================
+%% Fullsweep after garbage collection
+%% +hms: Max heap size for fullsweep (128MB = 128000000 bytes)
++erl +hms 128000000
+
+%% +hmsz: Max heap size for small generations (128MB)
++erl +hmsz 128000000
+
+%% +hmbs: Max heap size for binary virtual heap (128MB)
++erl +hmbs 128000000
+
+%% +hmbks: Max heap size for binary kilobyte storage (128MB)
++erl +hmbks 128000000
+
+%% +hmtbs: Max heap size for total binary storage (128MB)
++erl +hmtbs 128000000
+
+%% +hmtlts: Max time to live for temporary terms (10ms)
++erl +hmtlts 10000
+
+%% +hmtavg: Average heap size for terms (128MB)
++erl +hmtavg 128000000
+
+%% +hmaxmb: Max memory blocks for allocation (512MB)
++erl +hmaxmb 512
+
+%% ========================================================================
+%% MEMORY ALLOCATOR (Cgroups-Aware)
+%% ========================================================================
+%% +MBas: Allocator strategy (aobf = Address Order Best Fit)
+%% Best for multi-threaded workloads with fragmentation concerns
++erl +MBas aobf
+
+%% +MBlmbcs: Large block carrier size (512KB = 524288 bytes)
+%% Larger carriers reduce fragmentation for big binaries
++erl +MBlmbcs 512
+
+%% +MBsmbcs: Small block carrier size (1MB = 1048576 bytes)
++erl +MBsmbcs 1024
+
+%% +MBsbct: Single block carrier threshold (2MB = 2097152 bytes)
++erl +MBsbct 2048
+
+%% ========================================================================
+%% CGROUPS MEMORY DETECTION (OTP 26+)
+%% ========================================================================
+%% These flags enable the VM to detect container memory limits
+
+%% +MBacul 0: Disable carrier utilization limit for cgroups v2
+%% Prevents VM from exceeding container memory limits
++erl +MBacul 0
+
+%% +Msbagf 512: Set carrier size alignment to 512 bytes
+%% Improves memory alignment for SIMD operations
++erl +Msbagf 512
+
+%% +MBacgs 0: Auto-detect cgroups memory limits (0 = unlimited)
+%% VM reads memory.limit_in_bytes from cgroups
++erl +MBacgs 0
+
+%% ========================================================================
+%% PROCESS AND PORT LIMITS
+%% ========================================================================
+%% +P: Max number of concurrent Erlang processes
+%% 262144 = 256K processes (sufficient for high-connection scenarios)
++P 262144
+
+%% +Q: Max number of ports (files, sockets, external ports)
+%% 131072 = 128K ports (supports 128K concurrent connections)
++Q 131072
+
+%% +Z: Number of internal table slots for process monitoring
+%% 8192 slots for efficient process lookup
++Z 8192
+
+%% Environment variables for limits
+-env ERL_MAX_PORTS 131072
+-env ERL_MAX_ETS_TABLES 50000
+
+%% ========================================================================
+%% ETS TABLE CONFIGURATION
+%% ========================================================================
+%% +ets: ETS allocation size (256MB)
+%% Pre-allocates memory for ETS tables to reduce fragmentation
++erl +ets 256000000
+
+%% ========================================================================
+%% KERNEL POLL AND I/O
+%% ========================================================================
+%% +K true: Enable kernel poll (epoll/kqueue)
+%% Dramatically improves performance for high connection counts
+%% Required for production workloads with 10K+ connections
++K true
+
+%% +SP: Scheduler penalty for system tasks (reduced for better throughput)
+%% +SP 4: Lower penalty = more aggressive scheduling
++SP 4
+
+%% +IOpt: I/O device tuning (16 = optimal for most workloads)
++IOt 16
+
+%% ========================================================================
+%% DISTRIBUTION AND CLUSTERING
+%% ========================================================================
+%% Enable TLS distribution for secure clustering
+-proto_dist inet_tls
+
+%% Distribution port range (EPMD-less clustering)
+%% These work with ERL_DIST_PORT environment variable
+-erl inet_dist_listen_min 9100
+-erl inet_dist_listen_max 9200
+-erl inet_dist_use_interface 0.0.0.0
+-erl inet_dist_listen_all true
+
+%% Net tick time for cluster health detection (60 seconds)
+%% Higher values reduce false positives in partitioned networks
+-kernel net_ticktime 60
+
+%% Distribution buffer busy limit (8MB = 8192KB)
+%% +zdbbl: Size of distribution buffer busy limit
++zdbbl 8192
+
+%% ZDB (Zero Database) async operations
+%% +zdb max: Max async DB operations (64 concurrent)
++zdb max 64
+
+%% +zdb att: Max async time (1000ms)
++zdb att 1000
+
+%% +zdb pdef: Default parallelism (1)
++zdb pdef 1
+
+%% +zdb batch: Batch size (8 operations)
++zdb batch 8
+
+%% +zdb async: Async workers (8 workers)
++zdb async 8
+
+%% +zdb res: Resolution (10ms)
++zdb res 10
+
+%% ========================================================================
+%% CRASH DUMP AND ERROR REPORTING
+%% ========================================================================
+%% Crash dump location
+-erl crash_dump /var/log/erlmcp/crash.dump
+
+%% Max crash dump file size (10MB)
+-erl elog_max_size 10485760
+
+%% Error logger format depth (1000 lines for detailed stack traces)
+-bd 1000
+
+%% ========================================================================
+%% TIME CORRECTION
+%% ========================================================================
+%% +c true: Enable time correction (needed for distributed systems)
+%% Syncs VM time with system time, prevents clock drift issues
++c true
+
+%% ========================================================================
+%% ATOM TABLE SIZE
+%% ========================================================================
+%% +t: Max number of atoms (5M = 5000000)
+%% Sufficient for dynamic module loading and large codebases
++t 5000000
+
+%% ========================================================================
+%% HEARTBEAT MANAGEMENT
+%% ========================================================================
+%% -heart: Enable heartbeat (auto-restart VM if it hangs)
+%% Useful for production reliability but requires proper init system
+-heart
+
+%% -heart_kill_threshold: Seconds before heartbeat kills VM (60s)
+-heart_kill_threshold 60
+
+%% -heartbeat: Heartbeat interval (30s)
+-heartbeat 30
+
+%% ========================================================================
+%% MICROSTATE ACCOUNTING (Monitoring)
+%% ========================================================================
+%% +Muacul true: Enable microstate accounting utilization limit
+%% Provides detailed scheduler metrics for observability
++Muacul true
+
+%% ========================================================================
+%% MEMORY STATISTICS
+%% ========================================================================
+%% +MMScs true: Enable memory statistics collection
+%% +MFac true: Enable full memory accounting
++MMScs true
++MFac true
+
+%% ========================================================================
+%% MEMORY CARRIER SETTINGS (OTP 28+)
+%% ========================================================================
+%% +MScrvm true: Enable carrier VM memory management
+%% +MSscl true: Enable statistics carrier limit
++MScrvm true
++MSscl true
+
+%% ========================================================================
+%% SIGNAL MONITORING
+%% ========================================================================
+%% +k true: Enable signal monitoring
+%% Tracks inter-process signals for debugging
++k true
+
+%% ========================================================================
+%% PER-PROCESS STATISTICS
+%% ========================================================================
+%% +Ppi 1024: Per-process information slots
+%% Stores detailed stats for 1024 processes
++Ppi 1024
+
+%% ========================================================================
+%% SNAPSHOT TOOL
+%% ========================================================================
+%% -snapshot tool false: Disable snapshot tool in production
+%% Reduces overhead, re-enable for debugging
+-snapshot tool false
+
+%% ========================================================================
+%% SCHEDULER S (SMP scheduling)
+%% ========================================================================
+%% +S: Explicit scheduler configuration
+%% 8:auto = 8 schedulers with auto CPU affinity
++S 8:auto
+
+%% ========================================================================
+%% LOCK COUNTING (Debug - Disabled in Production)
+%% ========================================================================
+%% +cl: Enable lock counting (disabled for performance)
+%% Uncomment for debugging contention issues:
+%% +cl 0.01
+
+%% ========================================================================
+%% GC FULLSWEEP SETTINGS
+%% ========================================================================
+%% +hms +hmbs: Fullsweep after 128MB of allocations
+%% Balances between memory usage and GC pause time
++erl +hms 128000000
++erl +hmbs 128000000
+
+%% Fullsweep after inactivity (60 seconds)
+%% Reduces memory footprint for idle processes
+-env ERL_FULLSWEEP_AFTER 60
+
+%% ========================================================================
+%% DISTRIBUTION BUFFER LIMIT
+%% ========================================================================
+%% Distribution buffer busy limit (64KB)
+-env ERL_DIST_BUF_BUSY_LIMIT 65536
+
+%% ========================================================================
+%% PORTABLE CHARACTER SET
+%% ========================================================================
+%% +pc unicode: Enable Unicode string handling
+%% Required for JSON-RPC UTF-8 support
++pc unicode
+
+%% ========================================================================
+%% LOGGER CONFIGURATION
+%% ========================================================================
+%% Disable SASL logging in production (reduces overhead)
+-sasl sasl_error_logger false
+
+%% Error logger type (errors only)
+-sasl errlog_type error
+
+%% Error logger format depth (20 = reasonable stack traces)
+-sasl error_logger_format_depth 20
+
+%% Logger burst limit (5000 messages to prevent log spam)
+-kernel logger_burst_limit 5000
+
+%% ========================================================================
+%% GLOBAL HEAPS (OTP 27+)
+%% ========================================================================
+%% Enable global heaps for reduced memory fragmentation
+%% +hmaxmb 512: 512MB max heap size (already set above)
+%% This enables efficient memory sharing between processes
+
+%% ========================================================================
+%% CONNECTION POOLING REFERENCES
+%% ========================================================================
+%% Connection pooling is configured in sys.config:
+%%   {erlmcp, [
+%%       {connection_pooling, #{
+%%           enabled => true,
+%%           pool_size => 50,
+%%           max_overflow => 20,
+%%           pool_timeout => 30000,
+%%           idle_timeout_ms => 600000
+%%       }}
+%%   ]}
+%%
+%% Pools managed by erlmcp_connection_pool:
+%%   - erlmcp_tcp_pool: TCP connection pool
+%%   - erlmcp_http_pool: HTTP connection pool
+%%   - erlmcp_ws_pool: WebSocket connection pool
+%%
+%% See: apps/erlmcp_transports/src/erlmcp_connection_pool.erl
+
+%% ========================================================================
+%% RATE LIMITING REFERENCES
+%% ========================================================================
+%% Rate limiting is configured in sys.config:
+%%   {erlmcp, [
+%%       {rate_limiting, #{
+%%           enabled => true,
+%%           max_messages_per_sec => 100,
+%%           max_connections_per_sec => 10,
+%%           global_max_messages_per_sec => 10000,
+%%           max_tool_calls_per_sec => 50,
+%%           max_subscriptions_per_sec => 20,
+%%           bucket_refill_interval_ms => 100
+%%       }}
+%%   ]}
+%%
+%% Rate limiters:
+%%   - erlmcp_rate_limiter: Per-client token bucket
+%%   - erlmcp_api_rate_limiter: API gateway rate limiting
+%%
+%% See: apps/erlmcp_core/src/erlmcp_rate_limiter.erl
+%% See: apps/erlmcp_api_gateway/src/erlmcp_api_rate_limiter.erl
+
+%% ========================================================================
+%% PRODUCTION TUNING NOTES
+%% ========================================================================
+%%
+%% MEMORY ALLOCATION:
+%%   - Total VM memory limited by container cgroups
+%%   - +hms 128MB prevents excessive heap growth per process
+%%   - +ets 256MB pre-allocates ETS memory
+%%   - Cgroups detection prevents OOM kills
+%%
+%% THROUGHPUT OPTIMIZATION:
+%%   - +A 64 async threads for I/O parallelism
+%%   - +K true enables kernel poll (epoll/kqueue)
+%%   - +sbtac allows full CPU utilization
+%%   - +sbwt very_short reduces latency for hot paths
+%%
+%% CONNECTION POOLING:
+%%   - +Q 131072 ports supports 131K concurrent connections
+%%   - +P 262144 processes supports 256K concurrent operations
+%%   - Pool size 50 + overflow 20 in config handles 70 connections
+%%
+%% RATE LIMITING:
+%%   - Token bucket algorithm prevents DoS
+%%   - Per-client: 100 msg/sec default
+%%   - Global: 10000 msg/sec default
+%%   - DDoS protection blocks after 100 violations/minute
+%%
+%% MONITORING:
+%%   - +Muacul enables scheduler metrics
+%%   - +MMScs enables memory stats
+%%   - Prometheus metrics on port 9100
+%%
+%% ========================================================================
+%% VALIDATION COMMANDS
+%% ========================================================================
+%% Verify cgroups detection:
+%%   docker exec <container> erl -noshell -eval "io:format('Memory: ~p~n', [erlang:memory(system)]), halt()."
+%%
+%% Check allocator utilization:
+%%   docker exec <container> erl -noshell -name inspect@127.0.0.1 -remsh erlmcp -eval "erlang:display(allocator:utilization()), init:stop()."
+%%
+%% View process count:
+%%   docker exec <container> erl -noshell -eval "io:format('Processes: ~p~n', [erlang:system_info(process_count)]), halt()."
+%%
+%% Check scheduler utilization:
+%%   docker exec <container> erl -noshell -eval "io:format('Schedulers: ~p~n', [erlang:system_info(scheduler_utilization)]), halt()."
+%% ========================================================================

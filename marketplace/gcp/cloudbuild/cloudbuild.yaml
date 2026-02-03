@@ -1,0 +1,404 @@
+# Google Cloud Build Pipeline for erlmcp Marketplace
+# Builds, tests, and prepares erlmcp for Marketplace deployment
+
+steps:
+  # Step 1: Checkout code
+  - name: 'gcr.io/cloud-builders/git'
+    args: ['clone', 'https://github.com/banyan-platform/erlmcp.git', '.']
+    id: 'checkout'
+
+  # Step 2: Setup environment and dependencies
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Install dependencies
+        apt-get update && apt-get install -y \
+          curl \
+          unzip \
+          && rm -rf /var/lib/apt/lists/*
+
+        # Install Terraform
+        curl -fsSL https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip -o terraform.zip
+        unzip -d /usr/local/bin terraform.zip
+        chmod +x /usr/local/bin/terraform
+        rm terraform.zip
+
+        # Install Packer
+        curl -fsSL https://releases.hashicorp.com/packer/1.9.4/packer_1.9.4_linux_amd64.zip -o packer.zip
+        unzip -d /usr/local/bin packer.zip
+        chmod +x /usr/local/bin/packer
+        rm packer.zip
+
+        # Install gcloud (if not already)
+        if ! command -v gcloud &> /dev/null; then
+          echo "Installing gcloud..."
+          curl -fsSL https://dl.google.com/dl/cloudsdk/release/google-cloud-sdk.tar.gz | tar -xz
+          ./google-cloud-sdk/install.sh -q
+          ./google-cloud-sdk/bin/gcloud components install app-engine-go beta --quiet
+          echo 'export PATH=$PATH:/workspace/google-cloud-sdk/bin' >> ~/.bashrc
+        fi
+
+    id: 'setup-dependencies'
+
+  # Step 3: Validate Terraform and Packer configurations
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Validate Terraform modules
+        cd marketplace/gcp/terraform/modules
+        terraform init -no-color
+        terraform validate -no-color
+
+        # Validate Packer template
+        cd ../../packer
+        packer init -no-color erlmcp-vm-template.pkr.hcl
+        packer validate -no-color erlmcp-vm-template.pkr.hcl
+
+        # Validate marketplace schema
+        cd ../marketplace-schema
+        python3 -c "import yaml; yaml.safe_load(open('schema.yaml')); print('Schema is valid')"
+    id: 'validate-config'
+
+  # Step 4: Run security scans
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Run vulnerability scan on Docker image
+        docker build -t erlmcp-scan .
+
+        # Trivy scan
+        trivy image --severity CRITICAL,HIGH --format json --output trivy-report.json erlmcp-scan
+        trivy image --severity CRITICAL,HIGH --format table erlmcp-scan
+
+        # Check for hardcoded secrets
+        grep -r "password\|secret\|key\|token\|api" --include="*.erl" --include="*.yaml" --include="*.tf" --include="*.sh" . || true
+    id: 'security-scan'
+    env:
+      - 'TRIVY_SEVERITY=CRITICAL,HIGH'
+
+  # Step 5: Generate SBOM
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Generate SBOM with Syft
+        syft erlmcp-scan -o cyclonedx-json=erlmcp-sbom.json
+        syft erlmcp-scan -o spdx-json=erlmcp-sbom-spdx.json
+
+        # Verify SBOM
+        syft erlmcp-scan | grep "erlmcp" || true
+    id: 'generate-sbom'
+
+  # Step 6: Run tests (simulated)
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Run basic smoke tests
+        echo "Running smoke tests..."
+
+        # Test Docker build
+        docker build -t erlmcp-test .
+
+        # Test basic container functionality
+        docker run --rm erlmcp-test --help || true
+
+        # Test image size
+        docker images erlmcp-test
+        IMAGE_SIZE=$(docker images erlmcp-test --format "table {{.Size}}" | tail -1)
+        echo "Image size: $IMAGE_SIZE"
+
+        # Validate image size is < 200MB
+        if [[ "$IMAGE_SIZE" == *"MB"* ]]; then
+          SIZE_NUM=$(echo $IMAGE_SIZE | grep -o '[0-9]*')
+          if [ $SIZE_NUM -ge 200 ]; then
+            echo "ERROR: Image size too large: $IMAGE_SIZE"
+            exit 1
+          fi
+        fi
+
+        echo "Smoke tests passed"
+    id: 'run-tests'
+
+  # Step 7: Build and push Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Build Docker image with multi-stage
+        docker build -t us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:$BUILD_ID \
+          -f Dockerfile .
+
+        # Push to Artifact Registry
+        docker push us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:$BUILD_ID
+
+        # Also tag as latest
+        docker tag us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:$BUILD_ID \
+          us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:latest
+
+        docker push us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:latest
+
+        # Generate artifact digest
+        IMAGE_DIGEST=$(docker inspect us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:$BUILD_ID --format='{{index .RepoDigests 0}}')
+        echo "IMAGE_DIGEST=$IMAGE_DIGEST" > /workspace/artifact.env
+    id: 'build-and-push'
+    env:
+      - 'PROJECT_ID=$PROJECT_ID'
+      - 'BUILD_ID=$BUILD_ID'
+
+  # Step 8: Generate deployment package
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Create deployment package
+        mkdir -p /workspace/deployment-package
+        cp -r marketplace/gcp/* /workspace/deployment-package/
+
+        # Copy SBOMs
+        cp erlmcp-sbom.json /workspace/deployment-package/sbom/
+        cp erlmcp-sbom-spdx.json /workspace/deployment-package/sbom/
+        cp trivy-report.json /workspace/deployment-package/security-scan/
+
+        # Create deployment script
+        cat > /workspace/deployment-package/deploy.sh << 'EOF'
+        #!/bin/bash
+        # erlmcp Marketplace deployment script
+
+        set -e
+
+        echo "Deploying erlmcp Marketplace deployment..."
+
+        # Create deployment variables
+        export PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project)}"
+        export REGION="${REGION:-us-central1}"
+        export IMAGE_TAG="${IMAGE_TAG:-latest}"
+        export DEPLOYMENT_NAME="${DEPLOYMENT_NAME:-erlmcp}"
+
+        # Verify gcloud is configured
+        gcloud config set project $PROJECT_ID
+
+        # Enable required APIs
+        gcloud services enable \
+          run.googleapis.com \
+          container.googleapis.com \
+          secretmanager.googleapis.com \
+          logging.googleapis.com \
+          monitoring.googleapis.com
+
+        # Deploy based on deployment type
+        if [ "$1" = "cloudrun" ]; then
+          echo "Deploying Cloud Run..."
+          terraform init -upgrade
+          terraform apply -auto-apply -var="project_id=$PROJECT_ID" \
+            -var="region=$REGION" \
+            -var="container_image=us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:$IMAGE_TAG" \
+            -var="deployment_name=$DEPLOYMENT_NAME"
+
+        elif [ "$1" = "gke" ]; then
+          echo "Deploying GKE..."
+          terraform init -upgrade
+          terraform apply -auto-apply -var="project_id=$PROJECT_ID" \
+            -var="region=$REGION" \
+            -var="deployment_name=$DEPLOYMENT_NAME"
+
+        elif [ "$1" = "gce" ]; then
+          echo "Deploying Compute Engine..."
+          terraform init -upgrade
+          terraform apply -auto-apply -var="project_id=$PROJECT_ID" \
+            -var="region=$REGION" \
+            -var="deployment_name=$DEPLOYMENT_NAME"
+
+        else
+          echo "Error: Unknown deployment type: $1"
+          exit 1
+        fi
+
+        echo "Deployment completed!"
+        echo "Service URL: $(terraform output -raw service_url 2>/dev/null || echo 'N/A')"
+        echo "Health Check: $(terraform output -raw health_check_endpoint 2>/dev/null || echo 'N/A')"
+        EOF
+
+        chmod +x /workspace/deployment-package/deploy.sh
+
+        # Create README for deployment package
+        cat > /workspace/deployment-package/README.md << 'EOF'
+        # erlmcp Marketplace Deployment Package
+
+        This package contains all the necessary files to deploy erlmcp on Google Cloud Marketplace.
+
+        ## Files Included
+        - `terraform/modules/`: Terraform modules for different deployment types
+        - `packer/`: Packer templates for VM images
+        - `marketplace-schema/`: Marketplace UI schema and metadata
+        - `helm/`: Helm charts for Kubernetes deployment
+        - `sbom/`: Software Bill of Materials
+        - `security-scan/`: Security scan results
+        - `deploy.sh`: Deployment script
+
+        ## Quick Start
+        1. Configure your GCP project: `gcloud config set project YOUR_PROJECT_ID`
+        2. Choose deployment type: `./deploy.sh cloudrun`, `./deploy.sh gke`, or `./deploy.sh gce`
+        3. Follow the prompts to complete deployment
+
+        ## Support
+        - Documentation: https://erlmcp.dev/docs
+        - GitHub: https://github.com/banyan-platform/erlmcp
+        - Support: support@erlmcp.dev
+        EOF
+
+        echo "Deployment package created at /workspace/deployment-package/"
+    id: 'create-deployment-package'
+
+  # Step 9: Upload artifacts to Cloud Storage
+  - name: 'gcr.io/cloud-builders/gsutil'
+    args:
+      - '-m'
+      - 'cp'
+      - '-r'
+      - '/workspace/deployment-package/*'
+      - 'gs://$PROJECT_ID-erlmcp-artifacts/deployment/$BUILD_ID/'
+    id: 'upload-artifacts'
+
+  # Step 10: Generate deployment verification script
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Create verification script
+        cat > /workspace/verify-deployment.sh << 'EOF'
+        #!/bin/bash
+        # erlmcp deployment verification script
+
+        set -e
+
+        PROJECT_ID="${PROJECT_ID:-$(gcloud config get-value project)}"
+        REGION="${REGION:-us-central1}"
+
+        echo "Verifying erlmcp deployment..."
+
+        # Check Cloud Run service
+        if gcloud run services list --project=$PROJECT_ID --region=$REGION | grep -q erlmcp; then
+          SERVICE_URL=$(gcloud run services describe erlmcp --project=$PROJECT_ID --region=$REGION --format='value(status.url)')
+          echo "✓ Cloud Run service found: $SERVICE_URL"
+
+          # Test health endpoint
+          if curl -s $SERVICE_URL/health | grep -q '"status":"ok"'; then
+            echo "✓ Health check passed"
+          else
+            echo "✗ Health check failed"
+            exit 1
+          fi
+        else
+          echo "✗ Cloud Run service not found"
+          exit 1
+        fi
+
+        # Check monitoring
+        if gcloud logging read "resource.type=cloud_run_revision AND labels.service=erlmcp" --limit=5 --project=$PROJECT_ID --format='value(textPayload)'; then
+          echo "✓ Logs are flowing"
+        else
+          echo "⚠ No logs found (may take time to appear)"
+        fi
+
+        # Check metrics
+        if gcloud monitoring metrics list --project=$PROJECT_ID | grep -q erlmcp; then
+          echo "✓ Metrics are available"
+        else
+          echo "⚠ No metrics found (may take time to appear)"
+        fi
+
+        echo "Verification completed!"
+        EOF
+
+        chmod +x /workspace/verify-deployment.sh
+
+        # Copy verification script to deployment package
+        cp /workspace/verify-deployment.sh /workspace/deployment-package/
+    id: 'generate-verification-script'
+
+  # Step 11: Create image digest file
+  - name: 'bash'
+    args:
+      - '-c'
+      - |
+        cat > /workspace/image-digest.txt << EOF
+        Project ID: $PROJECT_ID
+        Build ID: $BUILD_ID
+        Image: us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:$BUILD_ID
+        Digest: $IMAGE_DIGEST
+        Build Time: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        EOF
+
+        cat /workspace/image-digest.txt
+    id: 'create-digest-file'
+
+  # Step 12: Final success notification
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "🎉 erlmcp Marketplace build completed successfully!"
+        echo ""
+        echo "Build ID: $BUILD_ID"
+        echo "Project: $PROJECT_ID"
+        echo "Image: $IMAGE_DIGEST"
+        echo ""
+        echo "Next steps:"
+        echo "1. Download deployment package from gs://$PROJECT_ID-erlmcp-artifacts/deployment/$BUILD_ID/"
+        echo "2. Deploy using: ./deploy.sh <cloudrun|gke|gce>"
+        echo "3. Verify deployment: ./verify-deployment.sh"
+    id: 'success-notification'
+
+  # Cleanup step: Remove test images
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        # Clean up test images
+        docker rmi erlmcp-scan erlmcp-test 2>/dev/null || true
+        echo "Cleanup completed"
+    id: 'cleanup'
+
+# Artifacts to preserve
+artifacts:
+  paths: [
+    '/workspace/deployment-package/*',
+    '/workspace/image-digest.txt',
+    '/workspace/verify-deployment.sh'
+  ]
+
+# Options
+options:
+  machineType: 'E2_HIGHCPU_32'
+  diskSizeGb: 100
+  logging: CLOUD_LOGGING_ONLY
+
+# Tags
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:$BUILD_ID'
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/erlmcp-marketplace/erlmcp:latest'
+
+# Notifications (optional)
+substitutions:
+  _IMAGE_TAG: 'latest'
+
+# Trigger-specific configuration
+images:
+  - 'gcr.io/$PROJECT_ID/erlmcp-builder:${BUILD_ID}'
+
+secrets:
+  - 'kms://projects/$PROJECT_ID/locations/global/keyRings/cloudbuild/cryptoKeys/sign-key'

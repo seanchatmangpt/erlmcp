@@ -1,0 +1,501 @@
+version: '3.8'
+
+services:
+  # erlmcp core services
+  erlmcp-core-1:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.base
+    image: erlmcp:v3-prod
+    container_name: erlmcp-core-1
+    hostname: erlmcp-core-1
+    command: start
+    environment:
+      - ERLMCP_NODE_NAME=erlmcp-core-1
+      - ERLMCP_COOKIE=${ERLMCP_COOKIE}
+      - ERLMCP_PROFILE=prod
+      - ERLMCP_JWT_SECRET=${ERLMCP_JWT_SECRET}
+      - ERLMCP_REDIS_PASSWORD=${ERLMCP_REDIS_PASSWORD}
+      - ERLMCP_CLUSTER_MODE=join
+      - ERLMCP_SEED_NODES=erlmcp-core-1@erlmcp-core-1:9000
+      - ERLMCP_METRICS_ENABLED=true
+      - ERLMCP_ENV=${ERLMCP_ENV:-production}
+    networks:
+      - erlmcp-overlay
+      - erlmcp-backend
+    volumes:
+      - erlmcp-data-1:/data
+      - erlmcp-logs-1:/var/log/erlmcp
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == core]
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.erlmcp-core.rule=Host(`erlmcp-core.localhost`)
+        - traefik.http.routers.erlmcp-core.entrypoints=http
+        - traefik.http.services.erlmcp-core.loadbalancer.server.port=8080
+
+  erlmcp-core-2:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.base
+    image: erlmcp:v3-prod
+    container_name: erlmcp-core-2
+    hostname: erlmcp-core-2
+    command: start
+    environment:
+      - ERLMCP_NODE_NAME=erlmcp-core-2
+      - ERLMCP_COOKIE=${ERLMCP_COOKIE}
+      - ERLMCP_PROFILE=prod
+      - ERLMCP_JWT_SECRET=${ERLMCP_JWT_SECRET}
+      - ERLMCP_REDIS_PASSWORD=${ERLMCP_REDIS_PASSWORD}
+      - ERLMCP_CLUSTER_MODE=join
+      - ERLMCP_SEED_NODES=erlmcp-core-1@erlmcp-core-1:9000
+      - ERLMCP_METRICS_ENABLED=true
+      - ERLMCP_ENV=${ERLMCP_ENV:-production}
+    networks:
+      - erlmcp-overlay
+      - erlmcp-backend
+    volumes:
+      - erlmcp-data-2:/data
+      - erlmcp-logs-2:/var/log/erlmcp
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == core]
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.erlmcp-core.rule=Host(`erlmcp-core.localhost`)
+        - traefik.http.routers.erlmcp-core.entrypoints=http
+        - traefik.http.services.erlmcp-core.loadbalancer.server.port=8080
+
+  # Redis cluster
+  redis-1:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.redis
+    image: erlmcp-redis:v3-prod
+    container_name: redis-1
+    hostname: redis-1
+    environment:
+      - ERLMCP_REDIS_PASSWORD=${ERLMCP_REDIS_PASSWORD}
+    networks:
+      - erlmcp-overlay
+    volumes:
+      - redis-data-1:/data
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == redis]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  redis-2:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.redis
+    image: erlmcp-redis:v3-prod
+    container_name: redis-2
+    hostname: redis-2
+    environment:
+      - ERLMCP_REDIS_PASSWORD=${ERLMCP_REDIS_PASSWORD}
+    networks:
+      - erlmcp-overlay
+    volumes:
+      - redis-data-2:/data
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == redis]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Monitoring stack
+  prometheus:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.prometheus
+    image: erlmcp-prometheus:v3-prod
+    container_name: prometheus
+    hostname: prometheus
+    environment:
+      - PROMETHEUS_CONFIG_FILE=/etc/prometheus/prometheus.yml
+      - ERLMCP_ENV=${ERLMCP_ENV:-production}
+    networks:
+      - erlmcp-monitoring
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    volumes:
+      - prometheus-data:/data
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  grafana:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.grafana
+    image: erlmcp-grafana:v3-prod
+    container_name: grafana
+    hostname: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
+      - ERLMCP_ENV=${ERLMCP_ENV:-production}
+    networks:
+      - erlmcp-monitoring
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Load balancer (Traefik)
+  traefik:
+    image: traefik:v2.10.5
+    container_name: traefik
+    hostname: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.http.address=:80"
+      - "--entrypoints.https.address=:443"
+      - "--entrypoints.http.http.redirections.entrypoint.to=https"
+      - "--entrypoints.http.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=${ACME_EMAIL:-admin@localhost}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik dashboard
+    networks:
+      - erlmcp-overlay
+    volumes:
+      - traefik-data:/letsencrypt
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    hostname: postgres
+    environment:
+      - POSTGRES_DB=erlmcp
+      - POSTGRES_USER=grafana
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    networks:
+      - erlmcp-backend
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == database]
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Node Exporter (for system metrics)
+  node-exporter-1:
+    image: prom/node-exporter:latest
+    container_name: node-exporter-1
+    hostname: node-exporter-1
+    networks:
+      - erlmcp-monitoring
+    deploy:
+      mode: global
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Alertmanager
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    hostname: alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/data'
+    networks:
+      - erlmcp-monitoring
+    volumes:
+      - alertmanager-data:/data
+      - ./config/docker/provisioning/alerting/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Log aggregation (optional)
+  fluentd:
+    image: fluent/fluentd:v1.16-1
+    container_name: fluentd
+    hostname: fluentd
+    environment:
+      - FLUENTD_CONF=fluent.conf
+    networks:
+      - erlmcp-logging
+    volumes:
+      - ./config/docker/fluent:/fluent/etc
+      - fluentd-data:/var/log/fluentd
+      - /var/log/erlmcp:/var/log/erlmcp
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == logging]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+# Networks
+networks:
+  erlmcp-overlay:
+    external: true
+    name: erlmcp-overlay
+
+  erlmcp-backend:
+    driver: overlay
+    attachable: true
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+  erlmcp-monitoring:
+    driver: overlay
+    attachable: true
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+
+  erlmcp-logging:
+    driver: overlay
+    attachable: true
+    ipam:
+      config:
+        - subnet: 172.22.0.0/16
+
+# Volumes
+volumes:
+  erlmcp-data-1:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/core-1
+
+  erlmcp-data-2:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/core-2
+
+  erlmcp-logs-1:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/logs/core-1
+
+  erlmcp-logs-2:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/logs/core-2
+
+  redis-data-1:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/redis-1
+
+  redis-data-2:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/redis-2
+
+  prometheus-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/prometheus
+
+  grafana-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/grafana
+
+  postgres-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/postgres
+
+  alertmanager-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/alertmanager
+
+  traefik-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/traefik
+
+  fluentd-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/fluentd

@@ -1,0 +1,887 @@
+# Horizontal Scaling Configuration Templates for erlmcp v3
+
+## Template: Production Horizontal Scaling Setup
+
+This template provides a complete horizontal scaling configuration for erlmcp v3
+targeting 100K+ concurrent connections and 1M+ RPS.
+
+```yaml
+# horizontal-scaling.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erlmcp-scale
+  labels:
+    name: erlmcp-scale
+    purpose: production-scaling
+
+---
+# Service Configuration
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-service
+  namespace: erlmcp-scale
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-attributes: "load_balancing.algorithm.type=least_connections"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "3"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "3"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "30s"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "5s"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: "/health"
+spec:
+  selector:
+    app: erlmcp
+    tier: application
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+
+---
+# Deployment Configuration
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erlmcp
+  namespace: erlmcp-scale
+  labels:
+    app: erlmcp
+    tier: application
+spec:
+  replicas: 20
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  selector:
+    matchLabels:
+      app: erlmcp
+      tier: application
+  template:
+    metadata:
+      labels:
+        app: erlmcp
+        tier: application
+        version: "2.1.0"
+    spec:
+      serviceAccountName: erlmcp-service-account
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+      - name: erlmcp
+        image: erlmcp/erlmcp:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        - containerPort: 9090
+          name: metrics
+          protocol: TCP
+        env:
+        - name: CONFIG_PATH
+          value: "/etc/erlmcp/config.yaml"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+            ephemeral-storage: "10Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
+            ephemeral-storage: "20Gi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/erlmcp
+          readOnly: true
+        - name: data-volume
+          mountPath: /data
+          readOnly: false
+        - name: log-volume
+          mountPath: /var/log/erlmcp
+          readOnly: false
+        - name: tmp-volume
+          mountPath: /tmp
+          readOnly: false
+      initContainers:
+      - name: init-config
+        image: erlmcp/erlmcp-config:latest
+        imagePullPolicy: IfNotPresent
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            cp /config/erlmcp.yaml /etc/erlmcp/config.yaml
+            chmod 644 /etc/erlmcp/config.yaml
+        volumeMounts:
+        - name: config-template
+          mountPath: /config
+        - name: config-volume
+          mountPath: /etc/erlmcp
+      volumes:
+      - name: config-template
+        configMap:
+          name: erlmcp-config-template
+      - name: config-volume
+        emptyDir:
+          medium: Memory
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: erlmcp-data-pvc
+      - name: log-volume
+        emptyDir:
+          medium: Memory
+      - name: tmp-volume
+        emptyDir:
+          medium: Memory
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - erlmcp
+              topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: erlmcp-node-purpose
+                operator: In
+                values:
+                - scalable
+      tolerations:
+      - key: "erlmcp-node-purpose"
+        operator: "Equal"
+        value: "scalable"
+        effect: "NoSchedule"
+      - key: "erlmcp-node-purpose"
+        operator: "Equal"
+        value: "scalable"
+        effect: "PreferNoSchedule"
+
+---
+# Horizontal Pod Autoscaler
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: erlmcp-hpa
+  namespace: erlmcp-scale
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: erlmcp
+  minReplicas: 20
+  maxReplicas: 100
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: connections
+      target:
+        type: AverageValue
+        averageValue: "8000"
+  - type: Pods
+    pods:
+      metric:
+        name: rps
+      target:
+        type: AverageValue
+        averageValue: "100000"
+  - type: External
+    external:
+      metric:
+        name: erlmcp_queue_depth
+        selector:
+          matchLabels:
+            app: erlmcp
+      target:
+        type: AverageValue
+        averageValue: "100"
+  - type: External
+    external:
+      metric:
+        name: erlmcp_error_rate
+        selector:
+          matchLabels:
+            app: erlmcp
+      target:
+        type: AverageValue
+        averageValue: "0.01"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+      - type: Pods
+        value: 5
+        periodSeconds: 300
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 5
+        periodSeconds: 60
+      selectPolicy: Max
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+      - type: Pods
+        value: 5
+        periodSeconds: 60
+
+---
+# Cluster Autoscaler Configuration
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cluster-autoscaler
+  namespace: erlmcp-scale
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: erlmcp
+  minReplicas: 20
+  maxReplicas: 200
+  metrics:
+  - type: Pods
+    pods:
+      metric:
+        name: nodes
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+      node:
+        type: Request
+
+---
+# Prometheus Operator Configuration
+apiVersion: monitoring.coreos.com/v1
+kind: Prometheus
+metadata:
+  name: erlmcp-prometheus
+  namespace: erlmcp-scale
+spec:
+  replicas: 2
+  version: v2.40.0
+  image: prom/prometheus:v2.40.0
+  serviceAccountName: prometheus
+  serviceMonitorSelector:
+    matchLabels:
+      app: erlmcp
+  podMonitorSelector:
+    matchLabels:
+      app: erlmcp
+  resources:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+  retention: 15d
+  storage:
+    volumeClaimTemplate:
+      spec:
+        storageClassName: gp2
+        resources:
+          requests:
+            storage: 100Gi
+  securityContext:
+    fsGroup: 2000
+    runAsNonRoot: true
+    runAsUser: 1000
+  additionalScrapeConfigs:
+  - job_name: 'erlmcp'
+    scrape_interval: 5s
+    metrics_path: /metrics
+    kubernetes_sd_configs:
+    - role: pod
+    relabel_configs:
+    - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+      action: keep
+      regex: true
+    - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+      action: replace
+      target_label: __metrics_path__
+      regex: (.+)
+    - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+      action: replace
+      regex: ([^:]+)(?::\d+)?;(\d+)
+      replacement: $1:$2
+      target_label: __address__
+    - action: labelmap
+      regex: __meta_kubernetes_pod_label_(.+)
+    - source_labels: [__meta_kubernetes_namespace]
+      action: replace
+      target_label: namespace
+    - source_labels: [__meta_kubernetes_pod_name]
+      action: replace
+      target_label: pod
+    - source_labels: [__meta_kubernetes_container_name]
+      action: replace
+      target_label: container
+    - source_labels: [app, tier]
+      action: replace
+      target_label: job
+      regex: (.+);(.+)
+      replacement: $2-$1
+
+---
+# Grafana Dashboard Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-grafana-dashboards
+  namespace: erlmcp-scale
+  labels:
+    grafana_dashboard: "1"
+data:
+  erlmcp-overview.json: |
+    {
+      "dashboard": {
+        "title": "erlmcp Overview",
+        "panels": [
+          {
+            "title": "Requests Per Second",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(erlmcp_requests_total[5m]))",
+                "legendFormat": "{{method}} - {{status}}"
+              }
+            ],
+            "grid": {
+              "leftLogBase": 1,
+              "rightLogBase": 1,
+              "leftMax": null,
+              "leftMin": 0
+            }
+          },
+          {
+            "title": "Response Time (P99)",
+            "type": "singlestat",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.99, sum(rate(erlmcp_response_time_bucket[5m])) by (le))"
+              }
+            ],
+            "grid": {
+              "leftLogBase": 1,
+              "rightLogBase": 1
+            },
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 50
+                    },
+                    {
+                      "color": "red",
+                      "value": 100
+                    }
+                  ]
+                },
+                "mappings": [],
+                "unit": "ms"
+              }
+            }
+          },
+          {
+            "title": "Active Connections",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "erlmcp_connections_active",
+                "legendFormat": "Active"
+              }
+            ],
+            "grid": {
+              "leftLogBase": 1,
+              "rightLogBase": 1,
+              "leftMax": null,
+              "leftMin": 0
+            }
+          },
+          {
+            "title": "Error Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(erlmcp_requests_total{status=~\"5..\"}[5m])) / sum(rate(erlmcp_requests_total[5m]))",
+                "legendFormat": "5xx Errors"
+              }
+            ],
+            "grid": {
+              "leftLogBase": 1,
+              "rightLogBase": 1,
+              "leftMax": null,
+              "leftMin": 0
+            }
+          },
+          {
+            "title": "Node CPU Utilization",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(node_cpu_usage_seconds_total[5m])) by (instance) / sum(node_cpu_seconds_total) by (instance) * 100",
+                "legendFormat": "{{instance}}"
+              }
+            ],
+            "grid": {
+              "leftLogBase": 1,
+              "rightLogBase": 1,
+              "leftMax": null,
+              "leftMin": 0
+            },
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "red",
+                      "value": 90
+                    }
+                  ]
+                },
+                "unit": "percent"
+              }
+            }
+          },
+          {
+            "title": "Node Memory Utilization",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "(1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100",
+                "legendFormat": "{{instance}}"
+              }
+            ],
+            "grid": {
+              "leftLogBase": 1,
+              "rightLogBase": 1,
+              "leftMax": null,
+              "leftMin": 0
+            },
+            "fieldConfig": {
+              "defaults": {
+                "thresholds": {
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 70
+                    },
+                    {
+                      "color": "red",
+                      "value": 90
+                    }
+                  ]
+                },
+                "unit": "percent"
+              }
+            }
+          }
+        ]
+      }
+    }
+
+---
+# AlertManager Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-alertmanager-config
+  namespace: erlmcp-scale
+data:
+  alertmanager.yml: |
+    global:
+      smtp_smarthost: 'localhost:587'
+      smtp_from: 'alerts@example.com'
+      smtp_auth_username: 'alerts@example.com'
+      smtp_auth_password: 'password'
+
+    route:
+      group_by: ['alertname', 'cluster', 'region']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 12h
+      receiver: 'web.hook'
+
+    receivers:
+    - name: 'web.hook'
+      webhook_configs:
+      - url: 'http://localhost:5001/'
+
+    inhibit_rules:
+    - source_match:
+        severity: 'critical'
+      target_match:
+        severity: 'warning'
+      equal: ['alertname', 'dev', 'instance']
+
+---
+# Service Monitor Configuration
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: erlmcp-service-monitor
+  namespace: erlmcp-scale
+  labels:
+    app: erlmcp
+spec:
+  selector:
+    matchLabels:
+      app: erlmcp
+      tier: application
+  endpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+    honorLabels: true
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'erlmcp_.*'
+      replacement: '$1'
+      action: keep
+    - sourceLabels: [__name__, method]
+      regex: 'erlmcp_requests_total;(GET|POST|PUT|DELETE)'
+      replacement: '${1}_requests_total'
+      action: replace
+      targetLabel: __name__
+
+---
+# Pod Monitor Configuration
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: erlmcp-pod-monitor
+  namespace: erlmcp-scale
+  labels:
+    app: erlmcp
+spec:
+  selector:
+    matchLabels:
+      app: erlmcp
+  podMetricsEndpoints:
+  - port: metrics
+    interval: 30s
+    path: /metrics
+    metricRelabelings:
+    - sourceLabels: [__name__]
+      regex: 'erlmcp_.*'
+      replacement: '$1'
+      action: keep
+
+---
+# Ingress Configuration
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-ingress
+  namespace: erlmcp-scale
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/load-balance: "least_conn"
+    nginx.ingress.kubernetes.io/healthcheck-interval: "5s"
+    nginx.ingress.kubernetes.io/healthcheck-timeout: "3s"
+    nginx.ingress.kubernetes.io/healthcheck-path: "/health"
+    nginx.ingress.kubernetes.io/healthcheck-status-codes: "200"
+    nginx.ingress.kubernetes.io/enable-access-log: "true"
+    nginx.ingress.kubernetes.io/error-log-path: "/var/log/nginx/error.log"
+    nginx.ingress.kubernetes.io/access-log-path: "/var/log/nginx/access.log"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Strict-Transport-Security: max-age=31536000; includeSubDomains; preload";
+      more_set_headers "Cache-Control: no-cache, no-store, must-revalidate";
+      more_set_headers "Pragma: no-cache";
+      more_set_headers "Expires: 0";
+      more_set_headers "Content-Security-Policy: default-src 'self'";
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - erlmcp.example.com
+    secretName: erlmcp-tls
+  rules:
+  - host: erlmcp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-service
+            port:
+              number: 80
+
+---
+# Network Policy Configuration
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-network-policy
+  namespace: erlmcp-scale
+spec:
+  podSelector:
+    matchLabels:
+      app: erlmcp
+      tier: application
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: erlmcp-frontend
+    - podSelector:
+        matchLabels:
+          role: gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 8443
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: erlmcp-monitoring
+    ports:
+    - protocol: TCP
+      port: 9090
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: erlmcp-backend
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: erlmcp-observability
+    ports:
+    - protocol: TCP
+      port: 4317
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: erlmcp-storage
+    ports:
+    - protocol: TCP
+      port: 5432
+
+---
+# Resource Quota Configuration
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-resource-quota
+  namespace: erlmcp-scale
+spec:
+  hard:
+    requests.cpu: "200"
+    requests.memory: "400Gi"
+    requests.ephemeral-storage: "200Gi"
+    limits.cpu: "400"
+    limits.memory: "800Gi"
+    limits.ephemeral-storage: "400Gi"
+    pods: "100"
+    services: "50"
+    persistentvolumeclaims: "20"
+    count/deployments.apps: "10"
+    count/replicasets.apps: "50"
+  scopeSelector:
+    matchExpressions:
+    - operator: In
+      values: ["cluster"]
+```
+
+## Configuration Notes
+
+### Scaling Configuration
+
+1. **Horizontal Pod Autoscaler (HPA)**
+   - Scales between 20-100 replicas based on CPU, memory, connections, and RPS
+   - Downscaling has a 5-minute cooldown to prevent flapping
+   - Upscaling is aggressive (50% increase per minute)
+
+2. **Cluster Autoscaler**
+   - Scales the Kubernetes cluster between 20-200 nodes
+   - Monitors node utilization and scales accordingly
+   - Supports both CPU and pod-based scaling
+
+3. **Resource Requests and Limits**
+   - Each pod requests 2vCPU/4Gi memory
+   - Each pod limits to 4vCPU/8Gi memory
+   - Ephemeral storage is limited to 20Gi per pod
+
+### Monitoring and Observability
+
+1. **Prometheus Operator**
+   - Auto-discovers erlmcp pods
+   - Scrapes metrics every 5 seconds
+   - Retains data for 15 days
+   - Stores metrics in persistent storage
+
+2. **Grafana Dashboards**
+   - Pre-built dashboard for erlmcp overview
+   - Shows RPS, response times, connections, error rates
+   - Node-level resource utilization metrics
+
+3. **Alerting**
+   - Configured with AlertManager
+   - Supports email notifications
+   - Includes critical alert inhibition rules
+
+### Networking
+
+1. **Load Balancer**
+   - Uses Network Load Balancer (NLB) for high throughput
+   - Configured with cross-zone load balancing
+   - Health checks configured every 30 seconds
+
+2. **Ingress Controller**
+   - Nginx ingress for SSL termination
+   - Security headers configured
+   - Path-based routing
+
+3. **Network Policies**
+   - Restricts traffic between namespaces
+   - Allows traffic only from frontend and monitoring namespaces
+   - Egress restrictions for backend services
+
+### Security
+
+1. **Pod Security Context**
+   - Runs as non-root user (1000)
+   - Proper file permissions
+   - Security headers in ingress
+
+2. **Resource Management**
+   - Resource quotas prevent overallocation
+   - Pod anti-affinity for high availability
+   - Node affinity for scalable nodes
+
+3. **TLS/SSL**
+   - TLS termination at ingress
+   - Strict security headers
+   - SSL redirect enforced
+
+### Performance Optimization
+
+1. **Pod Affinity**
+   - Anti-affinity ensures pods are spread across nodes
+   - Node affinity ensures pods run on appropriate nodes
+   - Tolerations allow scheduling on taint nodes
+
+2. **Health Checks**
+   - Liveness probe every 10 seconds
+   - Readiness probe every 5 seconds
+   - Graceful shutdown configured
+
+3. **Volume Optimization**
+   - Ephemeral storage for logs
+   - Persistent storage for data
+   - Memory volumes for temporary files
+
+This template provides a complete horizontal scaling setup for erlmcp v3, optimized for production environments with high availability and scalability requirements.

@@ -1,0 +1,312 @@
+version: '3.8'
+
+# ============================================================================
+# ERLMCP QUALITY GATES - Docker Compose Configuration
+# ============================================================================
+# Purpose: Docker services for parallel quality gate execution
+# Philosophy: DOCKER-ONLY CONSTITUTION - All execution via containers
+#
+# Services:
+#   erlmcp-build   - Compilation, Dialyzer, Xref
+#   erlmcp-unit    - EUnit test execution
+#   erlmcp-ct      - Common Test execution
+#   erlmcp-check   - Coverage and validation checks
+#   erlmcp-bench   - Benchmark execution
+#
+# Usage:
+#   docker compose -f docker-compose.quality-gates.yml up
+#   docker compose -f docker-compose.quality-gates.yml run --rm erlmcp-build
+# ============================================================================
+
+services:
+  # ============================================================================
+  # SERVICE: erlmcp-build
+  # Purpose: Compilation and static analysis
+  # Gates: compile, dialyzer, xref
+  # ============================================================================
+  erlmcp-build:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: builder
+    image: ${DOCKER_IMAGE:-erlmcp:3.0.0-build}
+    container_name: erlmcp-quality-build
+    hostname: erlmcp-build
+    networks:
+      - erlmcp-quality-network
+    environment:
+      # Quality gate metadata
+      ERLMCP_QUALITY_GATE: "${ERLMCP_QUALITY_GATE:-unknown}"
+      ERLMCP_WORK_ORDER_ID: "${ERLMCP_WORK_ORDER_ID:-}"
+      ERLMCP_QUALITY_MODE: "build"
+
+      # OTP settings
+      ERL_AFLAGS: "+MBacul 0 +Msbagf 512"
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 50000
+
+      # Compiler settings
+      ERL_COMPILER_OPTIONS: "deterministic"
+      REBAR_NO_USER_CONFIG: "true"
+    volumes:
+      # Mount project for compilation
+      - ../:/workspace:rw
+      - erlmcp-build-cache:/root/.cache/rebar3
+      - erlmcp-build-logs:/workspace/log
+    working_dir: /workspace
+    command: >
+      sh -c "
+        echo 'Quality Gate: ${ERLMCP_QUALITY_GATE:-unknown}' &&
+        echo 'Work Order: ${ERLMCP_WORK_ORDER_ID:-unknown}' &&
+        case \"${ERLMCP_QUALITY_GATE:-}\" in
+          compile) rebar3 compile ;;
+          dialyzer) rebar3 dialyzer ;;
+          xref) rebar3 xref ;;
+          *) echo 'Unknown gate: ${ERLMCP_QUALITY_GATE:-unknown}' && exit 1 ;;
+        esac
+      "
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  # ============================================================================
+  # SERVICE: erlmcp-unit
+  # Purpose: EUnit test execution
+  # Gates: eunit
+  # ============================================================================
+  erlmcp-unit:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: builder
+    image: ${DOCKER_IMAGE:-erlmcp:3.0.0-build}
+    container_name: erlmcp-quality-unit
+    hostname: erlmcp-unit
+    networks:
+      - erlmcp-quality-network
+    environment:
+      # Quality gate metadata
+      ERLMCP_QUALITY_GATE: "eunit"
+      ERLMCP_WORK_ORDER_ID: "${ERLMCP_WORK_ORDER_ID:-}"
+      ERLMCP_QUALITY_MODE: "unit"
+
+      # Test settings
+      ERL_AFLAGS: "+MBacul 0 +Msbagf 512"
+      TEST: "true"
+
+      # Coverage
+      COVER_ENABLED: "true"
+      COVER_EXPORT_ENABLED: "true"
+    volumes:
+      # Mount project for testing
+      - ../:/workspace:rw
+      - erlmcp-unit-cache:/root/.cache/rebar3
+      - erlmcp-unit-logs:/workspace/log/eunit
+    working_dir: /workspace
+    command: >
+      sh -c "
+        echo 'Quality Gate: eunit' &&
+        echo 'Work Order: ${ERLMCP_WORK_ORDER_ID:-unknown}' &&
+        rebar3 eunit
+      "
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  # ============================================================================
+  # SERVICE: erlmcp-ct
+  # Purpose: Common Test execution
+  # Gates: ct
+  # ============================================================================
+  erlmcp-ct:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: builder
+    image: ${DOCKER_IMAGE:-erlmcp:3.0.0-build}
+    container_name: erlmcp-quality-ct
+    hostname: erlmcp-ct
+    networks:
+      - erlmcp-quality-network
+    environment:
+      # Quality gate metadata
+      ERLMCP_QUALITY_GATE: "ct"
+      ERLMCP_WORK_ORDER_ID: "${ERLMCP_WORK_ORDER_ID:-}"
+      ERLMCP_QUALITY_MODE: "integration"
+
+      # Test settings
+      ERL_AFLAGS: "+MBacul 0 +Msbagf 512"
+      TEST: "true"
+
+      # Coverage
+      COVER_ENABLED: "true"
+      COVER_EXPORT_ENABLED: "true"
+
+      # CT log directory
+      CT_LOG_DIR: "/workspace/log/ct"
+    volumes:
+      # Mount project for testing
+      - ../:/workspace:rw
+      - erlmcp-ct-cache:/root/.cache/rebar3
+      - erlmcp-ct-logs:/workspace/log/ct
+    working_dir: /workspace
+    command: >
+      sh -c "
+        echo 'Quality Gate: ct' &&
+        echo 'Work Order: ${ERLMCP_WORK_ORDER_ID:-unknown}' &&
+        rebar3 ct
+      "
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  # ============================================================================
+  # SERVICE: erlmcp-check
+  # Purpose: Coverage and validation checks
+  # Gates: coverage
+  # ============================================================================
+  erlmcp-check:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: builder
+    image: ${DOCKER_IMAGE:-erlmcp:3.0.0-build}
+    container_name: erlmcp-quality-check
+    hostname: erlmcp-check
+    networks:
+      - erlmcp-quality-network
+    environment:
+      # Quality gate metadata
+      ERLMCP_QUALITY_GATE: "coverage"
+      ERLMCP_WORK_ORDER_ID: "${ERLMCP_WORK_ORDER_ID:-}"
+      ERLMCP_QUALITY_MODE: "validation"
+
+      # Validation settings
+      ERLMCP_REQUIRED_COVERAGE: "80"
+      COVER_ENABLED: "true"
+    volumes:
+      # Mount project for validation
+      - ../:/workspace:rw
+      - erlmcp-check-cache:/root/.cache/rebar3
+      - erlmcp-check-logs:/workspace/log
+      - erlmcp-check-coverage:/workspace/cover
+    working_dir: /workspace
+    command: >
+      sh -c "
+        echo 'Quality Gate: coverage' &&
+        echo 'Work Order: ${ERLMCP_WORK_ORDER_ID:-unknown}' &&
+        rebar3 cover
+      "
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+
+  # ============================================================================
+  # SERVICE: erlmcp-bench
+  # Purpose: Benchmark execution
+  # Gates: benchmark
+  # ============================================================================
+  erlmcp-bench:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: builder
+    image: ${DOCKER_IMAGE:-erlmcp:3.0.0-build}
+    container_name: erlmcp-quality-bench
+    hostname: erlmcp-bench
+    networks:
+      - erlmcp-quality-network
+    environment:
+      # Quality gate metadata
+      ERLMCP_QUALITY_GATE: "benchmark"
+      ERLMCP_WORK_ORDER_ID: "${ERLMCP_WORK_ORDER_ID:-}"
+      ERLMCP_QUALITY_MODE: "benchmark"
+
+      # Benchmark settings
+      ERL_AFLAGS: "+MBacul 0 +Msbagf 512"
+      BENCHMARK_OUTPUT_DIR: "/workspace/benchmark/results"
+    volumes:
+      # Mount project for benchmarking
+      - ../:/workspace:rw
+      - erlmcp-bench-cache:/root/.cache/rebar3
+      - erlmcp-bench-results:/workspace/benchmark/results
+    working_dir: /workspace
+    command: >
+      sh -c "
+        echo 'Quality Gate: benchmark' &&
+        echo 'Work Order: ${ERLMCP_WORK_ORDER_ID:-unknown}' &&
+        if [ -f 'rebar.config' ] && grep -q 'benches' rebar.config; then
+          rebar3 bench
+        else
+          echo 'No benchmarks configured' &&
+          exit 0
+        fi
+      "
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+networks:
+  erlmcp-quality-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  # Build service volumes
+  erlmcp-build-cache:
+    driver: local
+  erlmcp-build-logs:
+    driver: local
+
+  # Unit test volumes
+  erlmcp-unit-cache:
+    driver: local
+  erlmcp-unit-logs:
+    driver: local
+
+  # Common Test volumes
+  erlmcp-ct-cache:
+    driver: local
+  erlmcp-ct-logs:
+    driver: local
+
+  # Check service volumes
+  erlmcp-check-cache:
+    driver: local
+  erlmcp-check-logs:
+    driver: local
+  erlmcp-check-coverage:
+    driver: local
+
+  # Benchmark volumes
+  erlmcp-bench-cache:
+    driver: local
+  erlmcp-bench-results:
+    driver: local

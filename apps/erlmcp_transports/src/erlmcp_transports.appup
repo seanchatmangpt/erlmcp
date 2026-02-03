@@ -1,0 +1,120 @@
+%% -*- erlang -*-
+%% vim: set ft=erlang ts=4 sw=4 et:
+%%%
+%%% erlmcp_transports.appup - Hot Code Upgrade Instructions
+%%%
+%%% Purpose: Zero-downtime upgrade/downgrade for transport layer
+%%% Version: 2.1.0 -> 3.0.0
+%%%
+%%% Upgrade Strategy:
+%%%   1. Graceful drain of active connections
+%%%   2. Transport module reload
+%%%   3. Connection migration
+%%%   4. Resume accepting new connections
+%%%
+%%% Supported Versions:
+%%%   - From: 2.1.0
+%%%   - To: 3.0.0
+%%%   - Downgrade: 3.0.0 -> 2.1.0
+%%%
+%%% State Changes:
+%%%   - Added: TLS 1.3 support in HTTP transports
+%%%   - Added: WebSocket compression (permessage-deflate)
+%%%   - Modified: Transport state with protocol versioning
+%%%
+%%% Dependencies:
+%%%   - Requires gun 2.0.1+
+%%%   - Requires ranch 2.1.0+
+%%%   - Requires cowboy 2.10.0+
+%%%
+%%% See: docs/HOT_CODE_UPGRADE.md
+
+{"3.0.0",
+ [
+  %% Upgrade from 2.1.0 to 3.0.0
+  {"2.1.0",
+   [
+    %% Step 1: Suspend transport supervisor (simple_one_for_one)
+    {apply, {supervisor, suspend, [erlmcp_transport_sup]}},
+
+    %% Step 2: Graceful drain of active connections
+    {apply, {erlmcp_graceful_drain, start, [30000]}}, % 30s drain timeout
+
+    %% Step 3: Load new transport modules
+    {load_module, erlmcp_transports_app, brutal_purge, purge},
+    {load_module, erlmcp_transport_sup, brutal_purge, purge},
+    {load_module, erlmcp_transport_stdio, brutal_purge, purge},
+    {load_module, erlmcp_transport_tcp, brutal_purge, purge},
+    {load_module, erlmcp_transport_http, brutal_purge, purge},
+    {load_module, erlmcp_transport_ws, brutal_purge, purge},
+    {load_module, erlmcp_transport_sse, brutal_purge, purge},
+    {load_module, erlmcp_client_transport, brutal_purge, purge},
+    {load_module, erlmcp_graceful_drain, brutal_purge, purge},
+
+    %% Step 4: Apply code_change to all active transport processes
+    {apply, {erlmcp_transport_stdio, upgrade_all, [3.0.0]}},
+    {apply, {erlmcp_transport_tcp, upgrade_all, [3.0.0]}},
+    {apply, {erlmcp_transport_http, upgrade_all, [3.0.0]}},
+    {apply, {erlmcp_transport_ws, upgrade_all, [3.0.0]}},
+    {apply, {erlmcp_transport_sse, upgrade_all, [3.0.0]}},
+
+    %% Step 5: Migrate transport state
+    {apply, {erlmcp_state_migration, migrate_transport_state, [2.1.0, 3.0.0]}},
+
+    %% Step 6: End drain and resume accepting connections
+    {apply, {erlmcp_graceful_drain, stop, []}},
+
+    %% Step 7: Resume transport supervisor
+    {apply, {supervisor, resume, [erlmcp_transport_sup]}},
+
+    %% Step 8: Verify transport health
+    {apply, {erlmcp_upgrade_coordinator, verify_transport_upgrade, [3.0.0]}},
+
+    %% Step 9: Log successful upgrade
+    {apply, {logger, info, ["erlmcp_transports upgraded from 2.1.0 to 3.0.0", []]}}
+   ],
+   [
+    %% Downgrade from 3.0.0 to 2.1.0
+    {"3.0.0",
+     [
+      %% Step 1: Suspend transport supervisor
+      {apply, {supervisor, suspend, [erlmcp_transport_sup]}},
+
+      %% Step 2: Graceful drain
+      {apply, {erlmcp_graceful_drain, start, [30000]}},
+
+      %% Step 3: Load old transport modules
+      {load_module, erlmcp_transports_app, brutal_purge, purge},
+      {load_module, erlmcp_transport_sup, brutal_purge, purge},
+      {load_module, erlmcp_transport_stdio, brutal_purge, purge},
+      {load_module, erlmcp_transport_tcp, brutal_purge, purge},
+      {load_module, erlmcp_transport_http, brutal_purge, purge},
+      {load_module, erlmcp_transport_ws, brutal_purge, purge},
+      {load_module, erlmcp_transport_sse, brutal_purge, purge},
+      {load_module, erlmcp_client_transport, brutal_purge, purge},
+      {load_module, erlmcp_graceful_drain, brutal_purge, purge},
+
+      %% Step 4: Apply code_change (downgrade)
+      {apply, {erlmcp_transport_stdio, downgrade_all, [2.1.0]}},
+      {apply, {erlmcp_transport_tcp, downgrade_all, [2.1.0]}},
+      {apply, {erlmcp_transport_http, downgrade_all, [2.1.0]}},
+      {apply, {erlmcp_transport_ws, downgrade_all, [2.1.0]}},
+      {apply, {erlmcp_transport_sse, downgrade_all, [2.1.0]}},
+
+      %% Step 5: Rollback transport state
+      {apply, {erlmcp_state_migration, rollback_transport_state, [3.0.0, 2.1.0]}},
+
+      %% Step 6: End drain
+      {apply, {erlmcp_graceful_drain, stop, []}},
+
+      %% Step 7: Resume supervisor
+      {apply, {supervisor, resume, [erlmcp_transport_sup]}},
+
+      %% Step 8: Verify transport health
+      {apply, {erlmcp_upgrade_coordinator, verify_transport_downgrade, [2.1.0]}},
+
+      %% Step 9: Log successful downgrade
+      {apply, {logger, info, ["erlmcp_transports downgraded from 3.0.0 to 2.1.0", []]}}
+     ]}
+   ]}
+ ]}.

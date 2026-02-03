@@ -1,0 +1,291 @@
+{{/*
+  erlmcp Deployment for GCP Marketplace
+  GKE-optimized deployment with Workload Identity and Secret Manager
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: deployment
+    marketplace.cloud.google.com/deployment: "true"
+  annotations:
+    {{- with .Values.deploymentAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit | default 10 }}
+  selector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: {{ .Values.strategyType | default "RollingUpdate" }}
+    {{- if eq (default "RollingUpdate" .Values.strategyType) "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.maxSurge | default "25%" }}
+      maxUnavailable: {{ .Values.maxUnavailable | default "0%" }}
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.global.gcp.workloadIdentity.enabled }}
+        iam.gke.io/gcp-service-account: {{ .Values.global.gcp.workloadIdentity.gsaEmail | quote }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: erlmcp
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port | default 8080 }}
+              protocol: TCP
+            - name: metrics
+              containerPort: {{ .Values.metrics.port | default 9090 }}
+              protocol: TCP
+            - name: distribution
+              containerPort: {{ .Values.distribution.port | default 9100 }}
+              protocol: TCP
+
+          # Environment variables
+          env:
+            - name: ERLMCP_ENV
+              value: {{ .Values.global.environment | default "production" | quote }}
+            - name: ERLMCP_VERSION
+              value: {{ .Chart.AppVersion | quote }}
+            - name: ERLMCP_NODE_NAME
+              value: "erlmcp@$(HOSTNAME)"
+            - name: ERL_AFLAGS
+              value: "-proto_dist inet_tls"
+            - name: ERL_DIST_PORT
+              value: {{ .Values.distribution.port | default "9100" | quote }}
+
+            # GCP-specific environment variables
+            {{- if .Values.otel.enabled }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "erlmcp"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "deployment.environment={{ .Values.global.environment }},service.version={{ .Chart.AppVersion }}"
+            {{- end }}
+
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+
+          # Secret Manager integration via environment variables
+          {{- if .Values.secretManager.enabled }}
+          {{- range $secret := .Values.secretManager.secrets }}
+          - name: {{ $secret.envName | default $secret.name }}
+            valueFrom:
+              secretKeyRef:
+                name: {{ include "erlmcp.secretName" $ }}
+                key: {{ $secret.key | default "latest" }}
+          {{- end }}
+          {{- end }}
+
+          # Resource limits
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          # Health check probes
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+          # Lifecycle hooks
+          {{- with .Values.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+          # Volume mounts
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /var/run
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /var/lib/erlmcp
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: /etc/tls
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+
+      # Volumes
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "erlmcp.fullname" . }}-data
+        {{- end }}
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.secretName | default "erlmcp-tls" }}
+            defaultMode: 0400
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
+      # Node selector
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      # Affinity
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      # Tolerations
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      # Priority class
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+
+      # Termination grace period
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds | default 60 }}
+
+---
+{{/* Persistent Volume Claim */}}
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size | default "10Gi" }}
+  storageClassName: {{ .Values.persistence.storageClass | default "premium-rwo" }}
+{{- end }}
+
+---
+{{/* HorizontalPodAutoscaler */}}
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "erlmcp.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+    {{- with .Values.autoscaling.customMetrics }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDownStabilizationSeconds | default 300 }}
+      policies:
+        - type: Pods
+          value: {{ .Values.autoscaling.scaleDownPodsValue | default 1 }}
+          periodSeconds: {{ .Values.autoscaling.scaleDownPeriodSeconds | default 60 }}
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.scaleUpStabilizationSeconds | default 0 }}
+      policies:
+        - type: Pods
+          value: {{ .Values.autoscaling.scaleUpPodsValue | default 3 }}
+          periodSeconds: {{ .Values.autoscaling.scaleUpPeriodSeconds | default 60 }}
+{{- end }}
+
+---
+{{/* PodDisruptionBudget */}}
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else if .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-base-config
+  namespace: erlmcp-base
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp-base
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/component: erlmcp
+    environment: base
+data:
+  # Main configuration
+  config.json: |
+    {
+      "cluster": {
+        "enabled": true,
+        "cookie": "erlmcp-cluster-3-0-0",
+        "heartbeat_interval": "10s",
+        "node_check_interval": "5s",
+        "split_brain": {
+          "strategy": "winner_takes_all",
+          "check_interval": "30s"
+        }
+      },
+      "server": {
+        "max_subscriptions_per_resource": 1000,
+        "max_progress_tokens": 10000
+      },
+      "transports": {
+        "tcp": {
+          "connect_timeout": 5000,
+          "keepalive": true,
+          "nodelay": true,
+          "port": 3000
+        },
+        "http": {
+          "connect_timeout": 5000,
+          "request_timeout": 30000,
+          "max_connections": 100,
+          "port": 3001
+        }
+      },
+      "logging": {
+        "level": "info",
+        "format": "json"
+      }
+    }
+  # Environment variables
+  env.sh: |
+    #!/bin/sh
+    # Environment variables for erlmcp
+    export ERLMCP_CLUSTER_ENABLED="true"
+    export ERLMCP_CLUSTER_COOKIE="erlmcp-cluster-3-0-0"
+    export ERLMCP_OTP_VERSION="28.3.1"
+    export POD_IP="$(POD_IP)"
+    export POD_NAME="$(POD_NAME)"
+    export POD_NAMESPACE="$(POD_NAMESPACE)"
+    export ERLMCP_LOG_LEVEL="info"
+    export ERLMCP_LOG_FORMAT="json"
+    export ERLMCP_HTTP_PORT="3001"
+    export ERLMCP_TCP_PORT="3000"
+    export ERLMCP_CLUSTER_PORT="9000"
+    export ERLMCP_MAX_CONNECTIONS="5000"
+    export ERLMCP_MAX_SESSIONS="10000"
+    export ERLMCP_MAX_REGISTRY_SIZE="1000000"
+    export ERLMCP_SESSION_BACKEND="ets"
+    export ERLMCP_REGISTRY_BACKEND="ets"
+    export ERLMCP_METRICS_ENABLED="true"
+    export ERLMCP_OTEL_ENABLED="true"
+    export OTEL_EXPORTER_OTLP_ENDPOINT="otel-collector.observability.svc.cluster.local:4317"
+    export ERLMCP_HEALTH_ENDPOINT="/health"
+    export ERLMCP_READY_ENDPOINT="/ready"
+    export ERLMCP_METRICS_ENDPOINT="/metrics"

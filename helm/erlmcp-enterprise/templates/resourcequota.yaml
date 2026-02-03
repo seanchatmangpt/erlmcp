@@ -1,0 +1,98 @@
+{{/*
+==============================================================================
+ERLMCP v3 Enterprise - ResourceQuota Helm Template
+==============================================================================
+Purpose: Production-ready resource quota management via Helm values
+
+Usage:
+  helm install erlmcp ./helm/erlmcp-enterprise --namespace erlmcp
+  helm upgrade erlmcp ./helm/erlmcp-enterprise --set resourceQuota.compute.requests.cpu=64
+
+Values Reference:
+  resourceQuota:
+    enabled: true
+    compute:
+      requests:
+        cpu: "32"
+        memory: 64Gi
+      limits:
+        cpu: "64"
+        memory: 128Gi
+    storage:
+      persistentvolumeclaims: 20
+      requests.storage: 500Gi
+    objects:
+      pods: 100
+      services: 30
+      secrets: 30
+      configmaps: 20
+==============================================================================
+*/}}
+
+{{- if .Values.resourceQuota.enabled }}
+{{- range $quotaType, $quotaConfig := .Values.resourceQuota.types }}
+---
+{{- if $quotaConfig.enabled }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" $ }}-{{ $quotaType }}
+  namespace: {{ include "erlmcp-enterprise.namespace" $ }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" $ | nindent 4 }}
+    component: resource-quota
+    quota-type: {{ $quotaType }}
+    environment: {{ $.Values.global.cluster.environment | default "production" }}
+  annotations:
+    description: {{ $quotaConfig.description | default (printf "Resource quota for %s" $quotaType) | quote }}
+    {{- with $quotaConfig.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- with $quotaConfig.scopes }}
+  scopes:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with $quotaConfig.scopeSelector }}
+  scopeSelector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  hard:
+    {{- with $quotaConfig.h }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+==============================================================================
+TENANT-SPECIFIC QUOTAS - Multi-tenant isolation
+==============================================================================
+*/}}
+{{- if and .Values.resourceQuota.enabled .Values.resourceQuota.tenants }}
+{{- range $tenantName, $tenantConfig := .Values.resourceQuota.tenants }}
+{{- if $tenantConfig.enabled }}
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" $ }}-tenant-{{ $tenantName }}
+  namespace: {{ $tenantConfig.namespace | default (printf "%s-%s" (include "erlmcp-enterprise.namespace" $) $tenantName) }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" $ | nindent 4 }}
+    component: resource-quota
+    quota-type: tenant
+    tenant: {{ $tenantName }}
+    tier: {{ $tenantConfig.tier | default "standard" }}
+  annotations:
+    description: {{ $tenantConfig.description | default (printf "Tenant quota for %s" $tenantName) | quote }}
+    sla-tier: {{ $tenantConfig.tier | default "standard" | quote }}
+spec:
+  hard:
+    {{- with $tenantConfig.resources }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

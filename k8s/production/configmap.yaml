@@ -1,0 +1,556 @@
+---
+# ============================================================================
+# ErlMCP v3.0.0 - Production ConfigMap
+# ============================================================================
+# Production configuration for ErlMCP deployed in Kubernetes
+# Includes application configuration, VM arguments, and feature flags
+# ============================================================================
+# Usage:
+#   kubectl apply -f k8s/production/configmap.yaml
+#   kubectl create configmap erlmcp-config --from-file=k8s/production/config/
+# ============================================================================
+
+---
+# ============================================================================
+# MAIN APPLICATION CONFIGURATION
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-config
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    environment: production
+    component: config
+  annotations:
+    description: "ErlMCP production configuration"
+data:
+  # ------------------------------------------------------------------------
+  # ERLMCP APPLICATION CONFIGURATION (Erlang term format)
+  # ------------------------------------------------------------------------
+  erlmcp.conf: |
+    %% ==============================================================================
+    %% ErlMCP v3.0.0 - Production Configuration
+    %% ==============================================================================
+    %% Environment: production
+    %% This configuration is loaded at application startup
+    %% ==============================================================================
+
+    [
+      %% ------------------------------------------------------------------------------
+      %% ERLMCP APPLICATION SETTINGS
+      %% ------------------------------------------------------------------------------
+      {erlmcp, [
+        %% Logging Configuration
+        {log_level, info},
+        {log_format, json},
+        {log_output, [
+          {stdout, true},
+          {file, "/var/log/erlmcp/erlmcp.log"}
+        ]},
+        {log_rotation, #{
+          enabled => true,
+          max_size_mb => 100,
+          max_files => 10,
+          compress_on_rotate => true
+        }},
+
+        %% Server Configuration
+        {server_defaults, #{
+          max_subscriptions_per_resource => 5000,
+          max_progress_tokens => 50000,
+          request_timeout => 30000,
+          max_concurrent_requests => 1000,
+          max_connections_per_client => 100,
+          connection_timeout => 30000,
+          keepalive_timeout => 60000,
+          max_message_size => 16777216,
+          message_queue_limit => 10000,
+          shutdown_timeout => 60000,
+          drain_timeout => 30000
+        }},
+
+        %% Client Configuration
+        {client_defaults, #{
+          timeout => 5000,
+          strict_mode => true,
+          max_pending_requests => 500,
+          retry_attempts => 3,
+          retry_delay => 2000,
+          retry_backoff => exponential,
+          max_backoff => 30000
+        }},
+
+        %% Transport Configuration
+        {transport, #{
+          tcp => #{
+            enabled => true,
+            host => "0.0.0.0",
+            port => 8080,
+            connect_timeout => 5000,
+            keepalive => true,
+            nodelay => true,
+            max_connections => 1000,
+            backlog => 1024,
+            buffer_size => 16384,
+            send_timeout => 30000,
+            recv_timeout => 30000
+          },
+          http => #{
+            enabled => true,
+            port => 8081,
+            connect_timeout => 5000,
+            request_timeout => 30000,
+            max_connections => 500,
+            max_headers_size => 8192,
+            max_body_size => 16777216,
+            compression => true,
+            chunked => true
+          },
+          websocket => #{
+            enabled => true,
+            port => 8082,
+            max_frame_size => 16777216,
+            ping_interval => 30000,
+            ping_timeout => 5000,
+            idle_timeout => 300000,
+            compression => false
+          },
+          sse => #{
+            enabled => true,
+            port => 8083,
+            retry_interval => 1000,
+            max_retries => 10,
+            keepalive_interval => 15000
+          },
+          stdio => #{
+            enabled => true,
+            buffer_size => 16384
+          }
+        }},
+
+        %% Authentication & Authorization
+        {auth, #{
+          enabled => true,
+          type => jwt,
+          jwt => #{
+            secret_key => {env, "ERLMCP_JWT_SECRET"},
+            algorithm => hs256,
+            expiration => 3600,
+            refresh_expiration => 86400,
+            issuer => "erlmcp-production",
+            audience => "erlmcp-api",
+            clock_skew => 30
+          },
+          rbac => #{
+            enabled => true,
+            roles => [admin, operator, readonly, user],
+            default_role => user,
+            admin_role => admin
+          },
+          rate_limit => #{
+            enabled => true,
+            requests_per_second => 100,
+            burst => 200,
+            per_ip => true,
+            per_user => true,
+            storage => ets
+          }
+        }},
+
+        %% Session Configuration
+        {session, #{
+          backend => redis,
+          backend_config => #{
+            host => {env, "REDIS_HOST"},
+            port => {env, "REDIS_PORT"},
+            password => {env, "REDIS_PASSWORD"},
+            database => 0,
+            prefix => "session:",
+            ttl => 3600
+          },
+          retention => 86400,
+          max_sessions => 100000,
+          cleanup_interval => 300000,
+          gc_interval => 60000
+        }},
+
+        %% Registry Configuration
+        {registry_defaults, #{
+          sharding_strategy => none,
+          health_check_interval => 30000
+        }},
+
+        %% Monitoring & Observability
+        {monitoring, #{
+          enabled => true,
+          prometheus_port => 9090,
+          prometheus_host => "0.0.0.0",
+          health_check_interval => 30000,
+          metrics_retention_days => 30,
+          metrics_export_interval => 15000
+        }},
+
+        %% OpenTelemetry Configuration
+        {otel, #{
+          enabled => true,
+          exporter => otlp,
+          endpoint => {env, "OTEL_EXPORTER_OTLP_ENDPOINT"},
+          service_name => "erlmcp",
+          service_namespace => "production",
+          service_version => "3.0.0",
+          sampler => #{
+            type => probability,
+            probability => 0.1,
+            parent_based => true
+          }
+        }},
+
+        %% Cluster Configuration (distributed Erlang)
+        {cluster_enabled, true},
+        {cluster_nodes, []},  % Auto-discovery via headless service
+        {cluster_cookie, {env, "ERLANG_COOKIE"}},
+        {cluster_heartbeat_interval, 10000},
+        {node_check_interval, 5000},
+        {split_brain_strategy, majority},
+        {split_brain_check_interval, 30000},
+
+        %% Persistence Configuration
+        {persistence, #{
+          enabled => true,
+          backend => mnesia,
+          backend_config => #{
+            dir => "/var/lib/erlmcp/mnesia",
+            dump_log_write_threshold => 5000,
+            dump_log_time_threshold => 30000
+          },
+          backup => #{
+            enabled => true,
+            interval => 86400000,
+            retention => 7,
+            location => "/backup"
+          }
+        }}
+      ]},
+
+      %% ------------------------------------------------------------------------------
+      %% KERNEL CONFIGURATION
+      %% ------------------------------------------------------------------------------
+      {kernel, [
+        {logger_level, info},
+        {logger, [
+          {handler, default, logger_std_h, #{
+            config => #{
+              type => stdio,
+              sync_mode_qlen => 100,
+              drop_mode_qlen => 300,
+              flush_qlen => 5000,
+              overflow => keep
+            },
+            formatter => {logger_formatter, #{
+              single_line => true,
+              legacy_header => false,
+              time_designator => $
+            }},
+            filter_default => stop
+          }},
+          {handler, file_handler, logger_std_h, #{
+            config => #{
+              file => "/var/log/erlmcp/kernel.log",
+              max_no_bytes => 104857600,
+              max_no_files => 10,
+              compress_on_rotate => true
+            },
+            formatter => {logger_formatter, #{
+              single_line => true
+            }}
+          }}
+        ]},
+        {inet_dist_listen_min, 9100},
+        {inet_dist_listen_max, 9200},
+        {net_setuptime, 7000}
+      ]},
+
+      %% ------------------------------------------------------------------------------
+      %% SASL CONFIGURATION
+      %% ------------------------------------------------------------------------------
+      {sasl, [
+        {sasl_error_logger, {file, "/var/log/erlmcp/sasl.log"}},
+        {errlog_type, error},
+        {error_logger_format_depth, 50},
+        {utc_log, true}
+      ]},
+
+      %% ------------------------------------------------------------------------------
+      %% SSL/TLS CONFIGURATION
+      %% ------------------------------------------------------------------------------
+      {ssl, [
+        {session_lifetime, 300},
+        {protocol_version, ['tlsv1.2', 'tlsv1.3']},
+        {secure_renegotiate, true},
+        {honor_cipher_order, true},
+        {client_renegotiation, false}
+      ]},
+
+      %% ------------------------------------------------------------------------------
+      %% OS MONITOR CONFIGURATION
+      %% ------------------------------------------------------------------------------
+      {os_mon, [
+        {start_memsup, false},
+        {start_cpu_sup, false},
+        {start_disksup, false}
+      ]}
+    ].
+
+  # ------------------------------------------------------------------------
+  # VM ARGUMENTS (vm.args)
+  # ------------------------------------------------------------------------
+  vm.args: |
+    %% ==============================================================================
+    %% Erlang VM Arguments for ErlMCP v3.0.0 Production
+    %% ==============================================================================
+
+    %% Node identification
+    -name erlmcp@${ERLMCP_NODE_NAME}.erlmcp-production.svc.cluster.local
+    -setcookie ${ERLANG_COOKIE}
+
+    %% Code paths
+    -pa /opt/erlmcp/lib/*/ebin
+    -pa /opt/erlmcp/ebin
+
+    %% Process limits (support high concurrency)
+    +P 262144       %% Max number of Erlang processes
+    +Q 65536        %% Max number of ports
+    +t 5000000      %% Atom table size
+
+    %% Scheduler configuration
+    +sbt db                                %% Dirty CPU schedulers
+    +SDcpu 10                              %% Dirty CPU schedulers count
+    +SDio 10                               %% Dirty IO schedulers count
+    +sfwi 500                              %% Scheduler forced wakeup interval
+
+    %% Memory & Garbage Collection
+    +MBacul 0                              %% Cgroups-aware memory (disable carrier limit)
+    +Msbagf 512                            %% Carrier size alignment
+    +MBacgs 0                              %% Auto-detect cgroups memory limits
+    +e 0                                   %% Fullsweep after 0 allocations
+
+    %% Environment variables
+    -env ERL_MAX_PORTS 65536
+    -env ERL_MAX_ETS_TABLES 50000
+    -env ERL_CRASH_DUMP /var/log/erlmcp/erl_crash.dump
+
+    %% Networking (EPMD-less clustering)
+    -kernel inet_dist_listen_min 9100
+    -kernel inet_dist_listen_max 9200
+    -kernel net_setuptime 7000
+    -proto_dist inet_tls
+
+    %% Time correction
+    +C no_time_correction
+
+    %% Microstate accounting
+    +Muacul true
+
+    %% Scheduler utilization balancing
+    +sub true
+
+    %% Distribution buffer busy limit (8MB)
+    +zdbbl 8192
+
+    %% Logger burst limit
+    -kernel logger_burst_limit 5000
+
+    %% Enable heart (auto-restart)
+    -heart
+
+    %% Kernel poll
+    +K true
+
+    %% Interactive mode (disabled for containers)
+    -noshell
+    -noinput
+
+    %% Boot mode
+    -mode embedded
+
+  # ------------------------------------------------------------------------
+  # FEATURE FLAGS (JSON format)
+  # ------------------------------------------------------------------------
+  feature-flags.json: |
+    {
+      "version": "3.0.0",
+      "environment": "production",
+      "last_updated": "2026-01-01T00:00:00Z",
+      "flags": {
+        "observability": {
+          "metrics.enabled": true,
+          "metrics.prometheus": true,
+          "metrics.opentelemetry": true,
+          "telemetry.enabled": true,
+          "tracing.enabled": true,
+          "tracing.otlp": true,
+          "logging.json": true,
+          "logging.level": "info",
+          "dashboards.enabled": true,
+          "alerts.enabled": true
+        },
+        "performance": {
+          "cache.enabled": true,
+          "cache.redis": true,
+          "cache.ets": true,
+          "compression.enabled": true,
+          "compression.gzip": true,
+          "pooling.enabled": true,
+          "async.enabled": true,
+          "batch.enabled": true
+        },
+        "security": {
+          "auth.enabled": true,
+          "auth.jwt": true,
+          "auth.rbac": true,
+          "auth.rate_limit": true,
+          "auth.tls": true,
+          "audit.enabled": true,
+          "encryption.at_rest": true,
+          "encryption.in_transit": true
+        },
+        "cluster": {
+          "distributed_tracing": true,
+          "session_persistence": true,
+          "load_balancing": true,
+          "circuit_breaker": true,
+          "retry": true,
+          "backpressure": true,
+          "healthchecks": true,
+          "graceful_shutdown": true,
+          "auto_healing": true
+        },
+        "scaling": {
+          "high_availability": true,
+          "auto_scaling": true,
+          "horizontal_scaling": true,
+          "rolling_updates": true,
+          "rollbacks": true
+        }
+      }
+    }
+
+---
+# ============================================================================
+# FLUENT-BIT CONFIGURATION (Log collection sidecar)
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-fluent-bit-config
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    component: logging
+data:
+  fluent-bit.conf: |
+    [SERVICE]
+        Flush         5
+        Daemon        off
+        Log_Level     info
+
+    [INPUT]
+        Name              tail
+        Path              /var/log/erlmcp/*.log
+        Parser            json
+        Tag               erlmcp.*
+        Refresh_Interval  10
+        Mem_Buf_Limit     5MB
+        Skip_Long_Lines   On
+
+    [FILTER]
+        Name                nest
+        Match               erlmcp.*
+        Operation           nest
+        Wildcard            pod*
+        Wildcard            namespace*
+        Wildcard            pod_name
+        Wildcard            pod_namespace
+        Wildcard            pod_id
+        Wildcard            host
+        Wildcard            container_name
+        Wildcard            docker_id
+        Wildcard            kubernetes*
+        Remove_prefix       kubernetes_
+        Add_prefix          kubernetes_
+
+    [OUTPUT]
+        Name                stdout
+        Match               *
+        Format              json_lines
+
+    # Uncomment to send to Elasticsearch
+    #[OUTPUT]
+    #    Name            es
+    #    Match           *
+    #    Host            ${FLUENT_ELASTICSEARCH_HOST}
+    #    Port            ${FLUENT_ELASTICSEARCH_PORT}
+    #    Index           erlmcp
+    #    Type            _doc
+    #    Logstash_Format On
+    #    Logstash_Prefix erlmcp
+    #    Retry_Limit     False
+
+    # Uncomment to send to Loki
+    #[OUTPUT]
+    #    Name            loki
+    #    Match           *
+    #    Url             ${FLUENT_LOKI_URL}
+    #    Batch           true
+    #    BatchWait       1
+    #    BatchSize       100000
+    #    Labels          job=erlmcp,namespace=erlmcp-production
+
+---
+# ============================================================================
+# ENVIRONMENT VARIABLES CONFIGMAP
+# ============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-env
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    component: env
+data:
+  # Application settings
+  ERLMCP_ENV: "production"
+  ERLMCP_VERSION: "3.0.0"
+  ERLMCP_LOG_LEVEL: "info"
+  ERLMCP_LOG_FORMAT: "json"
+
+  # Server settings
+  ERLMCP_PORT: "8080"
+  ERLMCP_HTTPS_PORT: "8443"
+  ERLMCP_METRICS_PORT: "9090"
+  ERLMCP_HEALTH_PORT: "9091"
+
+  # Distribution settings
+  ERL_DIST_PORT: "9100"
+  ERL_DIST_PORT_MIN: "9100"
+  ERL_DIST_PORT_MAX: "9200"
+
+  # Resource limits
+  ERL_MAX_PORTS: "65536"
+  ERL_MAX_ETS_TABLES: "50000"
+  ERL_FULLSWEEP_AFTER: "0"
+
+  # Feature flags
+  CLUSTER_ENABLED: "true"
+  MONITORING_ENABLED: "true"
+  OTEL_ENABLED: "true"
+  AUTH_ENABLED: "true"
+  RATE_LIMIT_ENABLED: "true"
+
+  # Performance settings
+  MAX_SUBSCRIPTIONS: "5000"
+  MAX_PROGRESS_TOKENS: "50000"
+  MAX_CONCURRENT_REQUESTS: "1000"

@@ -1,0 +1,186 @@
+groups:
+  - name: erlmcp.recording
+    interval: 15s
+    rules:
+      # Business metrics recording rules
+      - record: erlmcp_request_rate
+        expr: rate(erlmcp_requests_total[5m])
+
+      - record: erlmcp_error_rate
+        expr: rate(erlmcp_errors_total[5m]) / rate(erlmcp_requests_total[5m])
+
+      - record: erlmcp_success_rate
+        expr: 1 - erlmcp_error_rate
+
+      - record: erlmcp_avg_request_duration
+        expr: histogram_quantile(0.5, rate(erlmcp_request_duration_seconds_bucket[5m]))
+
+      - record: erlmcp_p95_request_duration
+        expr: histogram_quantile(0.95, rate(erlmcp_request_duration_seconds_bucket[5m]))
+
+      - record: erlmcp_p99_request_duration
+        expr: histogram_quantile(0.99, rate(erlmcp_request_duration_seconds_bucket[5m]))
+
+      - record: erlmcp_connections_active
+        expr: erlmcp_connections_total - erlmcp_connections_closed_total
+
+      - record: erlmcp_sessions_active
+        expr: erlmcp_active_sessions
+
+      - record: erlmcp_throughput
+        expr: rate(erlmcp_requests_total[1m])
+
+      # Performance metrics
+      - record: erlmcp_queue_backlog
+        expr: erlmcp_queue_size
+
+      - record: erlmcp_process_count
+        expr: erlmcp_process_count
+
+      - record: erlmcp_memory_usage
+        expr: erlmcp_memory_total_bytes / 1073741824  # Convert to GB
+
+      - record: erlmcp_cpu_usage
+        expr: 1 - (avg(rate(container_cpu_seconds_total[5m])) by (instance) / on (instance) group_left(node) machine_cpu_cores)
+
+      # Security metrics
+      - record: erlmcp_security_event_rate
+        expr: rate(erlmcp_security_events_total[5m])
+
+      - record: erlmcp_auth_failure_rate
+        expr: rate(erlmcp_auth_failures_total[5m])
+
+      - record: erlmcp_rate_limit_exceeded_rate
+        expr: rate(erlmcp_rate_limit_exceeded_total[5m])
+
+      # Transport metrics
+      - record: erlmcp_transport_error_rate
+        expr: rate(erlmcp_transport_errors_total[5m])
+
+      - record: erlmcp_connection_success_rate
+        expr: 1 - rate(erlmcp_connection_errors_total[5m]) / rate(erlmcp_connections_total[5m])
+
+      # Session metrics
+      - record: erlmcp_session_error_rate
+        expr: rate(erlmcp_session_errors_total[5m])
+
+      - record: erlmcp_avg_session_duration
+        expr: histogram_quantile(0.5, rate(erlmcp_session_duration_seconds_bucket[5m]))
+
+      # Database metrics
+      - record: erlmcp_db_error_rate
+        expr: rate(erlmcp_db_errors_total[5m])
+
+      - record: erlmcp_db_connection_count
+        expr: erlmcp_db_connections_active
+
+      # Tool invocation metrics
+      - record: erlmcp_tool_invocation_rate
+        expr: rate(erlmcp_tools_invocations_total[5m])
+
+      # Capacity planning metrics
+      - record: erlmcp_capacity_utilization
+        expr: (erlmcp_cpu_usage + erlmcp_memory_usage) / 2
+
+      - record: erlmcp_resource_pressure
+        expr: (erlmcp_cpu_usage > 80) + (erlmcp_memory_usage > 80) + (erlmcp_disk_usage > 80)
+
+      # SLA metrics
+      - record: erlmcp_sla_uptime
+        expr: 1 - rate(erlmcp_downtime_seconds_total[1h])
+
+      - record: erlmcp_sla_response_time
+        expr: erlmcp_p95_request_duration
+
+      - record: erlmcp_sla_error_rate
+        expr: erlmcp_error_rate
+
+      # Error categorization
+      - record: erlmcp_errors_by_type
+        expr: rate(erlmcp_errors_total[5m]) by (error_type)
+
+      - record: erlmcp_errors_by_status
+        expr: rate(erlmcp_responses_total[5m]) by (status)
+
+      - record: erlmcp_errors_by_endpoint
+        expr: rate(erlmcp_responses_total[5m]) by (endpoint)
+
+      # Business metrics
+      - record: erlmcp_active_users
+        expr: erlmcp_business_metrics_active_users
+
+      - record: erlmcp_conversion_rate
+        expr: rate(erlmcp_business_metrics_conversions_total[5m])
+
+      - record: erlmcp_revenue_per_minute
+        expr: rate(erlmcp_business_metrics_revenue_total[5m])
+
+      # Health metrics
+      - record: erlmcp_health_score
+        expr: (erlmcp_healthy * 100) + (1 - erlmcp_error_rate * 10000) + (1 - erlmcp_p99_request_duration)
+
+      # Load balancing metrics
+      - record: erlmcp_load_balancer_distribution
+        expr: rate(erlmcp_requests_total[5m]) by (instance)
+
+      # Network metrics
+      - record: erlmcp_network_in_bytes
+        expr: rate(rate(node_network_receive_bytes_total[5m]))
+
+      - record: erlmcp_network_out_bytes
+        expr: rate(rate(node_network_transmit_bytes_total[5m]))
+
+      # Disk metrics
+      - record: erlmcp_disk_usage
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100
+
+      # Prometheus exporter metrics
+      - record: prometheus_tsdb_head_chunks
+        expr: prometheus_tsdb_head_chunks
+
+      - record: prometheus_tsdb_head_series
+        expr: prometheus_tsdb_head_series
+
+      - record: prometheus_tsdb_lowmem_series
+        expr: prometheus_tsdb_lowmem_series
+
+      # Alerting metrics
+      - record: alerts_firing_total
+        expr: alerts_firing
+
+      - record: alerts_pending_total
+        expr: alerts_pending
+
+      # Recording rules for dashboard calculations
+      - record: erlmcp_daily_requests
+        expr: sum(increase(erlmcp_requests_total[24h]))
+
+      - record: erlmcp_weekly_requests
+        expr: sum(increase(erlmcp_requests_total[7d]))
+
+      - record: erlmcp_monthly_requests
+        expr: sum(increase(erlmcp_requests_total[30d]))
+
+      # Performance percentiles for dashboards
+      - record: erlmcp_p50_request_duration
+        expr: histogram_quantile(0.50, rate(erlmcp_request_duration_seconds_bucket[5m]))
+
+      - record: erlmcp_p90_request_duration
+        expr: histogram_quantile(0.90, rate(erlmcp_request_duration_seconds_bucket[5m]))
+
+      # Error ratios
+      - record: erlmcp_5xx_ratio
+        expr: rate(erlmcp_responses_total{status=~"5.."}[5m]) / rate(erlmcp_responses_total[5m])
+
+      - record: erlmcp_4xx_ratio
+        expr: rate(erlmcp_responses_total{status=~"4.."}[5m]) / rate(erlmcp_responses_total[5m])
+
+      # Time series aggregations
+      - record: erlmcp_requests_max
+        expr: max(erlmcp_requests_total[5m])
+
+      - record: erlmcp_requests_min
+        expr: min(erlmcp_requests_total[5m])
+
+      - record: erlmcp_requests_avg
+        expr: avg(erlmcp_requests_total[5m])

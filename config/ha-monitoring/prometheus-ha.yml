@@ -1,0 +1,138 @@
+# High Availability Monitoring Configuration for erlmcp
+# Global configuration for Prometheus
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: "erlmcp-ha"
+    env: "production"
+
+rule_files:
+  - "erlmcp_ha_rules.yml"
+  - "erlmcp_sla_rules.yml"
+
+scrape_configs:
+  # erlmcp primary region nodes
+  - job_name: 'erlmcp-primary'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets:
+          - 'us-east-1-node1:9090'
+          - 'us-east-1-node2:9090'
+          - 'us-east-1-node3:9090'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: region
+        replacement: 'us-east-1'
+      - source_labels: [__address__]
+        target_label: node_type
+        replacement: 'primary'
+
+  # erlmcp secondary region nodes
+  - job_name: 'erlmcp-secondary'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets:
+          - 'eu-west-1-node1:9090'
+          - 'eu-west-1-node2:9090'
+          - 'eu-west-1-node3:9090'
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: region
+        replacement: 'eu-west-1'
+      - source_labels: [__address__]
+        target_label: node_type
+        replacement: 'secondary'
+
+  # erlmcp tertiary region nodes
+  - job_name: 'erlmcp-tertiary'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets:
+          - 'ap-southeast-1-node1:9090'
+          - 'ap-southeast-1-node2:9090'
+    scrape_interval: 30s
+    scrape_timeout: 20s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: region
+        replacement: 'ap-southeast-1'
+      - source_labels: [__address__]
+        target_label: node_type
+        replacement: 'tertiary'
+
+  # HAProxy load balancer
+  - job_name: 'haproxy'
+    metrics_path: '/stats'
+    scheme: http
+    static_configs:
+      - targets:
+          - 'global-lb:8404'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'haproxy_backend_.*'
+        target_label: job
+        replacement: 'haproxy_backend'
+      - source_labels: [__name__]
+        regex: 'haproxy_server_.*'
+        target_label: job
+        replacement: 'haproxy_server'
+
+  # Database metrics
+  - job_name: 'postgres-ha'
+    metrics_path: '/metrics'
+    scheme: http
+    static_configs:
+      - targets:
+          - 'postgres-primary:9100'
+          - 'postgres-replica1:9100'
+          - 'postgres-replica2:9100'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: db_role
+        regex: '(.*)-\\d+'
+        replacement: '$1'
+
+  # Redis for session storage
+  - job_name: 'redis-ha'
+    metrics_path: '/metrics'
+    scheme: http
+    static_configs:
+      - targets:
+          - 'redis-master:9121'
+          - 'redis-replica1:9121'
+          - 'redis-replica2:9121'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Network metrics
+  - job_name: 'node-exporter'
+    metrics_path: '/metrics'
+    scheme: http
+    static_configs:
+      - targets:
+          - 'us-east-1-node1:9100'
+          - 'us-east-1-node2:9100'
+          - 'us-east-1-node3:9100'
+          - 'eu-west-1-node1:9100'
+          - 'eu-west-1-node2:9100'
+          - 'eu-west-1-node3:9100'
+          - 'ap-southeast-1-node1:9100'
+          - 'ap-southeast-1-node2:9100'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - 'alertmanager:9093'

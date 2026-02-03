@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-02-02T09:49:23-08:00",
+  "otp_version": "",
+  "analysis": {
+  "otp_check": {"status": "fail", "version": "28", "required": "28.3.1+"},
+  "compilation": {"status": "pass", "exit_code": 0},
+  "test_discovery": {
+    "eunit_modules":      696,
+    "ct_suites":       77,
+    "total": 773
+  },
+  "eunit": {"status": "pass", "exit_code": 0},
+  "test_patterns": {
+    "setup_functions":      372,
+    "cleanup_functions":      416,
+    "mock_usage":      416
+  },

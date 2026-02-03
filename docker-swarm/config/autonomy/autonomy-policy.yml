@@ -1,0 +1,245 @@
+# Self-Healing and Auto-Recovery Configuration for erlmcp Docker Swarm
+
+version: 1.0
+
+# Auto-Scaling Policies
+autoscaling:
+  policies:
+    # Core service scaling
+    - name: "erlmcp-core-auto-scale"
+      service: "erlmcp-core"
+      metrics:
+        - cpu: "avg > 70% for 5m"
+        - memory: "avg > 80% for 5m"
+        - connections: "avg > 5000 for 5m"
+      actions:
+        - scale_up: "+1"
+        - scale_down: "-1 (min=3)"
+      cooldown: "10m"
+      enabled: true
+
+    # Transport service scaling
+    - name: "erlmcp-transport-auto-scale"
+      service: "erlmcp-transports"
+      metrics:
+        - cpu: "avg > 60% for 5m"
+        - connections: "avg > 8000 for 5m"
+      actions:
+        - scale_up: "+2"
+        - scale_down: "-1 (min=3)"
+      cooldown: "10m"
+      enabled: true
+
+    # Database scaling
+    - name: "database-auto-scale"
+      service: "erlmcp-session-db"
+      metrics:
+        - cpu: "avg > 75% for 5m"
+        - connections: "avg > 800 for 5m"
+      actions:
+        - scale_up: "+1"
+        - scale_down: "-1 (min=3)"
+      cooldown: "15m"
+      enabled: true
+
+# Self-Healing Policies
+self_healing:
+  policies:
+    # Service restart policy
+    - name: "service-restart"
+      conditions:
+        - "service_down == 1"
+        - "health_check_failed == true"
+      actions:
+        - restart: true
+        - scale_check: true
+      max_attempts: 3
+      cooldown: "5m"
+      enabled: true
+
+    # Node health check
+    - name: "node-health-check"
+      conditions:
+        - "node_unhealthy == true"
+        - "node_down == true"
+      actions:
+        - drain_node: true
+        - migrate_services: true
+      max_attempts: 1
+      cooldown: "2m"
+      enabled: true
+
+    # Container restart policy
+    - name: "container-restart"
+      conditions:
+        - "container_crashed == true"
+        - "container_unhealthy == true"
+      actions:
+        - restart_container: true
+        - log_restart: true
+      max_attempts: 5
+      backoff: "exponential (base=2, max=30m)"
+      enabled: true
+
+# Circuit Breaker Configuration
+circuit_breaker:
+  policies:
+    # Database circuit breaker
+    - name: "database-circuit-breaker"
+      service: "erlmcp-session-db"
+      failure_threshold: "5 errors in 1m"
+      reset_timeout: "30s"
+      half_open_attempts: "3"
+      actions:
+        - trip_circuit: true
+        - alert_admin: true
+      enabled: true
+
+    # Circuit breaker for external services
+    - name: "external-service-circuit-breaker"
+      service: "erlmcp-gateway"
+      failure_threshold: "10 errors in 1m"
+      reset_timeout: "1m"
+      half_open_attempts: "5"
+      actions:
+        - fallback_to_cache: true
+        - degrade_service: true
+      enabled: true
+
+# Auto-Recovery Configuration
+auto_recovery:
+  policies:
+    # Rollback on deployment failure
+    - name: "deployment-rollback"
+      conditions:
+        - "deployment_failed == true"
+        - "error_rate > 10%"
+      actions:
+        - rollback: true
+        - alert_team: true
+      cooldown: "5m"
+      enabled: true
+
+    # Database recovery
+    - name: "database-recovery"
+      conditions:
+        - "database_unavailable == true"
+        - "replication_lag > 30s"
+      actions:
+        - promote_replica: true
+        - restore_from_backup: true
+        - alert_team: true
+      max_attempts: 3
+      cooldown: "10m"
+      enabled: true
+
+# Resource Optimization
+resource_optimization:
+  policies:
+    # CPU optimization
+    - name: "cpu-optimization"
+      service: "erlmcp-*"
+      metrics:
+        - cpu: "avg > 90% for 15m"
+      actions:
+        - scale_up: true
+        - optimize_processes: true
+      enabled: true
+
+    # Memory optimization
+    - name: "memory-optimization"
+      service: "erlmcp-*"
+      metrics:
+        - memory: "avg > 85% for 10m"
+      actions:
+        - scale_up: true
+        - gc_optimize: true
+        - cache_clear: true
+      enabled: true
+
+# Alerting and Notification
+alerting:
+  channels:
+    - name: "slack"
+      webhook: "${SLACK_WEBHOOK}"
+      format: "json"
+      severity_levels: ["critical", "high", "warning"]
+
+    - name: "email"
+      smtp_server: "${SMTP_SERVER}"
+      smtp_port: 587
+      recipients: ["admin@company.com", "devops@company.com"]
+      severity_levels: ["critical", "high"]
+
+    - name: "pagerduty"
+      service_key: "${PAGERDuty_SERVICE_KEY}"
+      severity_levels: ["critical"]
+
+  policies:
+    - name: "high-priority-alerts"
+      conditions:
+        - "severity == critical"
+        - "service_down == true"
+      actions:
+        - notify: ["all"]
+        - escalate: true
+      cooldown: "5m"
+
+    - name: "medium-priority-alerts"
+      conditions:
+        - "severity == high"
+        - "error_rate > 5%"
+      actions:
+        - notify: ["devops"]
+        - create_ticket: true
+      cooldown: "15m"
+
+# Continuous Monitoring
+continuous_monitoring:
+  enabled: true
+  metrics:
+    - service_health
+    - resource_usage
+    - performance_metrics
+    - security_events
+    - compliance_status
+  alerts:
+    - metric: "service_health"
+      threshold: "99%"
+      severity: "critical"
+    - metric: "response_time"
+      threshold: "2s"
+      severity: "high"
+    - metric: "error_rate"
+      threshold: "5%"
+      severity: "warning"
+    - metric: "memory_usage"
+      threshold: "90%"
+      severity: "high"
+    - metric: "cpu_usage"
+      threshold: "85%"
+      severity: "warning"
+
+# Disaster Recovery
+disaster_recovery:
+  policies:
+    - name: "failover-primary"
+      conditions:
+        - "primary_node_down == true"
+        - "downtime > 5m"
+      actions:
+        - promote_secondary: true
+        - update_dns: true
+        - notify_all: true
+      enabled: true
+
+    - name: "data-recovery"
+      conditions:
+        - "data_corruption == true"
+        - "data_loss == true"
+      actions:
+        - restore_from_backup: true
+        - rebuild_replicas: true
+        - alert_security: true
+      max_attempts: 3
+      enabled: true

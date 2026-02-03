@@ -1,0 +1,175 @@
+# Staging environment values for erlmcp-enterprise
+# Usage: helm install erlmcp-staging ./helm/erlmcp-enterprise -f helm/erlmcp-enterprise/values-staging.yaml
+
+global:
+  cluster:
+    name: "erlmcp-staging"
+    environment: "staging"
+    region: "us-east-1"
+
+deployment:
+  replicas: 2
+
+statefulset:
+  enabled: true
+  replicas: 2
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1000m"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: "erlmcp-staging.local"
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: erlmcp-staging-tls
+      hosts:
+        - erlmcp-staging.local
+
+service:
+  type: "ClusterIP"
+
+app:
+  erlang:
+    env:
+      ERLMCP_LOG_LEVEL: "info"
+      ERLMCP_METRICS_ENABLED: "true"
+
+  sessions:
+    enabled: true
+    backend: "mnesia"
+    sharding:
+      enabled: true
+      count: 8
+    replication:
+      enabled: true
+      nodes: 2
+
+  cache:
+    enabled: true
+    type: "redis"
+
+  database:
+    enabled: true
+
+  queue:
+    enabled: true
+
+monitoring:
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+  grafana:
+    enabled: true
+
+logging:
+  level: "info"
+  format: "json"
+
+security:
+  networkPolicy:
+    enabled: true
+
+storage:
+  persistentVolumeClaim:
+    enabled: true
+    size: "20Gi"
+  logs:
+    enabled: true
+    size: "5Gi"
+
+# ==============================================================================
+# Staging ResourceQuota Overrides
+# ==============================================================================
+resourceQuota:
+  enabled: true
+
+  types:
+    compute:
+      enabled: true
+      hard:
+        requests.cpu: "16"
+        requests.memory: 32Gi
+        limits.cpu: "32"
+        limits.memory: 64Gi
+
+    storage:
+      enabled: true
+      hard:
+        persistentvolumeclaims: "10"
+        requests.storage: "200Gi"
+
+    objects:
+      enabled: true
+      hard:
+        pods: "50"
+        services: "20"
+        services.loadbalancers: "1"
+        services.nodeports: "5"
+        secrets: "20"
+        configmaps: "15"
+
+    long-running:
+      enabled: true
+      hard:
+        pods: "25"
+        requests.cpu: "12"
+        requests.memory: 24Gi
+        limits.cpu: "24"
+        limits.memory: 48Gi
+
+    batch:
+      enabled: true
+      hard:
+        pods: "10"
+        requests.cpu: "2"
+        requests.memory: 4Gi
+        limits.cpu: "4"
+        limits.memory: 8Gi
+
+limitRange:
+  enabled: true
+  container:
+    default:
+      cpu: "500m"
+      memory: "1Gi"
+    defaultRequest:
+      cpu: "100m"
+      memory: "256Mi"
+    max:
+      cpu: "4000m"
+      memory: "8Gi"
+    min:
+      cpu: "50m"
+      memory: "128Mi"
+
+  persistentVolumeClaim:
+    default:
+      storage: "5Gi"
+    max:
+      storage: "100Gi"
+    min:
+      storage: "1Gi"

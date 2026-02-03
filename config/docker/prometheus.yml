@@ -1,0 +1,239 @@
+# Prometheus Scrape Configuration for erlmcp v3
+# =================================================
+# Comprehensive metrics collection for Erlang/OTP MCP server
+#
+# Features:
+# - Standard Erlang VM metrics (memory, reductions, process count)
+# - Application-specific metrics (connections, requests, sessions)
+# - Transport metrics (stdio, tcp, http, websocket)
+# - OpenTelemetry integration
+# - Alerting rules integration
+#
+# Metrics Endpoint: http://erlmcp:9100/metrics
+# Dashboard: http://localhost:9090
+
+global:
+  # Default scrape interval
+  scrape_interval: 15s
+  # Default rule evaluation interval
+  evaluation_interval: 15s
+  # Scrape timeout
+  scrape_timeout: 10s
+  # External labels
+  external_labels:
+    cluster: 'erlmcp-swarm'
+    replica: "{{.NodeID}}"
+    environment: 'production'
+
+# Alerting rule files
+rule_files:
+  - "erlmcp_alerts.yml"
+  - "erlmcp_recording_rules.yml"
+
+# Scrape configurations
+scrape_configs:
+  # ============================================
+  # erlmcp Application Metrics (Primary)
+  # ============================================
+  - job_name: 'erlmcp-core'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scrape_timeout: 5s
+    scheme: http
+    honor_labels: true
+    honor_timestamps: true
+    static_configs:
+      - targets:
+          - erlmcp-core-1:8080
+          - erlmcp-core-2:8080
+          - erlmcp-core-3:8080
+        labels:
+          service: 'erlmcp'
+          component: 'core'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '(.+):(.+)'
+        replacement: '$1'
+
+    # Metric relabeling for data reduction
+    metric_relabel_configs:
+      # Drop high-cardinality metrics if needed
+      - source_labels: [__name__]
+        regex: 'erlmcp_request_id.*'
+        action: drop
+
+  # ============================================
+  # erlmcp Transport Layer Metrics
+  # ============================================
+  - job_name: 'erlmcp-transports'
+    metrics_path: '/transport/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+    scheme: http
+    honor_labels: true
+    static_configs:
+      - targets:
+          - erlmcp-core-1:8080
+          - erlmcp-core-2:8080
+          - erlmcp-core-3:8080
+        labels:
+          service: 'erlmcp'
+          component: 'transports'
+
+  # ============================================
+  # erlmcp Session Metrics
+  # ============================================
+  - job_name: 'erlmcp-sessions'
+    metrics_path: '/sessions/metrics'
+    scrape_interval: 10s
+    scheme: http
+    honor_labels: true
+    static_configs:
+      - targets:
+          - erlmcp-core-1:8080
+          - erlmcp-core-2:8080
+          - erlmcp-core-3:8080
+        labels:
+          service: 'erlmcp'
+          component: 'sessions'
+
+  # ============================================
+  # erlmcp Cluster Metrics
+  # ============================================
+  - job_name: 'erlmcp-cluster'
+    metrics_path: '/cluster/metrics'
+    scrape_interval: 15s
+    scheme: http
+    honor_labels: true
+    static_configs:
+      - targets:
+          - erlmcp-core-1:8080
+          - erlmcp-core-2:8080
+          - erlmcp-core-3:8080
+        labels:
+          service: 'erlmcp'
+          component: 'cluster'
+
+  # ============================================
+  # OpenTelemetry Collector
+  # ============================================
+  - job_name: 'otel-collector'
+    scrape_interval: 15s
+    metrics_path: '/metrics'
+    honor_labels: true
+    static_configs:
+      - targets:
+          - otel-collector:8888
+        labels:
+          service: 'opentelemetry'
+
+  # ============================================
+  # Node Exporter (System Metrics)
+  # ============================================
+  - job_name: 'node-exporter'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - node-exporter-1:9100
+          - node-exporter-2:9100
+          - node-exporter-3:9100
+      labels:
+        cluster: 'erlmcp-swarm'
+
+  # ============================================
+  # Redis Metrics
+  # ============================================
+  - job_name: 'redis'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    scheme: http
+    static_configs:
+      - targets:
+          - redis-1:6379
+          - redis-2:6379
+    metrics_path: /scrape
+    params:
+      module: [redis]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '(.+):(.+)'
+        replacement: '$1'
+
+  # ============================================
+  # Docker Swarm Manager
+  # ============================================
+  - job_name: 'docker-swarm'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    static_configs:
+      - targets:
+          - swarm-manager-1:2376
+          - swarm-manager-2:2376
+
+  # ============================================
+  # Blackbox Exporter (External Checks)
+  # ============================================
+  - job_name: 'blackbox'
+    metrics_path: '/probe'
+    params:
+      module: [http_2xx, tcp_connect]
+    static_configs:
+      - targets:
+          - http://blackbox:9115
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox:9115
+
+  # ============================================
+  # VictoriaMetrics (Long-term Storage)
+  # ============================================
+  - job_name: 'victoria-metrics'
+    honor_labels: true
+    metrics_path: '/api/v1/write'
+    scheme: http
+    static_configs:
+      - targets:
+          - victoria-metrics:8428
+    proxy_url: http://victoria-metrics:8428
+    scrape_interval: 30s
+
+# ============================================
+# Alerting Configuration
+# ============================================
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+      timeout: 10s
+      api_version: v2
+
+# ============================================
+# Storage Configuration
+# ============================================
+storage:
+  tsdb:
+    # Data retention
+    retention.time: 30d
+    retention.size: 50GB
+
+    # Performance tuning
+    wal-compression: true
+    # Out-of-order samples
+    out_of_order_time_window: 30m
+
+# ============================================
+# Tracing Configuration
+# ============================================
+tracing:
+  endpoint: "localhost:4318"
+  client_type: "http"
+  headers:
+    X-Trace-Enabled: "true"

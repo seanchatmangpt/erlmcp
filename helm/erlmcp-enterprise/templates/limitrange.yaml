@@ -1,0 +1,141 @@
+{{/*
+==============================================================================
+ERLMCP v3 Enterprise - LimitRange Helm Template
+==============================================================================
+Purpose: Enforce container-level resource constraints via Helm values
+
+Features:
+- Default values for containers without explicit limits
+- Min/Max validation to prevent invalid values
+- Default request-to-limit ratio enforcement
+- PVC storage limits
+- Pod-level aggregate limits
+
+Values Reference:
+  limitRange:
+    enabled: true
+    container:
+      default:
+        cpu: "1000m"
+        memory: "2Gi"
+      defaultRequest:
+        cpu: "250m"
+        memory: "512Mi"
+      max:
+        cpu: "8000m"
+        memory: "16Gi"
+      min:
+        cpu: "50m"
+        memory: "128Mi"
+      maxLimitRequestRatio:
+        cpu: 4
+        memory: 2
+==============================================================================
+*/}}
+
+{{- if .Values.limitRange.enabled }}
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-container-limits
+  namespace: {{ include "erlmcp-enterprise.namespace" . }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: limit-range
+    environment: {{ .Values.global.cluster.environment | default "production" }}
+  annotations:
+    description: "Container resource limits with defaults and validation"
+    {{- with .Values.limitRange.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  limits:
+    {{- /* Container limits */}}
+    {{- if .Values.limitRange.container }}
+    - type: Container
+      {{- with .Values.limitRange.container.default }}
+      default:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.limitRange.container.defaultRequest }}
+      defaultRequest:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.limitRange.container.max }}
+      max:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.limitRange.container.min }}
+      min:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.limitRange.container.maxLimitRequestRatio }}
+      maxLimitRequestRatio:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+
+    {{- /* PersistentVolumeClaim limits */}}
+    {{- if .Values.limitRange.persistentVolumeClaim }}
+    - type: PersistentVolumeClaim
+      {{- with .Values.limitRange.persistentVolumeClaim.default }}
+      default:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.limitRange.persistentVolumeClaim.max }}
+      max:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.limitRange.persistentVolumeClaim.min }}
+      min:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+
+    {{- /* Pod limits (sum of all containers) */}}
+    {{- if .Values.limitRange.pod }}
+    - type: Pod
+      {{- with .Values.limitRange.pod.max }}
+      max:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+
+    {{- /* Node limits */}}
+    {{- if .Values.limitRange.node }}
+    - type: Container
+      {{- with .Values.limitRange.node.max }}
+      max:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.limitRange.node.min }}
+      min:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- end }}
+{{- end }}
+
+{{/*
+==============================================================================
+VALIDATION CONFIGMAP - Resource quota validation
+==============================================================================
+*/}}
+{{- if .Values.limitRange.validationConfigMap }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-quota-validation
+  namespace: {{ include "erlmcp-enterprise.namespace" . }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: quota-validation
+data:
+  component-resources.yaml: |
+    {{- .Values.limitRange.validationConfigMap.componentResources | default "{}" | toYaml | nindent 4 }}
+  quota-compliance.yaml: |
+    {{- .Values.limitRange.validationConfigMap.quotaCompliance | default "{}" | toYaml | nindent 4 }}
+  alert-thresholds.yaml: |
+    {{- .Values.limitRange.validationConfigMap.alertThresholds | default "{}" | toYaml | nindent 4 }}
+{{- end }}

@@ -1,0 +1,342 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erlmcp-green
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    environment: production
+    version: v3.0.0
+    component: erlmcp-green
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: production
+      version: v3.0.0
+      component: erlmcp-green
+  template:
+    metadata:
+      labels:
+        app: erlmcp
+        environment: production
+        version: v3.0.0
+        component: erlmcp-green
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        rollouts.argoproj.io/desired-replicas: "3"
+        rollouts.argoproj.io/max-unavailable: "1"
+        rollouts.argoproj.io/max-surge: "1"
+        checksum/config: "placeholder-for-configmap-hash"
+        checksum/secrets: "placeholder-for-secrets-hash"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values:
+                  - erlmcp-blue
+              topologyKey: kubernetes.io/hostname
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/erlmcp
+                operator: Exists
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: erlmcp
+        image: ghcr.io/your-org/erlmcp:production-v3.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8443
+          name: https
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: TRACE_ENABLED
+          value: "true"
+        - name: HEALTH_CHECK_PATH
+          value: "/mcp/health"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-production-db-secret
+              key: url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-production-redis-secret
+              key: url
+        - name: FEATURE_FLAGS
+          valueFrom:
+            configMapKeyRef:
+              name: feature-flags
+              key: flags
+        - name: CANARY_PERCENTAGE
+          value: "5"
+        - name: MAX_CONCURRENT_REQUESTS
+          value: "1000"
+        - name: REQUEST_TIMEOUT
+          value: "30"
+        - name: GRACEFUL_SHUTDOWN_TIMEOUT
+          value: "15"
+        - name: METRICS_PORT
+          value: "8080"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otlp-collector.REGION:4317"
+        - name: OTEL_EXPORTER_OTLP_HEADERS
+          value: "x-honeycomb-team=PLACEHOLDER_HONEYCOMB_API_KEY"
+        livenessProbe:
+          httpGet:
+            path: /mcp/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /mcp/health?ready=1
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: config
+          mountPath: /etc/erlmcp
+          readOnly: true
+        - name: certs
+          mountPath: /etc/erlmcp/certs
+          readOnly: true
+        - name: logs
+          mountPath: /var/log/erlmcp
+        - name: tmp
+          mountPath: /tmp
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "curl -X POST http://localhost:8080/mcp/shutdown || true; sleep 15"]
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+            ephemeral-storage: "2Gi"
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+            ephemeral-storage: "1Gi"
+      volumes:
+      - name: config
+        configMap:
+          name: erlmcp-production-config
+      - name: certs
+        secret:
+          secretName: erlmcp-production-certs
+      - name: logs
+        emptyDir: {}
+      - name: tmp
+        emptyDir:
+          sizeLimit: "1Gi"
+      imagePullSecrets:
+      - name: erlmcp-regcred
+      - name: ghcr-secret
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-green
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    environment: production
+    version: v3.0.0
+    component: erlmcp-green
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-ssl-cert: "arn:aws:acm:REGION:ACCOUNT:certificate/ARN"
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+    service.beta.kubernetes.io/aws-load-balancer-ssl-ports: "443"
+    service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"
+spec:
+  selector:
+    app: erlmcp
+    environment: production
+    version: v3.0.0
+    component: erlmcp-green
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+  type: LoadBalancer
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-green-ingress
+  namespace: erlmcp-production
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    external-dns.alpha.kubernetes.io/hostname: api.erlmcp.com
+    external-dns.alpha.kubernetes.io/ttl: "300"
+spec:
+  tls:
+  - hosts:
+    - api.erlmcp.com
+    secretName: erlmcp-production-tls
+  rules:
+  - host: api.erlmcp.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-green
+            port:
+              name: http
+      - path: /mcp
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-green
+            port:
+              name: http
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-green
+            port:
+              name: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: erlmcp-green-hpa
+  namespace: erlmcp-production
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: erlmcp-green
+  minReplicas: 3
+  maxReplicas: 15
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: nodes
+      target:
+        type: AverageValue
+        averageValue: "100m"
+  - type: External
+    external:
+      metric:
+        name: http_request_rate_per_second
+        selector:
+          matchLabels:
+            app: erlmcp
+      target:
+        type: Value
+        value: "1000"
+  - type: External
+    external:
+      metric:
+        name: http_response_time_seconds
+        selector:
+          matchLabels:
+            app: erlmcp
+      target:
+        type: Value
+        value: "0.5"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 25
+        periodSeconds: 60
+      - type: Pods
+        value: 1
+        periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 15
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 30
+      - type: Pods
+        value: 2
+        periodSeconds: 30
+      selectPolicy: Max

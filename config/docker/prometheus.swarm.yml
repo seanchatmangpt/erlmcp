@@ -1,0 +1,98 @@
+# Prometheus Configuration for erlmcp v3 Swarm Deployment
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'erlmcp-swarm'
+    environment: 'production'
+
+# Alerting configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
+
+# Rule files
+rule_files:
+  - '/etc/prometheus/rules/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # erlmcp service metrics (using DNS SRV for Swarm)
+  - job_name: 'erlmcp'
+    dns_sd_configs:
+      - names:
+          - 'tasks.erlmcp'
+        type: 'A'
+        port: 9100
+        refresh_interval: 30s
+    metrics_path: /metrics
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    relabel_configs:
+      - source_labels: [__meta_docker_swarm_node_hostname]
+        target_label: instance
+      - source_labels: [__meta_docker_swarm_service_name]
+        target_label: service
+      - source_labels: [__meta_docker_swarm_task_name]
+        target_label: task
+
+  # erlmcp HTTP API health checks
+  - job_name: 'erlmcp-health'
+    metrics_path: /health
+    scheme: http
+    dns_sd_configs:
+      - names:
+          - 'tasks.erlmcp'
+        type: 'A'
+        port: 8080
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: [__meta_docker_swarm_node_hostname]
+        target_label: instance
+
+  # Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # PostgreSQL metrics (with postgres_exporter sidecar)
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # Prometheus self-monitoring
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # OTEL Collector metrics
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+    metrics_path: /metrics
+
+  # Grafana metrics
+  - job_name: 'grafana'
+    static_configs:
+      - targets: ['grafana:3000']
+    metrics_path: /metrics
+
+  # Loki for log aggregation
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+    metrics_path: /metrics
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /prometheus
+    retention:
+      time: 30d

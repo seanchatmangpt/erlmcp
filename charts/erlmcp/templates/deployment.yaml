@@ -1,0 +1,138 @@
+{{- if .Values.erlmcp.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    {{- if .Values.canary.enabled }}
+    component: canary
+    {{- else }}
+    component: main
+    {{- end }}
+  annotations:
+    {{- if .Values.canary.enabled }}
+    rollouts.argoproj.io/traffic-weight: "{{ .Values.canary.percentage }}"
+    {{- end }}
+    checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    checksum/secrets: {{ include (print $.Template.BasePath "/secrets.yaml") . | sha256sum }}
+spec:
+  replicas: {{ .Values.erlmcp.replicaCount }}
+  strategy:
+    {{- toYaml .Values.erlmcp.deployment.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp.selectorLabels" . | nindent 8 }}
+        {{- if .Values.canary.enabled }}
+        component: canary
+        {{- end }}
+      annotations:
+        {{- if .Values.monitoring.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.erlmcp.service.port | quote }}
+        prometheus.io/path: /metrics
+        {{- end }}
+        {{- range $key, $value := .Values.extraAnnotations }}
+        {{ $key }}: {{ $value | quote }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.securityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.global.registry }}/{{ .Values.global.repository }}:{{ .Values.erlmcp.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.erlmcp.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.erlmcp.service.port }}
+              protocol: TCP
+          {{- if .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          env:
+            {{- range .Values.erlmcp.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            {{- range .Values.volumes }}
+            - name: {{ .name }}
+              {{- if .configMap }}
+              mountPath: {{ .mountPath }}
+              subPath: {{ .subPath }}
+              readOnly: {{ .readOnly }}
+              {{- else if .secret }}
+              mountPath: {{ .mountPath }}
+              subPath: {{ .subPath }}
+              readOnly: {{ .readOnly }}
+              {{- end }}
+            {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        {{- range .Values.volumes }}
+        - name: {{ .name }}
+          {{- if .configMap }}
+          configMap:
+            name: {{ .configMap.name }}
+            {{- if .configMap.items }}
+            items:
+              {{- range .configMap.items }}
+              - key: {{ .key }}
+                path: {{ .path }}
+                {{- if .mode }}
+                mode: {{ .mode }}
+                {{- end }}
+              {{- end }}
+            {{- end }}
+          {{- else if .secret }}
+          secret:
+            secretName: {{ .secret.name }}
+            {{- if .secret.items }}
+            items:
+              {{- range .secret.items }}
+              - key: {{ .key }}
+                path: {{ .path }}
+                {{- if .mode }}
+                mode: {{ .mode }}
+                {{- end }}
+              {{- end }}
+            {{- end }}
+          {{- else if .emptyDir }}
+          emptyDir:
+            {{- toYaml .emptyDir | nindent 12 }}
+          {{- else if .persistentVolumeClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .persistentVolumeClaim.claimName }}
+            {{- if .persistentVolumeClaim.readOnly }}
+            readOnly: {{ .persistentVolumeClaim.readOnly }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+{{- end }}

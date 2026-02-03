@@ -1,0 +1,256 @@
+# ============================================================================
+# Development Docker Compose Override for erlmcp v3
+# ============================================================================
+# Purpose: Fast local development with minimal external dependencies
+# Usage: docker compose -f docker-compose.yml -f docker-compose.override.dev.yml --env-file .env.dev up
+#
+# Features:
+# - Hot-reload code mounting
+# - Debug ports exposed
+# - Development tools enabled
+# - Minimal resource limits
+# - All security features disabled for easy testing
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # Override erlmcp service for development
+  erlmcp:
+    build:
+      target: debug
+      args:
+        BUILD_ENV: development
+    container_name: erlmcp-dev
+    hostname: erlmcp-dev
+
+    # Development port mappings
+    ports:
+      - "${ERLMCP_PORT:-8080}:8080"    # HTTP API
+      - "9110:9100"                     # EPMD-less distribution (dev specific)
+      - "9101:9101"                     # Metrics
+      - "9091:9090"                     # Health checks
+      - "4369:4369"                     # EPMD (for legacy tool compatibility)
+      - "5678:5678"                     # Debugger
+
+    # Environment for development
+    environment:
+      ERLMCP_ENV: development
+      ERLMCP_LOG_LEVEL: debug
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-dev_cookie_12345}
+      ERLMCP_NODE_NAME: ${ERLMCP_NODE_NAME:-erlmcp_dev@erlmcp-dev}
+
+      # Development flags
+      ERL_AFLAGS: "+pc unicode"
+      ERL_DIST_PORT: "9110"
+      ERLANG_DISTRIBUTION_PORT_RANGE: "9110-9210"
+
+      # Enable all debug features
+      DEBUG: "true"
+      ENABLE_PROFILING: "true"
+      ENABLE_DEBUG_ENDPOINTS: "true"
+
+      # Disable security for dev
+      ALLOW_INSECURE_HTTP: "true"
+      TLS_ENABLED: "false"
+
+      # Disable rate limiting
+      FEATURE_RATE_LIMITING: "false"
+
+      # Feature flags
+      FEATURE_EXPERIMENTAL: "true"
+
+    # Mount workspace for live editing
+    volumes:
+      - ./apps:/opt/erlmcp/apps:rw
+      - ./config:/opt/erlmcp/config:ro
+      - ./vm.args:/opt/erlmcp/releases/3.0.0/vm.args:ro
+      - ./logs:/var/log/erlmcp:rw
+      - erlang-cache:/root/.cache
+      - rebar3-cache:/root/.cache/rebar3
+
+    # Low resource limits for development
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_CPU_LIMIT:-1.0}'
+          memory: '${ERLMCP_MEMORY_LIMIT:-2G}'
+          pids: ${ERLMCP_DEV_PIDS_LIMIT:-2048}
+        reservations:
+          cpus: '${ERLMCP_CPU_RESERVATION:-0.25}'
+          memory: '${ERLMCP_MEMORY_RESERVATION:-512M}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 0  # Don't restart in dev - let errors show
+
+    # Override command for interactive development
+    command: >
+      sh -c "
+        echo 'Starting erlmcp in development mode...' &&
+        rebar3 compile &&
+        rebar3 shell --apps erlmcp
+      "
+
+    # Keep container running for interactive shell
+    stdin_open: true
+    tty: true
+
+    # Health check - disabled in dev for faster startup
+    healthcheck:
+      disable: true
+
+    # Network mode for easier local access
+    network_mode: bridge
+
+  # Development database (PostgreSQL)
+  postgres:
+    profiles:
+      - postgres
+    image: postgres:16-alpine
+    container_name: erlmcp-postgres-dev
+    hostname: postgres-dev
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-erlmcp_dev}
+      POSTGRES_USER: ${DB_USER:-erlmcp}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password}
+      POSTGRES_HOST_AUTH_METHOD: trust
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+      - ./scripts/init-db-dev.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-erlmcp}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - erlmcp-dev-network
+
+  # Development Redis
+  redis:
+    profiles:
+      - redis
+    image: redis:7-alpine
+    container_name: erlmcp-redis-dev
+    hostname: redis-dev
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes --loglevel debug
+    volumes:
+      - redis-dev-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - erlmcp-dev-network
+
+  # pgAdmin for database management (optional)
+  pgadmin:
+    profiles:
+      - tools
+    image: dpage/pgadmin4:latest
+    container_name: erlmcp-pgadmin-dev
+    hostname: pgadmin-dev
+    restart: unless-stopped
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@erlmcp.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    volumes:
+      - pgadmin-dev-data:/var/lib/pgadmin
+    networks:
+      - erlmcp-dev-network
+
+  # Redis Commander for Redis management (optional)
+  redis-commander:
+    profiles:
+      - tools
+    image: rediscommander/redis-commander:latest
+    container_name: erlmcp-redis-commander-dev
+    hostname: redis-commander-dev
+    restart: unless-stopped
+    ports:
+      - "${REDIS_COMMANDER_PORT:-8081}:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379
+    networks:
+      - erlmcp-dev-network
+
+  # Prometheus (monitoring)
+  prometheus:
+    profiles:
+      - monitoring
+    image: prom/prometheus:latest
+    container_name: erlmcp-prometheus-dev
+    hostname: prometheus-dev
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./config/docker/prometheus-dev.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-dev-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    networks:
+      - erlmcp-dev-network
+
+  # Grafana (visualization)
+  grafana:
+    profiles:
+      - monitoring
+    image: grafana/grafana:latest
+    container_name: erlmcp-grafana-dev
+    hostname: grafana-dev
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+      GF_SERVER_ROOT_URL: http://localhost:3000
+      GF_LOG_LEVEL: debug
+    volumes:
+      - grafana-dev-data:/var/lib/grafana
+      - ./config/grafana/provisioning-dev:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - erlmcp-dev-network
+
+# Development-specific network
+networks:
+  erlmcp-dev-network:
+    driver: bridge
+    name: erlmcp-dev
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# Development volumes
+volumes:
+  erlang-cache:
+    driver: local
+  rebar3-cache:
+    driver: local
+  postgres-dev-data:
+    driver: local
+  redis-dev-data:
+    driver: local
+  pgadmin-dev-data:
+    driver: local
+  prometheus-dev-data:
+    driver: local
+  grafana-dev-data:
+    driver: local

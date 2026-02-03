@@ -1,0 +1,122 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-config
+  namespace: erlmcp
+data:
+  # erlmcp Configuration
+  ERLMCP_NODE_NAME: "node-1"
+  ERLMCP_CLUSTER_NAME: "erlmcp-production"
+  ERLMCP_REPLICAS: "3"
+  ERLMCP_PORT: "8080"
+  ERLMCP_WS_PORT: "8443"
+
+  # Database Configuration
+  ERLMCP_DB_HOST: "postgresql-service.erlmcp.svc.cluster.local"
+  ERLMCP_DB_PORT: "5432"
+  ERLMCP_DB_NAME: "erlmcp"
+  ERLMCP_DB_USER: "erlmcp_user"
+  ERLMCP_DB_PASSWORD: "${DB_PASSWORD}"
+
+  # Redis Configuration
+  ERLMCP_REDIS_HOST: "redis-service.erlmcp.svc.cluster.local"
+  ERLMCP_REDIS_PORT: "6379"
+
+  # Monitoring Configuration
+  ERLMCP_METRICS_ENABLED: "true"
+  ERLMCP_METRICS_PORT: "9090"
+
+  # Logging Configuration
+  ERLMCP_LOG_LEVEL: "info"
+  ERLMCP_LOG_FORMAT: "json"
+  ERLMCP_LOG_RATE_LIMIT: "1000"
+
+  # Security Configuration
+  ERLMCP_AUTH_ENABLED: "true"
+  ERLMCP_SSL_ENABLED: "true"
+  ERLMCP_SSL_CERT_PATH: "/etc/ssl/certs/erlmcp.crt"
+  ERLMCP_SSL_KEY_PATH: "/etc/ssl/private/erlmcp.key"
+  ERLMCP_RATE_LIMIT: "1000"
+  ERLMCP_RATE_LIMIT_BURST: "2000"
+
+  # Load Balancer Configuration
+  ERLMCP_LB_TYPE: "round_robin"
+  ERLMCP_LB_STICKY: "true"
+  ERLMCP_LB_STICKY_TIMEOUT: "3600"
+
+  # Health Check Configuration
+  ERLMCP_HEALTH_CHECK_ENABLED: "true"
+  ERLMCP_HEALTH_CHECK_PATH: "/health"
+  ERLMCP_HEALTH_CHECK_INTERVAL: "30s"
+  ERLMCP_HEALTH_CHECK_TIMEOUT: "5s"
+  ERLMCP_HEALTH_CHECK_THRESHOLD: "3"
+
+---
+# TLS Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-tls
+  namespace: erlmcp
+data:
+  server.crt: |
+    -----BEGIN CERTIFICATE-----
+    # Certificate content will be provided separately
+    -----END CERTIFICATE-----
+  server.key: |
+    -----BEGIN PRIVATE KEY-----
+    # Private key content will be provided separately
+    -----END PRIVATE KEY-----
+
+---
+# Logging Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-logging
+  namespace: erlmcp
+data:
+  logging.json: |
+    {
+      "level": "${LOG_LEVEL:-info}",
+      "format": "${LOG_FORMAT:-json}",
+      "outputs": {
+        "console": {
+          "enabled": true
+        },
+        "file": {
+          "enabled": true,
+          "path": "/var/log/erlmcp.log",
+          "max_size": "100MB",
+          "max_backups": 5
+        },
+        "elasticsearch": {
+          "enabled": true,
+          "hosts": ["elasticsearch-logging.logging.svc.cluster.local:9200"]
+        }
+      }
+    }
+
+---
+# Metrics Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-metrics
+  namespace: erlmcp
+data:
+  metrics.yml: |
+    metrics:
+      enabled: true
+      port: 9090
+      path: /metrics
+      collectors:
+        - http_requests_total
+        - http_request_duration_seconds
+        - http_response_size_bytes
+        - erlmcp_sessions_active
+        - erlmcp_nodes_connected
+        - erlmcp_errors_total
+      labels:
+        environment: production
+        cluster: erlmcp-production

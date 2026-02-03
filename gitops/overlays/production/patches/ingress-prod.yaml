@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp
+  namespace: erlmcp-prod
+  annotations:
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+spec:
+  tls:
+    - hosts:
+        - erlmcp.example.com
+      secretName: erlmcp-prod-tls
+  rules:
+    - host: erlmcp.example.com

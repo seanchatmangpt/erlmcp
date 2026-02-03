@@ -1,0 +1,558 @@
+---
+# ============================================================================
+# ErlMCP v3.0.0 - Production Deployment
+# ============================================================================
+# Production-ready Kubernetes Deployment for ErlMCP with:
+# - Rolling update strategy with surge/unavailable control
+# - Resource limits and requests for QoS
+# - Liveness, readiness, and startup probes
+# - Pod anti-affinity for high availability
+# - Topology spread constraints for zone distribution
+# - Security contexts and pod security policies
+# - Graceful shutdown handling
+# - Priority class for critical workloads
+# ============================================================================
+# Usage:
+#   kubectl apply -f k8s/production/
+#   kubectl rollout restart deployment/erlmcp -n erlmcp-production
+#   kubectl rollout status deployment/erlmcp -n erlmcp-production
+# ============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erlmcp
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    environment: production
+    version: "3.0.0"
+    component: server
+  annotations:
+    description: "Erlang/OTP Model Context Protocol - Production Deployment"
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  # --------------------------------------------------------------------------
+  # REPLICA COUNT - Production baseline
+  # --------------------------------------------------------------------------
+  # Adjust based on load testing and traffic patterns
+  # Minimum 3 for high availability across zones
+  replicas: 5
+
+  # --------------------------------------------------------------------------
+  # UPDATE STRATEGY - Rolling Update with controlled surge
+  # --------------------------------------------------------------------------
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # Max number of pods that can be created above desired replicas
+      maxSurge: 25%
+      # Max number of pods that can be unavailable during update
+      maxUnavailable: 0
+
+  # --------------------------------------------------------------------------
+  # REVISION HISTORY LIMIT - Keep last 10 revisions for rollback
+  # --------------------------------------------------------------------------
+  revisionHistoryLimit: 10
+
+  # --------------------------------------------------------------------------
+  # SELECTOR - Pod labels for service routing
+  # --------------------------------------------------------------------------
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: production
+      component: server
+
+  # --------------------------------------------------------------------------
+  # POD TEMPLATE
+  # --------------------------------------------------------------------------
+  template:
+    metadata:
+      labels:
+        app: erlmcp
+        environment: production
+        version: "3.0.0"
+        component: server
+      annotations:
+        # Prometheus scraping annotations
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+
+        # ConfigMap checksum for automatic restarts on config change
+        checksum/config: "20240101-erlmcp-v3"
+
+        # OpenTelemetry tracing
+        sidecar.istio.io/inject: "true"
+        traffic.sidecar.istio.io/includeInboundPorts: "8080,9090"
+
+    spec:
+      # ----------------------------------------------------------------------
+      # SERVICE ACCOUNT - Identity for RBAC
+      # ----------------------------------------------------------------------
+      serviceAccountName: erlmcp
+
+      # ----------------------------------------------------------------------
+      # SECURITY CONTEXT - Pod-level security
+      # ----------------------------------------------------------------------
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
+      # ----------------------------------------------------------------------
+      # TERMINATION GRACE PERIOD - Time for graceful shutdown
+      # ----------------------------------------------------------------------
+      terminationGracePeriodSeconds: 90
+
+      # ----------------------------------------------------------------------
+      # PRIORITY CLASS - Critical production workload
+      # ----------------------------------------------------------------------
+      priorityClassName: high-priority
+
+      # ----------------------------------------------------------------------
+      # INIT CONTAINERS - Pre-flight checks
+      # ----------------------------------------------------------------------
+      initContainers:
+        # Wait for dependencies to be ready
+        - name: wait-for-dependencies
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for dependencies..."
+              # Wait for config to be available
+              until [ -f /etc/erlmcp/erlmcp.conf ]; do
+                echo "Waiting for erlmcp.conf..."
+                sleep 2
+              done
+              echo "Configuration ready!"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/erlmcp
+              readOnly: true
+
+      # ----------------------------------------------------------------------
+      # MAIN CONTAINER - ErlMCP Application
+      # ----------------------------------------------------------------------
+      containers:
+        - name: erlmcp
+          image: ghcr.io/erlmcp/erlmcp:3.0.0
+          imagePullPolicy: IfNotPresent
+
+          # ------------------------------------------------------------------
+          # PORTS - Exposed ports
+          # ------------------------------------------------------------------
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: health
+              containerPort: 9091
+              protocol: TCP
+            - name: distribution
+              containerPort: 9100
+              protocol: TCP
+
+          # ------------------------------------------------------------------
+          # ENVIRONMENT VARIABLES - Application configuration
+          # ------------------------------------------------------------------
+          env:
+            # Application environment
+            - name: ERLMCP_ENV
+              value: "production"
+            - name: ERLMCP_VERSION
+              value: "3.0.0"
+            - name: ERLMCP_LOG_LEVEL
+              value: "info"
+            - name: ERLMCP_LOG_FORMAT
+              value: "json"
+
+            # Node naming for distributed Erlang (EPMD-less clustering)
+            - name: ERLMCP_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: ERLMCP_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ERLMCP_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+
+            # Distribution settings (EPMD-less clustering)
+            - name: ERL_AFLAGS
+              value: "-proto_dist inet_tls"
+            - name: ERL_DIST_PORT
+              value: "9100"
+            - name: ERLANG_DISTRIBUTION_PORT_RANGE
+              value: "9100-9200"
+
+            # Erlang cookie from secret
+            - name: ERLANG_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: erlang-cookie
+
+            # Database connection (from secrets)
+            - name: ERLMCP_DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: db-host
+            - name: ERLMCP_DB_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: db-port
+            - name: ERLMCP_DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: db-name
+            - name: ERLMCP_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: db-user
+            - name: ERLMCP_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: db-password
+
+            # Redis connection (from secrets)
+            - name: REDIS_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: redis-host
+            - name: REDIS_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: redis-port
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: redis-password
+
+            # JWT secret
+            - name: ERLMCP_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: erlmcp-secrets
+                  key: jwt-secret
+
+            # OpenTelemetry configuration
+            - name: OTEL_ENABLED
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "erlmcp"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=production,service.version=3.0.0,deployment.environment=production"
+
+            # Performance tuning
+            - name: ERL_MAX_PORTS
+              value: "65536"
+            - name: ERL_MAX_ETS_TABLES
+              value: "50000"
+            - name: ERL_FULLSWEEP_AFTER
+              value: "0"
+
+          # ------------------------------------------------------------------
+          # RESOURCE LIMITS - CPU and memory constraints
+          # ------------------------------------------------------------------
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: 2000m
+              memory: 4Gi
+              ephemeral-storage: 5Gi
+
+          # ------------------------------------------------------------------
+          # SECURITY CONTEXT - Container-level security
+          # ------------------------------------------------------------------
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+
+          # ------------------------------------------------------------------
+          # PROBES - Health checks
+          # ------------------------------------------------------------------
+
+          # Startup probe - Gives container time to start
+          # Fails if pod doesn't start within 5 minutes
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 30
+
+          # Liveness probe - Checks if container is alive
+          # Fails if the container needs to be restarted
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+
+          # Readiness probe - Checks if container can serve traffic
+          # Removes pod from service if failing
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: health
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 2
+            failureThreshold: 3
+
+          # ------------------------------------------------------------------
+          # LIFECYCLE HOOKS - Graceful shutdown
+          # ------------------------------------------------------------------
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    echo "Initiating graceful shutdown..."
+                    # Drain existing connections
+                    curl -X POST http://localhost:8080/admin/drain || true
+                    # Wait for connections to drain
+                    sleep 30
+                    echo "Shutdown complete"
+
+          # ------------------------------------------------------------------
+          # VOLUME MOUNTS
+          # ------------------------------------------------------------------
+          volumeMounts:
+            - name: config
+              mountPath: /etc/erlmcp
+              readOnly: true
+            - name: tls-certs
+              mountPath: /etc/erlmcp/tls
+              readOnly: true
+            - name: logs
+              mountPath: /var/log/erlmcp
+            - name: data
+              mountPath: /var/lib/erlmcp
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /var/cache/erlmcp
+
+      # ----------------------------------------------------------------------
+      # SIDECAR CONTAINERS
+      # ----------------------------------------------------------------------
+
+      # Log collector sidecar (optional)
+      - name: log-collector
+        image: fluent/fluent-bit:2.2.0
+        command:
+          - /fluent-bit/bin/fluent-bit
+          - -c
+          - /fluent-bit/etc/fluent-bit.conf
+        volumeMounts:
+          - name: logs
+            mountPath: /var/log/erlmcp
+            readOnly: true
+          - name: fluent-bit-config
+            mountPath: /fluent-bit/etc
+            readOnly: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+
+      # ----------------------------------------------------------------------
+      # VOLUMES
+      # ----------------------------------------------------------------------
+      volumes:
+        - name: config
+          configMap:
+            name: erlmcp-config
+        - name: tls-certs
+          secret:
+            secretName: erlmcp-tls
+            optional: true
+        - name: fluent-bit-config
+          configMap:
+            name: erlmcp-fluent-bit-config
+            optional: true
+        - name: logs
+          emptyDir:
+            sizeLimit: 1Gi
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: cache
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: data
+          persistentVolumeClaim:
+            claimName: erlmcp-data
+
+      # ----------------------------------------------------------------------
+      # AFFINITY RULES - Pod placement
+      # ----------------------------------------------------------------------
+      affinity:
+        # Pod anti-affinity - Spread pods across nodes
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - erlmcp
+                    - key: component
+                      operator: In
+                      values:
+                        - server
+                topologyKey: kubernetes.io/hostname
+
+        # Node affinity - Schedule on dedicated nodes
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - key: node-role.kubernetes.io/worker
+                    operator: In
+                    values:
+                      - "true"
+            - weight: 50
+              preference:
+                matchExpressions:
+                  - key: erlmcp.io/dedicated
+                    operator: In
+                    values:
+                      - "true"
+
+      # ----------------------------------------------------------------------
+      # TOPOLOGY SPREAD CONSTRAINTS - Zone distribution
+      # ----------------------------------------------------------------------
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: erlmcp
+              component: server
+        - maxSkew: 2
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: erlmcp
+              component: server
+
+      # ----------------------------------------------------------------------
+      # TOLERATIONS - Allow scheduling on tainted nodes
+      # ----------------------------------------------------------------------
+      tolerations:
+        - key: "dedicated"
+          operator: "Equal"
+          value: "erlmcp"
+          effect: "NoSchedule"
+        - key: "workload"
+          operator: "Equal"
+          value: "production"
+          effect: "NoSchedule"
+
+      # ----------------------------------------------------------------------
+      # DNS CONFIG - optimize DNS for cluster communication
+      # ----------------------------------------------------------------------
+      dnsPolicy: ClusterFirst
+
+      # ----------------------------------------------------------------------
+      # IMAGE PULL SECRETS
+      # ----------------------------------------------------------------------
+      imagePullSecrets:
+        - name: ghcr-auth
+        - name: dockerhub-auth
+
+---
+# ============================================================================
+# PERSISTENT VOLUME CLAIM - Application data storage
+# ============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: erlmcp-data
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    component: storage
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+  volumeMode: Filesystem

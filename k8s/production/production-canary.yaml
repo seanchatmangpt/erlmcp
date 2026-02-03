@@ -1,0 +1,344 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erlmcp-canary
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    environment: production
+    version: v3.0.0
+    component: erlmcp-canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: production
+      version: v3.0.0
+      component: erlmcp-canary
+  template:
+    metadata:
+      labels:
+        app: erlmcp
+        environment: production
+        version: v3.0.0
+        component: erlmcp-canary
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        argoproj.io/canary: "true"
+        rollouts.argoproj.io/traffic-weight: "5"
+        rollouts.argoproj.io/canary-service: erlmcp-canary
+        rollouts.argoproj.io/stable-service: erlmcp-green
+        rollouts.argoproj.io/canary-ingress: erlmcp-green-ingress
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values:
+                  - erlmcp-green
+              topologyKey: kubernetes.io/hostname
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      containers:
+      - name: erlmcp
+        image: ghcr.io/your-org/erlmcp:production-${{ github.sha }}-${{ github.run_number }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8443
+          name: https
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: HEALTH_CHECK_PATH
+          value: "/mcp/health"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-production-db-secret
+              key: url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-production-redis-secret
+              key: url
+        - name: FEATURE_FLAGS
+          valueFrom:
+            configMapKeyRef:
+              name: feature-flags
+              key: flags
+        - name: CANARY_ENABLED
+          value: "true"
+        - name: TRAFFIC_PERCENT
+          value: "5"
+        - name: MAX_CONCURRENT_REQUESTS
+          value: "500"
+        - name: REQUEST_TIMEOUT
+          value: "30"
+        - name: GRACEFUL_SHUTDOWN_TIMEOUT
+          value: "15"
+        - name: METRICS_PORT
+          value: "8080"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otlp-collector.REGION:4317"
+        - name: OTEL_EXPORTER_OTLP_HEADERS
+          value: "x-honeycomb-team={{ .Values.secrets.honeycomb_api_key }}"
+        livenessProbe:
+          httpGet:
+            path: /mcp/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /mcp/health?ready=1
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+          seccompProfile:
+            type: RuntimeDefault
+        volumeMounts:
+        - name: config
+          mountPath: /etc/erlmcp
+          readOnly: true
+        - name: certs
+          mountPath: /etc/erlmcp/certs
+          readOnly: true
+        - name: logs
+          mountPath: /var/log/erlmcp
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "curl -X POST http://localhost:8080/mcp/shutdown || true; sleep 15"]
+      volumes:
+      - name: config
+        configMap:
+          name: erlmcp-production-config
+      - name: certs
+        secret:
+          secretName: erlmcp-production-certs
+      - name: logs
+        emptyDir: {}
+      imagePullSecrets:
+      - name: erlmcp-regcred
+      - name: ghcr-secret
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-canary
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    environment: production
+    version: v3.0.0
+    component: erlmcp-canary
+spec:
+  selector:
+    app: erlmcp
+    environment: production
+    version: v3.0.0
+    component: erlmcp-canary
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+  type: LoadBalancer
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-canary-ingress
+  namespace: erlmcp-production
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    external-dns.alpha.kubernetes.io/hostname: canary.api.erlmcp.com
+    rollouts.argoproj.io/canary: "true"
+    rollouts.argoproj.io/scale-down-delay: "5m"
+    canary.argoproj.io/traffic-weight: "5"
+    canary.argoproj.io/service-name: "erlmcp-canary"
+    canary.argoproj.io/stable-service: "erlmcp-green"
+    canary.argoproj.io/canary-ingress: "erlmcp-green-ingress"
+    canary.argoproj.io/canary-deployment: "erlmcp-canary"
+    canary.argoproj.io/canary-service: "erlmcp-canary"
+    canary.argoproj.io/stable-ingress: "erlmcp-green-ingress"
+    canary.argoproj.io/canary-header: "X-Canary"
+    canary.argoproj.io/canary-header-value: "true"
+spec:
+  tls:
+  - hosts:
+    - canary.api.erlmcp.com
+    secretName: erlmcp-production-canary-tls
+  rules:
+  - host: canary.api.erlmcp.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-canary
+            port:
+              name: http
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: erlmcp-green
+  namespace: erlmcp-production
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: production
+  strategy:
+    canary:
+      steps:
+      - setWeight: 5
+      - pause:
+          duration: 30s
+      - setWeight: 15
+      - pause:
+          duration: 60s
+      - setWeight: 50
+      - pause:
+          duration: 60s
+      - setWeight: 100
+      analysis:
+        templates:
+        - templateName: erlmcp-metric-template
+        args:
+        - name: traffic_percentage
+          value: "5"
+  template:
+    spec:
+      containers:
+      - name: erlmcp
+        image: ghcr.io/your-org/erlmcp:production-${{ github.sha }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8443
+          name: https
+        resources:
+          requests:
+            cpu: "200m"
+            memory: "512Mi"
+          limits:
+            cpu: "1000m"
+            memory: "2Gi"
+        env:
+        - name: ENVIRONMENT
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: METRICS_ENABLED
+          value: "true"
+        livenessProbe:
+          httpGet:
+            path: /mcp/health
+            port: 8080
+        readinessProbe:
+          httpGet:
+            path: /mcp/health?ready=1
+            port: 8080
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: erlmcp-metric-template
+  namespace: erlmcp-production
+spec:
+  args:
+  - name: traffic_percentage
+  metrics:
+  - name: p99-latency
+    interval: 30s
+    successCondition: result[0] < 0.5
+    failureCondition: result[0] >= 0.5
+    provider:
+      prometheusGauge:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: "histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[$interval]))"
+  - name: error-rate
+    interval: 30s
+    successCondition: result[0] < 0.01
+    failureCondition: result[0] >= 0.01
+    provider:
+      prometheusGauge:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: "rate(http_requests_total{status=~\"5..\", traffic_percentage=\"$traffic_percentage\"}[$interval]) / rate(http_requests_total{traffic_percentage=\"$traffic_percentage\"}[$interval])"
+  - name: response-time
+    interval: 30s
+    successCondition: result[0] < 0.3
+    failureCondition: result[0] >= 0.3
+    provider:
+      prometheusGauge:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: "rate(http_request_duration_seconds_sum{traffic_percentage=\"$traffic_percentage\"}[$interval]) / rate(http_request_duration_seconds_count{traffic_percentage=\"$traffic_percentage\"}[$interval])"
+  - name: p90-latency
+    interval: 30s
+    successCondition: result[0] < 0.2
+    failureCondition: result[0] >= 0.2
+    provider:
+      prometheusGauge:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: "histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[$interval]))"
+  - name: throughput
+    interval: 30s
+    successCondition: result[0] > 1000
+    failureCondition: result[0] < 100
+    provider:
+      prometheusGauge:
+        address: http://prometheus.monitoring.svc.cluster.local:9090
+        query: "rate(http_requests_total{traffic_percentage=\"$traffic_percentage\"}[$interval])"

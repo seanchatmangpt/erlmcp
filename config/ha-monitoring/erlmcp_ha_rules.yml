@@ -1,0 +1,304 @@
+# High Availability Alert Rules for erlmcp
+# Defines critical alerts for HA components
+
+groups:
+  - name: erlmcp_ha_alerts
+    rules:
+      # Node Health Alerts
+      - alert: NodeDown
+        expr: up{job=~"erlmcp-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: node
+        annotations:
+          summary: "erlmcp node is down"
+          description: "Node {{ $labels.instance }} in {{ $labels.region }} has been down for more than 1 minute"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-nodes"
+          runbook: "https://docs.company.com/ha/node-failure"
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by (instance, region) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 90
+        for: 5m
+        labels:
+          severity: warning
+          component: node
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }} in {{ $labels.region }}"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-nodes"
+          runbook: "https://docs.company.com/ha/node-optimization"
+
+      - alert: MemoryPressure
+        expr: (1 - (avg by (instance, region) (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: node
+        annotations:
+          summary: "Memory pressure detected"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }} in {{ $labels.region }}"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-nodes"
+          runbook: "https://docs.company.com/ha/node-optimization"
+
+      # Session HA Alerts
+      - alert: SessionFailover
+        expr: increase(erlmcp_session_failover_total[5m]) > 0
+        for: 30s
+        labels:
+          severity: critical
+          component: session
+        annotations:
+          summary: "Session failover occurred"
+          description: "{{ $value }} sessions failed over in the last 5 minutes in {{ $labels.region }}"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-sessions"
+          runbook: "https://docs.company.com/ha/session-failover"
+
+      - alert: SessionReplicationLag
+        expr: erlmcp_session_replication_seconds > 10
+        for: 1m
+        labels:
+          severity: warning
+          component: session
+        annotations:
+          summary: "Session replication lag detected"
+          description: "Session replication lag is {{ $value }} seconds on {{ $labels.instance }}"
+          dashboard: "https://github.com/company/erlmcp-ha-sessions"
+          runbook: "https://docs.company.com/ha/session-replication"
+
+      # Database HA Alerts
+      - alert: DatabaseFailover
+        expr: increase(erlmcp_database_failover_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database failover occurred"
+          description: "{{ $value }} database failovers in the last 5 minutes"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-database"
+          runbook: "https://docs.company.com/ha/database-failover"
+
+      - alert: PrimaryDatabaseDown
+        expr: {job="postgres-ha", db_role="primary"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Primary database is down"
+          description: "Primary database in {{ $labels.region }} is down"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-database"
+          runbook: "https://docs.company.com/ha/database-failover"
+
+      - alert: DatabaseReplicationLag
+        expr: pg_replication_lag_seconds > 30
+        for: 2m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database replication lag detected"
+          description: "Replication lag is {{ $value }} seconds on {{ $labels.instance }}"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-database"
+          runbook: "https://docs.company.com/ha/database-replication"
+
+      # Region Failure Alerts
+      - alert: RegionFailure
+        expr: sum by (region) (up{job=~"erlmcp-.*"}) == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: region
+        annotations:
+          summary: "Region failure detected"
+          description: "All nodes in {{ $labels.region }} are down"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-regions"
+          runbook: "https://docs.company.com/ha/region-failover"
+
+      - alert: CrossRegionConnectionFailure
+        expr: erlmcp_cross_region_connections == 0
+        for: 5m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "Cross-region connection failure"
+          description: "No active connections between regions detected"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-network"
+          runbook: "https://github.com/company/erlmcp-ha-network"
+
+      # Load Balancer Alerts
+      - alert: LoadBalancerFailure
+        expr: increase(haproxy_backend_status_down_2xx_total[5m]) > 0
+        for: 30s
+        labels:
+          severity: critical
+          component: loadbalancer
+        annotations:
+          summary: "Load balancer backend failure"
+          description: "Backend {{ $labels.proxy }} in {{ $labels.region }} has failed"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-loadbalancer"
+          runbook: "https://docs.company.com/ha/loadbalancer-failure"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          component: loadbalancer
+        annotations:
+          summary: "High request latency detected"
+          description: "P95 latency is {{ $value }}s on {{ $labels.instance }}"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-loadbalancer"
+          runbook: "https://docs.company.com/ha/loadbalancer-optimization"
+
+      # Network Alerts
+      - alert: NetworkSaturation
+        expr: rate(node_network_receive_bytes_total[5m]) / 1000000 > 800
+        for: 5m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "Network saturation detected"
+          description: "Network receive rate is {{ $value }} Mbps on {{ $labels.instance }}"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-network"
+          runbook: "https://docs.company.com/ha/network-optimization"
+
+      - alert: PacketLoss
+        expr: (rate(node_network_transmit_packets_total[5m]) - rate(node_network_transmit_packets_total{status!~"dropped"}[5m])) / rate(node_network_transmit_packets_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          component: network
+        annotations:
+          summary: "Packet loss detected"
+          description: "Packet loss rate is {{ $value }}% on {{ $labels.instance }}"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-network"
+          runbook: "https://docs.company.com/ha/network-optimization"
+
+      # Health Check Alerts
+      - alert: HealthCheckFailure
+        expr: increase(erlmcp_health_check_failures_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          component: monitoring
+        annotations:
+          summary: "Health check failures detected"
+          description: "{{ $value }} health check failures in the last 5 minutes"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-health"
+          runbook: "https://docs.company.com/ha/health-checks"
+
+      - alert: MonitoringDown
+        expr: up{job="prometheus"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: monitoring
+        annotations:
+          summary: "Monitoring system down"
+          description: "Prometheus is down - critical metrics unavailable"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-monitoring"
+          runbook: "https://docs.company.com/ha/monitoring-failure"
+
+      # Auto-Healing Alerts
+      - alert: AutoHealerActive
+        expr: erlmcp_autohealer_active > 0
+        for: 5m
+        labels:
+          severity: info
+          component: autohealer
+        annotations:
+          summary: "Auto-healer is active"
+          description: "Auto-healer is attempting to resolve issues on {{ $value }} nodes"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-autohealer"
+          runbook: "https://docs.company.com/ha/auto-healing"
+
+      - alert: AutoHealerFailed
+        expr: increase(erlmcp_autohealer_failures_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: autohealer
+        annotations:
+          summary: "Auto-healer failed to resolve issues"
+          description: "{{ $value }} auto-healing attempts failed in the last 5 minutes"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-autohealer"
+          runbook: "https://docs.company.com/ha/auto-healing"
+
+      # Performance Alerts
+      - alert: ThroughputDegradation
+        expr: rate(erlmcp_requests_total[5m]) < 10000
+        for: 5m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "Throughput degradation detected"
+          description: "Request rate is {{ $value }} requests/s (normal: > 10000)"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-performance"
+          runbook: "https://docs.company.com/ha/throughput-optimization"
+
+      - alert: ErrorRateSpike
+        expr: rate(erlmcp_requests_total{status=~"5.."}[5m]) / rate(erlmcp_requests_total[5m]) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+          component: performance
+        annotations:
+          summary: "Error rate spike detected"
+          description: "Error rate is {{ $value }}% (normal: < 1%)"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-performance"
+          runbook: "https://docs.company.com/ha/error-resolution"
+
+      # Capacity Alerts
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: storage
+        annotations:
+          summary: "High disk usage detected"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }}"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-storage"
+          runbook: "https://docs.company.com/ha/storage-optimization"
+
+      - alert: SessionCapacityWarning
+        expr: erlmcp_active_sessions / erlmcp_max_sessions > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: capacity
+        annotations:
+          summary: "Session capacity warning"
+          description: "Session capacity usage is {{ $value }}% (80% threshold)"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-capacity"
+          runbook: "https://docs.company.com/ha/capacity-planning"
+
+      # SLA Alerts
+      - alert: SLABreach
+        expr: (1 - (erlmcp_uptime_duration[1h] / 3600)) * 100 > 0.001
+        for: 5m
+        labels:
+          severity: critical
+          component: sla
+        annotations:
+          summary: "SLA breach detected"
+          description: "Uptime is {{ $value }}% (target: 99.999%)"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-sla"
+          runbook: "https://docs.company.com/ha/sla-resolution"
+
+      - alert: RTOBreach
+        expr: erlmcp_failover_duration_seconds > 300
+        for: 1m
+        labels:
+          severity: critical
+          component: sla
+        annotations:
+          summary: "RTO breach detected"
+          description: "Failover took {{ $value }} seconds (target: < 300s)"
+          dashboard: "https://grafana.company.com/d/erlmcp-ha-sla"
+          runbook: "https://docs.company.com/ha/rto-resolution"

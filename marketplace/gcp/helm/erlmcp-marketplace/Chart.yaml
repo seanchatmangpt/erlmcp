@@ -1,0 +1,69 @@
+# ============================================================================
+# Helm Chart for erlmcp on GCP Marketplace
+# ============================================================================
+
+apiVersion: v2
+name: erlmcp-marketplace
+description: |
+  erlmcp - Production-grade Erlang/OTP Model Context Protocol Server
+  Optimized for Google Cloud Platform with Workload Identity,
+  Secret Manager integration, and Cloud Operations monitoring.
+
+type: application
+
+# Chart version
+version: 3.0.0
+
+# Application version
+appVersion: "3.0.0"
+
+# Keywords for search
+keywords:
+  - mcp
+  - erlang
+  - otp
+  - model-context-protocol
+  - ai
+  - llm
+  - server
+
+# Maintainers
+maintainers:
+  - name: banyan-platform
+    email: dev@banyan-platform.io
+    url: https://github.com/banyan-platform/erlmcp
+
+# Home page
+home: https://erlmcp.dev
+sources:
+  - https://github.com/banyan-platform/erlmcp
+  - https://docs.erlmcp.dev
+
+# Icon
+icon: https://storage.googleapis.com/erlmcp-marketplace/icon.png
+
+# Annotations for GCP Marketplace
+annotations:
+  marketplace.cloud.google.com/deployed-with: "terraform"
+  marketplace.cloud.google.com/managed-app-version: "3.0.0"
+  marketplace.cloud.google.com/partner: "banyan-platform"
+  marketplace.cloud.google.com/solution-id: "erlmcp-3-0-0"
+
+# Kube version compatibility
+kubeVersion: ">=1.24.0-0"
+
+# Dependencies
+dependencies:
+  - name: prometheus-operator
+    version: ">=40.0.0"
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: prometheus-operator.enabled
+    alias: prometheus
+
+# Common labels
+labels:
+  app.kubernetes.io/name: erlmcp
+  app.kubernetes.io/component: server
+  app.kubernetes.io/part-of: erlmcp
+  app.kubernetes.io/managed-by: helm
+  marketplace.cloud.google.com/deployment: true

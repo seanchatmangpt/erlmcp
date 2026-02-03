@@ -1,0 +1,93 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: erlmcp-swarm
+    environment: production
+    monitor: prometheus
+
+rule_files:
+  - "alert_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # erlmcp services
+  - job_name: 'erlmcp-core'
+    honor_labels: true
+    static_configs:
+      - targets: ['erlmcp-core:9100']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+      - source_labels: [__meta_swarm_node_name]
+        target_label: node
+
+  - job_name: 'erlmcp-transport-stdio'
+    honor_labels: true
+    static_configs:
+      - targets: ['erlmcp-transport-stdio:9101']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+      - source_labels: [__meta_swarm_node_name]
+        target_label: node
+
+  - job_name: 'erlmcp-transport-tcp'
+    honor_labels: true
+    static_configs:
+      - targets: ['erlmcp-transport-tcp:9102']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+      - source_labels: [__meta_swarm_node_name]
+        target_label: node
+
+  - job_name: 'erlmcp-transport-http'
+    honor_labels: true
+    static_configs:
+      - targets: ['erlmcp-transport-http:9103']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    relabel_configs:
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+      - source_labels: [__meta_swarm_node_name]
+        target_label: node
+
+  # Docker Swarm metrics
+  - job_name: 'docker'
+    honor_labels: true
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 5s
+
+  # Node exporter
+  - job_name: 'node'
+    honor_labels: true
+    static_configs:
+      - targets:
+        - node-exporter:9100
+    scrape_interval: 15s
+
+  # OpenTelemetry Collector
+  - job_name: 'otel-collector'
+    honor_labels: true
+    static_configs:
+      - targets: ['erlmcp-otel-collector:8889']
+    scrape_interval: 15s
+    metrics_path: /metrics/v1/metrics
+    metrics_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'otel_.*'
+        action: keep

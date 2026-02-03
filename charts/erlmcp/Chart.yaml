@@ -1,0 +1,24 @@
+apiVersion: v2
+name: erlmcp
+description: Enterprise Erlang MCP (Model Context Protocol) Server
+version: 3.0.0
+appVersion: 3.0.0
+kubeVersion: ">=1.25.0"
+home: https://github.com/your-org/erlmcp
+sources:
+  - https://github.com/your-org/erlmcp
+keywords:
+  - erlang
+  - mcp
+  - model-context-protocol
+  - ai
+  - llm
+  - enterprise
+maintainers:
+  - name: erlmcp-team
+    email: dev@erlmcp.com
+annotations:
+  category: AI/ML
+  enterprise: true
+  ci/cd: "true"
+  deployment-type: "kubernetes"

@@ -1,0 +1,209 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: {{.Swarm.Name}}-erlmcp
+    replica: $(hostname)
+    env: production
+
+rule_files:
+  - "erlmcp_rules.yml"
+  - "alerting_rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+scrape_configs:
+  # erlmcp services
+  - job_name: 'erlmcp-core'
+    scrape_interval: 15s
+    honor_labels: true
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+        - erlmcp-core-1:8080
+        - erlmcp-core-2:8080
+        - erlmcp-core-3:8080
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+
+  - job_name: 'erlmcp-server'
+    scrape_interval: 15s
+    honor_labels: true
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+        - erlmcp-server-1:8081
+        - erlmcp-server-2:8081
+        - erlmcp-server-3:8081
+        - erlmcp-server-4:8081
+        - erlmcp-server-5:8081
+        - erlmcp-server-6:8081
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+
+  - job_name: 'erlmcp-session'
+    scrape_interval: 15s
+    honor_labels: true
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+        - erlmcp-session-1:8082
+        - erlmcp-session-2:8082
+        - erlmcp-session-3:8082
+        - erlmcp-session-4:8082
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+
+  # Infrastructure monitoring
+  - job_name: 'redis'
+    scrape_interval: 15s
+    honor_labels: true
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+        - redis-1:6379
+        - redis-2:6379
+        - redis-3:6379
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+
+  - job_name: 'postgres'
+    scrape_interval: 30s
+    honor_labels: true
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+        - postgres-1:5432
+        - postgres-2:5432
+        - postgres-3:5432
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+
+  # Docker and Swarm metrics
+  - job_name: 'cadvisor'
+    scrape_interval: 30s
+    honor_labels: true
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+        - cadvisor:8080
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+
+  # Service mesh metrics
+  - job_name: 'envoy'
+    scrape_interval: 15s
+    honor_labels: true
+    metrics_path: /stats
+    scheme: http
+    static_configs:
+      - targets:
+        - envoy-1:15000
+        - envoy-2:15000
+        - envoy-3:15000
+        - envoy-4:15000
+        - envoy-5:15000
+        - envoy-6:15000
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+
+  # Traefik metrics
+  - job_name: 'traefik'
+    scrape_interval: 30s
+    honor_labels: true
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+        - traefik-1:8080
+        - traefik-2:8080
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+
+  # Node exporter metrics
+  - job_name: 'node'
+    scrape_interval: 30s
+    honor_labels: true
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+        - node-exporter:9100
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # Kubernetes-like service discovery for Docker Swarm
+  - job_name: 'docker-swarm'
+    honor_labels: false
+    dockerswarm_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: [__meta_swarm_service_name]
+        target_label: service
+      - source_labels: [__meta_swarm_service_id]
+        target_label: service_id
+      - source_labels: [__meta_swarm_service_task_node_hostname]
+        target_label: node
+      - source_labels: [__meta_swarm_service_task_slot]
+        target_label: slot
+      - replacement: "http"
+        target_label: __address__
+      - source_labels: [__address__]
+        target_label: instance
+
+  # Blackbox exporter for health checks
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://erlmcp-core-1:8080/health
+        - http://erlmcp-core-2:8080/health
+        - http://erlmcp-core-3:8080/health
+        - http://erlmcp-server-1:8081/health
+        - http://erlmcp-server-2:8081/health
+        - http://erlmcp-server-3:8081/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 'blackbox:9115'

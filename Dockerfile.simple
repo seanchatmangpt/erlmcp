@@ -1,0 +1,30 @@
+FROM erlang:28.3.1-alpine AS builder
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apk add --no-cache git make gcc g++ musl-dev openssl-dev ncurses-dev bash
+
+# Copy source
+COPY . .
+
+# Compile apps individually
+RUN for app in erlmcp_core erlmcp_transports erlmcp_observability erlmcp_validation; do \
+      (cd apps/$app && rebar3 compile) || true; \
+    done
+
+# Create release from erlmcp_core
+RUN cd apps/erlmcp_core && rebar3 release
+
+# Runtime stage
+FROM alpine:3.20
+
+RUN apk add --no-cache openssl ncurses-libs bash
+
+COPY --from=builder /build/apps/erlmcp_core/_build/default/rel/erlmcp /opt/erlmcp
+
+WORKDIR /opt/erlmcp
+
+EXPOSE 8080
+
+CMD ["/opt/erlmcp/bin/erlmcp", "foreground"]

@@ -1,0 +1,417 @@
+name: erlmcp Rolling Update Deployment
+
+on:
+  push:
+    branches:
+      - main
+      - release/*
+    paths:
+      - 'apps/**'
+      - 'docker/**'
+      - '.github/workflows/rolling-update-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      strategy:
+        description: 'Deployment strategy'
+        required: true
+        default: 'blue-green'
+        type: choice
+        options:
+          - blue-green
+          - canary
+          - rolling
+      image:
+        description: 'Docker image to deploy'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run (no changes)'
+        required: false
+        default: false
+        type: boolean
+      traffic_weight:
+        description: 'Canary traffic weight (for canary strategy)'
+        required: false
+        default: '10'
+        type: string
+
+permissions:
+  contents: read
+  id-token: write  # For OIDC
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ========================================================================
+  # Pre-deployment Validation
+  # ========================================================================
+  validate:
+    name: Validate Deployment
+    runs-on: ubuntu-22.04
+    outputs:
+      environment: ${{ steps.config.outputs.environment }}
+      strategy: ${{ steps.config.outputs.strategy }}
+      image: ${{ steps.config.outputs.image }}
+      should_deploy: ${{ steps.check.outputs.should_deploy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure deployment
+        id: config
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+            STRATEGY="${{ github.event.inputs.strategy }}"
+            IMAGE="${{ github.event.inputs.image }}"
+          else
+            # For push events, determine from branch
+            if [[ "${{ github.ref_name }}" == release/* ]]; then
+              ENVIRONMENT="staging"
+            else
+              ENVIRONMENT="staging"
+            fi
+            STRATEGY="blue-green"
+            IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          fi
+
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "strategy=$STRATEGY" >> $GITHUB_OUTPUT
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+      - name: Check deployment conditions
+        id: check
+        run: |
+          SHOULD_DEPLOY="true"
+
+          # Skip if commit message contains [skip-deploy]
+          if git log -1 --pretty=%B | grep -q "\[skip-deploy\]"; then
+            echo "Skipping deployment due to [skip-deploy] marker"
+            SHOULD_DEPLOY="false"
+          fi
+
+          # Additional checks can go here
+          echo "should_deploy=$SHOULD_DEPLOY" >> $GITHUB_OUTPUT
+
+      - name: Display deployment plan
+        run: |
+          cat << 'EOF'
+          ╔══════════════════════════════════════════════════════════╗
+          ║           erlmcp Deployment Plan                        ║
+          ╠══════════════════════════════════════════════════════════╣
+          ║  Environment:     ${{ steps.config.outputs.environment }}
+          ║  Strategy:        ${{ steps.config.outputs.strategy }}
+          ║  Image:           ${{ steps.config.outputs.image }}
+          ║  Should Deploy:   ${{ steps.check.outputs.should_deploy }}
+          ╚══════════════════════════════════════════════════════════╝
+          EOF
+
+  # ========================================================================
+  # Build and Push Image
+  # ========================================================================
+  build:
+    name: Build Image
+    needs: validate
+    if: needs.validate.outputs.should_deploy == 'true'
+    runs-on: ubuntu-22.04
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile.production
+          push: true
+          tags: |
+            ${{ needs.validate.outputs.image }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ github.sha }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: Image digest
+        run: |
+          echo "Digest: ${{ steps.build.outputs.digest }}"
+
+  # ========================================================================
+  # Blue-Green Deployment
+  # ========================================================================
+  deploy-blue-green:
+    name: Blue-Green Deploy
+    needs: [validate, build]
+    if: |
+      needs.validate.outputs.should_deploy == 'true' &&
+      needs.validate.outputs.strategy == 'blue-green'
+    runs-on: ubuntu-22.04
+    environment:
+      name: ${{ needs.validate.outputs.environment }}
+      url: https://${{ needs.validate.outputs.environment == 'production' && 'api.erlmcp.com' || 'staging.erlmcp.com' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure kubeconfig
+        run: |
+          if [ "${{ needs.validate.outputs.environment }}" = "production" ]; then
+            echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > kubeconfig
+          else
+            echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig
+          fi
+          export KUBECONFIG=kubeconfig
+
+      - name: Set dry-run flag
+        id: dryrun
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "flag=--dry-run" >> $GITHUB_OUTPUT
+          else
+            echo "flag=" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run blue-green deployment
+        run: |
+          chmod +x scripts/rolling-update/blue-green-deploy.sh
+          ./scripts/rolling-update/blue-green-deploy.sh \
+            "${{ needs.validate.outputs.environment }}" \
+            "${{ needs.validate.outputs.image }}" \
+            "${{ steps.dryrun.outputs.flag }}"
+
+      - name: Verify deployment
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          NAMESPACE="erlmcp-${{ needs.validate.outputs.environment }}"
+          kubectl rollout status deployment -l app=erlmcp -n "$NAMESPACE" --timeout=10m
+
+      - name: Run smoke tests
+        if: github.event.inputs.dry_run != 'true'
+        run: |
+          chmod +x scripts/test/smoke.sh
+          ./scripts/test/smoke.sh "${{ needs.validate.outputs.environment }}"
+
+      - name: Start rollback monitor
+        if: github.event.inputs.dry_run != 'true'
+        uses: nick-fields/retry@v2
+        with:
+          timeout_minutes: 30
+          max_attempts: 1
+          command: |
+            chmod +x scripts/rolling-update/automated-rollback.sh
+            timeout 120 ./scripts/rolling-update/automated-rollback.sh \
+              "${{ needs.validate.outputs.environment }}" \
+              --monitor-only &
+            echo "Rollback monitor started in background"
+
+  # ========================================================================
+  # Canary Deployment
+  # ========================================================================
+  deploy-canary:
+    name: Canary Deploy
+    needs: [validate, build]
+    if: |
+      needs.validate.outputs.should_deploy == 'true' &&
+      needs.validate.outputs.strategy == 'canary'
+    runs-on: ubuntu-22.04
+    environment:
+      name: ${{ needs.validate.outputs.environment }}-canary
+      url: https://canary.${{ needs.validate.outputs.environment == 'production' && 'api.erlmcp.com' || 'staging.erlmcp.com' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Configure kubeconfig
+        run: |
+          if [ "${{ needs.validate.outputs.environment }}" = "production" ]; then
+            echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > kubeconfig
+          else
+            echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig
+          fi
+          export KUBECONFIG=kubeconfig
+
+      - name: Run canary deployment
+        run: |
+          chmod +x scripts/rolling-update/canary-deploy.sh
+          ./scripts/rolling-update/canary-deploy.sh \
+            "${{ needs.validate.outputs.environment }}" \
+            "${{ needs.validate.outputs.image }}" \
+            --max-traffic "${{ github.event.inputs.traffic_weight || '50' }}"
+
+      - name: Verify canary deployment
+        run: |
+          NAMESPACE="erlmcp-${{ needs.validate.outputs.environment }}"
+          kubectl rollout status deployment/erlmcp-canary -n "$NAMESPACE" --timeout=10m
+
+  # ========================================================================
+  # Traffic Switch
+  # ========================================================================
+  traffic-switch:
+    name: Traffic Switch
+    needs: [validate, deploy-blue-green]
+    if: |
+      always() &&
+      needs.validate.outputs.should_deploy == 'true' &&
+      needs.validate.outputs.strategy == 'blue-green' &&
+      needs.deploy-blue-green.result == 'success'
+    runs-on: ubuntu-22.04
+    environment:
+      name: ${{ needs.validate.outputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Configure kubeconfig
+        run: |
+          if [ "${{ needs.validate.outputs.environment }}" = "production" ]; then
+            echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > kubeconfig
+          else
+            echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > kubeconfig
+          fi
+          export KUBECONFIG=kubeconfig
+
+      - name: Get current active color
+        id: current
+        run: |
+          NAMESPACE="erlmcp-${{ needs.validate.outputs.environment }}"
+          CURRENT=$(kubectl get service erlmcp-active -n "$NAMESPACE" \
+            -o jsonpath='{.spec.selector.component}')
+          echo "color=$CURRENT" >> $GITHUB_OUTPUT
+          echo "Current active: $CURRENT"
+
+      - name: Determine target color
+        id: target
+        run: |
+          CURRENT="${{ steps.current.outputs.color }}"
+          if [ "$CURRENT" = "erlmcp-blue" ]; then
+            echo "color=erlmcp-green" >> $GITHUB_OUTPUT
+          else
+            echo "color=erlmcp-blue" >> $GITHUB_OUTPUT
+          fi
+          echo "Target color: $(echo ${{ steps.target.outputs.color }} | cut -d- -f2 | tr '[:lower:]' '[:upper:]')"
+
+      - name: Run traffic switch
+        run: |
+          chmod +x scripts/rolling-update/traffic-switch.sh
+          ./scripts/rolling-update/traffic-switch.sh \
+            "${{ needs.validate.outputs.environment }}" \
+            "$(echo '${{ steps.target.outputs.color }}' | cut -d- -f2)" \
+            --analyze-before
+
+      - name: Verify traffic switch
+        run: |
+          NAMESPACE="erlmcp-${{ needs.validate.outputs.environment }}"
+          chmod +x scripts/rolling-update/traffic-switch.sh
+          ./scripts/rolling-update/traffic-switch.sh "$NAMESPACE" --status
+
+  # ========================================================================
+  # Deployment Summary
+  # ========================================================================
+  summary:
+    name: Deployment Summary
+    needs: [validate, build, deploy-blue-green, deploy-canary, traffic-switch]
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Generate summary
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          ## erlmcp Rolling Update Deployment Summary
+
+          ### Configuration
+          | Parameter | Value |
+          |-----------|-------|
+          | Environment | ${{ needs.validate.outputs.environment }} |
+          | Strategy | ${{ needs.validate.outputs.strategy }} |
+          | Image | ${{ needs.validate.outputs.image }} |
+
+          ### Job Status
+          | Job | Status |
+          |-----|--------|
+          | Validate | ${{ needs.validate.result == 'success' && '✅' || '❌' }} |
+          | Build | ${{ needs.build.result == 'success' && '✅' || '❌' }} |
+          | Blue-Green Deploy | ${{ needs.deploy-blue-green.result == 'success' && '✅' || needs.deploy-blue-green.result == 'skipped' && '⏭️' || '❌' }} |
+          | Canary Deploy | ${{ needs.deploy-canary.result == 'success' && '✅' || needs.deploy-canary.result == 'skipped' && '⏭️' || '❌' }} |
+          | Traffic Switch | ${{ needs.traffic-switch.result == 'success' && '✅' || needs.traffic-switch.result == 'skipped' && '⏭️' || '❌' }} |
+
+          ### Artifacts
+          - **Image Digest**: `${{ needs.build.outputs.digest }}`
+          - **Image**: `${{ needs.validate.outputs.image }}`
+
+          EOF
+
+      - name: Send notification
+        if: always()
+        run: |
+          if [ -n "${{ secrets.SLACK_WEBHOOK }}" ]; then
+            STATUS="${{ needs.deploy-blue-green.result == 'success' || needs.deploy-canary.result == 'success' }}"
+            if [ "$STATUS" = "success" ]; then
+              EMOJI="✅"
+              TEXT="Deployment completed successfully"
+            else
+              EMOJI="❌"
+              TEXT="Deployment failed"
+            fi
+
+            curl -s -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+              -H 'Content-Type: application/json' \
+              -d "{
+                \"text\": \"$EMJI erlmcp Deployment: $TEXT\",
+                \"blocks\": [{
+                  \"type\": \"section\",
+                  \"text\": {
+                    \"type\": \"mrkdwn\",
+                    \"text\": \":rocket: *erlmcp Deployment*\n\n*Environment:* ${{ needs.validate.outputs.environment }}\n*Strategy:* ${{ needs.validate.outputs.strategy }}\n*Status:* $TEXT\n*Image:* ${{ needs.validate.outputs.image }}\"
+                  }
+                }]
+              }" || true
+          fi

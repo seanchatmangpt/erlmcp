@@ -1,0 +1,263 @@
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@erlmcp.com'
+  smtp_auth_username: 'alerts@erlmcp.com'
+  smtp_auth_password: 'changeme'
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Default receiver
+default_receiver: 'web.hook'
+
+# How long to keep notifications
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'dev', 'instance']
+
+# Route tree for notifications
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'web.hook'
+  routes:
+    # Critical alerts - immediate escalation
+    - match:
+        severity: 'critical'
+      receiver: 'critical-alerts'
+      group_wait: 5s
+      repeat_interval: 5m
+
+    # Warning alerts - team notifications
+    - match:
+        severity: 'warning'
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 15m
+
+    # Security alerts - dedicated team
+    - match_re:
+        severity: '.*'
+        category: 'security'
+      receiver: 'security-alerts'
+      group_wait: 10s
+      repeat_interval: 10m
+
+    # Infrastructure alerts - ops team
+    - match_re:
+        severity: '.*'
+        category: 'infrastructure'
+      receiver: 'ops-alerts'
+      group_wait: 30s
+      repeat_interval: 30m
+
+    # Performance alerts - dev team
+    - match_re:
+        severity: '.*'
+        category: 'performance'
+      receiver: 'performance-alerts'
+      group_wait: 30s
+      repeat_interval: 15m
+
+    # Error alerts - dev team
+    - match_re:
+        severity: '.*'
+        category: 'errors'
+      receiver: 'dev-alerts'
+      group_wait: 30s
+      repeat_interval: 15m
+
+# Receiver definitions
+receivers:
+  # Critical alerts - pager duty
+  - name: 'critical-alerts'
+    email_configs:
+      - to: 'on-call-engineer@erlmcp.com'
+        subject: 'CRITICAL: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Labels: {{ .Labels }}
+          {{ end }}
+    pagerduty_configs:
+      - service_key: 'PAGERDUTY_SERVICE_KEY'
+        description: '{{ .GroupLabels.alertname }}'
+        details:
+          service: '{{ .GroupLabels.service }}'
+          severity: critical
+          summary: '{{ .GroupAnnotations.summary }}'
+    webhook_configs:
+      - url: 'https://hooks.slack.com/services/SLACK_WEBHOOK_URL'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: 'application/json'
+        title: '🚨 CRITICAL ALERT: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        color: 'danger'
+
+  # Warning alerts - Slack and email
+  - name: 'warning-alerts'
+    email_configs:
+      - to: 'dev-team@erlmcp.com'
+        subject: 'WARNING: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Labels: {{ .Labels }}
+          {{ end }}
+    webhook_configs:
+      - url: 'https://hooks.slack.com/services/SLACK_WEBHOOK_URL'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: 'application/json'
+        title: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        color: 'warning'
+
+  # Security alerts - security team
+  - name: 'security-alerts'
+    email_configs:
+      - to: 'security-team@erlmcp.com'
+        subject: 'SECURITY: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          SECURITY ALERT: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Labels: {{ .Labels }}
+          {{ end }}
+    webhook_configs:
+      - url: 'https://hooks.slack.com/services/SECURITY_WEBHOOK_URL'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: 'application/json'
+        title: '🔒 SECURITY ALERT: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        color: 'danger'
+      - url: 'https://security-incident.example.com/api/v1/incidents'
+        http_config:
+          headers:
+            Content-Type: 'application/json'
+            Authorization: 'Bearer ${SECURITY_API_TOKEN}'
+
+  # Ops alerts - operations team
+  - name: 'ops-alerts'
+    email_configs:
+      - to: 'ops-team@erlmcp.com'
+        subject: 'INFRASTRUCTURE: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Infrastructure Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Labels: {{ .Labels }}
+          {{ end }}
+    webhook_configs:
+      - url: 'https://hooks.slack.com/services/OPS_WEBHOOK_URL'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: 'application/json'
+        title: '🔧 Infrastructure Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        color: 'warning'
+
+  # Performance alerts - development team
+  - name: 'performance-alerts'
+    email_configs:
+      - to: 'dev-team@erlmcp.com'
+        subject: 'PERFORMANCE: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Performance Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Labels: {{ .Labels }}
+          {{ end }}
+    webhook_configs:
+      - url: 'https://hooks.slack.com/services/PERFORMANCE_WEBHOOK_URL'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: 'application/json'
+        title: '📊 Performance Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        color: 'warning'
+
+  # Error alerts - development team
+  - name: 'dev-alerts'
+    email_configs:
+      - to: 'dev-team@erlmcp.com'
+        subject: 'ERROR: {{ .GroupLabels.alertname }}'
+        body: |
+          {{ range .Alerts }}
+          Error Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Labels: {{ .Labels }}
+          {{ end }}
+    webhook_configs:
+      - url: 'https://hooks.slack.com/services/DEV_WEBHOOK_URL'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: 'application/json'
+        title: '💻 Error Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          {{ .Annotations.summary }}
+          {{ .Annotations.description }}
+          {{ end }}
+        color: 'danger'
+
+  # Webhook for general notifications
+  - name: 'web.hook'
+    webhook_configs:
+      - url: 'http://localhost:5001/'
+        send_resolved: true
+        http_config:
+          headers:
+            Content-Type: 'application/json'
+
+# Inhibition rules to prevent notification storms
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'info'
+    equal: ['alertname', 'instance']
+  - target_match_re:
+      severity: '.*'
+    equal: ['alertname', 'instance']

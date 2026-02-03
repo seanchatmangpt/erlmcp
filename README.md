@@ -1,49 +1,332 @@
 # erlmcp
 
-Erlang/OTP SDK for the Model Context Protocol (MCP) - Production-ready client and server implementation with comprehensive validation.
+![Erlang/OTP](https://img.shields.io/badge/Erlang%2FOTP-28.3.1+-red.svg)
+![Docker](https://img.shields.io/badge/docker-2024%2F09-blue.svg)
+![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
+![MCP Spec](https://img.shields.io/badge/MCP-2025--11--25-green.svg)
 
-> **Quick Start?** See **[docs/README_RUN_LOCAL.md](docs/README_RUN_LOCAL.md)** for all entry points: STDIO server, HTTP server, validator, examples, and Erlang shell.
+> **Erlang/OTP SDK for the Model Context Protocol (MCP) - Production-ready client and server implementation**
+
+---
+
+## 5-Minute Docker Quick Start
+
+Get erlmcp running in under 5 minutes with Docker. No Erlang/OTP installation required.
+
+```bash
+# Clone and start (2 minutes)
+git clone https://github.com/banyan-platform/erlmcp && cd erlmcp
+docker compose --profile runtime up -d
+
+# Verify health (1 minute)
+curl http://localhost:8080/health
+
+# Run tests via quality lanes (2 minutes)
+docker compose run --rm erlmcp-build rebar3 eunit
+docker compose run --rm erlmcp-ct rebar3 ct
+```
+
+**That's it!** erlmcp is now running on `http://localhost:8080`.
+
+### What's Running?
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| erlmcp | 8080 | HTTP API (JSON-RPC over HTTP) |
+| Metrics | 9100 | Prometheus metrics |
+| Health | 9090 | Health check endpoint |
+
+### Start Monitoring Stack (Optional)
+
+```bash
+# Start Grafana, Prometheus, Alertmanager (1 minute)
+docker compose --profile monitoring up -d
+
+# Access dashboards
+# Grafana: http://localhost:3000 (admin/admin)
+# Prometheus: http://localhost:9090
+```
+
+---
+
+## Choose Your Path
+
+### 👨‍💻 Developer
+Build, test, and debug erlmcp locally.
+- **Setup**: [Development Setup](#development-setup)
+- **Testing**: [Quality Lanes](#quality-lanes)
+- **Debugging**: [CLI Reference](docs/CLI_REFERENCE.md)
+
+### 👷 Operator
+Deploy and manage erlmcp in production.
+- **Docker Compose**: [Single Node Deployment](#production-deployment)
+- **Docker Swarm**: [Multi-Node Deployment](#docker-swarm-deployment)
+- **Kubernetes**: [K8s Deployment](#kubernetes-deployment)
+
+### 🏗️ Architect
+Understand system design and integration.
+- **Architecture**: [System Architecture](docs/architecture.md)
+- **API Reference**: [Complete API](docs/api-reference.md)
+- **Transport Specs**: [Transports Guide](docs/TRANSPORTS.md)
+
+---
+
+## Development vs Production
+
+### Choose Your Configuration
+
+| Feature | Development | Production |
+|---------|-------------|------------|
+| **Image Size** | ~1.5GB (with tools) | ~150MB (minimal) |
+| **Debug Tools** | Vim, htop, strace | None (security) |
+| **Log Level** | Debug | Info |
+| **Resource Limits** | None | CPU/Memory constrained |
+| **Health Checks** | Basic | 3-level verification |
+| **Deployment** | docker compose | Swarm/K8s |
+
+### Docker Profiles
+
+```bash
+# Development (build, test, debug)
+docker compose --profile build up
+docker compose --profile dev up
+
+# Production (minimal runtime)
+docker compose --profile runtime up -d
+
+# Monitoring (observability stack)
+docker compose --profile monitoring up -d
+```
+
+### Configuration Selection Guide
+
+| Use Case | Profile | Command |
+|----------|---------|---------|
+| Local development | `dev` | `docker compose --profile dev up` |
+| Running tests | `build`, `unit`, `ct` | `docker compose --profile unit run --rm erlmcp-unit` |
+| Production single-node | `runtime` | `docker compose --profile runtime up -d` |
+| Production with monitoring | `runtime`, `monitoring` | `docker compose --profile runtime --profile monitoring up -d` |
+| Multi-node cluster | Docker Swarm | See [Swarm Deployment](#docker-swarm-deployment) |
+| Cloud-native | Kubernetes | See [K8s Deployment](#kubernetes-deployment) |
+
+---
+
+## Production Deployment
+
+### Option 1: Docker Compose (Single Node)
+
+**Best for**: POC, testing, single-server deployments
+
+```bash
+# 1. Create environment file
+cp .env.prod.template .env
+# Edit .env with your configuration
+
+# 2. Start production runtime
+docker compose --profile runtime up -d
+
+# 3. Verify health
+curl http://localhost:8080/health
+```
+
+**Health Verification**:
+```bash
+# Level 1: HTTP health endpoint
+curl http://localhost:8080/health
+
+# Level 2: Container health
+docker ps --format "table {{.Names}}\t{{.Status}}"
+
+# Level 3: Service logs
+docker logs erlmcp --tail 50 -f
+```
+
+### Option 2: Docker Swarm (Multi-Node, RECOMMENDED)
+
+**Best for**: Production HA, multi-server deployments
+
+```bash
+# 1. Initialize Swarm (if not already)
+docker swarm init
+
+# 2. Create overlay networks
+docker network create --driver overlay --attachable --opt encrypted erlmcp-overlay
+docker network create --driver overlay --attachable --opt encrypted monitoring-overlay
+
+# 3. Create secrets
+echo "your-secure-cookie" | docker secret create erlang_cookie -
+# Create TLS certificates, DB passwords, etc.
+
+# 4. Label nodes for placement
+docker node update --label-add erlmcp.enabled=true <node-id>
+docker node update --label-add erlmcp.database=true <db-node-id>
+docker node update --label-add erlmcp.monitoring=true <monitoring-node-id>
+
+# 5. Deploy stack
+docker stack deploy -c docker/docker-stack.yml erlmcp-swarm
+
+# 6. Verify deployment
+docker service ls
+docker stack ps erlmcp-swarm
+
+# 7. Check health
+curl http://localhost:8080/health
+```
+
+**Swarm Management**:
+```bash
+# Scale services
+docker service scale erlmcp-swarm_erlmcp=5
+
+# Update service (rolling update)
+docker service update --image ghcr.io/banyan-platform/erlmcp:3.0.1 erlmcp-swarm_erlmcp
+
+# View logs
+docker service logs -f erlmcp-swarm_erlmcp
+
+# Remove stack
+docker stack rm erlmcp-swarm
+```
+
+### Option 3: Kubernetes (Cloud-Native)
+
+**Best for**: Cloud-native, auto-scaling deployments
+
+```bash
+# 1. Create namespace
+kubectl create namespace erlmcp
+
+# 2. Create secrets
+kubectl create secret generic erlmcp-secrets \
+  --from-literal=erlang-cookie=$(openssl rand -base64 32)
+
+# 3. Deploy (using Helm)
+helm install erlmcp ./helm/erlmcp-enterprise \
+  --namespace erlmcp \
+  --values config/scalability/production.values.yaml
+
+# 4. Verify deployment
+kubectl get pods -n erlmcp
+kubectl get services -n erlmcp
+
+# 5. Port-forward for testing
+kubectl port-forward -n erlmcp svc/erlmcp 8080:8080
+curl http://localhost:8080/health
+```
+
+**Production Checklist**: See [DOCKER_DEPLOYMENT_CHECKLIST.md](DOCKER_DEPLOYMENT_CHECKLIST.md)
+
+---
+
+## Monitoring Setup
+
+### Quick Start Monitoring
+
+```bash
+# 1. Start monitoring stack
+docker compose --profile monitoring up -d
+
+# 2. Access dashboards
+# Grafana: http://localhost:3000 (admin/admin)
+# Prometheus: http://localhost:9090
+# Alertmanager: http://localhost:9093
+
+# 3. View pre-configured dashboards
+# - erlmcp Overview
+# - Performance Metrics
+# - Error Rates
+# - Resource Usage
+```
+
+### Metrics Endpoints
+
+| Metric | Endpoint | Description |
+|--------|----------|-------------|
+| Request Rate | `/metrics` | `http_requests_total` |
+| Error Rate | `/metrics` | `http_errors_total` |
+| Latency | `/metrics` | `http_request_duration_seconds` |
+| Memory | `/metrics` | `erlmcp_memory_words` |
+| Connections | `/metrics` | `erlmcp_connections_active` |
+
+---
+
+## Documentation
+
+### Getting Started
+
+| Guide | Description |
+|-------|-------------|
+| [Docker Quick Start](QUICKSTART_DOCKER.md) | Detailed Docker setup with troubleshooting |
+| [Development vs Production](DEVELOPMENT_VS_PRODUCTION.md) | Configuration comparison guide |
+| [Development Setup](DEVELOPMENT.md) | Local Erlang/OTP development environment |
+| [Contributing](CONTRIBUTING.md) | Code standards and PR process |
+
+### Deployment & Operations
+
+| Guide | Description |
+|-------|-------------|
+| [Deployment Checklist](DOCKER_DEPLOYMENT_CHECKLIST.md) | Production readiness verification |
+| [Docker Deployment](docs/deployment/) | Complete Docker deployment procedures |
+| [Swarm Deployment](docs/deployment/SWARM_DEPLOYMENT.md) | Docker Swarm multi-node setup |
+| [K8s Deployment](k8s/) | Kubernetes manifests and Helm charts |
+| [HA Architecture](docs/ha-architecture.md) | High availability design |
+| [Disaster Recovery](docs/dr/) | Backup and recovery procedures |
+
+### Core Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Architecture](docs/architecture.md) | System design and supervision trees |
+| [API Reference](docs/api-reference.md) | Complete API documentation |
+| [Protocol Implementation](docs/protocol.md) | MCP protocol details |
+| [Transports Guide](docs/TRANSPORTS.md) | All transport configurations |
+| [Examples](examples/) | 40+ example implementations |
+
+### CLI Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [CLI Reference](docs/CLI_REFERENCE.md) | All commands, options, exit codes |
+| [Interactive Mode](docs/CLI_INTERACTIVE_GUIDE.md) | REPL workflows and examples |
+| [Shell Completions](docs/SHELL_COMPLETIONS_GUIDE.md) | Tab completion (bash/zsh/fish) |
+| [Diagnostics](docs/DIAGNOSTICS_GUIDE.md) | Profiling, tracing, monitoring |
+| [Plugin Development](docs/PLUGIN_DEVELOPMENT_GUIDE.md) | Create custom plugins |
+
+### Validation & Testing
+
+| Guide | Description |
+|-------|-------------|
+| [Validator Guide](docs/VALIDATOR_GUIDE.md) | Validation and compliance |
+| [Spec Compliance Testing](docs/SPEC_COMPLIANCE_TESTING.md) | Test coverage details |
+| [Quality Report](CODE_QUALITY_REPORT_V2.1.md) | Latest quality metrics |
+
+### Performance & Benchmarks
+
+| Guide | Description |
+|-------|-------------|
+| [Benchmark Execution](archive/benchmarks/BENCHMARK_EXECUTION_GUIDE.md) | Running benchmarks |
+| [OTP 28 Performance](archive/benchmarks/OTP_28_BENCHMARK_SUMMARY.md) | Performance baselines |
+| [Performance Validator](archive/benchmarks/PERFORMANCE_VALIDATOR_REPORT.md) | Validation results |
+
+---
 
 ## ⚠️ Version 3.0: OTP 28.3.1+ Required
 
 **BREAKING CHANGE**: erlmcp v3.0+ requires **Erlang/OTP 28.3.1 or later**. All backward compatibility with OTP 25-27 has been removed to enable exclusive use of native OTP 28+ features.
 
-See [OTP 28.3.1 Migration Guide](#otp-2831-migration) below.
+**Migration Guide**: See [OTP 28.3.1 Migration](#otp-2831-migration) below.
 
-## Overview
+---
 
-erlmcp is a robust, production-grade implementation of the [MCP 2025-11-25 specification](https://modelcontextprotocol.io/) built with Erlang/OTP 28.3.1+. It provides:
+## Development Setup
 
-- **MCP Protocol Implementation**: Implements MCP 2025-11-25 with automated compliance reporting (currently 95.7%—run `make compliance-report` to see exact gaps). JSON-RPC 2.0 with all MCP methods (tools, resources, prompts)
-- **Multiple Transports**: STDIO, TCP, HTTP, WebSocket, Server-Sent Events
-- **Production-Ready**: Supervision trees, circuit breakers, rate limiting, observability
-- **Comprehensive Validation**: Automated spec compliance testing and reporting
-- **High Performance**: 2.69M+ ops/sec in-memory, 40-50K concurrent connections per node
-- **OTP 28+ Features**: Native JSON, priority messages, scalable process iteration
+**For local development with Erlang/OTP 28.3.1+**
 
-## Project Scope
+### Prerequisites
 
-**Core OSS MCP Implementation**:
-- **erlmcp_core**: Complete MCP protocol implementation (client, server, JSON-RPC, session management)
-- **erlmcp_transports**: Transport layer with STDIO (required), HTTP, and SSE (spec-compliant streamable transports)
-- **erlmcp_validation**: Automated compliance validation and reporting tools
-- **erlmcp_observability** (optional): Metrics, tracing, and monitoring integrations
-
-**Experimental/Optional Features**:
-- TCP and WebSocket transports (experimental, not required for MCP compliance)
-- Web dashboard and chaos engineering tools (development/testing aids)
-- Performance benchmarking suite (validation of performance claims)
-
-**Reference Materials** (not required for MCP compliance):
-- `docs/tcps/`: Toyota Production System quality framework documentation
-- `archive/`: Historical performance baselines, quality reports, implementation details
-- Marketplace documentation: Deployment guides for large-scale scenarios
-
-**What You Need for MCP**: Just the core apps (erlmcp_core + erlmcp_transports) and STDIO transport. Everything else enhances observability, testing, or provides experimental features.
-
-## Quick Start
-
-**Prerequisites**: Erlang/OTP 28.3.1 or later
+- Erlang/OTP 28.3.1 or later
+- Docker 24.0+ (for Docker-based quality lanes)
+- Make or rebar3
 
 ### Setup & Development
 
@@ -52,16 +335,16 @@ erlmcp is a robust, production-grade implementation of the [MCP 2025-11-25 speci
 erl -version  # Must be 28.3.1 or later
 
 # Clone and compile
-git clone https://github.com/yourusername/erlmcp.git
+git clone https://github.com/banyan-platform/erlmcp.git
 cd erlmcp
 rebar3 compile
 
-# Run tests
-rebar3 eunit
-rebar3 ct
+# Run tests (via Docker quality lanes)
+docker compose run --rm erlmcp-unit make eunit
+docker compose run --rm erlmcp-ct make ct
 
 # Run quality gates
-make check
+docker compose run --rm erlmcp-check make check
 
 # Start Erlang shell
 make console
@@ -89,137 +372,55 @@ erlmcp benchmark
 erlmcp help
 ```
 
-See [CLI Reference](docs/CLI_REFERENCE.md) for complete command documentation.
+## Quality Lanes
 
-## Documentation
+erlmcp uses Docker-based quality lanes for all validation. Each lane corresponds to a quality gate.
 
-### Documentation Structure
+| Lane | Service | Purpose | Command |
+|------|---------|---------|---------|
+| Compile | `erlmcp-build` | Compilation gate | `docker compose run --rm erlmcp-build make compile` |
+| EUnit | `erlmcp-unit` | Unit test gate | `docker compose run --rm erlmcp-unit make eunit` |
+| CT | `erlmcp-ct` | Integration test gate | `docker compose run --rm erlmcp-ct make ct` |
+| Check | `erlmcp-check` | Quality analysis gate | `docker compose run --rm erlmcp-check make check` |
+| Bench | `erlmcp-bench` | Performance gate | `docker compose run --rm erlmcp-bench make benchmark` |
+| Cluster | `erlmcp-node` | Cluster testing | `docker compose run --rm erlmcp-node make test-cluster` |
 
-The project documentation is organized for easy navigation:
-
-- **Root Level**: Essential operational files (setup, contributing, changelog)
-- **docs/**: Official specifications, API references, deployment guides
-- **archive/**: Reference material (implementation details, performance baselines, quality reports)
-
-For comprehensive navigation and finding specific topics:
-- **[Documentation Guide](DOCUMENTATION_GUIDE.md)** - Complete navigation guide with quick links by topic
-- **[Archive Index](ARCHIVE_INDEX.md)** - Guide to all archived reference materials
-
-### Quick Links
-
-**Getting Started**:
-- [Development Setup](DEVELOPMENT.md) - Environment setup and workflow
-- [Contributing Guidelines](CONTRIBUTING.md) - Code standards and PR process
-- [System Architecture](CLAUDE.md) - Formal specification, OTP patterns, quality gates
-
-**CLI Documentation** (NEW):
-- [CLI Reference Guide](docs/CLI_REFERENCE.md) - All commands, options, exit codes
-- [Interactive Mode Guide](docs/CLI_INTERACTIVE_GUIDE.md) - REPL workflows and examples
-- [Shell Completions](docs/SHELL_COMPLETIONS_GUIDE.md) - Tab completion setup (bash/zsh/fish)
-- [Diagnostics & Profiling](docs/DIAGNOSTICS_GUIDE.md) - Profiling, tracing, monitoring
-- [Plugin Development](docs/PLUGIN_DEVELOPMENT_GUIDE.md) - Create custom plugins
-- [CLI Examples](examples/cli/) - validate-spec.sh, connect-server.sh, recorded sessions
-
-**Core Documentation**:
-- [Architecture](docs/architecture.md) - System design and supervision trees
-- [API Reference](docs/api-reference.md) - Complete API documentation
-- [Protocol Implementation](docs/protocol.md) - MCP protocol details
-- [Examples](examples/) - 40+ example implementations
-
-**Validation & Testing**:
-- [Validator Guide](docs/VALIDATOR_GUIDE.md) - Validation and compliance
-- [Spec Compliance Testing](docs/SPEC_COMPLIANCE_TESTING.md) - Test coverage details
-- [Quality Report](CODE_QUALITY_REPORT_V2.1.md) - Latest quality metrics
-
-**Deployment & Operations**:
-- [Deployment Guide](archive/tasks/DEPLOYMENT_GUIDE_100X.md) - Production deployment procedures
-- [Production Readiness](archive/tasks/PRODUCTION_READINESS_SCORE.md) - Readiness assessment
-- [Cluster Setup](archive/tasks/CLUSTER_SETUP.md) - Multi-node configuration
-
-**Performance & Benchmarks**:
-- [Benchmark Execution Guide](archive/benchmarks/BENCHMARK_EXECUTION_GUIDE.md) - Running benchmarks
-- [OTP 28 Benchmark Summary](archive/benchmarks/OTP_28_BENCHMARK_SUMMARY.md) - Performance baselines
-- [Performance Validator Report](archive/benchmarks/PERFORMANCE_VALIDATOR_REPORT.md) - Validation results
-
-**API & Integration**:
-- [MCP Endpoints Guide](archive/misc/MCP_ENDPOINTS_AND_CAPABILITIES_GUIDE.md) - Comprehensive MCP API reference
-- [Integration Plan](archive/misc/GGEN_INTEGRATION_PLAN.md) - Large-scale integration architecture
-
-## Validation & Compliance
-
-### Validation Quick Start
-
+**Full Quality Pipeline**:
 ```bash
-# Build validation CLI
-rebar3 escriptize
-
-# Run all validators
-./_build/default/bin/erlmcp_validate run --all
-
-# Run specific validator
-./_build/default/bin/erlmcp_validate run --section protocol
-
-# Run for specific transport
-./_build/default/bin/erlmcp_validate run --transport tcp
-
-# Generate compliance report
-./_build/default/bin/erlmcp_validate report --format markdown
-
-# Run with verbose output
-./_build/default/bin/erlmcp_validate run --all --verbose
+# Run all quality lanes in sequence
+docker compose run --rm erlmcp-build make compile && \
+docker compose run --rm erlmcp-unit make eunit && \
+docker compose run --rm erlmcp-ct make ct && \
+docker compose run --rm erlmcp-check make check
 ```
 
-### Compliance Status
+---
 
-| Metric | Status | Details |
-|--------|--------|---------|
-| **MCP Spec Compliance** | 95.7% | 2025-11-25 specification |
-| **Test Coverage** | 80%+ | EUnit + Common Test |
-| **Security Tests** | 60+ | Authorization, injection, certificates |
-| **Performance Regression** | Automated | Benchmarks on every commit |
-| **Error Recovery** | <5s RTO | Recovery time objective |
+## Overview
 
-### Test Categories Summary
+erlmcp is a robust, production-grade implementation of the [MCP 2025-11-25 specification](https://modelcontextprotocol.io/) built with Erlang/OTP 28.3.1+. It provides:
 
-**Protocol Tests** (54 tests)
-- JSON-RPC 2.0 compliance
-- MCP protocol validation
-- Error code coverage (-32700 to -32010, 1001-1089)
-- Method signature validation
+- **MCP Protocol Implementation**: Implements MCP 2025-11-25 with automated compliance reporting (currently 95.7%—run `make compliance-report` to see exact gaps). JSON-RPC 2.0 with all MCP methods (tools, resources, prompts)
+- **Multiple Transports**: STDIO, TCP, HTTP, WebSocket, Server-Sent Events
+- **Production-Ready**: Supervision trees, circuit breakers, rate limiting, observability
+- **Comprehensive Validation**: Automated spec compliance testing and reporting
+- **High Performance**: 2.69M+ ops/sec in-memory, 40-50K concurrent connections per node
+- **OTP 28+ Features**: Native JSON, priority messages, scalable process iteration
 
-**Security Tests** (60+ tests)
-- Authentication (JWT, tokens, expiry)
-- Authorization (RBAC, role-based access)
-- Injection prevention (SQL, XSS, command, path traversal)
-- Certificate validation (expired, self-signed, chains)
-- Penetration testing scenarios (8 tests)
+## Project Scope
 
-**Error Recovery Tests** (38+ tests)
-- Process crash recovery (registry, client, server)
-- Transaction rollback (resources, tools)
-- State validation (request IDs, capabilities)
-- Network failure recovery (14 tests)
-- Supervision tree validation (4 tests)
-- Chaos engineering integration (4 tests)
+**Core OSS MCP Implementation**:
+- **erlmcp_core**: Complete MCP protocol implementation (client, server, JSON-RPC, session management)
+- **erlmcp_transports**: Transport layer with STDIO (required), HTTP, and SSE (spec-compliant streamable transports)
+- **erlmcp_validation**: Automated compliance validation and reporting tools
+- **erlmcp_observability** (optional): Metrics, tracing, and monitoring integrations
 
-**Integration Tests** (10+ tests)
-- Multi-transport consistency
-- Lifecycle management
-- Capability negotiation
-- Request-response correlation
+**Experimental/Optional Features**:
+- TCP and WebSocket transports (experimental, not required for MCP compliance)
+- Web dashboard and chaos engineering tools (development/testing aids)
+- Performance benchmarking suite (validation of performance claims)
 
-**Lifecycle Tests** (10 tests)
-- Initialize sequence
-- Version negotiation
-- Capability exchange
-- Reinitialize rejection
-
-**Performance Tests** (21 tests)
-- Latency (P50 <5ms, P95 <20ms, P99 <50ms)
-- Throughput (>1000 req/s)
-- Memory (<100KB per connection)
-- Concurrent connections (10K with 99% success)
-- Connection pool efficiency
+**What You Need for MCP**: Just the core apps (erlmcp_core + erlmcp_transports) and STDIO transport. Everything else enhances observability, testing, or provides experimental features.
 
 ## Project Structure
 
@@ -381,13 +582,89 @@ See [OTP 28.3.1 Features Guide](docs/otp28-features.md) for implementation detai
 
 **OTP 28.3.1 improvements**: JIT enhancements expected to improve baselines by 5-15% over OTP 27.
 
+## Validation & Compliance
+
+### Validation Quick Start
+
+```bash
+# Build validation CLI
+rebar3 escriptize
+
+# Run all validators
+./_build/default/bin/erlmcp_validate run --all
+
+# Run specific validator
+./_build/default/bin/erlmcp_validate run --section protocol
+
+# Run for specific transport
+./_build/default/bin/erlmcp_validate run --transport tcp
+
+# Generate compliance report
+./_build/default/bin/erlmcp_validate report --format markdown
+
+# Run with verbose output
+./_build/default/bin/erlmcp_validate run --all --verbose
+```
+
+### Compliance Status
+
+| Metric | Status | Details |
+|--------|--------|---------|
+| **MCP Spec Compliance** | 95.7% | 2025-11-25 specification |
+| **Test Coverage** | 80%+ | EUnit + Common Test |
+| **Security Tests** | 60+ | Authorization, injection, certificates |
+| **Performance Regression** | Automated | Benchmarks on every commit |
+| **Error Recovery** | <5s RTO | Recovery time objective |
+
+### Test Categories Summary
+
+**Protocol Tests** (54 tests)
+- JSON-RPC 2.0 compliance
+- MCP protocol validation
+- Error code coverage (-32700 to -32010, 1001-1089)
+- Method signature validation
+
+**Security Tests** (60+ tests)
+- Authentication (JWT, tokens, expiry)
+- Authorization (RBAC, role-based access)
+- Injection prevention (SQL, XSS, command, path traversal)
+- Certificate validation (expired, self-signed, chains)
+- Penetration testing scenarios (8 tests)
+
+**Error Recovery Tests** (38+ tests)
+- Process crash recovery (registry, client, server)
+- Transaction rollback (resources, tools)
+- State validation (request IDs, capabilities)
+- Network failure recovery (14 tests)
+- Supervision tree validation (4 tests)
+- Chaos engineering integration (4 tests)
+
+**Integration Tests** (10+ tests)
+- Multi-transport consistency
+- Lifecycle management
+- Capability negotiation
+- Request-response correlation
+
+**Lifecycle Tests** (10 tests)
+- Initialize sequence
+- Version negotiation
+- Capability exchange
+- Reinitialize rejection
+
+**Performance Tests** (21 tests)
+- Latency (P50 <5ms, P95 <20ms, P99 <50ms)
+- Throughput (>1000 req/s)
+- Memory (<100KB per connection)
+- Concurrent connections (10K with 99% success)
+- Connection pool efficiency
+
 ## Quality Gates
 
 **Automated validation (enforced on every commit):**
 
 - [x] **Compilation**: 0 errors
 - [x] **Tests**: 100% pass rate
-- [x] **Coverage**: ≥80%
+- [x] **Coverage**: >=80%
 - [x] **Dialyzer**: 0 type warnings
 - [x] **Xref**: 0 undefined functions
 - [x] **Benchmarks**: <10% regression (if perf code changed)
@@ -429,7 +706,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for:
 
 ## License
 
-[Specify your license here]
+Apache License 2.0
 
 ## Version
 
@@ -455,8 +732,10 @@ See [CHANGELOG.md](CHANGELOG.md) for full release history and [docs/OTP28_MIGRAT
 ## Support
 
 - Documentation: [Documentation Guide](DOCUMENTATION_GUIDE.md) - Start here for navigation
-- Issues: [GitHub Issues](https://github.com/yourusername/erlmcp/issues)
-- Discussions: [GitHub Discussions](https://github.com/yourusername/erlmcp/discussions)
+- Issues: [GitHub Issues](https://github.com/banyan-platform/erlmcp/issues)
+- Discussions: [GitHub Discussions](https://github.com/banyan-platform/erlmcp/discussions)
+
+---
 
 ## OTP 28.3.1 Migration
 
@@ -478,22 +757,18 @@ export PATH="$ERLMCP_OTP_BIN:$PATH"
 kerl install 28.3.1 $HOME/.kerl/28.3.1
 . $HOME/.kerl/28.3.1/activate
 
-# Option 3: Use system package manager (Ubuntu/Debian)
-# Add Erlang Solutions repo and install:
-# sudo apt-get install erlang-asn1 erlang-crypto erlang-eldap erlang-ftp \
-#   erlang-inets erlang-mnesia erlang-os-mon erlang-parsetools \
-#   erlang-public-key erlang-runtime-tools erlang-snmp erlang-ssl \
-#   erlang-syntax-tools erlang-tftp erlang-tools erlang-xmerl
+# Option 3: Use Docker (recommended for production)
+docker compose --profile runtime up -d
 ```
 
 **Benefits**:
-- ✅ 2-3x faster JSON operations (native json module)
-- ✅ <1ms priority message latency for critical operations (EEP 76)
-- ✅ O(1) memory scalability for process monitoring
-- ✅ ~10% throughput improvement from JIT optimizations
-- ✅ Post-quantum TLS 1.3 support (MLKEM hybrid algorithms)
-- ✅ 75% memory reduction with process hibernation
-- ✅ Cleaner codebase (~1,358 lines removed)
+- 2-3x faster JSON operations (native json module)
+- <1ms priority message latency for critical operations (EEP 76)
+- O(1) memory scalability for process monitoring
+- ~10% throughput improvement from JIT optimizations
+- Post-quantum TLS 1.3 support (MLKEM hybrid algorithms)
+- 75% memory reduction with process hibernation
+- Cleaner codebase (~1,358 lines removed)
 
 **Migration Steps**:
 
@@ -503,22 +778,16 @@ erl -version  # Must be 28.3.1 or later
 erl -eval 'erlang:display(erlang:system_info(otp_release)), init:stop().'
 # Should output: "28"
 
-# 2. Update rebar.config minimum OTP version
-# Already set to: {minimum_otp_vsn, "28"}
-
-# 3. Remove jsx dependency (if you added it manually)
-# erlmcp now uses native json module exclusively
-
-# 4. Clean and recompile
+# 2. Clean and recompile
 rebar3 clean
 rebar3 compile
 
-# 5. Run tests
-rebar3 eunit
-rebar3 ct
+# 3. Run tests
+docker compose run --rm erlmcp-unit make eunit
+docker compose run --rm erlmcp-ct make ct
 
-# 6. Run quality gates
-make check
+# 4. Run quality gates
+docker compose run --rm erlmcp-check make check
 ```
 
 ### API Changes
@@ -553,28 +822,6 @@ make check
 % Future-proofs against quantum computing threats
 % No configuration changes needed
 ```
-
-### Cross-Version Distribution
-
-OTP 28.3.1 includes cross-version distribution improvements:
-
-```erlang
-% Nodes can now run different OTP versions in same cluster
-% Requires EPMD (Erlang Port Mapper Daemon)
-% Automatic version negotiation in distribution handshake
-
-% Enable clustering in config/sys.config:
-{erlmcp_core, [
-  {cluster_enabled, true},
-  {cluster_nodes, ['erlmcp1@host1', 'erlmcp2@host2']},
-  {cluster_cookie, erlmcp_cluster}
-]}.
-```
-
-**Important Notes**:
-- OTP 28 nodes can communicate with OTP 26+ nodes
-- Distribution protocol version is automatically negotiated
-- Some OTP 28-specific features may not work with older nodes
 
 See [docs/INSTALLATION.md](docs/INSTALLATION.md) for detailed installation instructions.
 

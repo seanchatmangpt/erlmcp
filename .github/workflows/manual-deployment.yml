@@ -1,0 +1,174 @@
+name: Manual Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+        - 'dev'
+        - 'staging'
+        - 'prod'
+      deployment_type:
+        description: 'Deployment type'
+        required: true
+        default: 'canary'
+        type: choice
+        options:
+        - 'canary'
+        - 'blue-green'
+        - 'rolling'
+      feature_flags:
+        description: 'Feature flags to enable'
+        required: false
+        type: string
+      rollback_on_failure:
+        description: 'Automatically rollback on failure'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+        - 'true'
+        - 'false'
+
+jobs:
+  # Pre-deployment Checks
+  pre-deployment-check:
+    name: Pre-deployment Validation
+    runs-on: ubuntu-latest
+    outputs:
+      health-check: ${{ steps.health-check.outputs.healthy }}
+      feature-flags-valid: ${{ steps.feature-flags.outputs.valid }}
+      compliance-passed: ${{ steps.compliance.outputs.passed }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Environment Health
+        id: health-check
+        run: |
+          health_status=$(curl -s ${{ github.event.inputs.environment }}-health-check | jq -r '.status')
+          if [ "$health_status" != "healthy" ]; then
+            echo "::set-output name=healthy::false"
+          else
+            echo "::set-output name=healthy::true"
+          fi
+
+      - name: Validate Feature Flags
+        id: feature-flags
+        if: github.event.inputs.feature_flags != ''
+        run: |
+          ./scripts/feature-flags/validate.sh "${{ github.event.inputs.feature_flags }}"
+          echo "::set-output name=valid::true"
+
+      - name: Run Compliance Check
+        id: compliance
+        run: |
+          ./scripts/compliance/deployment-check.sh ${{ github.event.inputs.environment }}
+          echo "::set-output name=passed::true"
+
+  # Deployment Strategy
+  deploy:
+    name: Deploy ${{ github.event.inputs.environment }}
+    runs-on: ubuntu-latest
+    needs: pre-deployment-check
+    if: needs.pre-deployment-check.outputs.health-check == 'true'
+    environment: ${{ github.event.inputs.environment }}
+    outputs:
+      deployment-url: ${{ steps.deploy.outputs.url }}
+      canary-percentage: ${{ steps.deploy.outputs.canary-percentage }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy ${{ github.event.inputs.deployment_type }}
+        id: deploy
+        run: |
+          case ${{ github.event.inputs.deployment_type }} in
+            canary)
+              ./scripts/deploy/deploy-canary.sh ${{ github.event.inputs.environment }}
+              echo "::set-output name=canary-percentage::10"
+              ;;
+            blue-green)
+              ./scripts/deploy/deploy-blue-green.sh ${{ github.event.inputs.environment }}
+              echo "::set-output name=canary-percentage::0"
+              ;;
+            rolling)
+              ./scripts/deploy/deploy-rolling.sh ${{ github.event.inputs.environment }}
+              echo "::set-output name=canary-percentage::0"
+              ;;
+          esac
+          echo "::set-output name=url::$(./scripts/deploy/get-url.sh ${{ github.event.inputs.environment }})"
+
+      - name: Update Feature Flags
+        if: github.event.inputs.feature_flags != ''
+        run: |
+          ./scripts/feature-flags/update.sh "${{ github.event.inputs.feature_flags }}" ${{ github.event.inputs.environment }}
+
+  # Post-deployment Validation
+  post-deployment-validation:
+    name: Post-deployment Validation
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: github.event.inputs.rollback_on_failure == 'true'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run Integration Tests
+        run: |
+          ./scripts/test/integration-test.sh ${{ needs.deploy.outputs.deployment-url }}
+
+      - name: Performance Validation
+        run: |
+          ./scripts/test/performance-test.sh ${{ needs.deploy.outputs.deployment-url }}
+
+      - name: Business Logic Validation
+        run: |
+          ./scripts/test/business-logic-test.sh ${{ needs.deploy.outputs.deployment-url }}
+
+      - name: Canary Validation
+        if: github.event.inputs.deployment_type == 'canary'
+        run: |
+          ./scripts/test/canary-validation.sh ${{ needs.deploy.outputs.deployment-url }} ${{ needs.deploy.outputs.canary-percentage }}
+
+  # Rollback on Failure
+  rollback:
+    name: Rollback Deployment
+    runs-on: ubuntu-latest
+    needs: [deploy, post-deployment-validation]
+    if: failure() && github.event.inputs.rollback_on_failure == 'true'
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rollback
+        run: |
+          ./scripts/deploy/rollback-${{ github.event.inputs.environment }}.sh
+
+      - name: Verify Rollback
+        run: |
+          ./scripts/test/smoke-test.sh ${{ github.event.inputs.environment }}
+
+  # Notification
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy, post-deployment-validation, rollback]
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Send Notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ needs.deploy.result }}
+          channel: '#ci-cd'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          text: "Manual deployment to ${{ github.event.inputs.environment }} completed"
+          fields: repo,workflow,deployment_type,feature_flags

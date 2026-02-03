@@ -1,0 +1,557 @@
+name: erlmcp v3 Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v3.*.*'
+      - 'v3.*.*-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 3.0.0)'
+        required: true
+        type: string
+      pre_release:
+        description: 'Is this a pre-release?'
+        required: true
+        default: false
+        type: boolean
+      deploy_environment:
+        description: 'Deployment target'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - none
+          - staging
+          - production
+
+permissions:
+  contents: write
+  packages: write
+  id-token: write  # For keyless signing
+
+env:
+  OTP_VERSION: '28'
+  REBAR3_VERSION: '3.25'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ========================================================================
+  # Phase 1: Validation
+  # ========================================================================
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_pre_release: ${{ steps.pre_release.outputs.is_pre_release }}
+      deploy_env: ${{ steps.environment.outputs.environment }}
+      previous_version: ${{ steps.previous.outputs.previous }}
+      commit_count: ${{ steps.commits.outputs.count }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine Version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/v}
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_ENV
+
+      - name: Check Pre-release Status
+        id: pre_release
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            IS_PRE="${{ github.event.inputs.pre_release }}"
+          else
+            if [[ "$VERSION" =~ -(alpha|beta|rc) ]]; then
+              IS_PRE="true"
+            else
+              IS_PRE="false"
+            fi
+          fi
+          echo "is_pre_release=$IS_PRE" >> $GITHUB_OUTPUT
+
+      - name: Determine Deployment Environment
+        id: environment
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.deploy_environment }}"
+          else
+            if [ "${{ steps.pre_release.outputs.is_pre_release }}" = "true" ]; then
+              ENV="staging"
+            else
+              ENV="production"
+            fi
+          fi
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+
+      - name: Get Previous Version
+        id: previous
+        run: |
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+          echo "previous=$PREV" >> $GITHUB_OUTPUT
+          echo "Previous version: $PREV"
+
+      - name: Count Commits
+        id: commits
+        run: |
+          RANGE="${{ steps.previous.outputs.previous }}..HEAD"
+          COUNT=$(git rev-list --count $RANGE 2>/dev/null || echo "0")
+          echo "count=$COUNT" >> $GITHUB_OUTPUT
+          echo "Commits in release: $COUNT"
+
+      - name: Version Consistency Check
+        run: |
+          ./scripts/release/check-version.sh "$VERSION"
+
+      - name: Check CHANGELOG
+        run: |
+          if ! grep -q "## \[$VERSION\]" CHANGELOG.md 2>/dev/null; then
+            echo "::warning::CHANGELOG.md does not have entry for $VERSION"
+            echo "Consider running: ./scripts/release/generate-changelog.sh $VERSION --merge"
+          fi
+
+      - name: Display Release Summary
+        run: |
+          cat << 'EOF'
+          ╔══════════════════════════════════════════════════════════╗
+          ║           erlmcp Release Validation Summary              ║
+          ╠══════════════════════════════════════════════════════════╣
+          ║  Version:          ${{ steps.version.outputs.version }}
+          ║  Type:             ${{ steps.pre_release.outputs.is_pre_release == 'true' && 'Pre-release' || 'Stable' }}
+          ║  Deploy to:        ${{ steps.environment.outputs.environment }}
+          ║  Previous:         ${{ steps.previous.outputs.previous }}
+          ║  Commits:          ${{ steps.commits.outputs.count }}
+          ╚══════════════════════════════════════════════════════════╝
+          EOF
+
+  # ========================================================================
+  # Phase 2: Quality Gates
+  # ========================================================================
+  quality:
+    name: Quality Gates
+    needs: validate
+    uses: ./.github/workflows/quality-gates.yml
+
+  # ========================================================================
+  # Phase 3: Build
+  # ========================================================================
+  build:
+    name: Build Release
+    needs: [validate, quality]
+    runs-on: ubuntu-22.04
+    outputs:
+      tarball_sha256: ${{ steps.tarball.outputs.sha256 }}
+      docker_digest: ${{ steps.docker.outputs.digest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+
+      - name: Cache Rebar3
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/rebar3
+            _build
+          key: ${{ runner.os }}-erlang-${{ env.OTP_VERSION }}-${{ hashFiles('**/rebar.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-erlang-${{ env.OTP_VERSION }}-
+
+      - name: Compile
+        run: |
+          rebar3 as prod compile
+          echo "Compile successful"
+
+      - name: Run Tests
+        run: |
+          rebar3 eunit
+          rebar3 ct
+
+      - name: Build Release
+        run: |
+          rebar3 as prod release
+
+      - name: Create Tarball
+        id: tarball
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          cd _build/prod/rel
+          tar -czf "erlmcp-${VERSION}.tar.gz" erlmcp
+          SHA256=$(sha256sum "erlmcp-${VERSION}.tar.gz" | awk '{print $1}')
+          echo "sha256=$SHA256" >> $GITHUB_OUTPUT
+          mkdir -p "${{ github.workspace }}/dist/artifacts/v${VERSION}"
+          cp "erlmcp-${VERSION}.tar.gz" "${{ github.workspace }}/dist/artifacts/v${VERSION}/"
+          echo "${SHA256}" > "${{ github.workspace }}/dist/artifacts/v${VERSION}/erlmcp-${VERSION}.tar.gz.sha256"
+
+      - name: Upload Tarball Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-tarball
+          path: dist/artifacts/v${{ needs.validate.outputs.version }}/erlmcp-${{ needs.validate.outputs.version }}.tar.gz*
+          retention-days: 90
+
+      - name: Build Docker Image
+        id: docker
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          docker build -f docker/Dockerfile.production \
+            --build-arg VERSION=${VERSION} \
+            --build-arg OTP_VERSION=${{ env.OTP_VERSION }} \
+            -t ghcr.io/${{ env.IMAGE_NAME }}:${VERSION} \
+            -t ghcr.io/${{ env.IMAGE_NAME }}:latest \
+            .
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' ghcr.io/${{ env.IMAGE_NAME }}:${VERSION})
+          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
+
+      - name: Login to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Docker Image
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          docker push ghcr.io/${{ env.IMAGE_NAME }}:${VERSION}
+          if [ "${{ needs.validate.outputs.is_pre_release }}" = "false" ]; then
+            docker push ghcr.io/${{ env.IMAGE_NAME }}:latest
+          fi
+
+  # ========================================================================
+  # Phase 4: Evidence Generation
+  # ========================================================================
+  evidence:
+    name: Generate Evidence
+    needs: [validate, build]
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+
+      - name: Generate SBOM
+        run: |
+          ./scripts/release/generate_sbom.sh "${{ needs.validate.outputs.version }}"
+
+      - name: Generate Provenance
+        run: |
+          ./scripts/release/generate_provenance.sh "${{ needs.validate.outputs.version }}"
+
+      - name: Generate VEX
+        run: |
+          ./scripts/release/generate_vex.sh "${{ needs.validate.outputs.version }}"
+
+      - name: Scan Vulnerabilities
+        run: |
+          ./scripts/release/scan_vulnerabilities.sh "${{ needs.validate.outputs.version }}"
+
+      - name: Upload Evidence Artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-evidence
+          path: dist/evidence/v${{ needs.validate.outputs.version }}/
+          retention-days: 90
+
+  # ========================================================================
+  # Phase 5: Signing
+  # ========================================================================
+  sign:
+    name: Sign Artifacts
+    needs: [validate, build, evidence]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write  # For OIDC token
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: release-tarball
+          path: dist/artifacts/v${{ needs.validate.outputs.version }}/
+
+      - name: Download Evidence
+        uses: actions/download-artifact@v3
+        with:
+          name: release-evidence
+          path: dist/evidence/v${{ needs.validate.outputs.version }}/
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3.1.0
+        with:
+          cosign-release: 'v2.2.1'
+
+      - name: Sign Docker Image
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          cosign sign \
+            --yes \
+            -a version="${VERSION}" \
+            -a git.sha="${{ github.sha }}" \
+            -a git.branch="${{ github.ref_name }}" \
+            -a build.timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            ghcr.io/${{ env.IMAGE_NAME }}:${VERSION}
+
+      - name: Sign Tarball
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          TARBALL="dist/artifacts/v${VERSION}/erlmcp-${VERSION}.tar.gz"
+          cosign sign-blob \
+            --yes \
+            -a version="${VERSION}" \
+            -a artifact=tarball \
+            --output-signature="${TARBALL}.sig" \
+            --output-certificate="${TARBALL}.cert" \
+            "$TARBALL"
+
+      - name: Sign SBOM
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          SBOM="dist/evidence/v${VERSION}/erlmcp-${VERSION}.sbom.json"
+          cosign sign-blob \
+            --yes \
+            -a version="${VERSION}" \
+            -a artifact=sbom \
+            --output-signature="${SBOM}.sig" \
+            --output-certificate="${SBOM}.cert" \
+            "$SBOM"
+
+      - name: Upload Signatures
+        uses: actions/upload-artifact@v3
+        with:
+          name: release-signatures
+          path: |
+            dist/artifacts/v${{ needs.validate.outputs.version }}/*.sig
+            dist/artifacts/v${{ needs.validate.outputs.version }}/*.cert
+            dist/evidence/v${{ needs.validate.outputs.version }}/*.sig
+            dist/evidence/v${{ needs.validate.outputs.version }}/*.cert
+          retention-days: 90
+
+  # ========================================================================
+  # Phase 6: Publish
+  # ========================================================================
+  publish:
+    name: Publish Release
+    needs: [validate, build, evidence, sign]
+    if: ${{ needs.validate.outputs.is_pre_release == 'false' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: ${{ env.REBAR3_VERSION }}
+
+      - name: Download All Artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: dist/
+
+      - name: Publish to Hex.pm
+        env:
+          HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          for app in erlmcp_core erlmcp_transports erlmcp_observability erlmcp_validation; do
+            echo "Publishing $app..."
+            cd "apps/$app"
+            rebar3 hex publish --yes || echo "  Already published"
+            cd ../..
+          done
+
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          PREV="${{ needs.validate.outputs.previous_version }}"
+          SHA256="${{ needs.build.outputs.tarball_sha256 }}"
+          DIGEST="${{ needs.build.outputs.docker_digest }}"
+
+          NOTES=$(cat << 'NOTES_EOF'
+          # erlmcp v${{ needs.validate.outputs.version }}
+
+          Release published: $(date -u +%Y-%m-%d)
+
+          ## Installation
+
+          ### Hex.pm
+          ```erlang
+          {deps, [{erlmcp, "${{ needs.validate.outputs.version }}"}]}.
+          ```
+
+          ### Docker
+          ```bash
+          docker pull ghcr.io/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}
+          ```
+
+          ## Artifacts
+
+          | Artifact | Checksum |
+          |----------|----------|
+          | Tarball | `${{ needs.build.outputs.tarball_sha256 }}` |
+          | Docker | `${{ needs.build.outputs.docker_digest }}` |
+          | Hex.pm | https://hex.pm/packages/erlmcp |
+          | SBOM | erlmcp-${{ needs.validate.outputs.version }}.sbom.json |
+          | Provenance | erlmcp-${{ needs.validate.outputs.version }}.provenance.json |
+
+          ## Verification
+
+          Verify Docker image:
+          ```bash
+          cosign verify ghcr.io/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}
+          ```
+
+          ---
+
+          Full changelog: https://github.com/${{ github.repository }}/compare/v${PREV}...v${VERSION}
+          NOTES_EOF
+          )
+          echo "content<<$EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "$EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.validate.outputs.version }}
+          name: erlmcp v${{ needs.validate.outputs.version }}
+          body: ${{ steps.notes.outputs.content }}
+          draft: false
+          prerelease: false
+          files: |
+            dist/release-tarball/erlmcp-${{ needs.validate.outputs.version }}.tar.gz
+            dist/release-tarball/erlmcp-${{ needs.validate.outputs.version }}.tar.gz.sha256
+            dist/release-signatures/erlmcp-${{ needs.validate.outputs.version }}.tar.gz.sig
+            dist/release-signatures/erlmcp-${{ needs.validate.outputs.version }}.tar.gz.cert
+            dist/release-evidence/erlmcp-${{ needs.validate.outputs.version }}.sbom.json
+            dist/release-evidence/erlmcp-${{ needs.validate.outputs.version }}.sbom.json.sig
+            dist/release-evidence/erlmcp-${{ needs.validate.outputs.version }}.provenance.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ========================================================================
+  # Phase 7: Deploy
+  # ========================================================================
+  deploy:
+    name: Deploy
+    needs: [validate, publish]
+    if: ${{ needs.validate.outputs.deploy_env != 'none' }}
+    runs-on: ubuntu-22.04
+    environment:
+      name: ${{ needs.validate.outputs.deploy_env }}
+    env:
+      KUBECONFIG: ${{ secrets.KUBE_CONFIG }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Deploy to ${{ needs.validate.outputs.deploy_env }}
+        run: |
+          VERSION="${{ needs.validate.outputs.version }}"
+          ENV="${{ needs.validate.outputs.deploy_env }}"
+
+          if [ "$ENV" = "production" ]; then
+            ./scripts/deploy/deploy-blue-green.sh production "$VERSION"
+          else
+            ./scripts/deploy/deploy-blue-green.sh staging "$VERSION"
+          fi
+
+      - name: Health Check
+        run: |
+          # Wait for deployment to be healthy
+          kubectl wait \
+            --for=condition=available \
+            deployment/erlmcp-server \
+            -n erlmcp-${{ needs.validate.outputs.deploy_env }} \
+            --timeout=5m
+
+      - name: Run Smoke Tests
+        run: |
+          ./scripts/test/smoke.sh "${{ needs.validate.outputs.deploy_env }}"
+
+  # ========================================================================
+  # Phase 8: Summary
+  # ========================================================================
+  summary:
+    name: Release Summary
+    needs: [validate, build, evidence, sign, publish, deploy]
+    if: always()
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Generate Summary
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          ## erlmcp v${{ needs.validate.outputs.version }} Release Summary
+
+          ### Status
+          | Stage | Status |
+          |-------|--------|
+          | Validation | ${{ needs.validate.result == 'success' && '✅' || '❌' }} |
+          | Build | ${{ needs.build.result == 'success' && '✅' || '❌' }} |
+          | Evidence | ${{ needs.evidence.result == 'success' && '✅' || '❌' }} |
+          | Signing | ${{ needs.sign.result == 'success' && '✅' || '❌' }} |
+          | Publish | ${{ needs.publish.result == 'success' && '✅' || '⏭️' }} |
+          | Deploy | ${{ needs.deploy.result == 'success' && '✅' || '⏭️' }} |
+
+          ### Artifacts
+          - **Version**: ${{ needs.validate.outputs.version }}
+          - **Type**: ${{ needs.validate.outputs.is_pre_release == 'true' && 'Pre-release' || 'Stable' }}
+          - **Docker**: ghcr.io/${{ env.IMAGE_NAME }}:${{ needs.validate.outputs.version }}
+          - **Hex.pm**: https://hex.pm/packages/erlmcp
+          - **GitHub Release**: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.validate.outputs.version }}
+
+          ### Deployment
+          - **Environment**: ${{ needs.validate.outputs.deploy_env }}
+          EOF
+
+      - name: Notify
+        if: ${{ always() }}
+        run: |
+          if [ -n "${{ secrets.SLACK_WEBHOOK }}" ]; then
+            STATUS="${{ needs.publish.result == 'success' && '✅ Success' || '❌ Failed' }}"
+            curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+              -H 'Content-Type: application/json' \
+              -d "{\"text\": \"Release v${{ needs.validate.outputs.version }}: ${STATUS}\"}"
+          fi

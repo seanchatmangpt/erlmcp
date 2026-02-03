@@ -1,0 +1,176 @@
+# Enterprise Promtail Configuration for erlmcp v3
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /data/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # erlmcp core logs
+  - job_name: erlmcp_core
+  static_configs:
+    - targets:
+        - localhost
+      labels:
+        job: erlmcp_core
+        __path__: /var/log/erlmcp/core.log
+  pipeline_stages:
+    - regex:
+        expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d+Z) \[(?P<level>\w+)\] \[(?P<component>\w+)\] (?P<message>.*)$'
+    - timestamp:
+        source: timestamp
+        format: RFC3339
+    - labels:
+        level:
+    - output:
+        source: message
+
+  # erlmcp transport logs
+  - job_name: erlmcp_transports
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: erlmcp_transports
+          __path__: /var/log/erlmcp/transports/*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d+Z) \[(?P<level>\w+)\] \[(?P<transport>\w+)\] (?P<message>.*)$'
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+      - labels:
+          transport:
+      - output:
+          source: message
+
+  # erlmcp session logs
+  - job_name: erlmcp_sessions
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: erlmcp_sessions
+          __path__: /var/log/erlmcp/sessions/*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d+Z) \[(?P<level>\w+)\] \[(?P<session_id>[0-9a-f-]+)\] (?P<message>.*)$'
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+      - labels:
+          session_id:
+      - output:
+          source: message
+
+  # erlmcp registry logs
+  - job_name: erlmcp_registry
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: erlmcp_registry
+          __path__: /var/log/erlmcp/registry.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d+Z) \[(?P<level>\w+)\] \[(?P<operation>\w+)\] (?P<message>.*)$'
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+      - labels:
+          operation:
+      - output:
+          source: message
+
+  # System logs
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: systemd
+          __path__: /var/log/syslog
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\w+\s+\d+\s+\d{2}:\d{2}:\d{2}) (?P<hostname>\S+) (?P<process>\S+): (?P<message>.*)$'
+      - timestamp:
+          source: timestamp
+          format: "Jan 2 15:04:05"
+      - labels:
+          hostname:
+          process:
+      - output:
+          source: message
+
+  # Application logs from Docker containers
+  - job_name: docker_containers
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d+Z) (?P<logsource>erlmcp\S+) (?P<message>.*)$'
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+      - labels:
+          logsource:
+      - output:
+          source: message
+
+  # Error logs
+  - job_name: error_logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: error
+          __path__: /var/log/erlmcp/error.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d+Z) \[(?P<level>ERROR)\] \[(?P<component>\w+)\] (?P<message>.*)$'
+      - timestamp:
+          source: timestamp
+          format: RFC3339
+      - labels:
+          level:
+          component:
+      - output:
+          source: message
+      - cri:
+      - match:
+          selector: '{job=~"erlmcp_.*",level="ERROR"}'
+          action: drop
+      - match:
+          selector: '{job=~"erlmcp_.*",level="ERROR"}'
+          action: keep
+
+  # Access logs
+  - job_name: access_logs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: access
+          __path__: /var/log/erlmcp/access.log
+    pipeline_stages:
+      - regex:
+          expression: '^(?P<ip>\S+) - - \[(?P<timestamp>[^\]]+)\] "(?P<method>\S+) (?P<path>\S+) (?P<protocol>\S+)" (?P<status>\d+) (?P<size>\d+) "(?P<referer>[^"]*)" "(?P<user_agent>[^"]*)"'
+      - timestamp:
+          source: timestamp
+          format: "02/Jan/2006:15:04:05 -0700"
+      - labels:
+          method:
+          path:
+          status:
+          ip:
+      - output:
+          source: message

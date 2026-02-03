@@ -1,0 +1,365 @@
+{{/*
+  StatefulSet for erlmcp cluster nodes
+  Implements stable network identities with persistent storage
+  and enterprise-grade clustering features
+*/}}
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    {{- if .Values.node.podTemplate.labels }}
+    {{- toYaml .Values.node.podTemplate.labels | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- if .Values.node.podTemplate.annotations }}
+    {{- toYaml .Values.node.podTemplate.annotations | nindent 4 }}
+    {{- end }}
+    # Service mesh annotations
+    {{- if eq (include "erlmcp.serviceMeshEnabled" .) "istio" }}
+    sidecar.istio.io/inject: "true"
+    sidecar.istio.io/rewriteAppHTTPProxies: "true"
+    {{- else if eq (include "erlmcp.serviceMeshEnabled" .) "linkerd" }}
+    linkerd.io/inject: "enabled"
+    {{- end }}
+    # Auto-scaling annotations
+    "autoscaling.alpha.kubernetes.io/conditions": '{"metric": {"type": "Resource", "resource": {"name": "cpu"}}}'
+spec:
+  serviceName: {{ include "erlmcp.clusterServiceName" . }}
+  replicas: {{ .Values.node.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: erlmcp-node
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: erlmcp-node
+        {{- if .Values.node.podTemplate.labels }}
+        {{- toYaml .Values.node.podTemplate.labels | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if .Values.node.podTemplate.annotations }}
+        {{- toYaml .Values.node.podTemplate.annotations | nindent 8 }}
+        {{- end }}
+        # Enable Pod Monitor for Prometheus
+        {{- if .Values.monitoring.prometheus.enabled }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+        {{- end }}
+        # Linkerd annotations
+        {{- if eq (include "erlmcp.serviceMeshEnabled" .) "linkerd" }}
+        linkerd.io/inject: "enabled"
+        {{- end }}
+    spec:
+      {{- if .Values.node.priorityClassName }}
+      priorityClassName: {{ .Values.node.priorityClassName }}
+      {{- end }}
+      {{- if .Values.node.tolerations }}
+      tolerations:
+        {{- toYaml .Values.node.tolerations | nindent 6 }}
+      {{- end }}
+      affinity:
+        {{- include "erlmcp.nodeAffinity" . | nindent 8 }}
+        {{- include "erlmcp.podAntiAffinity" . | nindent 8 }}
+      securityContext:
+        {{- toYaml .Values.global.podSecurityContext | nindent 8 }}
+      {{- if .Values.global.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml .Values.global.image.pullSecrets | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # Wait for cluster service to be ready
+        {{- if .Values.initContainers.wait-for-deps.enabled }}
+        - name: wait-for-cluster
+          image: {{ .Values.initContainers.wait-for-deps.image }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - "-c"
+            - |
+              echo "Waiting for cluster service to be ready..."
+              while ! nc -z {{ include "erlmcp.clusterServiceName" . }} {{ .Values.cluster.discovery.kubernetes.servicePort }}; do
+                echo "Waiting for cluster service..."
+                sleep 2
+              done
+              echo "Cluster service is ready"
+          resources:
+            {{- toYaml .Values.initContainers.wait-for-deps.resources | nindent 12 }}
+        {{- end }}
+        # Health check init container
+        {{- if .Values.initContainers.health-check.enabled }}
+        - name: health-check
+          image: {{ .Values.initContainers.health-check.image }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - "-c"
+            - |
+              echo "Performing health checks..."
+              for i in $(seq 1 30); do
+                if curl -f http://localhost:3000/ready; then
+                  echo "Health check passed"
+                  exit 0
+                else
+                  echo "Health check failed, retrying... ($i/30)"
+                  sleep 1
+                fi
+              done
+              echo "Health check failed after 30 attempts"
+              exit 1
+          resources:
+            {{- toYaml .Values.initContainers.health-check.resources | nindent 12 }}
+        {{- end }}
+      containers:
+        # Main erlmcp application container
+        - name: erlmcp
+          image: "{{ .Values.global.image.repository }}:{{ include "erlmcp.imageTag" . }}"
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          {{- include "erlmcp.probes" . | nindent 10 }}
+          args:
+            - start
+            - --name={{ include "erlmcp.nodeName" . }}
+            - --cookie={{ include "erlmcp.clusterCookie" . }}
+            - --http-port=3000
+            - --tcp-port=3000
+            - --cluster-port=9000
+            - --log-level={{ include "erlmcp.logLevel" . }}
+            - --log-format={{ include "erlmcp.logFormat" . }}
+            {{- if .Values.cluster.enabled }}
+            - --nodes={{ include "erlmcp.clusterServiceName" . }}
+            - --cluster-enabled=true
+            {{- end }}
+          env:
+            # Core environment variables
+            - name: ERLMCP_CLUSTER_ENABLED
+              value: "{{ .Values.cluster.enabled }}"
+            - name: ERLMCP_CLUSTER_COOKIE
+              value: "{{ include "erlmcp.clusterCookie" . }}"
+            - name: ERLMCP_OTP_VERSION
+              value: "28.3.1"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Override with configmap values
+            - name: ERLMCP_LOG_LEVEL
+              value: {{ include "erlmcp.logLevel" . }}
+            - name: ERLMCP_LOG_FORMAT
+              value: {{ include "erlmcp.logFormat" . }}
+            {{- if .Values.secrets.enabled }}
+            # Secret injection
+            - name: ERLMCP_SECRET_CONFIG_PATH
+              value: "/etc/erlmcp/secrets"
+            {{- end }}
+          {{- include "erlmcp.resources" . | nindent 10 }}
+          {{- include "erlmcp.volumeMounts" . | nindent 10 }}
+          ports:
+            # HTTP/HTTPS port
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            # TCP port
+            - name: tcp
+              containerPort: 3000
+              protocol: TCP
+            # Cluster communication port
+            - name: cluster
+              containerPort: 9000
+              protocol: TCP
+            # Metrics port
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            # OTEL port
+            - name: otel
+              containerPort: 4317
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+            successThreshold: 1
+          # Security context
+          securityContext:
+            {{- if .Values.global.securityContext }}
+            {{- toYaml .Values.global.securityContext | nindent 12 }}
+            {{- end }}
+          # Lifecycle hooks
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "echo 'Graceful shutdown initiated'; sleep 30"]
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "echo 'erlmcp started successfully'"]
+          # Resource management
+          resources:
+            {{- include "erlmcp.resources" . | nindent 12 }}
+          # Environment variables from configmaps
+          envFrom:
+            {{- if .Values.configMaps.main.enabled }}
+            - configMapRef:
+                name: {{ include "erlmcp.configMapName" . }}
+            {{- end }}
+          # Volume mounts
+          volumeMounts:
+            {{- include "erlmcp.volumeMounts" . | nindent 12 }}
+        # Prometheus node exporter sidecar
+        {{- if .Values.sidecars.prometheus-exporter.enabled }}
+        - name: node-exporter
+          image: {{ .Values.sidecars.prometheus-exporter.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            limits:
+              cpu: {{ .Values.sidecars.prometheus-exporter.resources.limits.cpu }}
+              memory: {{ .Values.sidecars.prometheus-exporter.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.sidecars.prometheus-exporter.resources.requests.cpu }}
+              memory: {{ .Values.sidecars.prometheus-exporter.resources.requests.memory }}
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 5
+            periodSeconds: 5
+        {{- end }}
+        # OpenTelemetry collector sidecar
+        {{- if .Values.sidecars.otel-collector.enabled }}
+        - name: otel-collector
+          image: {{ .Values.sidecars.otel-collector.image }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          ports:
+            - name: otlp
+              containerPort: 4317
+              protocol: TCP
+            - name: metrics
+              containerPort: 8888
+              protocol: TCP
+          resources:
+            limits:
+              cpu: {{ .Values.sidecars.otel-collector.resources.limits.cpu }}
+              memory: {{ .Values.sidecars.otel-collector.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.sidecars.otel-collector.resources.requests.cpu }}
+              memory: {{ .Values.sidecars.otel-collector.resources.requests.memory }}
+          volumeMounts:
+            - name: otel-config
+              mountPath: /etc/otel-collector
+          env:
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+        {{- end }}
+      # Volumes
+      volumes:
+        {{- include "erlmcp.volumes" . | nindent 8 }}
+        # Empty volume for node-specific data
+        - name: erlmcp-data
+          emptyDir: {}
+  volumeClaimTemplates:
+    # Sessions PVC
+    {{- if .Values.persistence.sessions.enabled }}
+    - metadata:
+        name: sessions-data
+        annotations:
+          {{- if .Values.persistence.sessions.annotations }}
+          {{- toYaml .Values.persistence.sessions.annotations | nindent 10 }}
+          {{- end }}
+        labels:
+          {{- if .Values.persistence.sessions.labels }}
+          {{- toYaml .Values.persistence.sessions.labels | nindent 10 }}
+          {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.sessions.accessModes | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.sessions.size }}
+        storageClassName: {{ .Values.persistence.sessions.storageClass }}
+    {{- end }}
+    # Registry PVC
+    {{- if .Values.persistence.registry.enabled }}
+    - metadata:
+        name: registry-data
+        annotations:
+          {{- if .Values.persistence.registry.annotations }}
+          {{- toYaml .Values.persistence.registry.annotations | nindent 10 }}
+          {{- end }}
+        labels:
+          {{- if .Values.persistence.registry.labels }}
+          {{- toYaml .Values.persistence.registry.labels | nindent 10 }}
+          {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.registry.accessModes | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.registry.size }}
+        storageClassName: {{ .Values.persistence.registry.storageClass }}
+    {{- end }}
+    # Config PVC
+    {{- if .Values.persistence.config.enabled }}
+    - metadata:
+        name: config-data
+        annotations:
+          {{- if .Values.persistence.config.annotations }}
+          {{- toYaml .Values.persistence.config.annotations | nindent 10 }}
+          {{- end }}
+        labels:
+          {{- if .Values.persistence.config.labels }}
+          {{- toYaml .Values.persistence.config.labels | nindent 10 }}
+          {{- end }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.config.accessModes | nindent 8 }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.config.size }}
+        storageClassName: {{ .Values.persistence.config.storageClass }}
+    {{- end }}

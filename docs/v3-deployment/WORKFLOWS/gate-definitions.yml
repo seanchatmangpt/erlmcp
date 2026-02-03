@@ -1,0 +1,562 @@
+# erlmcp v3 Deployment Gate Definitions
+# Complete specification of all deployment gates and their criteria
+
+version: "3.0.0"
+last_updated: "2026-02-02"
+
+# ============================================================================
+# GATE HIERARCHY
+# ============================================================================
+# Gates are organized into tiers with increasing strictness:
+# - Tier 1: Basic quality gates (all environments)
+# - Tier 2: Standard gates (staging and above)
+# - Tier 3: Production gates (production only)
+# - Tier 4: Critical gates (production with manual approval)
+
+# ============================================================================
+# TIER 1: BASIC GATES (All Environments)
+# ============================================================================
+tier1_gates:
+  compile:
+    name: "Compile Check"
+    description: "Ensure code compiles without errors"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 300  # 5 minutes
+    retry: 1
+    command: "rebar3 compile"
+    environment: dev, staging, production
+    conditions:
+      errors: "== 0"
+      warnings: "<= 10"
+    on_failure: block
+    on_warning: warn
+
+  format:
+    name: "Code Formatting"
+    description: "Ensure code follows formatting standards"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 120
+    command: "rebar3 format --check"
+    conditions:
+      violations: "== 0"
+    on_failure: block
+
+  smoke_tests:
+    name: "Smoke Tests"
+    description: "Quick sanity check tests"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 300
+    command: "make test-smoke"
+    conditions:
+      pass_rate: ">= 0.95"
+    on_failure: block
+
+# ============================================================================
+# TIER 2: STANDARD GATES (Staging and Production)
+# ============================================================================
+tier2_gates:
+  eunit:
+    name: "EUnit Tests"
+    description: "Unit test suite validation"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 600  # 10 minutes
+    command: "rebar3 eunit"
+    conditions:
+      failures: "== 0"
+      skipped: "<= 5"
+    on_failure: block
+    environment: staging, production
+
+  common_test:
+    name: "Common Test Suite"
+    description: "Integration and system tests"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 1200  # 20 minutes
+    command: "rebar3 ct"
+    conditions:
+      pass_rate: ">= 0.98"
+      failed_cases: "== 0"
+    on_failure: block
+    environment: staging, production
+
+  coverage:
+    name: "Code Coverage"
+    description: "Minimum code coverage requirements"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 180
+    command: "rebar3 cover"
+    conditions:
+      line_coverage: ">= 80%"
+      branch_coverage: ">= 75%"
+      function_coverage: ">= 90%"
+    on_failure: block
+    environment: staging, production
+
+  dialyzer:
+    name: "Dialyzer Analysis"
+    description: "Static type checking"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 900  # 15 minutes
+    command: "rebar3 dialyzer"
+    conditions:
+      warnings: "== 0"
+    on_failure: block
+    environment: staging, production
+
+  xref:
+    name: "Cross-Reference Analysis"
+    description: "Check for undefined functions"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 120
+    command: "rebar3 xref"
+    conditions:
+      undefined_functions: "== 0"
+      unused_functions: "<= 10"
+    on_failure: block
+    environment: staging, production
+
+# ============================================================================
+# TIER 3: PRODUCTION GATES (Production Only)
+# ============================================================================
+tier3_gates:
+  security_scan:
+    name: "Security Vulnerability Scan"
+    description: "Scan for known security vulnerabilities"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 600
+    command: "./scripts/security/scan.sh"
+    conditions:
+      critical_vulnerabilities: "== 0"
+      high_vulnerabilities: "== 0"
+      medium_vulnerabilities: "<= 3"
+    on_failure: block
+    environment: production
+    exception_process: "Security team approval required"
+
+  license_compliance:
+    name: "License Compliance Check"
+    description: "Verify all dependencies have approved licenses"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 120
+    command: "./scripts/compliance/licenses.sh"
+    conditions:
+      unapproved_licenses: "== 0"
+      forbidden_licenses: "== 0"
+    on_failure: block
+    environment: production
+
+  performance_benchmark:
+    name: "Performance Benchmark"
+    description: "Ensure no performance regression"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 900
+    command: "./scripts/bench/run.sh"
+    conditions:
+      regression: "< 10%"
+      p95_latency: "<= 500ms"
+      throughput_degradation: "< 5%"
+    on_failure: block
+    environment: production
+    baseline: "stored in metrics/baseline.json"
+
+  mcp_compliance:
+    name: "MCP Specification Compliance"
+    description: "Verify compliance with MCP specification"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 300
+    command: "./scripts/compliance/mcp-spec.sh"
+    conditions:
+      compliance_score: ">= 95%"
+      critical_violations: "== 0"
+    on_failure: block
+    environment: production
+
+  chaos_tests:
+    name: "Chaos Engineering Tests"
+    description: "Verify system resilience under failure conditions"
+    type: automated
+    required: true
+    blocking: false
+    timeout: 1200
+    command: "./scripts/chaos/run.sh"
+    conditions:
+      tests_passed: ">= 90%"
+      recovery_time: "< 60s"
+    on_failure: warn
+    environment: production
+
+# ============================================================================
+# TIER 4: CRITICAL GATES (Production with Manual Approval)
+# ============================================================================
+tier4_gates:
+  manual_approval:
+    name: "Change Board Approval"
+    description: "Manual approval from Change Advisory Board"
+    type: manual
+    required: true
+    blocking: true
+    timeout: 259200  # 72 hours
+    approvers:
+      - change_board
+      - tech_lead
+      - devops_lead
+      - security_lead
+    min_approvers: 3
+    on_timeout: reject
+    on_reject: block
+    environment: production
+    notification:
+      on_request: notify_all_approvers
+      on_approve: notify_deployer
+      on_reject: notify_deployer_and_reason
+      reminder_interval: 3600  # 1 hour
+
+  staging_soak:
+    name: "Staging Soak Period"
+    description: "Verify stability in staging for required duration"
+    type: time_based
+    required: true
+    blocking: true
+    duration: 86400  # 24 hours in seconds
+    conditions:
+      error_rate: "< 1%"
+      crash_count: "== 0"
+      memory_stable: true
+      no_regressions: true
+    on_failure: block
+    environment: production
+    checks:
+      - name: "Error Rate"
+        interval: 300  # 5 minutes
+        threshold: 1
+        metric: "http_requests_total{status=~\"5..\"}"
+      - name: "Crash Count"
+        interval: 60
+        threshold: 0
+        metric: "erlang_process_crashes_total"
+      - name: "Memory Usage"
+        interval: 300
+        threshold: 10  # 10% growth
+        metric: "erlang_memory_systems_bytes"
+
+  deployment_readiness:
+    name: "Deployment Readiness Checklist"
+    description: "Verify all pre-deployment requirements met"
+    type: checklist
+    required: true
+    blocking: true
+    items:
+      - item: "Changelog updated"
+        required: true
+      - item: "Migration guide exists"
+        condition: "if breaking changes"
+        required: conditional
+      - item: "Rollback plan documented"
+        required: true
+      - item: "Monitoring dashboards updated"
+        required: true
+      - item: "Alert rules configured"
+        required: true
+      - item: "Runbook reviewed"
+        required: true
+      - item: "On-call team notified"
+        required: true
+      - item: "Maintenance window scheduled"
+        condition: "if required"
+        required: conditional
+    on_incomplete: block
+    environment: production
+
+# ============================================================================
+# POST-DEPLOYMENT GATES
+# ============================================================================
+post_deployment_gates:
+  health_check:
+    name: "Health Check Gate"
+    description: "Verify application health after deployment"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 300
+    interval: 10
+    retries: 30
+    checks:
+      - endpoint: "/health"
+        method: GET
+        expected_status: 200
+        timeout: 5
+      - endpoint: "/ready"
+        method: GET
+        expected_status: 200
+        timeout: 5
+      - endpoint: "/metrics"
+        method: GET
+        expected_status: 200
+        timeout: 5
+    on_failure: rollback
+    environment: staging, production
+
+  smoke_test_post_deploy:
+    name: "Post-Deployment Smoke Tests"
+    description: "Run smoke tests against deployed environment"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 600
+    command: "./scripts/test/smoke-deployed.sh"
+    conditions:
+      pass_rate: ">= 0.98"
+    on_failure: rollback
+    environment: staging, production
+
+  metrics_verification:
+    name: "Metrics Verification"
+    description: "Verify metrics are being reported"
+    type: automated
+    required: true
+    blocking: false
+    timeout: 300
+    checks:
+      - metric: "up"
+        labels: {job: "erlmcp"}
+        condition: "value == 1"
+      - metric: "http_requests_total"
+        condition: "rate > 0"
+      - metric: "erlang_process_count"
+        condition: "value > 0"
+    on_failure: warn
+    environment: staging, production
+
+# ============================================================================
+# ROLLBACK GATES
+# ============================================================================
+rollback_gates:
+  automatic_rollback:
+    name: "Automatic Rollback Trigger"
+    description: "Conditions that trigger automatic rollback"
+    type: automated
+    triggered_by: failure
+    conditions:
+      health_check_consecutive_failures: 3
+      error_rate_threshold: 5  # percentage
+      error_rate_window: 300  # seconds
+      p95_latency_threshold: 10000  # milliseconds
+      crash_loop_threshold: 2  # crashes per pod
+      crash_loop_window: 120  # seconds
+    action: immediate_rollback
+    notification: critical
+    environment: production
+
+  manual_rollback:
+    name: "Manual Rollback Approval"
+    description: "Approval required for manual rollback"
+    type: manual
+    approvers:
+      - on_call_engineer
+      - tech_lead
+    min_approvers: 1
+    timeout: 300  # 5 minutes
+    on_timeout: approve  # auto-approve in emergency
+    environment: production
+
+  rollback_verification:
+    name: "Post-Rollback Verification"
+    description: "Verify system health after rollback"
+    type: automated
+    required: true
+    blocking: true
+    timeout: 300
+    checks:
+      - name: "Health Check"
+        endpoint: "/health"
+        expected_status: 200
+      - name: "Error Rate"
+        condition: "< 1%"
+      - name: "Response Time"
+        condition: "p95 < 500ms"
+    on_failure: alert
+    environment: production
+
+# ============================================================================
+# ENVIRONMENT-SPECIFIC GATE CONFIGURATIONS
+# ============================================================================
+environment_gates:
+  dev:
+    required_gates:
+      - compile
+      - format
+    optional_gates:
+      - smoke_tests
+    parallel_execution: true
+    timeout_total: 600
+
+  qa:
+    required_gates:
+      - compile
+      - format
+      - eunit
+      - common_test
+      - coverage
+    optional_gates:
+      - dialyzer
+      - xref
+    parallel_execution: true
+    timeout_total: 1800
+
+  staging:
+    required_gates:
+      - compile
+      - format
+      - eunit
+      - common_test
+      - coverage
+      - dialyzer
+      - xref
+      - security_scan
+      - license_compliance
+      - performance_benchmark
+    optional_gates:
+      - chaos_tests
+    parallel_execution: true
+    timeout_total: 3600
+    post_deployment:
+      - health_check
+      - smoke_test_post_deploy
+      - metrics_verification
+
+  production:
+    required_gates:
+      - compile
+      - format
+      - eunit
+      - common_test
+      - coverage
+      - dialyzer
+      - xref
+      - security_scan
+      - license_compliance
+      - performance_benchmark
+      - mcp_compliance
+      - manual_approval
+      - staging_soak
+      - deployment_readiness
+    optional_gates:
+      - chaos_tests
+    parallel_execution: true
+    timeout_total: 7200
+    post_deployment:
+      - health_check
+      - smoke_test_post_deploy
+      - metrics_verification
+    rollback:
+      - automatic_rollback
+      - rollback_verification
+
+# ============================================================================
+# GATE NOTIFICATION CONFIGURATION
+# ============================================================================
+gate_notifications:
+  on_block:
+    slack:
+      channel: "#deploy-alerts"
+      severity: critical
+      mention: ["@deploy-team"]
+    teams:
+      enable: true
+    email:
+      recipients: ["devops@example.com"]
+    pagerduty:
+      severity: high
+      condition: "environment == production"
+
+  on_warn:
+    slack:
+      channel: "#deploy-notices"
+      severity: warning
+    email:
+      recipients: []
+      enabled: false
+
+  on_pass:
+    slack:
+      channel: "#deploy-updates"
+      severity: info
+    teams:
+      enable: true
+
+# ============================================================================
+# GATE EXECUTION STRATEGY
+# ============================================================================
+execution_strategy:
+  parallel_by_default: true
+  max_parallel_gates: 5
+  gate_dependencies:
+    coverage:
+      requires: [eunit, common_test]
+    dialyzer:
+      requires: [compile]
+    xref:
+      requires: [compile]
+    security_scan:
+      requires: [compile]
+    performance_benchmark:
+      requires: [eunit, common_test]
+    staging_soak:
+      requires: [all_tier3_gates]
+    manual_approval:
+      requires: [all_tier3_gates, staging_soak]
+  retry_strategy:
+    max_retries: 2
+    backoff: exponential
+    initial_delay: 30
+    max_delay: 300
+
+# ============================================================================
+# GATE METRICS
+# ============================================================================
+metrics:
+  collection:
+    enabled: true
+    backend: prometheus
+    labels:
+      - gate_name
+      - environment
+      - status
+      - duration_ms
+  dashboard:
+    name: "Deployment Gates"
+    url: "https://grafana.erlmcp.io/d/deployment-gates"
+  alerts:
+    - name: "GateFailureRate"
+      condition: "rate(gate_failure_total[5m]) > 0.1"
+      severity: warning
+    - name: "GateTimeoutRate"
+      condition: "rate(gate_timeout_total[5m]) > 0.05"
+      severity: warning
+    - name: "ProductionGateFailure"
+      condition: "gate_failure_total{environment=\"production\"} > 0"
+      severity: critical

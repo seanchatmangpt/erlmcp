@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Add base
+resources:
+  - ../../base
+  - namespace.yaml
+  - values-prod.yaml
+  - patches/...
+
+# Add labels for production
+commonLabels:
+  app.kubernetes.io/name: erlmcp
+  app.kubernetes.io/instance: erlmcp-prod
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/component: erlmcp
+  environment: production
+
+# Add name suffix
+nameSuffix: -prod
+
+# Add configurations for production
+configurations:
+  - kustomizeconfig.yaml
+
+# Add secrets generator
+secretGenerator:
+  - name: erlmcp-tls
+    files:
+      - tls.crt=tls.crt
+      - tls.key=tls.key
+    type: kubernetes.io/tls
+
+# Add image tags
+images:
+  - name: banyanplatform/erlmcp
+    newName: banyanplatform/erlmcp
+    newTag: 3.0.0-prod

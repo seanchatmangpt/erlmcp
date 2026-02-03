@@ -1,0 +1,901 @@
+openapi: 3.0.3
+info:
+  title: erlmcp v3 API
+  description: |
+    erlmcp v3 Model Context Protocol API documentation
+
+    This API provides the Model Context Protocol implementation for erlmcp v3.
+    It supports real-time communication through JSON-RPC 2.0 with WebSocket and SSE support.
+
+    Base URLs: https://api.erlmcp.com/v3, http://localhost:8080/v3
+  version: 3.0.0
+  contact:
+    name: erlmcp Support
+    email: support@erlmcp.com
+    url: https://support.erlmcp.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: https://api.erlmcp.com/v3
+    description: Production server
+  - url: http://localhost:8080/v3
+    description: Local development server
+
+security:
+  - BearerAuth: []
+  - ApiKeyAuth: []
+
+paths:
+  /:
+    get:
+      summary: Health Check
+      description: |
+        Returns the health status of the erlmcp server.
+        This endpoint provides basic health information without authentication.
+      tags:
+        - System
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                version: "3.0.0"
+                uptime: 1234567
+                timestamp: "2024-02-01T12:00:00Z"
+        '503':
+          description: Server is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "unhealthy"
+                version: "3.0.0"
+                uptime: 1234567
+                timestamp: "2024-02-01T12:00:00Z"
+
+  /rpc:
+    post:
+      summary: JSON-RPC 2.0 Endpoint
+      description: |
+        Main JSON-RPC 2.0 endpoint for all MCP operations.
+        Supports both single requests and batch requests.
+      tags:
+        - MCP Protocol
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/JsonRpcRequest'
+                - $ref: '#/components/schemas/JsonRpcBatchRequest'
+            examples:
+              singleRequest:
+                summary: Single Request
+                value:
+                  jsonrpc: "2.0"
+                  method: "tools/call"
+                  params:
+                    name: "file_search"
+                    arguments:
+                      query: "TODO items"
+                      max_results: 10
+                  id: 1
+              batchRequest:
+                summary: Batch Request
+                value:
+                  - jsonrpc: "2.0"
+                    method: "tools/call"
+                    params:
+                      name: "file_search"
+                      arguments:
+                        query: "TODO items"
+                        max_results: 10
+                    id: 1
+                  - jsonrpc: "2.0"
+                    method: "tools/call"
+                    params:
+                      name: "resource_read"
+                      arguments:
+                        uri: "file:///path/to/resource"
+                    id: 2
+      responses:
+        '200':
+          description: JSON-RPC response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/JsonRpcResponse'
+                  - $ref: '#/components/schemas/JsonRpcBatchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /stream:
+    get:
+      summary: Server-Sent Events Stream
+      description: |
+        Establishes a server-sent events stream for real-time notifications.
+        Requires authentication and valid session.
+      tags:
+        - Streaming
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: session_id
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Session identifier
+        - name: filter
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [all, resources, tools, sessions]
+            default: "all"
+          description: Event type filter
+      responses:
+        '200':
+          description: Event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                example: |
+                  data: {"type":"notification","event":"resource_added","payload":{"uri":"file:///example.md","metadata":{}}}\n\n
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /resources:
+    get:
+      summary: List Resources
+      description: |
+        Lists all available resources and their capabilities.
+        Resources can be filtered by type and namespace.
+      tags:
+        - Resources
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [file, http, mcp, database]
+            description: Filter by resource type
+        - name: namespace
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Filter by namespace
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+            description: Maximum number of results
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Pagination cursor
+      responses:
+        '200':
+          description: Resource list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceList'
+              example:
+                resources:
+                  - uri: "file:///workspace/todo.md"
+                    name: "todo.md"
+                    description: "Task list"
+                    mime_type: "text/markdown"
+                    capabilities:
+                      - "read"
+                    metadata:
+                      size: 1024
+                      modified: "2024-02-01T12:00:00Z"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Subscribe to Resource
+      description: |
+        Subscribes to changes for a specific resource.
+        Returns a subscription ID for notifications.
+      tags:
+        - Resources
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResourceSubscriptionRequest'
+      responses:
+        '200':
+          description: Subscription created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /tools:
+    get:
+      summary: List Tools
+      description: |
+        Lists all available tools and their schemas.
+        Tools can be filtered by category and namespace.
+      tags:
+        - Tools
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [file, system, ai, custom]
+            description: Filter by category
+        - name: namespace
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Filter by namespace
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+            description: Maximum number of results
+      responses:
+        '200':
+          description: Tool list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolList'
+              example:
+                tools:
+                  - name: "file_search"
+                    description: "Search files in workspace"
+                    input_schema:
+                      type: object
+                      properties:
+                        query:
+                          type: string
+                          description: "Search query"
+                        max_results:
+                          type: integer
+                          default: 10
+                    category: "file"
+                    namespace: "default"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Call Tool
+      description: |
+        Executes a tool with the provided arguments.
+        Returns the result of the tool execution.
+      tags:
+        - Tools
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ToolCallRequest'
+      responses:
+        '200':
+          description: Tool executed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResponse'
+              example:
+                result:
+                  content: [
+                    {
+                      type: "text",
+                      text: "Found 5 files matching query"
+                    }
+                  ]
+                  metadata:
+                    files_found: 5
+                    query_time: 0.5
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ToolExecutionError'
+
+  /sessions:
+    get:
+      summary: List Sessions
+      description: |
+        Lists active sessions with pagination.
+      tags:
+        - Sessions
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+            description: Maximum number of results
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+            description: Pagination cursor
+      responses:
+        '200':
+          description: Session list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      summary: Create Session
+      description: |
+        Creates a new session for persistent state.
+      tags:
+        - Sessions
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SessionCreateRequest'
+      responses:
+        '200':
+          description: Session created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /metrics:
+    get:
+      summary: Get Metrics
+      description: |
+        Returns system metrics and performance data.
+      tags:
+        - Metrics
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [prometheus, json]
+            default: "json"
+            description: Response format
+      responses:
+        '200':
+          description: Metrics data
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: |
+                  # HELP erlmcp_connections_total Total connections
+                  # TYPE erlmcp_connections_total gauge
+                  erlmcp_connections_total 100
+                  # HELP erlmcp_requests_total Total requests
+                  # TYPE erlmcp_requests_total counter
+                  erlmcp_requests_total 12345
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+
+  /metrics/prometheus:
+    get:
+      summary: Prometheus Metrics Exporter
+      description: |
+        Exposes metrics in Prometheus format.
+      tags:
+        - Metrics
+      security:
+        - []
+      responses:
+        '200':
+          description: Prometheus metrics
+          content:
+            text/plain:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from authentication endpoint
+
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key obtained from admin console
+
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy, degraded]
+          description: Health status of the server
+        version:
+          type: string
+          description: Server version
+        uptime:
+          type: integer
+          format: int64
+          description: Server uptime in milliseconds
+        timestamp:
+          type: string
+          format: date-time
+          description: Current timestamp
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional health details
+
+    JsonRpcRequest:
+      type: object
+      required:
+        - jsonrpc
+        - method
+        - id
+      properties:
+        jsonrpc:
+          type: string
+          enum: ["2.0"]
+          description: JSON-RPC version
+        method:
+          type: string
+          description: Method name
+        params:
+          type: object
+          description: Method parameters
+        id:
+          type: integer
+          format: int64
+          description: Request ID
+
+    JsonRpcResponse:
+      type: object
+      required:
+        - jsonrpc
+        - id
+      properties:
+        jsonrpc:
+          type: string
+          enum: ["2.0"]
+          description: JSON-RPC version
+        result:
+          type: object
+          description: Method result
+        error:
+          $ref: '#/components/schemas/JsonRpcError'
+        id:
+          type: integer
+          format: int64
+          description: Request ID
+
+    JsonRpcBatchRequest:
+      type: array
+      items:
+        $ref: '#/components/schemas/JsonRpcRequest'
+      description: Array of JSON-RPC requests
+
+    JsonRpcBatchResponse:
+      type: array
+      items:
+        $ref: '#/components/schemas/JsonRpcResponse'
+      description: Array of JSON-RPC responses
+
+    JsonRpcError:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: integer
+          format: int32
+          description: Error code
+        message:
+          type: string
+          description: Error message
+        data:
+          type: object
+          description: Additional error data
+
+    ResourceList:
+      type: object
+      properties:
+        resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+        next_cursor:
+          type: string
+          description: Cursor for pagination
+
+    Resource:
+      type: object
+      required:
+        - uri
+        - name
+        - description
+        - mime_type
+        - capabilities
+      properties:
+        uri:
+          type: string
+          format: uri
+          description: Resource URI
+        name:
+          type: string
+          description: Resource name
+        description:
+          type: string
+          description: Resource description
+        mime_type:
+          type: string
+          description: MIME type
+        capabilities:
+          type: array
+          items:
+            type: string
+            enum: [read, write, list]
+          description: Available capabilities
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Resource metadata
+
+    ResourceSubscriptionRequest:
+      type: object
+      required:
+        - uri
+      properties:
+        uri:
+          type: string
+          format: uri
+          description: Resource URI to subscribe to
+        events:
+          type: array
+          items:
+            type: string
+            enum: [created, updated, deleted]
+          default: ["updated"]
+          description: Events to subscribe to
+
+    SubscriptionResponse:
+      type: object
+      required:
+        - subscription_id
+        - expires_at
+      properties:
+        subscription_id:
+          type: string
+          format: uuid
+          description: Subscription identifier
+        expires_at:
+          type: string
+          format: date-time
+          description: Subscription expiration time
+
+    ToolList:
+      type: object
+      properties:
+        tools:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tool'
+        next_cursor:
+          type: string
+          description: Cursor for pagination
+
+    Tool:
+      type: object
+      required:
+        - name
+        - description
+        - input_schema
+      properties:
+        name:
+          type: string
+          description: Tool name
+        description:
+          type: string
+          description: Tool description
+        input_schema:
+          type: object
+          description: JSON schema for input parameters
+        category:
+          type: string
+          enum: [file, system, ai, custom]
+          description: Tool category
+        namespace:
+          type: string
+          description: Tool namespace
+
+    ToolCallRequest:
+      type: object
+      required:
+        - name
+        - arguments
+      properties:
+        name:
+          type: string
+          description: Tool name
+        arguments:
+          type: object
+          description: Tool arguments
+        session_id:
+          type: string
+          format: uuid
+          description: Session ID for stateful operations
+        timeout:
+          type: integer
+          format: int32
+          default: 30
+          description: Timeout in seconds
+
+    ToolResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContentBlock'
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Execution metadata
+
+    ContentBlock:
+      type: object
+      required:
+        - type
+        - text
+      properties:
+        type:
+          type: string
+          enum: [text, image, resource]
+        text:
+          type: string
+          description: Text content
+        image:
+          type: string
+          format: uri
+          description: Image URI
+        resource:
+          type: string
+          format: uri
+          description: Resource URI
+
+    SessionList:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: '#/components/schemas/Session'
+        next_cursor:
+          type: string
+          description: Cursor for pagination
+
+    SessionCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Session name
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Session metadata
+
+    Session:
+      type: object
+      required:
+        - id
+        - created_at
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Session ID
+        name:
+          type: string
+          description: Session name
+        status:
+          type: string
+          enum: [active, inactive, expired]
+          description: Session status
+        created_at:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        last_active:
+          type: string
+          format: date-time
+          description: Last activity timestamp
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Session metadata
+
+    SessionResponse:
+      type: object
+      required:
+        - session
+        - access_token
+      properties:
+        session:
+          $ref: '#/components/schemas/Session'
+        access_token:
+          type: string
+          description: JWT access token
+
+    MetricsResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        metrics:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: number
+              - type: string
+              - type: boolean
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JsonRpcError'
+          example:
+            code: -32600
+            message: "Invalid Request"
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                description: Error message
+              code:
+                type: integer
+                format: int32
+                description: Error code
+
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                description: Error message
+              code:
+                type: integer
+                format: int32
+                description: Error code
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JsonRpcError'
+          example:
+            code: -32603
+            message: "Internal Error"
+
+    ToolExecutionError:
+      description: Tool execution error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JsonRpcError'
+          example:
+            code: -32000
+            message: "Tool execution failed"
+            data:
+              tool_name: "file_search"
+              error: "File not found"
+
+tags:
+  - name: System
+    description: System management endpoints
+  - name: MCP Protocol
+    description: Model Context Protocol implementation
+  - name: Resources
+    description: Resource management operations
+  - name: Tools
+    description: Tool execution operations
+  - name: Sessions
+    description: Session management operations
+  - name: Streaming
+    description: Real-time streaming endpoints
+  - name: Metrics
+    description: System metrics and monitoring

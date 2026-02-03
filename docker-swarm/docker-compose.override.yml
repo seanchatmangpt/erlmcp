@@ -1,0 +1,33 @@
+# Docker Compose Override File for Development/Testing
+# This file extends docker-compose.yml with development-specific configurations
+
+version: '3.8'
+
+services:
+  erlmcp-core:
+    environment:
+      - ERLMCP_PROFILE=dev
+      - ERLMCP_LOG_LEVEL=debug
+      - ERLMCP_DEV_MODE=true
+    volumes:
+      - ./logs:/app/logs
+      - ./dev:/app/dev
+
+  prometheus:
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+
+  grafana:
+    environment:
+      - GF_LOG_LEVEL=debug
+      - GF_DASHBOARDS_JSON_ENABLED=true
+
+  elasticsearch:
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms256m -Xmx256m"
+
+  logstash:
+    environment:
+      - LS_LOG_LEVEL=debug

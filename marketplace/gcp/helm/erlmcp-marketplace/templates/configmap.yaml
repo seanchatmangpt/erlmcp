@@ -1,0 +1,42 @@
+{{/*
+  erlmcp ConfigMap for GCP Marketplace
+  Application configuration for erlmcp on GKE
+*/}}
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: config
+data:
+  # erlmcp configuration
+  ERLMCP_ENV: {{ .Values.global.environment | default "production" | quote }}
+  ERLMCP_VERSION: {{ .Chart.AppVersion | quote }}
+  ERLMCP_LOG_LEVEL: {{ .Values.erlmcp.logLevel | default "info" | quote }}
+
+  # Erlang distribution configuration
+  ERL_AFLAGS: "-proto_dist inet_tls"
+  ERL_DIST_PORT: {{ .Values.distribution.port | default "9100" | quote }}
+  ERLANG_DISTRIBUTION_PORT_RANGE: {{ .Values.distribution.portRange | default "9100-9200" | quote }}
+
+  # Server configuration
+  {{- with .Values.erlmcp.config }}
+  {{- range $key, $value := . }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  {{- end }}
+
+  # GCP-specific configuration
+  GCP_PROJECT: {{ .Values.global.gcp.project | default "" | quote }}
+  GCP_REGION: {{ .Values.global.cloud.region | default "us-central1" | quote }}
+  GCP_ZONE: {{ .Values.global.gcp.zone | default "" | quote }}
+
+  # OpenTelemetry configuration
+  {{- if .Values.otel.enabled }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.otel.endpoint | quote }}
+  OTEL_SERVICE_NAME: "erlmcp"
+  OTEL_RESOURCE_ATTRIBUTES: "deployment.environment={{ .Values.global.environment }},service.version={{ .Chart.AppVersion }}"
+  {{- end }}

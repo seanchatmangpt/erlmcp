@@ -1,0 +1,199 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: haproxy
+  namespace: default
+  labels:
+    app: haproxy
+    tier: load-balancer
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: haproxy
+  template:
+    metadata:
+      labels:
+        app: haproxy
+        tier: load-balancer
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8404"
+        prometheus.io/path: "/stats"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - haproxy
+              topologyKey: "kubernetes.io/hostname"
+      containers:
+      - name: haproxy
+        image: haproxytech/haproxy-debian:2.6
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 80
+          protocol: TCP
+        - name: https
+          containerPort: 443
+          protocol: TCP
+        - name: stats
+          containerPort: 8404
+          protocol: TCP
+        - name: websocket
+          containerPort: 8443
+          protocol: TCP
+        - name: tcp
+          containerPort: 9090
+          protocol: TCP
+        volumeMounts:
+        - name: haproxy-config
+          mountPath: /usr/local/etc/haproxy/haproxy.cfg
+          subPath: haproxy.cfg
+        - name: ssl-certs
+          mountPath: /etc/haproxy/ssl
+          readOnly: true
+        - name: haproxy-run
+          mountPath: /var/run/haproxy
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2"
+            memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /stats
+              port: 8404
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /stats
+            port: 8404
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        securityContext:
+          capabilities:
+            add:
+            - CHOWN
+            - NET_BIND_SERVICE
+            - DAC_OVERRIDE
+          runAsUser: 99
+          runAsGroup: 99
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+      volumes:
+      - name: haproxy-config
+        configMap:
+          name: haproxy-config
+      - name: ssl-certs
+        secret:
+          secretName: haproxy-ssl
+      - name: haproxy-run
+        emptyDir: {}
+      securityContext:
+        fsGroup: 99
+      nodeSelector:
+        node-role.kubernetes.io/load-balancer: "true"
+      tolerations:
+      - key: "node-role.kubernetes.io/control-plane"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "node-role.kubernetes.io/master"
+        operator: "Exists"
+        effect: "NoSchedule"
+      priorityClassName: "system-cluster-critical"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: haproxy
+  namespace: default
+  labels:
+    app: haproxy
+    tier: load-balancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-target-group-attributes: "deregistration_delay.timeout_seconds=30,stickiness.enabled=true,stickiness.type=source_ip"
+spec:
+  type: LoadBalancer
+  selector:
+    app: haproxy
+  ports:
+  - name: http
+    port: 80
+    targetPort: 80
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 443
+    protocol: TCP
+  - name: websocket
+    port: 8443
+    targetPort: 8443
+    protocol: TCP
+  - name: tcp
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  externalTrafficPolicy: Local
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: haproxy-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: haproxy
+  minReplicas: 3
+  maxReplicas: 9
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: requests_per_second
+      target:
+        type: AverageValue
+        averageValue: 1000m
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60

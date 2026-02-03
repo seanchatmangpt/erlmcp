@@ -1,0 +1,85 @@
+{{/*
+  ERLMCP Enterprise HorizontalPodAutoscaler
+  Auto-scaling based on CPU, memory, and custom metrics
+*/}}
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: hpa
+  annotations:
+    {{- with .Values.autoscaling.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    "erlmcp.io/hpa": "enabled"
+spec:
+  {{- /* Scale Target */}}
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "erlmcp-enterprise.fullname" . }}-core
+
+  {{- /* Min/Max Replicas */}}
+  minReplicas: {{ .Values.autoscaling.minReplicas | default .Values.app.scaling.minReplicas | default 3 }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas | default .Values.app.scaling.maxReplicas | default 100 }}
+
+  {{- /* Metrics */}}
+  metrics:
+    {{- /* CPU metric */}}
+    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+
+    {{- /* Memory metric */}}
+    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+
+    {{- /* Custom metrics */}}
+    {{- with .Values.autoscaling.customMetrics }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+  {{- /* Scaling behavior */}}
+  {{- if .Values.autoscaling.behavior }}
+  behavior:
+    {{- toYaml .Values.autoscaling.behavior | nindent 4 }}
+  {{- else }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.app.scaling.behavior.scaleDown.stabilizationWindowSeconds | default 300 }}
+      policies:
+        - type: Pods
+          value: {{ .Values.app.scaling.behavior.scaleDown.pods.value | default 1 }}
+          periodSeconds: {{ .Values.app.scaling.behavior.scaleDown.pods.timeWindowSeconds | default 60 }}
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.app.scaling.behavior.scaleUp.stabilizationWindowSeconds | default 0 }}
+      policies:
+        - type: Pods
+          value: {{ .Values.app.scaling.behavior.scaleUp.pods.value | default 5 }}
+          periodSeconds: {{ .Values.app.scaling.behavior.scaleUp.pods.timeWindowSeconds | default 60 }}
+  {{- end }}
+{{- end }}
+---
+{{/*
+  ERLMCP Enterprise HPA for Cluster StatefulSet
+  Note: StatefulSets cannot be auto-scaled by HPA directly
+  This is a placeholder for custom deployment strategies
+*/}}
+{{- if and .Values.statefulset.enabled .Values.autoscaling.clusterEnabled }}
+{{- /* Warning: StatefulSet auto-scaling requires custom operator */}}
+{{- end }}

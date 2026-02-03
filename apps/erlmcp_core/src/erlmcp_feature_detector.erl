@@ -28,7 +28,7 @@
 ]).
 
 %% Types
--include("otp_compat.hrl").
+%% -include("otp_compat.hrl").  % Not available in subdirectory compilation
 
 -type otp_version() :: {Major :: integer(), Minor :: integer(), Patch :: integer()}.
 

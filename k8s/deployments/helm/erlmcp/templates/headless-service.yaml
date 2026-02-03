@@ -1,0 +1,118 @@
+{{/*
+  erlmcp Headless Service for Erlang node discovery
+  Enables distributed Erlang clustering with stable network identities
+  Supports mTLS for cluster internal communication
+*/}}
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-headless
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    service: headless
+    {{- if (include "erlmcp.tls.enabled" .) }}
+    "erlmcp.io/tls-enabled": "true"
+    {{- end }}
+    {{- if (include "erlmcp.mtls.enabled" .) }}
+    "erlmcp.io/mtls-enabled": "true"
+    {{- end }}
+  annotations:
+    {{- if .Values.global.serviceMesh.enabled }}
+    "service.beta.kubernetes.io/aws-load-balancer-type": "nlb"
+    "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true"
+    "service.beta.kubernetes.io/aws-load-balancer-scheme": "internal"
+    "service.beta.kubernetes.io/aws-load-balancer-internal": "true"
+    {{- end }}
+    {{- if (include "erlmcp.mtls.enabled" .) }}
+    "security.istio.io/tlsMode": "ISTIO_MUTUAL"
+    {{- end }}
+    "prometheus.io/scrape": "false"
+    "erlmcp.io/service": "headless"
+    "erlmcp.io/discovery": "erlang"
+spec:
+  clusterIP: None
+  ports:
+    {{- /* TCP transport port */}}
+    - name: tcp
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+      {{- if (include "erlmcp.tls.enabled" .) }}
+      appProtocol: {{ .Values.tls.appProtocol.tcp | default "kubernetes.io/h2" }}
+      {{- else }}
+      appProtocol: TCP
+      {{- end }}
+    {{- /* HTTP transport port */}}
+    - name: http
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+      {{- if (include "erlmcp.tls.enabled" .) }}
+      appProtocol: {{ .Values.tls.appProtocol.http | default "https" }}
+      {{- else }}
+      appProtocol: HTTP
+      {{- end }}
+    {{- /* HTTPS transport port */}}
+    {{- if (include "erlmcp.tls.enabled" .) }}
+    - name: https
+      port: 8443
+      targetPort: 8443
+      protocol: TCP
+      appProtocol: https
+    {{- end }}
+    {{- /* WebSocket transport port */}}
+    - name: ws
+      port: 8082
+      targetPort: 8082
+      protocol: TCP
+      {{- if (include "erlmcp.tls.enabled" .) }}
+      appProtocol: {{ .Values.tls.appProtocol.ws | default "wss" }}
+      {{- else }}
+      appProtocol: WebSocket
+      {{- end }}
+    {{- /* WebSocket Secure port */}}
+    {{- if (include "erlmcp.tls.enabled" .) }}
+    - name: wss
+      port: 8086
+      targetPort: 8086
+      protocol: TCP
+      appProtocol: wss
+    {{- end }}
+    {{- /* SSE transport port */}}
+    - name: sse
+      port: 8083
+      targetPort: 8083
+      protocol: TCP
+      {{- if (include "erlmcp.tls.enabled" .) }}
+      appProtocol: {{ .Values.tls.appProtocol.sse | default "https" }}
+      {{- else }}
+      appProtocol: SSE
+      {{- end }}
+    {{- /* EPMD port for Erlang clustering */}}
+    - name: epmd
+      port: 4369
+      targetPort: 4369
+      protocol: TCP
+      appProtocol: TCP
+    {{- /* Distributed Erlang port range */}}
+    - name: dist-erlang
+      port: 9100
+      targetPort: 9100
+      protocol: TCP
+      appProtocol: TCP
+    {{- /* Metrics port */}}
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+      appProtocol: HTTP
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+  publishNotReadyAddresses: true
+  internalTrafficPolicy: Local
+  type: ClusterIP
+  {{- if (include "erlmcp.mtls.enabled" .) }}
+  sessionAffinity: None
+  {{- end }}

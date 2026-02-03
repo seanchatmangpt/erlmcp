@@ -1,0 +1,634 @@
+pipeline {
+    agent {
+        kubernetes {
+            label 'erlmcp-builder'
+            cloud 'kubernetes-prod'
+            namespace 'jenkins'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: erlmcp-builder
+    image: erlang/otp28.3.1:latest
+    command:
+    - sleep
+    args:
+    - 99d
+    resources:
+      limits:
+        cpu: 2
+        memory: 4Gi
+      requests:
+        cpu: 500m
+        memory: 1Gi
+    volumeMounts:
+    - name: workspace
+      mountPath: /home/jenkins/agent
+  - name: docker
+    image: docker:latest
+    command:
+    - sleep
+    args:
+    - 99d
+    volumeMounts:
+    - name: docker-socket
+      mountPath: /var/run/docker.sock
+  volumes:
+  - name: workspace
+    emptyDir: {}
+  - name: docker-socket
+    hostPath:
+      path: /var/run/docker.sock
+'''
+        }
+    }
+
+    // Environment
+    environment {
+        CI_BUILD_ID = "${env.BUILD_ID}"
+        GIT_COMMIT_SHORT = "${env.GIT_COMMIT.take(7)}"
+        REGISTRY_URL = "ghcr.io/${env.GIT_REPO}"
+        SLACK_WEBHOOK = credentials('slack-webhook')
+        KUBECONFIG = credentials('kubeconfig-prod')
+        VAULT_TOKEN = credentials('vault-token')
+    }
+
+    // Options
+    options {
+        timeout(time: 2, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        disableConcurrentBuilds()
+        retry(3)
+        timestamps()
+    }
+
+    // Triggers
+    triggers {
+        upstream(upstreamProjects: 'quality-gate', threshold: hudson.model.Result.SUCCESS)
+        cron('H 2 * * *')
+    }
+
+    // Stage configuration
+    stages {
+        // ===================================================================
+        // PRE-BUILD VALIDATION
+        // ===================================================================
+        stage('Pre-Build Checks') {
+            steps {
+                script {
+                    def isPR = env.CHANGE_ID != null
+
+                    checkout scm
+
+                    // Skip if only docs changed
+                    if (isPR) {
+                        def changes = sh(script: 'git diff --name-only origin/main..HEAD', returnStdout: true).trim()
+                        def isDocsOnly = changes.split('\n').every { it.startsWith('docs/') }
+
+                        if (isDocsOnly) {
+                            currentBuild.result = 'ABORTED'
+                            echo "Skipping - only documentation changed"
+                            return
+                        }
+                    }
+
+                    // Check for required files
+                    sh '''
+                        [ -f rebar.config ] || { echo "Error: rebar.config not found"; exit 1; }
+                        [ -f Makefile ] || { echo "Error: Makefile not found"; exit 1; }
+                    '''
+
+                    // OTP version check
+                    sh '''
+                        otp_version=$(otp -v | head -1)
+                        echo "OTP Version: $otp_version"
+                        if [[ "$otp_version" != *"28.3.1"* ]]; then
+                            echo "Error: OTP 28.3.1 required"
+                            exit 1
+                        fi
+                    '''
+                }
+
+                // Notify start
+                slackSend(
+                    channel: '#ci-cd',
+                    color: 'good',
+                    message: "Build started: ${env.JOB_NAME} #${env.BUILD_ID} (<${env.BUILD_URL}|Open>)"
+                )
+            }
+        }
+
+        // ===================================================================
+        // DEPENDENCY MANAGEMENT
+        // ===================================================================
+        stage('Dependencies') {
+            steps {
+                // Cache setup
+                script {
+                    cache = [
+                        path: [
+                            '~/.cache/rebar3',
+                            '~/.mix',
+                            '~/.cache/hex'
+                        ],
+                        key: "deps-${env.GIT_COMMIT}-${env.BUILD_ID}",
+                        restoreKeys: [
+                            "deps-${env.GIT_COMMIT}-",
+                            "deps-"
+                        ]
+                    ]
+
+                    sh '''
+                        # Rebar3 cache
+                        mkdir -p ~/.cache/rebar3
+                        chmod 755 ~/.cache/rebar3
+
+                        # Hex package cache
+                        mkdir -p ~/.cache/hex
+                        echo '{"dependencies": {}}' > ~/.cache/hex/config.exs
+
+                        # Mix cache
+                        mkdir -p ~/.mix
+                    '''
+                }
+            }
+        }
+
+        // ===================================================================
+        // COMPILATION PHASE
+        // ===================================================================
+        stage('Compile') {
+            parallel {
+                stage('Core Apps') {
+                    steps {
+                        sh '''
+                            export PATH="/opt/erlmcp/otp-28.3.1/bin:$PATH"
+                            rebar3 compile -v
+                        '''
+                    }
+                }
+
+                stage('Deps') {
+                    steps {
+                        sh '''
+                            rebar3 deps_tree
+                            rebar3 hex deps
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // ANALYSIS PHASE
+        // ===================================================================
+        stage('Code Analysis') {
+            parallel {
+                stage('Xref') {
+                    steps {
+                        sh '''
+                            rebar3 xref
+                        '''
+                    }
+                }
+
+                stage('Dialyzer') {
+                    steps {
+                        sh '''
+                            rebar3 dialyzer
+                        '''
+                    }
+                }
+
+                stage('Lint') {
+                    steps {
+                        sh '''
+                            ./scripts/lint/run-all.sh
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // TESTING PHASE
+        // ===================================================================
+        stage('Testing') {
+            parallel {
+                // Unit Tests
+                stage('Unit Tests') {
+                    steps {
+                        parallel {
+                            stage('Core EUnit') {
+                                steps {
+                                    sh '''
+                                        rebar3 eunit --suite erlmcp_core
+                                    '''
+                                    junit allowEmptyResults: true, testResultsPattern: '**/eunit-core*.xml'
+                                }
+                            }
+
+                            stage('Transports EUnit') {
+                                steps {
+                                    sh '''
+                                        rebar3 eunit --suite erlmcp_transports
+                                    '''
+                                    junit allowEmptyResults: true, testResultsPattern: '**/eunit-transports*.xml'
+                                }
+                            }
+
+                            stage('Coverage') {
+                                steps {
+                                    sh '''
+                                        rebar3 cover
+                                    '''
+
+                                    // Upload coverage
+                                    cobertura(
+                                        autoUpdateHealth: true,
+                                        autoUpdateStability: true,
+                                        maxNumberBuilds: 100,
+                                        coberturaReportFile: '**/cobertura.xml'
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Integration Tests
+                stage('Integration Tests') {
+                    steps {
+                        script {
+                            def testEnvironments = ['staging']
+
+                            testEnvironments.each { env ->
+                                build job: "integration-test-${env}", wait: false
+                            }
+                        }
+                    }
+                }
+
+                // Performance Tests
+                stage('Performance Tests') {
+                    steps {
+                        script {
+                            if (env.BRANCH_NAME == 'main') {
+                                sh '''
+                                    make benchmark-quick
+                                '''
+
+                                // Generate performance report
+                                sh '''
+                                    python scripts/performance/generate-report.py \
+                                        --output performance-report.json
+                                '''
+
+                                // Archive
+                                archiveArtifacts artifacts: 'bench/results/**', fingerprint: true
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // SECURITY PHASE
+        // ===================================================================
+        stage('Security') {
+            parallel {
+                stage('Vulnerability Scan') {
+                    steps {
+                        sh '''
+                            trivy image --format json -o trivy-report.json .
+                        '''
+
+                        // Parse and upload
+                        trivyScan resultsFilePattern: 'trivy-report.json'
+                    }
+                }
+
+                stage('Secret Detection') {
+                    steps {
+                        sh '''
+                            grep -r "API_KEY\|PASSWORD\|SECRET" . || true
+                        '''
+                    }
+                }
+
+                stage('License Check') {
+                    steps {
+                        sh '''
+                            mix deps.audit --all
+                            rebar3 hex audit
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // PACKAGING PHASE
+        // ===================================================================
+        stage('Package') {
+            parallel {
+                stage('Docker Image') {
+                    steps {
+                        script {
+                            // Build multi-arch image
+                            sh '''
+                                docker buildx build --platform linux/amd64,linux/arm64 \
+                                    -t ${REGISTRY_URL}:${GIT_COMMIT_SHORT} \
+                                    -t ${REGISTRY_URL}:${CI_BUILD_ID} \
+                                    --push \
+                                    .
+                            '''
+                        }
+                    }
+                }
+
+                stage('Release Artifacts') {
+                    steps {
+                        sh '''
+                            # Create release package
+                            mkdir -p release
+                            cp -r _build release/
+                            cp rebar.config release/
+                            cp deps release/
+
+                            # Create tarball
+                            tar -czf erlmcp-${CI_BUILD_ID}.tar.gz release/
+                        '''
+
+                        archiveArtifacts artifacts: 'erlmcp-*.tar.gz', fingerprint: true
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // DEPLOYMENT PHASE
+        // ===================================================================
+        stage('Deploy') {
+            parallel {
+                stage('Staging') {
+                    when {
+                        branch 'develop'
+                    }
+                    steps {
+                        script {
+                            def deployment = deployToEnvironment('staging')
+
+                            // Verify deployment
+                            verifyDeployment('staging')
+
+                            // Run smoke tests
+                            build job: 'smoke-test-staging', wait: true
+                        }
+                    }
+                }
+
+                stage('Canary') {
+                    when {
+                        branch 'main'
+                    }
+                    steps {
+                        input 'Start Production Canary Deployment?'
+
+                        script {
+                            // Deploy canary
+                            sh '''
+                                ./scripts/canary/deploy.sh \
+                                    --namespace erlmcp-prod \
+                                    --image ${REGISTRY_URL}:${CI_BUILD_ID} \
+                                    --canary-percent 5
+                            '''
+
+                            // Monitor canary
+                            timeout(time: 10, unit: 'MINUTES') {
+                                script {
+                                    def health = sh(script: '''
+                                        ./scripts/health/canary-check.sh --namespace erlmcp-prod
+                                    ''', returnStdout: true)
+
+                                    if (health.contains('ERROR')) {
+                                        error 'Canary deployment failed - aborting'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                stage('Production') {
+                    when {
+                        branch 'main'
+                    }
+                    steps {
+                        input 'Deploy to Production?'
+
+                        script {
+                            // Blue-green deployment
+                            sh '''
+                                ./scripts/bluegreen/deploy.sh \
+                                    --namespace erlmcp-prod \
+                                    --image ${REGISTRY_URL}:${CI_BUILD_ID}
+                            '''
+
+                            // Final validation
+                            timeout(time: 15, unit: 'MINUTES') {
+                                script {
+                                    def healthy = sh(script: '''
+                                        ./scripts/health/validate.sh \
+                                            --namespace erlmcp-prod \
+                                            --threshold 95
+                                    ''', returnStdout: true)
+
+                                    if (!healthy.contains('SUCCESS')) {
+                                        error 'Production validation failed - triggering rollback'
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // POST-DEPLOYMENT
+        // ===================================================================
+        stage('Release') {
+            when {
+                branch 'main'
+            }
+            steps {
+                script {
+                    // Create release
+                    sh '''
+                        ./scripts/release/create.sh \
+                            --version ${CI_BUILD_ID} \
+                            --changelog CHANGELOG.md
+                    '''
+
+                    // Update monitoring dashboards
+                    updateMonitoringDashboards()
+
+                    // Notify
+                    slackSend(
+                        channel: '#releases',
+                        color: 'good',
+                        message: "🎉 Release ${CI_BUILD_ID} deployed successfully!"
+                    )
+                }
+            }
+        }
+    }
+
+    // Post-build actions
+    post {
+        always {
+            // Cleanup
+            sh '''
+                docker system prune -f || true
+                rm -rf ~/.cache/rebar3/build || true
+            '''
+
+            // Archive logs
+            archiveArtifacts artifacts: '**/*.log', fingerprint: true
+
+            // Generate summary
+            script {
+                def summary = generateBuildSummary()
+                currentBuild.description = summary
+            }
+        }
+
+        success {
+            script {
+                // Update badge
+                updateQualityBadge('success')
+
+                // Archive artifacts
+                archiveArtifacts artifacts: '**/quality-report.json', fingerprint: true
+            }
+        }
+
+        unstable {
+            script {
+                updateQualityBadge('unstable')
+
+                // Send notification
+                slackSend(
+                    channel: '#ci-cd',
+                    color: 'warning',
+                    message: "⚠️ Build unstable: ${env.BUILD_URL}"
+                )
+            }
+        }
+
+        failure {
+            script {
+                updateQualityBadge('failed')
+
+                // Auto-rollback for production failures
+                if (env.BRANCH_NAME == 'main') {
+                    sh '''
+                        ./scripts/deploy/rollback.sh \
+                            --namespace erlmcp-prod \
+                            --version ${CI_BUILD_ID}
+                    '''
+                }
+
+                // Create issue
+                createGitHubIssue()
+            }
+        }
+
+        cleanup {
+            // Cleanup workspace
+            cleanWs()
+        }
+    }
+}
+
+// Helper functions
+def deployToEnvironment(String envName) {
+    script {
+        withCredentials([kubeconfigFile(credentialsId: 'kubeconfig-prod', variable: 'KUBECONFIG')]) {
+            sh """
+                helm upgrade --install erlmcp-${envName} ./charts/erlmcp \
+                    --set image.tag=${env.CI_BUILD_ID} \
+                    --set environment=${envName} \
+                    --namespace erlmcp-${envName}
+            """
+        }
+    }
+}
+
+def verifyDeployment(String envName) {
+    script {
+        timeout(time: 5, unit: 'MINUTES') {
+            waitUntil {
+                def ready = sh(script: """
+                    kubectl get pods -n erlmcp-${envName} \
+                        --selector=app=erlmcp \
+                        --field-selector=status.phase=Running \
+                        | grep -c Running
+                """, returnStdout: true).trim()
+
+                return ready == '3'
+            }
+        }
+    }
+}
+
+def updateQualityBadge(String status) {
+    script {
+        def badgeColor = status == 'success' ? 'green' :
+                         status == 'unstable' ? 'yellow' : 'red'
+
+        sh """
+            echo "{ \"schemaVersion\": 1, \"label\": \"Quality\", \"message\": \"${status.toUpperCase()}\", \"color\": \"${badgeColor}\" }" \
+                > quality-badge.json
+        """
+    }
+}
+
+def createGitHubIssue() {
+    script {
+        withCredentials([string(credentialsId: 'github-token', variable: 'TOKEN')]) {
+            def body = """
+                ## Build Failed: ${env.JOB_NAME} #${env.BUILD_ID}
+
+                **Branch**: ${env.BRANCH_NAME}
+                **Commit**: ${env.GIT_COMMIT}
+                **Duration**: ${currentBuild.durationString}
+
+                **Log**: ${env.BUILD_URL}
+
+                ## Investigation Checklist
+                - [ ] Check recent changes
+                - [ ] Review error logs
+                - [ ] Verify dependencies
+                - [ ] Run tests locally
+            """
+
+            httpRequest(
+                url: 'https://api.github.com/repos/${env.GIT_REPO}/issues',
+                httpMode: 'POST',
+                contentType: 'APPLICATION_JSON',
+                requestBody: """
+                    {
+                        "title": "🚨 Build Failed: ${env.JOB_NAME} #${env.BUILD_ID}",
+                        "body": "${body}",
+                        "labels": ["ci-cd", "automated"]
+                    }
+                """,
+                headers: ["Authorization": "token ${TOKEN}"]
+            )
+        }
+    }
+}

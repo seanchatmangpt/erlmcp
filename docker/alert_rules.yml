@@ -1,0 +1,272 @@
+# ==============================================================================
+# erlmcp v3 Prometheus Alert Rules
+# Critical alerts for production monitoring
+# ==============================================================================
+
+groups:
+  - name: erlmcp_critical
+    interval: 30s
+    rules:
+      # ================================================================
+      # Health and Availability Alerts
+      # ================================================================
+      - alert: ErlmcpDown
+        expr: up{job="erlmcp-core"} == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: availability
+          runbook: "https://docs.erlmcp.com/runbooks/erlmcp-down"
+        annotations:
+          summary: "erlmcp instance is down"
+          description: "erlmcp instance {{ $labels.instance }} has been down for more than 30 seconds"
+
+      - alert: HealthCheckFailing
+        expr: erlmcp_healthy == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: health
+          runbook: "https://docs.erlmcp.com/runbooks/health-check"
+        annotations:
+          summary: "Health check failing"
+          description: "erlmcp health check has been failing for 1 minute"
+
+      # ================================================================
+      # Error Rate Alerts
+      # ================================================================
+      - alert: HighErrorRate
+        expr: |
+          (
+            rate(erlmcp_errors_total[5m]) /
+            rate(erlmcp_requests_total[5m])
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: errors
+          runbook: "https://docs.erlmcp.com/runbooks/high-error-rate"
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} for more than 5 minutes"
+
+      - alert: ErrorSpike
+        expr: |
+          rate(erlmcp_errors_total[1m]) >
+          5 * rate(erlmcp_errors_total[5m] offset 1m)
+        for: 1m
+        labels:
+          severity: warning
+          category: errors
+        annotations:
+          summary: "Error rate spike detected"
+          description: "Error rate increased 5x in the last minute"
+
+      # ================================================================
+      # Latency Alerts
+      # ================================================================
+      - alert: HighLatencyP99
+        expr: |
+          histogram_quantile(0.99,
+            rate(erlmcp_request_duration_seconds_bucket[5m])
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+          runbook: "https://docs.erlmcp.com/runbooks/high-latency"
+        annotations:
+          summary: "High P99 latency"
+          description: "P99 latency is {{ $value }}s for more than 5 minutes"
+
+      - alert: CriticalLatency
+        expr: |
+          histogram_quantile(0.95,
+            rate(erlmcp_request_duration_seconds_bucket[5m])
+          ) > 2
+        for: 2m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "Critical latency detected"
+          description: "P95 latency is {{ $value }}s - service is degraded"
+
+      # ================================================================
+      # Resource Alerts
+      # ================================================================
+      - alert: HighMemoryUsage
+        expr: |
+          erlmcp_memory_bytes{type="total"} / 1073741824 > 4
+        for: 10m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is {{ $value }}GB for more than 10 minutes"
+
+      - alert: CriticalMemoryUsage
+        expr: |
+          erlmcp_memory_bytes{type="total"} / 1073741824 > 7
+        for: 2m
+        labels:
+          severity: critical
+          category: resources
+        annotations:
+          summary: "Critical memory usage"
+          description: "Memory usage is {{ $value }}GB - immediate action required"
+
+      - alert: HighCPUUsage
+        expr: erlmcp_cpu_usage_percent > 80
+        for: 10m
+        labels:
+          severity: warning
+          category: resources
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is {{ $value }}% for more than 10 minutes"
+
+      - alert: CriticalCPUUsage
+        expr: erlmcp_cpu_usage_percent > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: resources
+        annotations:
+          summary: "Critical CPU usage"
+          description: "CPU usage is {{ $value }}% - immediate action required"
+
+      # ================================================================
+      # Connection Alerts
+      # ================================================================
+      - alert: ConnectionLimitReached
+        expr: |
+          erlmcp_connections_total / erlmcp_connections_max > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "Connection limit approaching"
+          description: "{{ $value | humanizePercentage }} of connection limit in use"
+
+      - alert: HighConnectionRate
+        expr: rate(erlmcp_connections_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "High connection rate"
+          description: "Connection rate is {{ $value }}/s"
+
+      # ================================================================
+      # Security Alerts
+      # ================================================================
+      - alert: HighAuthFailureRate
+        expr: rate(erlmcp_auth_failures_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: critical
+          category: security
+          runbook: "https://docs.erlmcp.com/runbooks/auth-failures"
+        annotations:
+          summary: "High authentication failure rate"
+          description: "{{ $value }} auth failures/sec - possible attack"
+
+      - alert: SecurityEventSpike
+        expr: rate(erlmcp_security_events_total[5m]) > 5
+        for: 1m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "Security event spike"
+          description: "{{ $value }} security events/sec detected"
+
+      # ================================================================
+      # Session Alerts
+      # ================================================================
+      - alert: SessionErrors
+        expr: rate(erlmcp_session_errors_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: sessions
+        annotations:
+          summary: "Session errors detected"
+          description: "{{ $value }} session errors/sec"
+
+      - alert: HighSessionCount
+        expr: erlmcp_active_sessions > 100000
+        for: 10m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "High session count"
+          description: "{{ $value }} active sessions"
+
+      # ================================================================
+      # Queue and Backlog Alerts
+      # ================================================================
+      - alert: QueueBacklog
+        expr: erlmcp_queue_size > 5000
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Queue backlog detected"
+          description: "Queue size is {{ $value }} items"
+
+      - alert: CriticalQueueBacklog
+        expr: erlmcp_queue_size > 20000
+        for: 1m
+        labels:
+          severity: critical
+          category: performance
+        annotations:
+          summary: "Critical queue backlog"
+          description: "Queue size is {{ $value }} items - processing severely degraded"
+
+      # ================================================================
+      # Transport Alerts
+      # ================================================================
+      - alert: TransportErrorRate
+        expr: rate(erlmcp_transport_errors_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: warning
+          category: transport
+        annotations:
+          summary: "Transport errors detected"
+          description: "{{ $value }} transport errors/sec for {{ $labels.transport }}"
+
+  - name: erlmcp_info
+    interval: 1m
+    rules:
+      # ================================================================
+      # Informational Alerts
+      # ================================================================
+      - alert: LowRequestRate
+        expr: rate(erlmcp_requests_total[5m]) < 1
+        for: 15m
+        labels:
+          severity: info
+          category: usage
+        annotations:
+          summary: "Low request rate"
+          description: "Request rate is below 1 req/s for 15 minutes"
+
+      - alert: VersionMismatch
+        expr: |
+          count(count by (version) (erlmcp_info)) > 1
+        for: 10m
+        labels:
+          severity: warning
+          category: deployment
+        annotations:
+          summary: "Multiple versions running"
+          description: "Different erlmcp versions detected in cluster"

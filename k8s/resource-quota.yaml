@@ -1,0 +1,556 @@
+---
+# ==============================================================================
+# ERLMCP v3 Enterprise - ResourceQuota Configuration
+# ==============================================================================
+# Purpose: Prevent tenant resource exhaustion and ensure fair allocation
+# across multi-tenant deployments. This configuration provides production-ready
+# resource limits with namespace isolation and priority class support.
+#
+# Key Features:
+# - Compute resource quotas (CPU/Memory requests and limits)
+# - Storage resource quotas (PVC count and total storage)
+# - Object count quotas (pods, services, secrets, configmaps)
+# - Priority class-based scoping for critical workloads
+# - Tenant-specific quotas for multi-tenant isolation
+# - Network resource quotas (LoadBalancers, NodePorts)
+#
+# Production Deployment:
+#   kubectl apply -f k8s/resource-quota.yaml
+#   kubectl describe resourcequota -n erlmcp
+#
+# Testing:
+#   kubectl run test-pod --image=nginx --requests=cpu=100m --restart=Never
+#   kubectl describe resourcequota erlmcp-compute-quota -n erlmcp
+#
+# ==============================================================================
+
+---
+# ==============================================================================
+# COMPUTE RESOURCE QUOTA - Primary quota for all workloads
+# ==============================================================================
+# Scope: All pods in the namespace (regardless of priority class)
+# Purpose: Aggregate limits for CPU and memory across all workloads
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-compute-quota
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: compute
+    environment: production
+  annotations:
+    description: "Aggregate compute resource limits for all erlmcp workloads"
+    contact: "platform-team@erlmcp.com"
+    last-updated: "2025-02-02"
+spec:
+  hard:
+    # CPU Requests - Guaranteed CPU allocation across all pods
+    # Prevents over-subscription and ensures consistent performance
+    requests.cpu: "32"
+
+    # Memory Requests - Guaranteed memory allocation
+    # Accounts for Erlang VM heap, ETS tables, and distributed state
+    requests.memory: 64Gi
+
+    # CPU Limits - Maximum CPU burst capacity
+    # Allows temporary bursts for traffic spikes
+    limits.cpu: "64"
+
+    # Memory Limits - Maximum memory allocation
+    # Prevents OOM kills and ensures predictable memory usage
+    limits.memory: 128Gi
+
+---
+# ==============================================================================
+# STORAGE RESOURCE QUOTA - Persistent volume limits
+# ==============================================================================
+# Scope: All PVCs in the namespace
+# Purpose: Control storage consumption and prevent disk exhaustion
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-storage-quota
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: storage
+    environment: production
+  annotations:
+    description: "Storage limits for persistent volumes and claims"
+    storage-class-scoped: "true"
+spec:
+  hard:
+    # Maximum number of persistent volume claims
+    # Limits per-pod storage claims
+    persistentvolumeclaims: "20"
+
+    # Total storage across all PVCs
+    # Adjust based on storage class and cluster capacity
+    requests.storage: "500Gi"
+
+    # Storage class specific quotas (optional - uncomment if using storage classes)
+    # requests.standard: "300Gi"
+    # requests.fast-ssd: "200Gi"
+
+---
+# ==============================================================================
+# OBJECT COUNT QUOTA - Kubernetes object limits
+# ==============================================================================
+# Scope: All objects in the namespace
+# Purpose: Prevent object explosion and control etcd load
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-object-quota
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: object-count
+    environment: production
+  annotations:
+    description: "Object count limits to prevent resource exhaustion"
+    etcd-impact: "high"
+spec:
+  hard:
+    # Pod count limit - Critical for cluster stability
+    # Includes StatefulSet replicas, Deployment pods, and jobs
+    pods: "100"
+
+    # Service limits - Prevent IP table exhaustion
+    services: "30"
+
+    # LoadBalancer limits - Cloud provider quota management
+    services.loadbalancers: "2"
+
+    # NodePort limits - Prevent port conflicts
+    services.nodeports: "5"
+
+    # Secret limits - Security and encryption overhead
+    secrets: "30"
+
+    # ConfigMap limits - Configuration management
+    configmaps: "20"
+
+    # ReplicationController limits (legacy support)
+    replicationcontrollers: "0"
+
+    # ResourceQuota limits (prevent quota inception)
+    resourcequotas: "5"
+
+    # LimitRange limits
+    limitranges: "5"
+
+    # PriorityClass limits
+    priorityclasses: "4"
+
+---
+# ==============================================================================
+# LONG-RUNNING WORKLOAD QUOTA - High/Medium priority pods only
+# ==============================================================================
+# Scope: Pods with PriorityClass = high-priority or medium-priority
+# Purpose: Protect critical production workloads from batch job interference
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-long-running-quota
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: long-running
+    environment: production
+  annotations:
+    description: "Quota for long-running production workloads with priority class"
+    priority-classes: "high-priority,medium-priority"
+spec:
+  scopes:
+    - PriorityClass
+  hard:
+    pods: "50"
+    requests.cpu: "24"
+    requests.memory: 48Gi
+    limits.cpu: "48"
+    limits.memory: 96Gi
+
+---
+# ==============================================================================
+# BATCH WORKLOAD QUOTA - Low priority jobs only
+# ==============================================================================
+# Scope: Pods with PriorityClass = low-priority
+# Purpose: Limit batch job resource consumption (backups, analytics, etc.)
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-batch-quota
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: batch
+    environment: production
+  annotations:
+    description: "Quota for batch jobs and background tasks with low priority"
+    priority-classes: "low-priority"
+    use-case: "backups,analytics,reporting"
+spec:
+  scopes:
+    - PriorityClass
+  hard:
+    pods: "20"
+    requests.cpu: "4"
+    requests.memory: 8Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    # Jobs can complete faster with temporary resource access
+    requests.nvidia.com/gpu: "0"
+
+---
+# ==============================================================================
+# TERMINATING WORKLOAD QUOTA - Pods with active termination
+# ==============================================================================
+# Scope: Pods that have a specified active deadline
+# Purpose: Limit resource usage for jobs with active deadline
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-terminating-quota
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: terminating
+    environment: production
+  annotations:
+    description: "Quota for terminating workloads with active deadline"
+spec:
+  scopes:
+    - Terminating
+  hard:
+    pods: "10"
+    requests.cpu: "2"
+    requests.memory: 4Gi
+
+---
+# ==============================================================================
+# BEST EFFORT QUOTA - Pods without resource requests
+# ==============================================================================
+# Scope: Pods that do not have resource requests/limits defined
+# Purpose: Track and limit best-effort workloads
+# WARNING: Best effort pods may be evicted under pressure
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-best-effort-quota
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: best-effort
+    environment: production
+  annotations:
+    description: "Quota for best-effort workloads without resource requests"
+    warning: "Best-effort pods are subject to eviction under resource pressure"
+spec:
+  scopes:
+    - BestEffort
+  hard:
+    pods: "5"
+    # CPU and memory NOT enforced for best-effort
+
+---
+# ==============================================================================
+# NOT BEST EFFORT QUOTA - Pods with resource requests
+# ==============================================================================
+# Scope: Pods that have resource requests/limits defined
+# Purpose: Ensure guaranteed resources for production workloads
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-guaranteed-quota
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: guaranteed
+    environment: production
+  annotations:
+    description: "Quota for guaranteed workloads with resource requests"
+    recommendation: "All production pods should have resource requests"
+spec:
+  scopes:
+    - NotBestEffort
+  hard:
+    pods: "90"
+    requests.cpu: "30"
+    requests.memory: 60Gi
+    limits.cpu: "60"
+    limits.memory: 120Gi
+
+---
+# ==============================================================================
+# LIMIT RANGE - Default and min/max resource constraints
+# ==============================================================================
+# Purpose: Enforce container-level resource constraints
+# - Default values for containers without explicit limits
+# - Min/Max validation to prevent invalid values
+# - Default request-to-limit ratio enforcement
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: erlmcp-container-limits
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: limit-range
+    environment: production
+  annotations:
+    description: "Container resource limits with defaults and validation"
+spec:
+  limits:
+    # -------------------------------------------------------------------------
+    # Container limits
+    # -------------------------------------------------------------------------
+    - type: Container
+      # Default limits applied if not specified
+      default:
+        cpu: "1000m"
+        memory: "2Gi"
+      # Default requests applied if not specified
+      defaultRequest:
+        cpu: "250m"
+        memory: "512Mi"
+      # Maximum limits enforced (cannot be exceeded)
+      max:
+        cpu: "8000m"
+        memory: "16Gi"
+      # Minimum requests enforced (must be at least this much)
+      min:
+        cpu: "50m"
+        memory: "128Mi"
+      # Maximum request/limit ratio (prevents over-subscription)
+      maxLimitRequestRatio:
+        cpu: "4"
+        memory: "2"
+
+    # -------------------------------------------------------------------------
+    # PersistentVolumeClaim limits
+    # -------------------------------------------------------------------------
+    - type: PersistentVolumeClaim
+      default:
+        storage: "10Gi"
+      max:
+        storage: "500Gi"
+      min:
+        storage: "1Gi"
+
+    # -------------------------------------------------------------------------
+    # Pod limits (sum of all containers)
+    # -------------------------------------------------------------------------
+    - type: Pod
+      max:
+        cpu: "16000m"
+        memory: "32Gi"
+
+    # -------------------------------------------------------------------------
+    # Node limits (for validation)
+    # -------------------------------------------------------------------------
+    - type: Container
+      max:
+        cpu: "16000m"
+      min:
+        cpu: "10m"
+
+---
+# ==============================================================================
+# TENANT-SPECIFIC QUOTAS - Multi-tenant isolation (optional)
+# ==============================================================================
+# Purpose: Demonstrate tenant quota patterns for multi-tenant deployments
+# Usage: Create tenant namespaces and apply these quotas per tenant
+# -----------------------------------------------------------------------------
+
+---
+# Tenant: Production Tenant (high allocation)
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-tenant-production
+  namespace: erlmcp-production
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: tenant
+    tenant: production
+    tier: platinum
+  annotations:
+    description: "Production tenant with highest resource allocation"
+    sla-tier: "platinum"
+spec:
+  hard:
+    requests.cpu: "16"
+    requests.memory: 32Gi
+    limits.cpu: "32"
+    limits.memory: 64Gi
+    pods: "50"
+    persistentvolumeclaims: "10"
+    requests.storage: "200Gi"
+    services: "15"
+    secrets: "15"
+    configmaps: "10"
+
+---
+# Tenant: Staging Tenant (medium allocation)
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-tenant-staging
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: tenant
+    tenant: staging
+    tier: gold
+  annotations:
+    description: "Staging tenant with medium resource allocation"
+    sla-tier: "gold"
+spec:
+  hard:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "16"
+    limits.memory: 32Gi
+    pods: "30"
+    persistentvolumeclaims: "5"
+    requests.storage: "100Gi"
+    services: "10"
+    secrets: "10"
+    configmaps: "8"
+
+---
+# ==============================================================================
+# NETWORK RESOURCE QUOTA - Network policy integration
+# ==============================================================================
+# Purpose: Control network-related resources (LoadBalancers cost money!)
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: erlmcp-network-quota
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: resource-quota
+    quota-type: network
+    environment: production
+  annotations:
+    description: "Network resource limits for cost control"
+    cost-impact: "LoadBalancers incur cloud provider charges"
+spec:
+  hard:
+    # Limit LoadBalancers (cost control)
+    services.loadbalancers: "2"
+
+    # Limit NodePorts (port exhaustion)
+    services.nodeports: "4"
+
+    # Total services (ClusterIP + NodePort + LoadBalancer)
+    services: "30"
+
+---
+# ==============================================================================
+# VALIDATION CONFIGMAP - Resource quota validation
+# ==============================================================================
+# Purpose: Document expected resource usage per component
+# -----------------------------------------------------------------------------
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-quota-validation
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: quota-validation
+data:
+  # Expected resource usage per component
+  component-resources.yaml: |
+    components:
+      erlmcp-server:
+        replicas: 3
+        requests:
+          cpu: "500m"
+          memory: "512Mi"
+        limits:
+          cpu: "2000m"
+          memory: "2Gi"
+        total_requests:
+          cpu: "1500m"
+          memory: "1536Mi"
+        total_limits:
+          cpu: "6000m"
+          memory: "6Gi"
+
+      erlmcp-sidecar-monitoring:
+        replicas: 3
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "200m"
+          memory: "256Mi"
+
+      erlmcp-log-aggregator:
+        replicas: 1
+        requests:
+          cpu: "200m"
+          memory: "256Mi"
+        limits:
+          cpu: "500m"
+          memory: "1Gi"
+
+  # Quota compliance matrix
+  quota-compliance.yaml: |
+    compliance:
+      quota: erlmcp-compute-quota
+      hard:
+        requests.cpu: "32"
+        requests.memory: 64Gi
+        limits.cpu: "64"
+        limits.memory: 128Gi
+      usage:
+        expected:
+          requests.cpu: "3.5"
+          requests.memory: "7Gi"
+          limits.cpu: "11.5"
+          limits.memory: "17Gi"
+        utilization:
+          requests.cpu: "11%"
+          requests.memory: "11%"
+          limits.cpu: "18%"
+          limits.memory: "13%"
+
+  # Alert thresholds
+  alert-thresholds.yaml: |
+    alerts:
+      - name: QuotaNearLimit
+        threshold: 80
+        message: "Resource quota usage above 80%"
+      - name: QuotaCritical
+        threshold: 90
+        message: "Resource quota usage above 90% - immediate action required"
+      - name: PodCountHigh
+        threshold: 80
+        metric: pods
+        message: "Pod count approaching quota limit"

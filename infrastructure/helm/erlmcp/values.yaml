@@ -1,0 +1,663 @@
+# ErlMCP v3 Helm Chart Values
+
+# General configuration
+global:
+  # Global image registry
+  imageRegistry: ghcr.io/erlmcp
+  # Global pull secrets
+  imagePullSecrets:
+    - name: ghcr-secret
+
+# ErlMCP Server Configuration
+server:
+  # Enable server component
+  enabled: true
+  # Number of replicas
+  replicas: 3
+  # Pod annotations
+  podAnnotations: {}
+  # Pod labels
+  podLabels:
+    app.kubernetes.io/name: erlmcp-server
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    app.kubernetes.io/component: server
+    app.kubernetes.io/part-of: erlmcp
+    app.kubernetes.io/managed-by: Helm
+  # Resource requests and limits
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  # Affinity settings
+  affinity: {}
+  # Tolerations
+  tolerations: []
+  # Node selector
+  nodeSelector: {}
+  # Security context
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  # Container ports
+  containerPorts:
+    http:
+      enabled: true
+      port: 8080
+      protocol: TCP
+    jsonRpc:
+      enabled: true
+      port: 8081
+      protocol: TCP
+    metrics:
+      enabled: true
+      port: 9090
+      protocol: TCP
+    prometheus:
+      enabled: true
+      port: 9100
+      protocol: TCP
+  # Liveness probe
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  # Readiness probe
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+  # Service configuration
+  service:
+    type: LoadBalancer
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-internal: "false"
+    ports:
+      - name: http
+        port: 80
+        targetPort: http
+        protocol: TCP
+      - name: https
+        port: 443
+        targetPort: http
+        protocol: TCP
+    externalTrafficPolicy: Local
+  # Service monitor for Prometheus
+  serviceMonitor:
+    enabled: true
+    additionalLabels: {}
+    namespace: monitoring
+    interval: 30s
+    scrapeTimeout: 10s
+
+# ErlMCP Registry Configuration
+registry:
+  # Enable registry component
+  enabled: true
+  # Number of replicas
+  replicas: 3
+  # Pod annotations
+  podAnnotations: {}
+  # Pod labels
+  podLabels:
+    app.kubernetes.io/name: erlmcp-registry
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    app.kubernetes.io/component: registry
+    app.kubernetes.io/part-of: erlmcp
+    app.kubernetes.io/managed-by: Helm
+  # Resource requests and limits
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  # Affinity settings
+  affinity: {}
+  # Tolerations
+  tolerations: []
+  # Node selector
+  nodeSelector: {}
+  # Security context
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  # Container ports
+  containerPorts:
+    http:
+      enabled: true
+      port: 8080
+      protocol: TCP
+  # Service configuration
+  service:
+    type: ClusterIP
+    ports:
+      - name: http
+        port: 80
+        targetPort: http
+        protocol: TCP
+
+# ErlMCP Transports Configuration
+transports:
+  # Enable transports component
+  enabled: true
+  # Number of replicas
+  replicas: 2
+  # Pod annotations
+  podAnnotations: {}
+  # Pod labels
+  podLabels:
+    app.kubernetes.io/name: erlmcp-transports
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    app.kubernetes.io/component: transports
+    app.kubernetes.io/part-of: erlmcp
+    app.kubernetes.io/managed-by: Helm
+  # Resource requests and limits
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  # Affinity settings
+  affinity: {}
+  # Tolerations
+  tolerations: []
+  # Node selector
+  nodeSelector: {}
+  # Security context
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  # Container ports
+  containerPorts:
+    http:
+      enabled: true
+      port: 8080
+      protocol: TCP
+    websocket:
+      enabled: true
+      port: 8081
+      protocol: TCP
+    sse:
+      enabled: true
+      port: 8082
+      protocol: TCP
+  # Service configuration
+  service:
+    type: ClusterIP
+    ports:
+      - name: http
+        port: 80
+        targetPort: http
+        protocol: TCP
+      - name: websocket
+        port: 80
+        targetPort: websocket
+        protocol: TCP
+      - name: sse
+        port: 80
+        targetPort: sse
+        protocol: TCP
+
+# Feature Flag Service Configuration
+featureFlags:
+  # Enable feature flag service
+  enabled: true
+  # Number of replicas
+  replicas: 1
+  # Pod annotations
+  podAnnotations: {}
+  # Pod labels
+  podLabels:
+    app.kubernetes.io/name: erlmcp-feature-flags
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion }}
+    app.kubernetes.io/component: feature-flags
+    app.kubernetes.io/part-of: erlmcp
+    app.kubernetes.io/managed-by: Helm
+  # Resource requests and limits
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+  # Affinity settings
+  affinity: {}
+  # Tolerations
+  tolerations: []
+  # Node selector
+  nodeSelector: {}
+  # Security context
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  # Service configuration
+  service:
+    type: ClusterIP
+    ports:
+      - name: http
+        port: 8080
+        targetPort: http
+        protocol: TCP
+  # Storage configuration
+  storage:
+    type: Redis
+    redis:
+      enabled: true
+      host: erlmcp-redis-master
+      port: 6379
+      password: ""
+      db: 0
+    persistence:
+      enabled: true
+      size: 1Gi
+
+# Observability Configuration
+observability:
+  # Enable observability stack
+  enabled: true
+  # Enable metrics collection
+  metrics:
+    enabled: true
+    port: 9090
+    path: /metrics
+    format: prometheus
+  # Enable tracing
+  tracing:
+    enabled: true
+    provider: jaeger
+    jaeger:
+      enabled: true
+      agentHost: jaeger-agent
+      agentPort: 6831
+      samplerType: const
+      samplerParam: 1
+  # Enable logging
+  logging:
+    enabled: true
+    level: info
+    format: json
+    outputs:
+      - stdout
+      # - elasticsearch (configured below)
+  # Elasticsearch configuration
+  elasticsearch:
+    enabled: false
+    hosts:
+      - http://elasticsearch-master:9200
+    username: ""
+    password: ""
+    index: erlmcp-logs
+    # Secret name for credentials
+    secretName: elasticsearch-credentials
+
+# Database Configuration
+database:
+  # Enable external database (RDS/PostgreSQL)
+  enabled: true
+  type: postgresql
+  # Connection settings
+  host: ""
+  port: 5432
+  database: erlmcp
+  username: erlmcp
+  password: ""
+  # Connection pool settings
+  pool:
+    size: 20
+    max_overflow: 40
+    timeout: 30
+    idle_timeout: 600
+  # SSL settings
+  ssl:
+    enabled: true
+    mode: require
+    rootCert: ""
+    clientCert: ""
+    clientKey: ""
+  # Migration settings
+  migration:
+    enabled: true
+    auto: true
+    # Migration resource
+    migration:
+      image: "ghcr.io/erlmcp/migration:3.0.0"
+      # Migration command
+      command: ["migrate"]
+      # Database URI
+      uri: "postgresql://$(DB_USERNAME):$(DB_PASSWORD)@$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=require"
+
+# Redis Configuration
+redis:
+  # Enable external Redis (ElastiCache)
+  enabled: true
+  # Connection settings
+  host: ""
+  port: 6379
+  password: ""
+  # Database selection
+  database: 0
+  # Connection pool settings
+  pool:
+    size: 20
+    max_idle: 10
+    timeout: 5
+  # SSL settings
+  ssl:
+    enabled: false
+    caCert: ""
+
+# Configuration values
+config:
+  # Environment
+  environment: {{ .Values.global.environment | default "staging" }}
+  # Log level
+  logLevel: {{ .Values.global.logLevel | default "info" }}
+  # Enable CORS
+  cors:
+    enabled: {{ .Values.global.enableCORS | default true }}
+    origins: {{ .Values.global.corsOrigins | default ["*"] }}
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    headers: ["Content-Type", "Authorization"]
+    credentials: true
+  # Rate limiting
+  rateLimiting:
+    enabled: {{ .Values.global.enableRateLimiting | default true }}
+    requests: {{ .Values.global.rateLimitRequests | default 1000 }}
+    window: 1m
+  # Authentication
+  authentication:
+    enabled: {{ .Values.global.enableAuthentication | default true }}
+    provider: {{ .Values.global.authProvider | default "jwt" }}
+    # JWT settings
+    jwt:
+      secret: ""
+      expiration: 24h
+      refreshExpiration: 7d
+    # OAuth settings
+    oauth:
+      enabled: false
+      provider: ""
+      clientId: ""
+      clientSecret: ""
+      redirectUri: ""
+      scopes: []
+    # LDAP settings
+    ldap:
+      enabled: false
+      server: ""
+      port: 389
+      bindDn: ""
+      bindPassword: ""
+      userBaseDn: ""
+      userSearchFilter: "(uid=%s)"
+      useTls: false
+  # Security
+  security:
+    encryption:
+      enabled: {{ .Values.global.enableEncryption | default true }}
+      key: ""
+    # Firewall rules
+    firewall:
+      enabled: true
+      allowedIPs:
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "192.168.0.0/16"
+  # Performance
+  performance:
+    maxConnections: {{ .Values.global.maxConnections | default 10000 }}
+    connectionTimeout: {{ .Values.global.connectionTimeout | default 30 }}
+    requestTimeout: {{ .Values.global.requestTimeout | default 60 }}
+    # Buffer sizes
+    buffers:
+      read: 8192
+      write: 16384
+  # Feature flags
+  featureFlags:
+    enabled: {{ .Values.observability.tracing.enabled }}
+    storage: {{ .Values.featureFlags.storage.type | default "redis" }}
+  # Compliance
+  compliance:
+    enabled: {{ .Values.global.enableCompliance | default true }}
+    standards: {{ .Values.global.complianceStandards | default ["ISO27001", "SOC2", "PCI-DSS"] }}
+    auditLogRetention: {{ .Values.global.auditLogRetention | default 365 }}
+  # Backup
+  backup:
+    enabled: {{ .Values.global.enableBackup | default true }}
+    frequency: {{ .Values.global.backupFrequency | default "daily" }}
+    retention: 30
+
+# Networking Configuration
+networking:
+  # Service type
+  serviceType: LoadBalancer
+  # Load balancer annotations
+  serviceAnnotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+  # Ingress configuration (if needed)
+  ingress:
+    enabled: false
+    annotations: {}
+    hosts:
+      - host: erlmcp.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: erlmcp-server
+                port:
+                  name: http
+    tls: []
+  # Network policies
+  networkPolicy:
+    enabled: true
+    egress:
+      - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+        ports:
+          - protocol: TCP
+            port: 443
+          - protocol: TCP
+            port: 80
+    ingress:
+      - from:
+        - namespaceSelector:
+            matchLabels:
+              app.kubernetes.io/name: erlmcp
+        podSelector: {}
+      - ports:
+          - protocol: TCP
+            port: 8080
+
+# Security Configuration
+security:
+  # Pod security context
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  # Container security context
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
+  # Security context constraints
+  securityContextConstraints:
+    enabled: true
+    # PSP definition
+    psp:
+      privileged: false
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      runAsUser:
+        rule: MustRunAsNonRoot
+      seLinux:
+        rule: RunAsAny
+      volumes:
+        - "configMap"
+        - "emptyDir"
+        - "projected"
+        - "secret"
+        - "downwardAPI"
+        - "persistentVolumeClaim"
+  # RBAC
+  rbac:
+    enabled: true
+    serviceAccount:
+      create: true
+      name: erlmcp-server
+      annotations: {}
+      automount: true
+      # Secret name for pull credentials
+      imagePullSecrets:
+        - name: ghcr-secret
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "configmaps", "secrets"]
+        verbs: ["get", "list", "watch"]
+      - apiGroups: [""]
+        resources: ["pods/log"]
+        verbs: ["get", "list"]
+      - apiGroups: ["apps"]
+        resources: ["deployments"]
+        verbs: ["get", "list", "watch"]
+
+# Persistence Configuration
+persistence:
+  # ConfigMap for application configuration
+  configMap:
+    enabled: true
+    name: erlmcp-config
+    # Mount path
+    mountPath: /etc/erlmcp
+    # Subpath
+    subPath: config
+    # Labels
+    labels:
+      app.kubernetes.io/name: erlmcp-config
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  # Secret for sensitive configuration
+  secret:
+    enabled: true
+    name: erlmcp-secrets
+    # Mount path
+    mountPath: /etc/erlmcp/secrets
+    # Subpath
+    subPath: secrets
+    # Labels
+    labels:
+      app.kubernetes.io/name: erlmcp-secrets
+      app.kubernetes.io/instance: {{ .Release.Name }}
+
+# Autoscaling Configuration
+autoscaling:
+  # Enable horizontal pod autoscaler
+  enabled: true
+  # HPA configuration
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    # Custom metrics (if needed)
+    customMetrics: []
+    # Behavior configuration
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Percent
+            value: 10
+            periodSeconds: 60
+      scaleUp:
+        stabilizationWindowSeconds: 0
+        policies:
+          - type: Percent
+            value: 50
+            periodSeconds: 60
+
+# Monitoring and Alerting
+monitoring:
+  # Prometheus service monitor
+  serviceMonitor:
+    enabled: true
+    additionalLabels: {}
+    interval: 30s
+    scrapeTimeout: 10s
+    # Additional labels
+    labels:
+      release: prometheus-operator
+  # Alert manager configuration
+  alertmanager:
+    enabled: false
+    # Alert rules
+    alertRules:
+      - alert: ErlMCPHighErrorRate
+        expr: rate(erlmcp_http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate on ErlMCP"
+          description: "Error rate is {{ $value }} errors/second"
+      - alert: ErlMCPHighLatency
+        expr: histogram_quantile(0.95, rate(erlmcp_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency on ErlMCP"
+          description: "95th percentile latency is {{ $value }}s"
+
+# Node Affinity and Taints
+affinity: {}
+tolerations: []
+
+# Deployment Strategy
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+    maxSurge: 1
+
+# Pod Disruption Budgets
+pdb:
+  enabled: true
+  minAvailable: 2
+  maxUnavailable: 1

@@ -1,0 +1,121 @@
+# Docker Compose override for load testing
+version: '3.8'
+
+services:
+  # k6 Load Testing Service
+  k6-load:
+    image: grafana/k6:latest
+    container_name: erlmcp-k6
+    hostname: k6
+    networks:
+      - erlmcp-network
+    environment:
+      # Target configuration
+      BASE_URL: ${BASE_URL:-http://erlmcp:8080}
+      K6_STATSD_ENABLE: "false"
+      K6_PROMETHEUS_RW_SERVER_URL: ${PROMETHEUS_URL:-http://prometheus-load:9090/api/v1/write}
+      K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM: "true"
+    volumes:
+      # Mount test scripts
+      - ./tests/load:/tests:ro
+      # Mount reports directory
+      - ./tests/load/reports:/reports:rw
+    working_dir: /tests
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["echo 'Use run-tests.sh to execute tests'"]
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: '4G'
+        reservations:
+          cpus: '0.5'
+          memory: '1G'
+    profiles:
+      - load
+
+  # Prometheus for collecting test metrics
+  prometheus-load:
+    image: prom/prometheus:latest
+    container_name: erlmcp-prometheus-load
+    hostname: prometheus-load
+    networks:
+      - erlmcp-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    ports:
+      - "${PROMETHEUS_PORT:-9091}:9090"
+    volumes:
+      - ./tests/load/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-load-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: '2G'
+        reservations:
+          cpus: '0.25'
+          memory: '512M'
+    profiles:
+      - load
+
+  # Grafana for visualizing test results
+  grafana-load:
+    image: grafana/grafana:latest
+    container_name: erlmcp-grafana-load
+    hostname: grafana-load
+    networks:
+      - erlmcp-network
+    environment:
+      # Security
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: ""
+
+      # Provisioning
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+      GF_PATHS_DATA: /var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - grafana-load-data:/var/lib/grafana
+      - ./tests/load/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      prometheus-load:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: '1G'
+        reservations:
+          cpus: '0.1'
+          memory: '256M'
+    profiles:
+      - load
+
+networks:
+  erlmcp-network:
+    external: true
+
+volumes:
+  prometheus-load-data:
+    driver: local
+  grafana-load-data:
+    driver: local

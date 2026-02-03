@@ -1,0 +1,128 @@
+{{/*
+  Services for erlmcp deployment
+*/}}
+
+# HTTP Service (LoadBalancer)
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-http
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    service: http
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    external-dns.alpha.kubernetes.io/hostname: erlmcp.example.com
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  healthCheckNodePort: 30001
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 3600
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000
+      protocol: TCP
+  selector:
+    app: erlmcp
+
+# Cluster Service (ClusterIP - Headless)
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-cluster
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    service: cluster
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service
+  ports:
+    - name: cluster
+      port: 9000
+      targetPort: 9000
+      protocol: TCP
+  selector:
+    app: erlmcp
+
+# Metrics Service (for Prometheus)
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-metrics
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    service: metrics
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+  selector:
+    app: erlmcp
+
+# OpenTelemetry Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-otel
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    service: otel
+spec:
+  type: ClusterIP
+  ports:
+    - name: otel
+      port: 4317
+      targetPort: 4317
+      protocol: TCP
+  selector:
+    app: erlmcp
+
+# Additional Services
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-mgmt
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    service: mgmt
+spec:
+  type: ClusterIP
+  ports:
+    - name: mgmt
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  selector:
+    app: erlmcp

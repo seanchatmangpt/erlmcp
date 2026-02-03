@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/component: mcp-server
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - name: tcp
+      port: 8080
+      targetPort: tcp
+      protocol: TCP
+    - name: http
+      port: 8081
+      targetPort: http
+      protocol: TCP
+    - name: ws
+      port: 8082
+      targetPort: ws
+      protocol: TCP
+    - name: sse
+      port: 8083
+      targetPort: sse
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+    - name: epmd
+      port: 4369
+      targetPort: epmd
+      protocol: TCP
+    - name: distribution
+      port: 9100
+      targetPort: distribution
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: erlmcp
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-headless
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: tcp
+      port: 8080
+      targetPort: tcp
+    - name: distribution
+      port: 9100
+      targetPort: distribution
+  selector:
+    app.kubernetes.io/name: erlmcp

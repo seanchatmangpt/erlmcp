@@ -1,0 +1,239 @@
+---
+# Deployment for Automated Rollback Monitor
+# Runs continuous health monitoring and triggers auto-rollback on failure
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: erlmcp-rollback-monitor
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp-rollback-monitor
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: erlmcp-rollback-monitor
+  namespace: erlmcp-staging
+rules:
+- apiGroups: ["apps"]
+  resources: ["deployments", "rollouts"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: [""]
+  resources: ["services", "endpoints", "pods"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["argoproj.io"]
+  resources: ["rollouts"]
+  verbs: ["get", "list", "watch", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: erlmcp-rollback-monitor
+  namespace: erlmcp-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: erlmcp-rollback-monitor
+subjects:
+- kind: ServiceAccount
+  name: erlmcp-rollback-monitor
+  namespace: erlmcp-staging
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-rollback-monitor-config
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp-rollback-monitor
+data:
+  monitor.sh: |
+    #!/bin/bash
+    set -euo pipefail
+
+    NAMESPACE="erlmcp-staging"
+    ACTIVE_SERVICE="erlmcp-active"
+    PROMETHEUS_URL="http://prometheus-operated.monitoring.svc.cluster.local:9090"
+
+    # Rollback thresholds
+    ERROR_RATE_THRESHOLD=0.05
+    P95_LATENCY_THRESHOLD=1000
+    P99_LATENCY_THRESHOLD=2000
+    CONSECUTIVE_FAILURES_THRESHOLD=3
+    MONITOR_INTERVAL=30
+    GRACE_PERIOD=120
+
+    echo "Starting rollback monitor for $NAMESPACE"
+    echo "Grace period: ${GRACE_PERIOD}s..."
+    sleep "$GRACE_PERIOD"
+
+    consecutive_failures=0
+    iteration=0
+
+    while true; do
+        ((iteration++))
+        echo "=== Monitoring Check #$iteration ($(date)) ==="
+
+        rollback_needed=false
+        rollback_reason=""
+
+        # Check deployment health
+        available=$(kubectl get deployment -n "$NAMESPACE" -o jsonpath='{.items[0].status.conditions[?(@.type=="Available")].status}' 2>/dev/null || echo "False")
+
+        if [[ "$available" != "True" ]]; then
+            ((consecutive_failures++))
+            rollback_needed=true
+            rollback_reason="Deployment not available"
+            echo "[FAIL] Deployment health check failed ($consecutive_failures/$CONSECUTIVE_FAILURES_THRESHOLD)"
+        else
+            # Query metrics from Prometheus
+            error_rate=$(curl -s "${PROMETHEUS_URL}/api/v1/query" --data-urlencode "query=sum(rate(http_requests_total{namespace=\"$NAMESPACE\",status=~\"5..\"}[1m])) / sum(rate(http_requests_total{namespace=\"$NAMESPACE\"}[1m]))" | jq -r '.data.result[0].value[1]' 2>/dev/null || echo "0")
+
+            error_rate_pass=$(echo "$error_rate < $ERROR_RATE_THRESHOLD" | bc -l 2>/dev/null || echo "1")
+            echo "[INFO] Error rate: $(echo "$error_rate" | awk '{printf "%.2f%%", $1 * 100}')"
+
+            if [[ "$error_rate_pass" != "1" ]]; then
+                ((consecutive_failures++))
+                rollback_needed=true
+                rollback_reason="Error rate $(echo "$error_rate" | awk '{printf "%.2f%%", $1 * 100}') exceeds threshold"
+                echo "[FAIL] Error rate threshold exceeded ($consecutive_failures/$CONSECUTIVE_FAILURES_THRESHOLD)"
+            else
+                p95_latency=$(curl -s "${PROMETHEUS_URL}/api/v1/query" --data-urlencode "query=histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{namespace=\"$NAMESPACE\"}[2m])) by (le)) * 1000" | jq -r '.data.result[0].value[1]' 2>/dev/null || echo "0")
+                echo "[INFO] P95 latency: ${p95_latency}ms"
+
+                p95_pass=$(echo "$p95_latency < $P95_LATENCY_THRESHOLD" | bc -l 2>/dev/null || echo "1")
+                if [[ "$p95_pass" != "1" ]]; then
+                    ((consecutive_failures++))
+                    rollback_needed=true
+                    rollback_reason="P95 latency ${p95_latency}ms exceeds threshold"
+                    echo "[FAIL] P95 latency threshold exceeded ($consecutive_failures/$CONSECUTIVE_FAILURES_THRESHOLD)"
+                else
+                    consecutive_failures=0
+                    echo "[PASS] All health checks passed"
+                fi
+            fi
+        fi
+
+        # Check if rollback is needed
+        if [[ $consecutive_failures -ge $CONSECUTIVE_FAILURES_THRESHOLD ]]; then
+            echo "[ALERT] Consecutive failures threshold reached: $consecutive_failures"
+            echo "[ALERT] Executing rollback: $rollback_reason"
+
+            # Send alert
+            if [[ -n "${SLACK_WEBHOOK_URL:-}" ]]; then
+                curl -s -X POST "$SLACK_WEBHOOK_URL" \
+                  -H 'Content-Type: application/json' \
+                  -d "{\"text\": \"🚨 Automated rollback triggered for $NAMESPACE: $rollback_reason\"}" || true
+            fi
+
+            # Execute rollback
+            kubectl rollout undo deployment -n "$NAMESPACE" --timeout=60s || true
+            kubectl rollout status deployment -n "$NAMESPACE" --timeout=300s || true
+
+            # Wait before resuming monitoring
+            consecutive_failures=0
+            echo "[INFO] Waiting 5 minutes before resuming monitoring..."
+            sleep 300
+        fi
+
+        echo "[INFO] Consecutive failures: $consecutive_failures/$CONSECUTIVE_FAILURES_THRESHOLD"
+        sleep "$MONITOR_INTERVAL"
+    done
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erlmcp-rollback-monitor
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp-rollback-monitor
+    component: monitoring
+  annotations:
+    description: "Automated rollback monitor for erlmcp deployments"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: erlmcp-rollback-monitor
+  template:
+    metadata:
+      labels:
+        app: erlmcp-rollback-monitor
+        component: monitoring
+      annotations:
+        prometheus.io/scrape: "false"
+    spec:
+      serviceAccountName: erlmcp-rollback-monitor
+      restartPolicy: Always
+      containers:
+      - name: monitor
+        image: bitnami/kubectl:latest
+        command:
+        - /bin/bash
+        - /scripts/monitor.sh
+        env:
+        - name: NAMESPACE
+          value: "erlmcp-staging"
+        - name: PROMETHEUS_URL
+          value: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+        - name: ERROR_RATE_THRESHOLD
+          value: "0.05"
+        - name: P95_LATENCY_THRESHOLD
+          value: "1000"
+        - name: CONSECUTIVE_FAILURES_THRESHOLD
+          value: "3"
+        - name: MONITOR_INTERVAL
+          value: "30"
+        - name: GRACE_PERIOD
+          value: "120"
+        - name: SLACK_WEBHOOK_URL
+          valueFrom:
+            secretKeyRef:
+              name: rollback-monitor-secrets
+              key: slack-webhook-url
+              optional: true
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "64Mi"
+          limits:
+            cpu: "100m"
+            memory: "128Mi"
+        volumeMounts:
+        - name: scripts
+          mountPath: /scripts
+          readOnly: true
+        - name: state
+          mountPath: /state
+      volumes:
+      - name: scripts
+        configMap:
+          name: erlmcp-rollback-monitor-config
+          defaultMode: 0755
+      - name: state
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rollback-monitor-secrets
+  namespace: erlmcp-staging
+type: Opaque
+stringData:
+  # Optional: Add Slack webhook URL for notifications
+  slack-webhook-url: ""
+---
+# PodDisruptionBudget for the monitor
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-rollback-monitor-pdb
+  namespace: erlmcp-staging
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: erlmcp-rollback-monitor
+  unhealthyPodEvictionPolicy: IfHealthyBudget

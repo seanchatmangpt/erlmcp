@@ -1,0 +1,355 @@
+{{/*
+  ERLMCP Enterprise Deployment
+  Production-ready deployment with all enterprise features
+*/}}
+{{- if .Values.deployment.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-core
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: core
+    tier: backend
+  annotations:
+    {{- with .Values.deployment.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+    "erlmcp.io/environment": {{ .Values.global.cluster.environment | quote }}
+spec:
+  {{- /* Replicas */}}
+  replicas: {{ .Values.deployment.replicas | default 3 }}
+  {{- /* Strategy */}}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ .Values.deployment.maxUnavailable | default 0 }}
+      maxSurge: {{ .Values.deployment.maxSurge | default 1 }}
+  {{- /* Selector */}}
+  selector:
+    matchLabels:
+      {{- include "erlmcp-enterprise.selectorLabels" . | nindent 6 }}
+      component: core
+  {{- /* Template */}}
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp-enterprise.selectorLabels" . | nindent 8 }}
+        component: core
+      annotations:
+        {{- with .Values.deployment.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        "prometheus.io/scrape": "true"
+        "prometheus.io/path": "/metrics"
+        "prometheus.io/port": "9090"
+    spec:
+      {{- /* Service Account */}}
+      {{- if .Values.security.rbac.create }}
+      serviceAccountName: {{ include "erlmcp-enterprise.serviceAccountName" . }}
+      {{- else }}
+      serviceAccountName: {{ .Values.security.rbac.serviceAccountName | default "default" }}
+      {{- end }}
+
+      {{- /* Security Context */}}
+      {{- with .Values.deployment.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- /* Affinity */}}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- /* Node Selector */}}
+      {{- with .Values.deployment.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- /* Tolerations */}}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      {{- /* Priority Class */}}
+      {{- if .Values.deployment.priorityClassName }}
+      priorityClassName: {{ .Values.deployment.priorityClassName }}
+      {{- end }}
+
+      {{- /* Init Containers */}}
+      {{- if .Values.deployment.initContainers }}
+      initContainers:
+        {{- toYaml .Values.deployment.initContainers | nindent 8 }}
+      {{- end }}
+
+      {{- /* Containers */}}
+      containers:
+        {{- /* Main ERLMCP container */}}
+        - name: erlmcp
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.deployment.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.deployment.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+          {{- /* Ports */}}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.ports.http.targetPort }}
+              protocol: TCP
+            - name: https
+              containerPort: {{ .Values.service.ports.https.targetPort }}
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: distributed
+              containerPort: 4369
+              protocol: TCP
+
+          {{- /* Environment Variables */}}
+          env:
+            - name: ERLMCP_CLUSTER_NAME
+              value: {{ .Values.global.cluster.name | quote }}
+            - name: ERLMCP_NODE_NAME
+              value: {{ include "erlmcp-enterprise.fullname" . }}-core
+            - name: ERLMCP_LOG_LEVEL
+              value: {{ .Values.app.erlang.env.LOG_LEVEL | default "info" | quote }}
+            - name: ERLMCP_METRICS_ENABLED
+              value: {{ .Values.app.erlang.env.ERLMCP_METRICS_ENABLED | default "true" | quote }}
+            - name: ERLMCP_CONFIG_PATH
+              value: {{ .Values.app.erlang.env.ERLMCP_CONFIG_PATH | default "/etc/erlmcp" | quote }}
+            - name: ERLANG_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.security.secrets.name | default "erlmcp-secrets" }}
+                  key: erlang-cookie
+            {{- with .Values.deployment.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+
+          {{- /* Resources */}}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+          {{- /* Volume Mounts */}}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/erlmcp
+              readOnly: true
+            - name: data
+              mountPath: /data
+            {{- with .Values.deployment.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+
+          {{- /* Probes */}}
+          {{- if .Values.deployment.livenessProbe }}
+          livenessProbe:
+            {{- toYaml .Values.deployment.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.deployment.readinessProbe }}
+          readinessProbe:
+            {{- toYaml .Values.deployment.readinessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.deployment.startupProbe }}
+          startupProbe:
+            {{- toYaml .Values.deployment.startupProbe | nindent 12 }}
+          {{- end }}
+
+          {{- /* Lifecycle */}}
+          {{- with .Values.deployment.lifecycle }}
+          lifecycle:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+        {{- /* Sidecar containers */}}
+        {{- if .Values.deployment.sidecars }}
+        {{- toYaml .Values.deployment.sidecars | nindent 8 }}
+        {{- end }}
+
+      {{- /* Volumes */}}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.storage.configMap.name | default "erlmcp-config" }}
+        {{- if .Values.storage.persistentVolumeClaim.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "erlmcp-enterprise.fullname" . }}-data
+        {{- else }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+        {{- with .Values.deployment.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+
+      {{- /* Termination Grace Period */}}
+      terminationGracePeriodSeconds: {{ .Values.deployment.terminationGracePeriodSeconds | default 60 }}
+{{- end }}
+---
+{{/*
+  ERLMCP Enterprise StatefulSet
+  For clustered Erlang nodes with stable network identities
+*/}}
+{{- if .Values.statefulset.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-cluster
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: cluster
+    tier: backend
+  annotations:
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+    "erlmcp.io/environment": {{ .Values.global.cluster.environment | quote }}
+spec:
+  {{- /* Service Name */}}
+  serviceName: {{ include "erlmcp-enterprise.fullname" . }}-headless
+  {{- /* Replicas */}}
+  replicas: {{ .Values.statefulset.replicas | default 3 }}
+  {{- /* Update Strategy */}}
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: {{ .Values.statefulset.partition | default 0 }}
+  {{- /* Pod Management Policy */}}
+  podManagementPolicy: {{ .Values.statefulset.podManagementPolicy | default "OrderedReady" }}
+  {{- /* Selector */}}
+  selector:
+    matchLabels:
+      {{- include "erlmcp-enterprise.selectorLabels" . | nindent 6 }}
+      component: cluster
+  {{- /* Template */}}
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp-enterprise.selectorLabels" . | nindent 8 }}
+        component: cluster
+      annotations:
+        "prometheus.io/scrape": "true"
+        "prometheus.io/path": "/metrics"
+        "prometheus.io/port": "9090"
+    spec:
+      {{- /* Service Account */}}
+      {{- if .Values.security.rbac.create }}
+      serviceAccountName: {{ include "erlmcp-enterprise.serviceAccountName" . }}
+      {{- else }}
+      serviceAccountName: {{ .Values.security.rbac.serviceAccountName | default "default" }}
+      {{- end }}
+
+      {{- /* Pod Anti-Affinity */}}
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "erlmcp-enterprise.selectorLabels" . | nindent 18 }}
+                  component: cluster
+              topologyKey: kubernetes.io/hostname
+
+      {{- /* Termination Grace Period */}}
+      terminationGracePeriodSeconds: {{ .Values.statefulset.terminationGracePeriodSeconds | default 120 }}
+
+      {{- /* Containers */}}
+      containers:
+        - name: erlmcp-cluster
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.ports.http.targetPort }}
+            - name: https
+              containerPort: {{ .Values.service.ports.https.targetPort }}
+            - name: epmd
+              containerPort: 4369
+            - name: distribution
+              containerPort: 9100
+            - name: metrics
+              containerPort: 9090
+
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: ERLMCP_CLUSTER_NAME
+              value: {{ .Values.global.cluster.name | quote }}
+            - name: ERLMCP_NODE_TYPE
+              value: "cluster"
+            - name: ERLANG_COOKIE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.security.secrets.name | default "erlmcp-secrets" }}
+                  key: erlang-cookie
+
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/erlmcp
+              readOnly: true
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.storage.configMap.name | default "erlmcp-config" }}
+
+  {{- /* Volume Claim Templates */}}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "erlmcp-enterprise.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          - {{ .Values.storage.persistentVolumeClaim.accessMode | default "ReadWriteOnce" }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.persistentVolumeClaim.size | default "100Gi" }}
+        {{- if .Values.storage.persistentVolumeClaim.storageClass }}
+        storageClassName: {{ .Values.storage.persistentVolumeClaim.storageClass }}
+        {{- end }}
+{{- end }}

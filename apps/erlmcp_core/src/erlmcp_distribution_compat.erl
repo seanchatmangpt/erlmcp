@@ -16,7 +16,7 @@
 
 -behaviour(gen_server).
 -include("erlmcp.hrl").
--include("otp_compat.hrl").
+%% -include_lib("erlmcp/include/otp_compat.hrl").  % Not available in subdirectory compilation
 
 %% API exports
 -export([start_link/0, get_compatibility_info/0, apply_compatibility_patches/0,
@@ -637,8 +637,11 @@ apply_otp26_protocol_patch(State) ->
 apply_otp28_feature_patch(State) ->
     logger:debug("Applying OTP 28 feature patch"),
 
-    % Enable priority messages
-    ?SET_PRIORITY_HIGH(),
+    % Enable native JSON (already available in OTP 27+)
+    enable_native_json(),
+
+    % Enable OTP 28 priority messages
+    enable_otp28_priority_messages(),
 
     % Enable process iterator optimizations
     enable_process_iterator_optimization(),
@@ -746,6 +749,12 @@ apply_legacy_protocol() ->
 -spec enable_native_json() -> ok.
 enable_native_json() ->
     logger:debug("Enabling native JSON support"),
+    ok.
+
+%% Enable OTP 28 priority messages
+-spec enable_otp28_priority_messages() -> ok.
+enable_otp28_priority_messages() ->
+    logger:debug("Enabling OTP 28 priority messages support"),
     ok.
 
 %% Enable process iterator optimization

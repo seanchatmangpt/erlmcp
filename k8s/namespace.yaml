@@ -4,8 +4,16 @@ metadata:
   name: erlmcp
   labels:
     name: erlmcp
+    kubernetes.io/metadata.name: erlmcp
     environment: production
     app: erlmcp
+    # Network policy labels for zero-trust isolation
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    # Namespace network policy type
+    network-policy: zero-trust
+    security-level: high
 ---
 apiVersion: v1
 kind: Namespace
@@ -13,8 +21,15 @@ metadata:
   name: erlmcp-staging
   labels:
     name: erlmcp-staging
+    kubernetes.io/metadata.name: erlmcp-staging
     environment: staging
     app: erlmcp
+    # Network policy labels for zero-trust isolation
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    network-policy: zero-trust
+    security-level: medium
 ---
 apiVersion: v1
 kind: Namespace
@@ -22,5 +37,13 @@ metadata:
   name: erlmcp-production
   labels:
     name: erlmcp-production
+    kubernetes.io/metadata.name: erlmcp-production
     environment: production
     app: erlmcp
+    # Network policy labels for zero-trust isolation
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    # Namespace network policy type
+    network-policy: zero-trust
+    security-level: high

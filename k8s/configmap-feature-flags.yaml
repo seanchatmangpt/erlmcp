@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-feature-flags
+  namespace: erlmcp
+data:
+  # Feature flags for production environment
+  flags: |
+    {
+      "metrics.enabled": true,
+      "telemetry.enabled": true,
+      "cache.enabled": true,
+      "compression.enabled": true,
+      "auth.enabled": true,
+      "rate_limit.enabled": true,
+      "audit_logging.enabled": true,
+      "experimental.new_api": false,
+      "experimental.websocket": false,
+      "experimental.grpc": false,
+      "monitoring.prometheus": true,
+      "monitoring.jaeger": false,
+      "distributed_tracing": true,
+      "session_persistence": true,
+      "load_balancing": true,
+      "circuit_breaker.enabled": true,
+      "retry.enabled": true,
+      "backpressure.enabled": true,
+      "healthchecks.enabled": true,
+      "graceful_shutdown.enabled": true,
+      "metrics.prometheus": true,
+      "logs.json": true,
+      "logs.level": "info",
+      "database.pooling": true,
+      "database.connection_limit": 100,
+      "redis.caching": true,
+      "redis.connection_limit": 50,
+      "file_storage.enabled": false,
+      "backup.enabled": false,
+      "high_availability.enabled": true,
+      "auto_scaling.enabled": true,
+      "canary_deployment": true,
+      "blue_green_deployment": true,
+      "rollbacks.enabled": true,
+      "rollouts.enabled": true,
+      "secrets.vault": true,
+      "secrets.kubernetes": true,
+      "network_policy.enabled": true,
+      "pod_security.enabled": true,
+      "resource_limits.enabled": true
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-feature-flags-staging
+  namespace: erlmcp-staging
+data:
+  # Feature flags for staging environment
+  flags: |
+    {
+      "metrics.enabled": true,
+      "telemetry.enabled": false,
+      "cache.enabled": true,
+      "compression.enabled": true,
+      "auth.enabled": false,
+      "rate_limit.enabled": true,
+      "audit_logging.enabled": false,
+      "experimental.new_api": true,
+      "experimental.websocket": false,
+      "experimental.grpc": true,
+      "monitoring.prometheus": true,
+      "monitoring.jaeger": false,
+      "distributed_tracing": true,
+      "session_persistence": true,
+      "load_balancing": true,
+      "circuit_breaker.enabled": true,
+      "retry.enabled": true,
+      "backpressure.enabled": true,
+      "healthchecks.enabled": true,
+      "graceful_shutdown.enabled": true,
+      "metrics.prometheus": true,
+      "logs.json": true,
+      "logs.level": "debug",
+      "database.pooling": true,
+      "database.connection_limit": 50,
+      "redis.caching": true,
+      "redis.connection_limit": 25,
+      "file_storage.enabled": false,
+      "backup.enabled": false,
+      "high_availability.enabled": true,
+      "auto_scaling.enabled": true,
+      "canary_deployment": true,
+      "blue_green_deployment": true,
+      "rollbacks.enabled": true,
+      "rollouts.enabled": true,
+      "secrets.vault": false,
+      "secrets.kubernetes": true,
+      "network_policy.enabled": true,
+      "pod_security.enabled": true,
+      "resource_limits.enabled": true
+    }

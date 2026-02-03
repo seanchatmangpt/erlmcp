@@ -1,0 +1,201 @@
+## ============================================================================
+## Staging VM Arguments for erlmcp v3
+## ============================================================================
+## Purpose: Production-like settings for staging environment testing
+## Security: Moderate restrictions, cookie from environment/secrets
+##
+## Usage: Referenced from docker-compose.override.staging.yml
+## ============================================================================
+
+## ============================================================================
+## Node Naming
+## ============================================================================
+## Dynamic naming based on hostname for staging cluster
+-name erlmcp_staging@${HOSTNAME}
+
+## ============================================================================
+## Cookie for Distributed Node Communication
+## ============================================================================
+## CRITICAL: Cookie MUST come from environment variable or Docker secret
+## NEVER hardcode cookies in production or staging
+## Set via ERLANG_COOKIE_FILE environment variable
+## The actual cookie will be set by the release script using the secret file
+# Cookie set via -setcookie flag passed from environment
+
+## ============================================================================
+## Heartbeat Management
+## ============================================================================
+## Enabled for staging to test failover behavior
+-heart
+-env HEART_BEAT_TIMEOUT 30
+-env HEART_COMMAND "/opt/erlmcp/bin/erlmcp start"
+
+## ============================================================================
+## Kernel Poll
+## ============================================================================
++K true
+
+## ============================================================================
+## VM Port Limit
+## ============================================================================
+## Production-like limit for staging
++Q 65536
+-env ERL_MAX_PORTS 65536
+
+## ============================================================================
+## Process Limit
+## ============================================================================
+## Production-like limit for staging
++P 262144
+
+## ============================================================================
+## Atom Table Size
+## ============================================================================
+## Production-like atom table
++t 5000000
+
+## ============================================================================
+## Time Correction
+## ============================================================================
++c true
+
+## ============================================================================
+## Scheduler Bind Type
+## ============================================================================
++sbt db
+
+## ============================================================================
+## Busy Waiting
+## ============================================================================
+## Enabled for better latency in staging
++sbwt very_short
++sbwtdcpu very_short
++swct very_short
+
+## ============================================================================
+## Async Thread Pool
+## ============================================================================
+## Moderate pool size for staging
++A 64
+
+## ============================================================================
+## Max ETS Tables
+## ============================================================================
+## Production-like limit
+-env ERL_MAX_ETS_TABLES 50000
+
+## ============================================================================
+## Microstate Accounting
+## ============================================================================
+## Enabled for performance analysis in staging
++Muacul true
+
+## ============================================================================
+## Scheduler Utilization Balancing
+## ============================================================================
++sub true
++sup true
+
+## ============================================================================
+## Distribution Buffer Busy Limit
+## ============================================================================
+## Higher buffer for staging cluster communication
++zdbbl 4096
+
+## ============================================================================
+## Logger Configuration
+## ============================================================================
+## Moderate burst limit for staging
+-kernel logger_burst_limit 5000
+
+## ============================================================================
+## Crash Dump Configuration
+## ============================================================================
+## Production-like crash dump settings
+-env ERL_CRASH_DUMP_SECONDS 10
+-env ERL_CRASH_DUMP /var/log/erlmcp/erl_crash.dump
+
+## ============================================================================
+## System Monitor
+## ============================================================================
+## Enabled for monitoring staging behavior
+-env ERLMCP_SYSTEM_MONITOR true
+-env ERLMCP_SYSTEM_MONITOR_INTERVAL 60000
+
+## ============================================================================
+## Memory Allocator Settings
+## ============================================================================
+## Production-like allocator settings
++MBas aobf
++MBlmbcs 512
++MBsmbcs 1024
++MBsbct 2048
+
+## ============================================================================
+## Cgroups Settings
+## ============================================================================
+## Enable cgroups awareness for container environments
++MBacul 0
++Msbagf 512
++MBacgs 0
+
+## ============================================================================
+## Garbage Collection Settings
+## ============================================================================
+## Production-like GC settings
++hms 46422
++hmbs 46422
++mbgsfr 256
++mbgsal 256
+
+## ============================================================================
+## Distribution Settings
+## ============================================================================
+## TLS distribution for security
+-proto_dist inet_tls
+
+## SSL/TLS Configuration for distribution
+-ssl_dist_opt client_verify verify_peer
+-ssl_dist_opt server_verify verify_peer
+-ssl_dist_opt fail_if_no_peer_cert true
+-ssl_dist_opt client_secure_renegotiate true
+-ssl_dist_opt server_secure_renegotiate true
+
+## ============================================================================
+## SMP Settings
+## ============================================================================
+## Enable SMP with auto-detected processors
++smp auto
+
+## ============================================================================
+## Kernel Settings for Staging
+## ============================================================================
+## Balanced error reporting for staging
+-kernel error_logger silent
+-kernel logger_level info
+
+## ============================================================================
+## SASL Settings
+## ============================================================================
+## Moderate SASL logging for staging
+-sasl sasl_error_logger false
+-sasl errlog_type error
+-sasl error_logger_format_depth 20
+
+## ============================================================================
+## OS Variables
+## ============================================================================
+## Set timezone for consistent logs
+-env TZ UTC
+
+## ============================================================================
+## Instrumentation
+## ============================================================================
+## Enable for performance monitoring
++MSA true
+
+## ============================================================================
+## Instrumentation Tools
+## ============================================================================
+## Enable system profiling tools
++instrument on

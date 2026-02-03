@@ -1,0 +1,141 @@
+{{/*
+  ERLMCP Enterprise RBAC
+  Role-based access control for enterprise operations
+*/}}
+{{- if .Values.security.rbac.create }}
+{{- /* Role */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: rbac
+  annotations:
+    "erlmcp.io/rbac": "role"
+rules:
+  {{- /* App resources */}}
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Network resources */}}
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Core resources */}}
+  - apiGroups: [""]
+    resources: ["services", "endpoints", "configmaps", "secrets", "pods", "pods/log"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Autoscaling */}}
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Policy */}}
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Monitoring */}}
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "prometheusrules"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+{{- /* ClusterRole */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: rbac
+    cluster: "true"
+  annotations:
+    "erlmcp.io/rbac": "clusterrole"
+rules:
+  {{- /* Cluster-wide resources */}}
+  - apiGroups: [""]
+    resources: ["namespaces", "nodes", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  {{- /* Storage */}}
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csidrivers"]
+    verbs: ["get", "list", "watch"]
+  {{- /* Custom resources */}}
+  - apiGroups: ["erlmcp.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+{{- /* RoleBinding */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: rbac
+  annotations:
+    "erlmcp.io/rbac": "rolebinding"
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "erlmcp-enterprise.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  apiGroup: rbac.authorization.k8s.io
+---
+{{- /* ClusterRoleBinding */}}
+{{- if .Values.security.rbac.createClusterRoleBinding }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: rbac
+    cluster: "true"
+  annotations:
+    "erlmcp.io/rbac": "clusterrolebinding"
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "erlmcp-enterprise.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}
+---
+{{- /* Reader Role (for monitoring/viewing) */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: rbac
+    access: "read-only"
+  annotations:
+    "erlmcp.io/rbac": "reader"
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "endpoints", "configmaps", "secrets", "pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "prometheusrules"]
+    verbs: ["get", "list", "watch"]
+{{- end }}

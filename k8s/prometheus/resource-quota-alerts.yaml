@@ -1,0 +1,262 @@
+---
+# ==============================================================================
+# ERLMCP v3 Enterprise - Prometheus AlertRules for ResourceQuota Monitoring
+# ==============================================================================
+# Purpose: Alert on resource quota usage approaching limits
+#
+# Integration:
+#   kubectl apply -f k8s/prometheus/resource-quota-alerts.yaml
+#
+# Requires:
+#   - kube-prometheus-stack or Prometheus Operator
+#   - kube-state-metrics for quota metrics
+# ==============================================================================
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: erlmcp-resource-quota
+  namespace: monitoring
+  labels:
+    app: erlmcp
+    component: resource-quota-alerts
+    prometheus: kube-prometheus
+    role: alert-rules
+spec:
+  groups:
+    # -------------------------------------------------------------------------
+    # ResourceQuota CPU Alerts
+    # -------------------------------------------------------------------------
+    - name: erlmcp_resource_quota_cpu
+      interval: 30s
+      rules:
+        # CPU Requests Warning
+        - alert: ResourceQuotaCPURequestsHigh
+          expr: |
+            (kube_resourcequota{resource="requests.cpu", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="requests.cpu", namespace="erlmcp"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota CPU requests usage high"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of CPU requests quota ({{ $labels.resource }})"
+            runbook_url: "https://docs.erlmcp.com/runbooks/resource-quota"
+
+        # CPU Requests Critical
+        - alert: ResourceQuotaCPURequestsCritical
+          expr: |
+            (kube_resourcequota{resource="requests.cpu", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="requests.cpu", namespace="erlmcp"}) * 100 > 90
+          for: 2m
+          labels:
+            severity: critical
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota CPU requests usage CRITICAL"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of CPU requests quota - immediate action required"
+
+        # CPU Limits Warning
+        - alert: ResourceQuotaCPULimitsHigh
+          expr: |
+            (kube_resourcequota{resource="limits.cpu", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="limits.cpu", namespace="erlmcp"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota CPU limits usage high"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of CPU limits quota"
+
+    # -------------------------------------------------------------------------
+    # ResourceQuota Memory Alerts
+    # -------------------------------------------------------------------------
+    - name: erlmcp_resource_quota_memory
+      interval: 30s
+      rules:
+        # Memory Requests Warning
+        - alert: ResourceQuotaMemoryRequestsHigh
+          expr: |
+            (kube_resourcequota{resource="requests.memory", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="requests.memory", namespace="erlmcp"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota memory requests usage high"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of memory requests quota"
+
+        # Memory Requests Critical
+        - alert: ResourceQuotaMemoryRequestsCritical
+          expr: |
+            (kube_resourcequota{resource="requests.memory", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="requests.memory", namespace="erlmcp"}) * 100 > 90
+          for: 2m
+          labels:
+            severity: critical
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota memory requests usage CRITICAL"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of memory requests quota - immediate action required"
+
+    # -------------------------------------------------------------------------
+    # ResourceQuota Pod Count Alerts
+    # -------------------------------------------------------------------------
+    - name: erlmcp_resource_quota_pods
+      interval: 30s
+      rules:
+        # Pod Count Warning
+        - alert: ResourceQuotaPodCountHigh
+          expr: |
+            (kube_resourcequota{resource="pods", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="pods", namespace="erlmcp"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota pod count high"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of pod quota ({{ $labels.resource }} pods)"
+
+        # Pod Count Critical
+        - alert: ResourceQuotaPodCountCritical
+          expr: |
+            (kube_resourcequota{resource="pods", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="pods", namespace="erlmcp"}) * 100 > 90
+          for: 2m
+          labels:
+            severity: critical
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota pod count CRITICAL"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of pod quota - no new pods can be created"
+
+    # -------------------------------------------------------------------------
+    # ResourceQuota Storage Alerts
+    # -------------------------------------------------------------------------
+    - name: erlmcp_resource_quota_storage
+      interval: 30s
+      rules:
+        # PVC Count Warning
+        - alert: ResourceQuotaPVCCountHigh
+          expr: |
+            (kube_resourcequota{resource="persistentvolumeclaims", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="persistentvolumeclaims", namespace="erlmcp"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota PVC count high"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of PVC quota"
+
+        # Storage Requests Warning
+        - alert: ResourceQuotaStorageRequestsHigh
+          expr: |
+            (kube_resourcequota{resource="requests.storage", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="requests.storage", namespace="erlmcp"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota storage requests usage high"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of storage quota"
+
+        # Storage Requests Critical
+        - alert: ResourceQuotaStorageRequestsCritical
+          expr: |
+            (kube_resourcequota{resource="requests.storage", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="requests.storage", namespace="erlmcp"}) * 100 > 90
+          for: 2m
+          labels:
+            severity: critical
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota storage requests usage CRITICAL"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of storage quota - no new PVCs can be created"
+
+    # -------------------------------------------------------------------------
+    # ResourceQuota Service Alerts
+    # -------------------------------------------------------------------------
+    - name: erlmcp_resource_quota_services
+      interval: 30s
+      rules:
+        # Service Count Warning
+        - alert: ResourceQuotaServiceCountHigh
+          expr: |
+            (kube_resourcequota{resource="services", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="services", namespace="erlmcp"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota service count high"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of service quota"
+
+        # LoadBalancer Count Warning (cost control)
+        - alert: ResourceQuotaLoadBalancerCountHigh
+          expr: |
+            (kube_resourcequota{resource="services.loadbalancers", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="services.loadbalancers", namespace="erlmcp"}) * 100 > 50
+          for: 5m
+          labels:
+            severity: warning
+            tier: cost-control
+          annotations:
+            summary: "LoadBalancer usage high (cost impact)"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of LoadBalancer quota - each LB incurs cloud provider charges"
+
+    # -------------------------------------------------------------------------
+    # ResourceQuota Object Count Alerts
+    # -------------------------------------------------------------------------
+    - name: erlmcp_resource_quota_objects
+      interval: 30s
+      rules:
+        # Secret Count Warning
+        - alert: ResourceQuotaSecretCountHigh
+          expr: |
+            (kube_resourcequota{resource="secrets", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="secrets", namespace="erlmcp"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota secret count high"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of secret quota"
+
+        # ConfigMap Count Warning
+        - alert: ResourceQuotaConfigMapCountHigh
+          expr: |
+            (kube_resourcequota{resource="configmaps", namespace="erlmcp"}
+            / kube_resourcequota_hard{resource="configmaps", namespace="erlmcp"}) * 100 > 80
+          for: 5m
+          labels:
+            severity: warning
+            tier: resource-quota
+          annotations:
+            summary: "Resource quota ConfigMap count high"
+            description: "Namespace {{ $labels.namespace }} is using {{ $value }}% of ConfigMap quota"
+
+    # -------------------------------------------------------------------------
+    # QoS Class Alerts
+    # -------------------------------------------------------------------------
+    - name: erlmcp_qos_class
+      interval: 30s
+      rules:
+        # Best-effort pods (no resource requests)
+        - alert: TooManyBestEffortPods
+          expr: |
+            count(kube_pod_status_phase{namespace="erlmcp", qos_class="Guaranteed"} == 0)
+            / count(kube_pod_status_phase{namespace="erlmcp"}) * 100 > 10
+          for: 10m
+          labels:
+            severity: warning
+            tier: quality-of_service
+          annotations:
+            summary: "High percentage of best-effort pods detected"
+            description: "{{ $value }}% of pods in namespace erlmcp are best-effort (no resource guarantees) and may be evicted under pressure"

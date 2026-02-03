@@ -1,0 +1,600 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "erlmcp v3 Cost Optimization Dashboard",
+    "tags": ["erlmcp", "cost", "optimization", "finance"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Total Cost Overview",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(erlmcp_cost_total)",
+            "legendFormat": "Total Cost"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 1000
+                },
+                {
+                  "color": "red",
+                  "value": 5000
+                }
+              ]
+            },
+            "mappings": [
+              {
+                "options": {
+                  "text": "${value}",
+                  "match": "null"
+                },
+                "type": "value"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": 2,
+        "title": "Cost Trend",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(erlmcp_cost_total[1d]))",
+            "legendFormat": "Daily Cost"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 0
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD/d",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 100
+                },
+                {
+                  "color": "red",
+                  "value": 500
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "Cost by Component",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(erlmcp_cost_total) by (component)",
+            "legendFormat": "{{component}}"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 8
+        },
+        "options": {
+          "displayLabels": true,
+          "legend": {
+            "displayMode": "table",
+            "placement": "right"
+          },
+          "pieType": "pie",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          },
+          "tooltip": {
+            "mode": "single",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "Cost Efficiency Metrics",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(erlmcp_requests_total) / sum(erlmcp_cost_total)",
+            "legendFormat": "Requests per Dollar"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 8
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "req/$",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 1000
+                },
+                {
+                  "color": "yellow",
+                  "value": 500
+                },
+                {
+                  "color": "red",
+                  "value": 100
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "Resource Utilization Cost",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(erlmcp_cost_cpu_total[1d])",
+            "legendFormat": "CPU Cost"
+          },
+          {
+            "expr": "rate(erlmcp_cost_memory_total[1d])",
+            "legendFormat": "Memory Cost"
+          },
+          {
+            "expr": "rate(erlmcp_cost_network_total[1d])",
+            "legendFormat": "Network Cost"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 16
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD/d",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 50
+                },
+                {
+                  "color": "red",
+                  "value": 200
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "Cost vs Performance",
+        "type": "scatterplot",
+        "targets": [
+          {
+            "expr": "sum(erlmcp_cost_total) by (component)",
+            "legendFormat": "{{component}} Cost"
+          },
+          {
+            "expr": "sum(rate(erlmcp_requests_total[5m])) by (component)",
+            "legendFormat": "{{component}} RPS"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 16
+        },
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "hideFrom": {
+                "tooltip": false,
+                "viz": false
+              }
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "Optimization Opportunities",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(erlmcp_cost_optimization_savings)",
+            "legendFormat": "Potential Savings"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 24
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 1000
+                },
+                {
+                  "color": "red",
+                  "value": 5000
+                }
+              ]
+            },
+            "mappings": [
+              {
+                "options": {
+                  "text": "Potential Savings: ${value}",
+                  "match": "null"
+                },
+                "type": "value"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "Cost Forecast",
+        "type": "timeseries",
+        "targets": [
+          {
+            "expr": "predict_linear(sum(erlmcp_cost_total[7d]), 86400*30)",
+            "legendFormat": "30 Day Forecast"
+          },
+          {
+            "expr": "predict_linear(sum(erlmcp_cost_total[7d]), 86400*7)",
+            "legendFormat": "7 Day Forecast"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 24
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 10000
+                },
+                {
+                  "color": "red",
+                  "value": 50000
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "Cost Breakdown by Service",
+        "type": "barchart",
+        "targets": [
+          {
+            "expr": "sum(erlmcp_cost_total) by (service)",
+            "legendFormat": "{{service}}"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 32
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "currencyUSD",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 1000
+                },
+                {
+                  "color": "red",
+                  "value": 5000
+                }
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "Cost Optimization Events",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "erlmcp_optimization_event",
+            "legendFormat": "{{event}}"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 32
+        },
+        "transformations": [
+          {
+            "id": "filterFieldsByName",
+            "options": {
+              "include": {
+                "names": [
+                  "Time",
+                  "event",
+                  "savings",
+                  "status"
+                ]
+              }
+            }
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [],
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "green",
+                  "value": 0
+                },
+                {
+                  "color": "red",
+                  "value": 80
+                }
+              ]
+            },
+            "custom": {}
+          }
+        }
+      },
+      {
+        "id": 11,
+        "title": "Savings by Initiative",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum(erlmcp_savings_total) by (initiative)",
+            "legendFormat": "{{initiative}}"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 40
+        },
+        "options": {
+          "displayLabels": true,
+          "legend": {
+            "displayMode": "table",
+            "placement": "right"
+          },
+          "pieType": "pie",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"],
+            "fields": ""
+          },
+          "tooltip": {
+            "mode": "single",
+            "sort": "desc"
+          }
+        }
+      },
+      {
+        "id": 12,
+        "title": "ROI Metrics",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "sum(erlmcp_benefit_total) / sum(erlmcp_cost_total)",
+            "legendFormat": "ROI"
+          }
+        ],
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 40
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ratio",
+            "thresholds": {
+              "steps": [
+                {
+                  "color": "red",
+                  "value": 0
+                },
+                {
+                  "color": "yellow",
+                  "value": 1
+                },
+                {
+                  "color": "green",
+                  "value": 2
+                }
+              ]
+            }
+          }
+        }
+      }
+    ],
+    "time": {
+      "from": "now-7d",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": [
+        "5s",
+        "10s",
+        "30s",
+        "1m",
+        "5m",
+        "15m",
+        "30m",
+        "1h",
+        "2h",
+        "1d"
+      ]
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "time_range",
+          "type": "custom",
+          "options": [
+            {
+              "selected": true,
+              "text": "7 days",
+              "value": "7d"
+            },
+            {
+              "selected": false,
+              "text": "30 days",
+              "value": "30d"
+            },
+            {
+              "selected": false,
+              "text": "90 days",
+              "value": "90d"
+            },
+            {
+              "selected": false,
+              "text": "1 year",
+              "value": "1y"
+            }
+          ],
+          "query": "7d,30d,90d,1y",
+          "current": {
+            "selected": true,
+            "text": "7 days",
+            "value": "7d"
+          },
+          "default": "7d"
+        },
+        {
+          "name": "service",
+          "type": "query",
+          "query": "services",
+          "refresh": 1,
+          "includeAll": true,
+          "allValue": ".*",
+          "regex": ".*",
+          "sort": 1
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        },
+        {
+          "datasource": "prometheus",
+          "enable": true,
+          "expr": "ALERTS{severity=\"cost_warning\"}",
+          "iconColor": "rgba(255, 191, 0, 1)",
+          "name": "Cost Warnings",
+          "type": "expression"
+        },
+        {
+          "datasource": "prometheus",
+          "enable": true,
+          "expr": "ALERTS{severity=\"cost_critical\"}",
+          "iconColor": "rgba(255, 50, 50, 1)",
+          "name": "Cost Alerts",
+          "type": "expression"
+        },
+        {
+          "datasource": "prometheus",
+          "enable": true,
+          "expr": "erlmcp_optimization_action",
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Optimization Actions",
+          "type": "expression"
+        }
+      ]
+    },
+    "refresh": "30s",
+    "schemaVersion": 30,
+    "version": 1,
+    "links": [],
+    "panelsRef": "panels"
+  }
+}

@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Add base
+resources:
+  - ../../base
+  - namespace.yaml
+  - values-staging.yaml
+  - patches/...
+
+# Add labels for staging
+commonLabels:
+  app.kubernetes.io/name: erlmcp
+  app.kubernetes.io/instance: erlmcp-staging
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/component: erlmcp
+  environment: staging
+
+# Add name suffix
+nameSuffix: -staging
+
+# Add configurations for staging
+configurations:
+  - kustomizeconfig.yaml
+
+# Add secrets generator
+secretGenerator:
+  - name: erlmcp-tls
+    files:
+      - tls.crt=tls.crt
+      - tls.key=tls.key
+    type: kubernetes.io/tls
+
+# Add image tags
+images:
+  - name: banyanplatform/erlmcp
+    newName: banyanplatform/erlmcp
+    newTag: 3.0.0-staging

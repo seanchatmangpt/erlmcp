@@ -1,0 +1,46 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'cluster', 'environment']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 1h
+  receiver: 'web.hook'
+
+receivers:
+  - name: 'web.hook'
+    webhook_configs:
+      - url: 'http://alertmanager-webhook:5001/hooks/alertmanager'
+
+      - name: 'slack'
+        slack_configs:
+          - channel: '#alerts'
+            api_url: '${SLACK_WEBHOOK_URL}'
+            title: '🚨 [{{ .Labels.severity | uppercase }}] {{ .GroupLabels.alertname }}'
+            text: |
+              **Alert:** {{ .GroupLabels.alertname }}
+              **Severity:** {{ .Labels.severity }}
+              **Instance:** {{ .Labels.instance }}
+              **Description:** {{ .Annotations.summary }}
+              **Time:** {{ .Annotations.runbook_url }}
+
+  - name: 'pagerduty'
+    pagerduty_configs:
+      - service_key: '${PAGERDUTY_SERVICE_KEY}'
+        description: |
+          {{ .Annotations.summary }}
+        details:
+          alert_name: '{{ .GroupLabels.alertname }}'
+          instance: '{{ .Labels.instance }}'
+          description: '{{ .Annotations.description }}'
+          severity: '{{ .Labels.severity }}'
+          timestamp: '{{ .StartsAt }}'
+
+  - name: 'email'
+    email_configs:
+      - to: 'alerts@company.com'
+        from: 'erlmcp-alerts@company.com'
+        smarthost: smtp.company.com:587
+        auth_username: 'alerts@company.com'
+        auth_password: '${SMTP_PASSWORD}'

@@ -1,0 +1,1654 @@
+openapi: 3.0.3
+info:
+  title: erlmcp Model Context Protocol (MCP) Server API
+  description: |
+    ## erlmcp v3.0 - Model Context Protocol Server
+
+    erlmcp is a production-grade Erlang/OTP implementation of the Model Context Protocol (MCP) specification (2025-11-25). This API specification describes the JSON-RPC 2.0 based protocol for MCP client-server communication.
+
+    ### Protocol Overview
+
+    MCP uses JSON-RPC 2.0 as its transport protocol. All messages follow the JSON-RPC 2.0 specification:
+    - Requests have `jsonrpc`, `id`, `method`, and optional `params`
+    - Responses have `jsonrpc`, `id`, and either `result` or `error`
+    - Notifications (one-way messages) have `jsonrpc`, `method`, and optional `params`
+
+    ### Transport Layer
+
+    erlmcp supports multiple transports:
+    - **stdio**: Standard input/output (default for local servers)
+    - **TCP**: Raw socket connections
+    - **HTTP**: REST endpoints with JSON-RPC in request body
+    - **WebSocket**: Real-time bidirectional communication
+    - **SSE**: Server-Sent Events for server-to-client streaming
+
+    ### Initialization Flow
+
+    1. Client sends `initialize` request with capabilities
+    2. Server responds with server capabilities
+    3. Server sends `notifications/initialized` notification
+    4. Normal operation begins
+
+    ### Capabilities
+
+    The server declares support for:
+    - **resources**: Data sources that can be read
+    - **tools**: Functions that can be invoked
+    - **prompts**: Reusable prompt templates
+    - **logging**: Configurable log levels
+    - **roots**: Workspace root directory management
+
+    ### Error Handling
+
+    erlmcp uses MCP-specific error codes in the JSON-RPC 2.0 server error range (-32000 to -32113):
+    - Core errors: -32001 to -32010
+    - Content errors: -32011 to -32020
+    - Resource errors: -32021 to -32030
+    - Tool errors: -32031 to -32040
+    - Prompt errors: -32041 to -32050
+    - Auth errors: -32051 to -32060
+    - Protocol errors: -32061 to -32070
+    - Pagination errors: -32071 to -32080
+    - Task errors: -32081 to -32090
+    - Progress errors: -32091 to -32100
+    - Completion errors: -32110 to -32113
+
+  version: 3.0.0
+  contact:
+    name: erlmcp Project
+    url: https://github.com/erlmcp/erlmcp
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+
+servers:
+  - url: http://localhost:8765/mcp
+    description: Local HTTP transport
+  - url: ws://localhost:8765/mcp
+    description: WebSocket transport
+  - url: tcp://localhost:8765
+    description: Raw TCP transport
+
+tags:
+  - name: protocol
+    description: Core protocol operations
+  - name: resources
+    description: Resource management
+  - name: tools
+    description: Tool execution
+  - name: prompts
+    description: Prompt templates
+  - name: roots
+    description: Root directory management (v3.0)
+  - name: completion
+    description: LLM completion (MCP 2025-11-25)
+  - name: tasks
+    description: Asynchronous task management
+  - name: notifications
+    description: Server notifications
+
+paths:
+  /mcp:
+    post:
+      summary: Execute JSON-RPC request
+      description: |
+        Main endpoint for all JSON-RPC 2.0 requests. The request body must contain
+        a valid JSON-RPC 2.0 request object with method, params, and id.
+      tags: [protocol]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/InitializeRequest'
+                - $ref: '#/components/schemas/PingRequest'
+                - $ref: '#/components/schemas/ResourcesListRequest'
+                - $ref: '#/components/schemas/ResourcesReadRequest'
+                - $ref: '#/components/schemas/ResourcesTemplatesListRequest'
+                - $ref: '#/components/schemas/ResourcesSubscribeRequest'
+                - $ref: '#/components/schemas/ResourcesUnsubscribeRequest'
+                - $ref: '#/components/schemas/ToolsListRequest'
+                - $ref: '#/components/schemas/ToolsCallRequest'
+                - $ref: '#/components/schemas/PromptsListRequest'
+                - $ref: '#/components/schemas/PromptsGetRequest'
+                - $ref: '#/components/schemas/RootsListRequest'
+                - $ref: '#/components/schemas/RootsAddRequest'
+                - $ref: '#/components/schemas/RootsRemoveRequest'
+                - $ref: '#/components/schemas/CompletionCompleteRequest'
+                - $ref: '#/components/schemas/TasksCreateRequest'
+                - $ref: '#/components/schemas/TasksListRequest'
+                - $ref: '#/components/schemas/TasksGetRequest'
+                - $ref: '#/components/schemas/TasksCancelRequest'
+            examples:
+              initialize:
+                summary: Initialize connection
+                value:
+                  jsonrpc: "2.0"
+                  id: 1
+                  method: initialize
+                  params:
+                    protocolVersion: "2025-11-25"
+                    capabilities:
+                      roots: {}
+                    clientInfo:
+                      name: "erlmcp-client"
+                      version: "3.0.0"
+              listTools:
+                summary: List available tools
+                value:
+                  jsonrpc: "2.0"
+                  id: 2
+                  method: tools/list
+              callTool:
+                summary: Call a tool
+                value:
+                  jsonrpc: "2.0"
+                  id: 3
+                  method: tools/call
+                  params:
+                    name: "calculate"
+                    arguments:
+                      a: 10
+                      b: 5
+                      op: "multiply"
+      responses:
+        '200':
+          description: Successful JSON-RPC response
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/InitializeResponse'
+                  - $ref: '#/components/schemas/PingResponse'
+                  - $ref: '#/components/schemas/ResourcesListResponse'
+                  - $ref: '#/components/schemas/ResourcesReadResponse'
+                  - $ref: '#/components/schemas/ResourcesTemplatesListResponse'
+                  - $ref: '#/components/schemas/ToolsListResponse'
+                  - $ref: '#/components/schemas/ToolsCallResponse'
+                  - $ref: '#/components/schemas/PromptsListResponse'
+                  - $ref: '#/components/schemas/PromptsGetResponse'
+                  - $ref: '#/components/schemas/RootsListResponse'
+                  - $ref: '#/components/schemas/CompletionCompleteResponse'
+              examples:
+                initialize:
+                  summary: Initialize response
+                  value:
+                    jsonrpc: "2.0"
+                    id: 1
+                    result:
+                      protocolVersion: "2025-11-25"
+                      capabilities:
+                        resources: {}
+                        tools: {}
+                        prompts: {}
+                      serverInfo:
+                        name: "erlmcp"
+                        version: "3.0.0"
+                toolResult:
+                  summary: Tool call result
+                  value:
+                    jsonrpc: "2.0"
+                    id: 3
+                    result:
+                      content:
+                        - type: text
+                          text: "50"
+        '400':
+          description: Invalid JSON-RPC request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                invalidParams:
+                  summary: Invalid parameters
+                  value:
+                    jsonrpc: "2.0"
+                    id: 3
+                    error:
+                      code: -32602
+                      message: "Invalid params"
+                      data:
+                        details: "Missing required parameter: name"
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token authentication for secured MCP endpoints
+    mTLS:
+      type: mutualTLS
+      description: Mutual TLS authentication for production deployments
+
+  schemas:
+    # ==================== Core Protocol Schemas ====================
+
+    JSONRPCVersion:
+      type: string
+      enum: ["2.0"]
+      description: JSON-RPC protocol version
+
+    RequestID:
+      oneOf:
+        - type: integer
+          minimum: 1
+        - type: string
+      description: Request identifier for correlating requests and responses
+
+    JSONRPCBase:
+      type: object
+      required:
+        - jsonrpc
+      properties:
+        jsonrpc:
+          $ref: '#/components/schemas/JSONRPCVersion'
+
+    # ==================== Initialize ====================
+
+    InitializeRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["initialize"]
+            params:
+              type: object
+              required:
+                - protocolVersion
+                - capabilities
+                - clientInfo
+              properties:
+                protocolVersion:
+                  type: string
+                  enum: ["2025-11-25"]
+                  description: MCP protocol version
+                capabilities:
+                  type: object
+                  description: Client capabilities
+                  properties:
+                    roots:
+                      type: object
+                      description: Roots capability declaration
+                    sampling:
+                      type: object
+                      properties:
+                        modelPreferences:
+                          type: object
+                    experimental:
+                      type: object
+                      additionalProperties: true
+                clientInfo:
+                  type: object
+                  required:
+                    - name
+                    - version
+                  properties:
+                    name:
+                      type: string
+                    version:
+                      type: string
+
+    InitializeResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              required:
+                - protocolVersion
+                - capabilities
+                - serverInfo
+              properties:
+                protocolVersion:
+                  type: string
+                capabilities:
+                  type: object
+                  properties:
+                    resources:
+                      type: object
+                      properties:
+                        subscribe:
+                          type: boolean
+                        listChanged:
+                          type: boolean
+                    tools:
+                      type: object
+                      properties:
+                        listChanged:
+                          type: boolean
+                    prompts:
+                      type: object
+                      properties:
+                        listChanged:
+                          type: boolean
+                    logging:
+                      type: object
+                    roots:
+                      type: object
+                      properties:
+                        listChanged:
+                          type: boolean
+                    completions:
+                      type: object
+                serverInfo:
+                  type: object
+                  required:
+                    - name
+                    - version
+                  properties:
+                    name:
+                      type: string
+                    version:
+                      type: string
+
+    # ==================== Ping ====================
+
+    PingRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["ping"]
+
+    PingResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              description: Empty object on successful ping
+
+    # ==================== Resources ====================
+
+    ResourcesListRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["resources/list"]
+            params:
+              type: object
+              properties:
+                cursor:
+                  type: string
+                  description: Pagination cursor
+
+    ResourcesListResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                resources:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Resource'
+                nextCursor:
+                  type: string
+
+    Resource:
+      type: object
+      required:
+        - uri
+        - name
+      properties:
+        uri:
+          type: string
+          format: uri
+          description: Unique resource identifier
+        name:
+          type: string
+          description: Human-readable resource name
+        description:
+          type: string
+          description: Optional description
+        mimeType:
+          type: string
+          description: MIME type of resource content
+          default: "text/plain"
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Optional metadata
+        annotations:
+          type: object
+          additionalProperties: true
+          description: Optional annotations (MCP 2025-11-25)
+
+    ResourcesReadRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["resources/read"]
+            params:
+              type: object
+              required:
+                - uri
+              properties:
+                uri:
+                  type: string
+                  format: uri
+
+    ResourcesReadResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                contents:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ResourceContent'
+
+    ResourceContent:
+      type: object
+      required:
+        - uri
+    # - type
+      properties:
+        uri:
+          type: string
+        type:
+          type: string
+          enum: [text, resource, image, audio]
+          default: text
+        text:
+          type: string
+          description: Text content (for type=text)
+        mimeType:
+          type: string
+          description: MIME type (for binary content)
+        data:
+          type: string
+          format: byte
+          description: Base64-encoded binary data
+        metadata:
+          type: object
+          additionalProperties: true
+        annotations:
+          type: array
+          items:
+            type: object
+            required:
+              - name
+            properties:
+              name:
+                type: string
+              value:
+                oneOf:
+                  - type: string
+                  - type: number
+                  - type: boolean
+                  - type: object
+
+    ResourcesTemplatesListRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["resources/templates/list"]
+
+    ResourcesTemplatesListResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                resourceTemplates:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ResourceTemplate'
+
+    ResourceTemplate:
+      type: object
+      required:
+        - uriTemplate
+        - name
+      properties:
+        uriTemplate:
+          type: string
+          description: URI template with {variable} placeholders
+        name:
+          type: string
+        description:
+          type: string
+        mimeType:
+          type: string
+          default: "text/plain"
+        description:
+          type: string
+
+    ResourcesSubscribeRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["resources/subscribe"]
+            params:
+              type: object
+              required:
+                - uri
+              properties:
+                uri:
+                  type: string
+                  format: uri
+
+    ResourcesSubscribeResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+
+    ResourcesUnsubscribeRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["resources/unsubscribe"]
+            params:
+              type: object
+              required:
+                - uri
+              properties:
+                uri:
+                  type: string
+                  format: uri
+
+    # ==================== Tools ====================
+
+    ToolsListRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["tools/list"]
+            params:
+              type: object
+              properties:
+                cursor:
+                  type: string
+
+    ToolsListResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                tools:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Tool'
+                nextCursor:
+                  type: string
+
+    Tool:
+      type: object
+      required:
+        - name
+        - description
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          maxLength: 10000
+        inputSchema:
+          type: object
+          description: JSON Schema for tool arguments
+        deprecated:
+          type: boolean
+          default: false
+        metadata:
+          type: object
+          additionalProperties: true
+        experimental:
+          type: object
+          additionalProperties: true
+        version:
+          type: string
+
+    ToolsCallRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["tools/call"]
+            params:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                arguments:
+                  type: object
+                  default: {}
+                _progressToken:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                  description: Progress token for long-running operations
+                _meta:
+                  type: object
+                  additionalProperties: true
+                  description: Request metadata
+
+    ToolsCallResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                content:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ToolContent'
+                isError:
+                  type: boolean
+                  default: false
+                  description: True if tool execution resulted in an error
+
+    ToolContent:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [text, image, audio, resource]
+        text:
+          type: string
+        data:
+          type: string
+          format: byte
+        mimeType:
+          type: string
+        uri:
+          type: string
+          format: uri
+
+    # ==================== Prompts ====================
+
+    PromptsListRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["prompts/list"]
+
+    PromptsListResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                prompts:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Prompt'
+
+    Prompt:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        arguments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PromptArgument'
+        metadata:
+          type: object
+          additionalProperties: true
+
+    PromptArgument:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        required:
+          type: boolean
+          default: false
+
+    PromptsGetRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["prompts/get"]
+            params:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                arguments:
+                  type: object
+                  additionalProperties:
+                    oneOf:
+                      - type: string
+                      - type: number
+                      - type: boolean
+                      - type: array
+                      - type: object
+                  default: {}
+
+    PromptsGetResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                description:
+                  type: string
+                messages:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/PromptMessage'
+
+    PromptMessage:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          oneOf:
+            - type: string
+            - type: object
+            - type: array
+
+    # ==================== Roots (v3.0) ====================
+
+    RootsListRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["roots/list"]
+
+    RootsListResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                roots:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/Root'
+
+    Root:
+      type: object
+      required:
+        - uri
+      properties:
+        uri:
+          type: string
+          format: uri
+        name:
+          type: string
+
+    RootsAddRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["roots/add"]
+            params:
+              type: object
+              required:
+                - uri
+              properties:
+                uri:
+                  type: string
+                  format: uri
+
+    RootsAddResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+
+    RootsRemoveRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["roots/remove"]
+            params:
+              type: object
+              required:
+                - uri
+              properties:
+                uri:
+                  type: string
+                  format: uri
+
+    # ==================== Completion (MCP 2025-11-25) ====================
+
+    CompletionCompleteRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["completion/complete"]
+            params:
+              type: object
+              required:
+                - ref
+                - argument
+              properties:
+                ref:
+                  type: object
+                  required:
+                    - type
+                    - uri
+                  properties:
+                    type:
+                      type: string
+                      enum: [resource, prompt]
+                    uri:
+                      type: string
+                argument:
+                  type: object
+                  required:
+                    - name
+                  properties:
+                    name:
+                      type: string
+                    value:
+                      type: string
+
+    CompletionCompleteResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                completion:
+                  type: object
+                  properties:
+                    text:
+                      type: string
+                    items:
+                      type: array
+                      items:
+                        type: object
+
+    # ==================== Tasks (Asynchronous) ====================
+
+    TasksCreateRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+            - params
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["tasks/create"]
+            params:
+              type: object
+              required:
+                - task
+              properties:
+                task:
+                  type: object
+                  required:
+                    - action
+                  properties:
+                    action:
+                      type: object
+                    timeoutMs:
+                      type: integer
+                    _meta:
+                      type: object
+
+    TasksCreateResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              required:
+                - taskId
+              properties:
+                taskId:
+                  type: string
+                status:
+                  type: string
+                  enum: [pending, processing, input_required, completed, failed, cancelled]
+
+    TasksListRequest:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - method
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            method:
+              type: string
+              enum: ["tasks/list"]
+            params:
+              type: object
+              properties:
+                cursor:
+                  type: string
+
+    TasksListResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - result
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            result:
+              type: object
+              properties:
+                tasks:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      taskId:
+                        type: string
+                      status:
+                        type: string
+                      action:
+                        type: object
+                nextCursor:
+                  type: string
+
+    # ==================== Error Responses ====================
+
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - id
+            - error
+          properties:
+            id:
+              $ref: '#/components/schemas/RequestID'
+            error:
+              type: object
+              required:
+                - code
+                - message
+              properties:
+                code:
+                  type: integer
+                  description: JSON-RPC or MCP error code
+                message:
+                  type: string
+                data:
+                  oneOf:
+                    - type: object
+                    - type: string
+
+    # ==================== Notifications ====================
+
+    NotificationInitialized:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - method
+          properties:
+            method:
+              type: string
+              enum: ["notifications/initialized"]
+            params:
+              type: object
+
+    NotificationProgress:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - method
+            - params
+          properties:
+            method:
+              type: string
+              enum: ["notifications/progress"]
+            params:
+              type: object
+              required:
+                - progressToken
+                - progress
+              properties:
+                progressToken:
+                  oneOf:
+                    - type: string
+                    - type: integer
+                progress:
+                  type: number
+                  format: float
+                  minimum: 0
+                  maximum: 1
+                total:
+                  type: number
+                  format: float
+                message:
+                  type: string
+
+    NotificationResourcesUpdated:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - method
+            - params
+          properties:
+            method:
+              type: string
+              enum: ["resources/updated"]
+            params:
+              type: object
+              properties:
+                uri:
+                  type: string
+                  format: uri
+
+    NotificationResourcesListChanged:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - method
+          properties:
+            method:
+              type: string
+              enum: ["resources/list_changed"]
+            params:
+              type: object
+              properties:
+                timestamp:
+                  type: integer
+                  description: Unix timestamp in milliseconds
+
+    NotificationToolsListChanged:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - method
+          properties:
+            method:
+              type: string
+              enum: ["tools/list_changed"]
+            params:
+              type: object
+              properties:
+                timestamp:
+                  type: integer
+
+    NotificationPromptsListChanged:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - method
+          properties:
+            method:
+              type: string
+              enum: ["prompts/list_changed"]
+            params:
+              type: object
+
+    NotificationRootsListChanged:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - method
+          properties:
+            method:
+              type: string
+              enum: ["roots/list_changed"]
+            params:
+              type: object
+
+    NotificationCancelled:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - method
+            - params
+          properties:
+            method:
+              type: string
+              enum: ["notifications/cancelled"]
+            params:
+              type: object
+              required:
+                - requestId
+                - reason
+              properties:
+                requestId:
+                  type: string
+                reason:
+                  type: string
+                  enum: [user_requested, timeout, aborted]
+
+    NotificationMessage:
+      allOf:
+        - $ref: '#/components/schemas/JSONRPCBase'
+        - type: object
+          required:
+            - method
+            - params
+          properties:
+            method:
+              type: string
+              enum: ["notifications/message"]
+            params:
+              type: object
+              required:
+                - level
+                - data
+              properties:
+                level:
+                  type: string
+                  enum: [debug, info, notice, warning, error, critical, alert, emergency]
+                logger:
+                  type: string
+                data:
+                  oneOf:
+                    - type: string
+                    - type: object
+                    - type: array
+
+# ==================== Error Code Reference ====================
+x-errorCodes:
+  # JSON-RPC 2.0 Standard Errors
+  parseError:
+    code: -32700
+    message: "Parse error"
+    description: Invalid JSON was received by the server
+  invalidRequest:
+    code: -32600
+    message: "Invalid Request"
+    description: The JSON sent is not a valid Request object
+  methodNotFound:
+    code: -32601
+    message: "Method not found"
+    description: The method does not exist / is not available
+  invalidParams:
+    code: -32602
+    message: "Invalid params"
+    description: Invalid method parameter(s)
+  internalError:
+    code: -32603
+    message: "Internal error"
+    description: Internal JSON-RPC error
+
+  # MCP Core Errors (-32001 to -32010)
+  resourceNotFound:
+    code: -32001
+    message: "Resource not found"
+    category: mcp_core
+  toolNotFound:
+    code: -32002
+    message: "Tool not found"
+    category: mcp_core
+  promptNotFound:
+    code: -32003
+    message: "Prompt not found"
+    category: mcp_core
+  capabilityNotSupported:
+    code: -32004
+    message: "Capability not supported"
+    category: mcp_core
+  notInitialized:
+    code: -32005
+    message: "Server not initialized"
+    category: mcp_core
+  subscriptionFailed:
+    code: -32006
+    message: "Subscription failed"
+    category: mcp_core
+  validationFailed:
+    code: -32007
+    message: "Validation failed"
+    category: mcp_core
+  transportError:
+    code: -32008
+    message: "Transport error"
+    category: mcp_core
+  timeout:
+    code: -32009
+    message: "Request timeout"
+    category: mcp_core
+  rateLimited:
+    code: -32010
+    message: "Rate limit exceeded"
+    category: mcp_core
+
+  # Content Errors (-32011 to -32020)
+  toolDescriptionTooLong:
+    code: -32011
+    message: "Tool description exceeds maximum length"
+    category: content
+  messageTooLarge:
+    code: -32012
+    message: "Message size exceeds maximum allowed"
+    category: content
+  invalidContentType:
+    code: -32013
+    message: "Invalid content type"
+    category: content
+  contentTooLarge:
+    code: -32014
+    message: "Content too large"
+    category: content
+  invalidEncoding:
+    code: -32015
+    message: "Invalid encoding"
+    category: content
+
+  # Resource Errors (-32021 to -32030)
+  resourceTemplateNotFound:
+    code: -32021
+    message: "Resource template not found"
+    category: resource
+  invalidUri:
+    code: -32022
+    message: "Invalid URI"
+    category: resource
+  uriSyntaxError:
+    code: -32023
+    message: "URI syntax error"
+    category: resource
+  resourceAccessDenied:
+    code: -32025
+    message: "Resource access denied"
+    category: resource
+  templateRenderFailed:
+    code: -32029
+    message: "Template render failed"
+    category: resource
+
+  # Tool Errors (-32031 to -32040)
+  toolExecutionFailed:
+    code: -32031
+    message: "Tool execution failed"
+    category: tool
+  toolTimeout:
+    code: -32032
+    message: "Tool execution timeout"
+    category: tool
+  toolCancelled:
+    code: -32033
+    message: "Tool execution cancelled"
+    category: tool
+  invalidToolArguments:
+    code: -32034
+    message: "Invalid tool arguments"
+    category: tool
+
+  # Prompt Errors (-32041 to -32050)
+  promptArgumentMissing:
+    code: -32043
+    message: "Prompt argument missing"
+    category: prompt
+  promptRenderFailed:
+    code: -32044
+    message: "Prompt render failed"
+    category: prompt
+  samplingFailed:
+    code: -32046
+    message: "Sampling failed"
+    category: prompt
+
+  # Authentication Errors (-32051 to -32060)
+  authenticationFailed:
+    code: -32051
+    message: "Authentication failed"
+    category: auth
+  authorizationFailed:
+    code: -32052
+    message: "Authorization failed"
+    category: auth
+  invalidCredentials:
+    code: -32053
+    message: "Invalid credentials"
+    category: auth
+  tokenExpired:
+    code: -32054
+    message: "Token expired"
+    category: auth
+  accessDenied:
+    code: -32056
+    message: "Access denied"
+    category: auth
+
+  # Protocol Errors (-32061 to -32070)
+  unsupportedProtocolVersion:
+    code: -32061
+    message: "Unsupported protocol version"
+    category: protocol
+  protocolVersionMismatch:
+    code: -32062
+    message: "Protocol version mismatch"
+    category: protocol
+  capabilityNegotiationFailed:
+    code: -32063
+    message: "Capability negotiation failed"
+    category: protocol
+
+  # Pagination Errors (-32071 to -32080)
+  invalidCursor:
+    code: -32071
+    message: "Invalid cursor"
+    category: pagination
+  cursorExpired:
+    code: -32072
+    message: "Cursor expired"
+    category: pagination
+  paginationNotSupported:
+    code: -32073
+    message: "Pagination not supported"
+    category: pagination
+
+  # Task Errors (-32081 to -32090)
+  taskNotFound:
+    code: -32081
+    message: "Task not found"
+    category: task
+  taskAlreadyExists:
+    code: -32082
+    message: "Task already exists"
+    category: task
+  taskFailed:
+    code: -32083
+    message: "Task failed"
+    category: task
+  taskCancelled:
+    code: -32084
+    message: "Task cancelled"
+    category: task
+  taskTimeout:
+    code: -32085
+    message: "Task timeout"
+    category: task
+
+  # Progress Errors (-32091 to -32100)
+  invalidProgressToken:
+    code: -32091
+    message: "Invalid progress token"
+    category: progress
+  progressTokenExpired:
+    code: -32092
+    message: "Progress token expired"
+    category: progress
+  progressUpdateFailed:
+    code: -32093
+    message: "Progress update failed"
+    category: progress
+  notificationFailed:
+    code: -32094
+    message: "Notification failed"
+    category: progress
+
+  # Completion Errors (-32110 to -32113)
+  completionNotFound:
+    code: -32110
+    message: "Completion not found"
+    category: completion
+  invalidCompletionReference:
+    code: -32111
+    message: "Invalid completion reference"
+    category: completion
+  invalidCompletionArgument:
+    code: -32112
+    message: "Invalid completion argument"
+    category: completion
+  completionFailed:
+    code: -32113
+    message: "Completion failed"
+    category: completion

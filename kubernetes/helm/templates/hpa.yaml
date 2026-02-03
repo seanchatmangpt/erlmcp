@@ -1,0 +1,176 @@
+{{/*
+  Horizontal Pod Autoscaler for erlmcp StatefulSet
+  Scales based on CPU, memory, and custom metrics
+*/}}
+
+{{- if .Values.autoscaling.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: {{ include "erlmcp.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.hpa.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.hpa.maxReplicas }}
+  metrics:
+    # CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.hpa.targetCPUUtilizationPercentage }}
+    # Memory utilization
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.hpa.targetMemoryUtilizationPercentage }}
+    # Custom metrics
+    {{- range .Values.autoscaling.hpa.customMetrics }}
+    - type: {{ .type }}
+      {{- if eq .type "Resource" }}
+      resource:
+        name: {{ .pods.metric.name }}
+        target:
+          type: AverageValue
+          averageValue: {{ .target.averageValue }}
+      {{- else if eq .type "Pods" }}
+      pods:
+        metric:
+          name: {{ .pods.metric.name }}
+        target:
+          type: {{ .target.type }}
+          {{- if eq .target.type "AverageValue" }}
+          averageValue: {{ .target.averageValue }}
+          {{- else if eq .target.type "Value" }}
+          value: {{ .target.value }}
+          {{- end }}
+      {{- else if eq .type "ContainerResource" }}
+      containerResource:
+        name: {{ .containerResource.metric.name }}
+        container: {{ .containerResource.container }}
+        target:
+          type: {{ .target.type }}
+          {{- if eq .target.type "Utilization" }}
+          averageUtilization: {{ .target.averageUtilization }}
+          {{- else if eq .target.type "Value" }}
+          value: {{ .target.value }}
+          {{- end }}
+      {{- else if eq .type "External" }}
+      external:
+        metric:
+          name: {{ .external.metric.name }}
+          selector:
+            {{- if .external.metric.selector }}
+            {{- toYaml .external.metric.selector | nindent 12 }}
+            {{- end }}
+        target:
+          type: {{ .target.type }}
+          {{- if eq .target.type "AverageValue" }}
+          averageValue: {{ .target.averageValue }}
+          {{- else if eq .target.type "Value" }}
+          value: {{ .target.value }}
+          {{- end }}
+      {{- end }}
+    {{- end }}
+  behavior:
+    # Scale down behavior
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      selectPolicy: Min
+    # Scale up behavior
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+      selectPolicy: Max
+{{- end }}
+
+{{/*
+  Cluster Autoscaler configuration
+*/}}
+{{- if .Values.autoscaling.clusterAutoscaler.enabled }}
+apiVersion: autoscaling/v2beta2
+kind: ClusterAutoscaler
+metadata:
+  name: cluster-autoscaler
+  namespace: kube-system
+spec:
+  scaleDown:
+    enabled: {{ .Values.autoscaling.clusterAutoscaler.scaleDownDisabled }}
+    delayAfterAdd: {{ .Values.autoscaling.clusterAutoscaler.scaleDownDelayAfterAdd }}
+    delayAfterDelete: {{ .Values.autoscaling.clusterAutoscaler.scaleDownDelayAfterDelete }}
+    unneededTime: {{ .Values.autoscaling.clusterAutoscaler.scaleDownUnneededTime }}
+    expendablePodsPriorityThreshold: 1
+  scaleUp:
+    enabled: true
+    delayAfterAdd: 30s
+    delayAfterDelete: 30s
+    maxGracefulTerminationSecs: 600
+  balanceSimilarNodeGroups: {{ .Values.autoscaling.clusterAutoscaler.balanceSimilarNodeGroups }}
+  expander: {{ .Values.autoscaling.clusterAutoscaler.expander }}
+  ignoreOperatingSystem: {{ .Values.autoscaling.clusterAutoscaler.ignoreOperatingSystem }}
+  estimators: {{ .Values.autoscaling.clusterAutoscaler.estimators }}
+  expendablePodsPriorityCutoff: -10
+  resourceLimits:
+    maxNodeProvisionTime: "10m"
+    cores:
+      min: 0
+      max: 1000
+    memory:
+      min: 0
+      max: 2000Gi
+    gpu:
+      min: 0
+      max: 10
+ {{- end }}
+
+{{/*
+  Vertical Pod Autoscaler
+*/}}
+{{- if .Values.autoscaling.vpa.enabled }}
+apiVersion: autoscaling/v2beta2
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: {{ include "erlmcp.fullname" . }}
+  updatePolicy:
+    updateMode: {{ .Values.autoscaling.vpa.updateMode }}
+  resourcePolicy:
+    containerPolicies:
+      - containerName: erlmcp
+        mode: {{ .Values.autoscaling.vpa.recommendations.defaultContainerPolicy }}
+        minAllowed:
+          cpu: {{ .Values.autoscaling.vpa.recommendations.constraints.minAllowed.cpu }}
+          memory: {{ .Values.autoscaling.vpa.recommendations.constraints.minAllowed.memory }}
+        maxAllowed:
+          cpu: {{ .Values.autoscaling.vpa.recommendations.constraints.maxAllowed.cpu }}
+          memory: {{ .Values.autoscaling.vpa.recommendations.constraints.maxAllowed.memory }}
+        controlledResources: ["cpu", "memory"]
+        controlledValues: ["RequestsAndLimits"]
+{{- end }}

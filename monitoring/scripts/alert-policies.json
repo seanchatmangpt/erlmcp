@@ -1,0 +1,544 @@
+{
+  "policies": [
+    {
+      "name": "Critical System Alerts",
+      "severity": "critical",
+      "conditions": [
+        {
+          "metric": "erlmcp_system_health_status",
+          "op": "eq",
+          "value": "unhealthy"
+        }
+      ],
+      "duration": "5m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P0"
+      },
+      "annotations": {
+        "summary": "Critical system issue detected",
+        "description": "erlmcp system has been in unhealthy state for 5 minutes",
+        "runbook": "https://runbook.erlmcp.com/critical-issues"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "pagerduty"
+        },
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "High Error Rate Alert",
+      "severity": "high",
+      "conditions": [
+        {
+          "metric": "erlmcp_error_rate",
+          "op": "gt",
+          "value": 0.01
+        }
+      ],
+      "duration": "10m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P1"
+      },
+      "annotations": {
+        "summary": "High error rate detected",
+        "description": "Error rate exceeded 1% for 10 minutes",
+        "runbook": "https://runbook.erlmcp.com/error-rate"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "High Latency Alert",
+      "severity": "high",
+      "conditions": [
+        {
+          "metric": "erlmcp_p99_latency",
+          "op": "gt",
+          "value": 1
+        }
+      ],
+      "duration": "5m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P1"
+      },
+      "annotations": {
+        "summary": "High latency detected",
+        "description": "P99 latency exceeded 1 second for 5 minutes",
+        "runbook": "https://runbook.erlmcp.com/high-latency"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "Session Leak Alert",
+      "severity": "medium",
+      "conditions": [
+        {
+          "metric": "erlmcp_session_utilization",
+          "op": "gt",
+          "value": 0.9
+        }
+      ],
+      "duration": "15m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P2"
+      },
+      "annotations": {
+        "summary": "Session leak detected",
+        "description": "Session utilization exceeded 90% for 15 minutes",
+        "runbook": "https://runbook.erlmcp.com/session-leak"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "Memory Usage Alert",
+      "severity": "medium",
+      "conditions": [
+        {
+          "metric": "erlmcp_memory_usage_percent",
+          "op": "gt",
+          "value": 0.8
+        }
+      ],
+      "duration": "30m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P2"
+      },
+      "annotations": {
+        "summary": "High memory usage",
+        "description": "Memory usage exceeded 80% for 30 minutes",
+        "runbook": "https://runbook.erlmcp.com/memory-usage"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "CPU Usage Alert",
+      "severity": "medium",
+      "conditions": [
+        {
+          "metric": "erlmcp_cpu_usage_percent",
+          "op": "gt",
+          "value": 0.8
+        }
+      ],
+      "duration": "30m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P2"
+      },
+      "annotations": {
+        "summary": "High CPU usage",
+        "description": "CPU usage exceeded 80% for 30 minutes",
+        "runbook": "https://runbook.erlmcp.com/cpu-usage"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "Database Connection Alert",
+      "severity": "high",
+      "conditions": [
+        {
+          "metric": "erlmcp_database_connections_percent",
+          "op": "gt",
+          "value": 0.9
+        }
+      ],
+      "duration": "5m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P1"
+      },
+      "annotations": {
+        "summary": "Database connection pool exhausted",
+        "description": "Database connections exceeded 90% of capacity for 5 minutes",
+        "runbook": "https://runbook.erlmcp.com/database-connections"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "pagerduty"
+        },
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "Registry Alert",
+      "severity": "high",
+      "conditions": [
+        {
+          "metric": "erlmcp_registry_operations_total",
+          "op": "rate",
+          "value": 1000,
+          "duration": "1m"
+        }
+      ],
+      "duration": "5m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P1"
+      },
+      "annotations": {
+        "summary": "High registry activity",
+        "description": "Registry operations exceeded 1000/minute for 5 minutes",
+        "runbook": "https://runbook.erlmcp.com/registry-activity"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "Security Alert - Brute Force",
+      "severity": "critical",
+      "conditions": [
+        {
+          "metric": "erlmcp_brute_force_attempts",
+          "op": "rate",
+          "value": 100,
+          "duration": "5m"
+        }
+      ],
+      "duration": "2m",
+      "labels": {
+        "team": "security",
+        "priority": "P0"
+      },
+      "annotations": {
+        "summary": "Brute force attack detected",
+        "description": "Brute force attempts exceeded 100/minute",
+        "runbook": "https://runbook.erlmcp.com/brute-force-attack"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "pagerduty"
+        },
+        {
+          "type": "notification",
+          "channel": "security-slack"
+        },
+        {
+          "type": "automatic_action",
+          "action": "block_ip"
+        }
+      ]
+    },
+    {
+      "name": "Security Alert - Unauthorized Access",
+      "severity": "high",
+      "conditions": [
+        {
+          "metric": "erlmcp_unauthorized_attempts",
+          "op": "rate",
+          "value": 50,
+          "duration": "5m"
+        }
+      ],
+      "duration": "5m",
+      "labels": {
+        "team": "security",
+        "priority": "P1"
+      },
+      "annotations": {
+        "summary": "Unauthorized access attempts detected",
+        "description": "Unauthorized attempts exceeded 50/minute",
+        "runbook": "https://runbook.erlmcp.com/unauthorized-access"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "security-slack"
+        }
+      ]
+    },
+    {
+      "name": "SLA Alert - Uptime",
+      "severity": "critical",
+      "conditions": [
+        {
+          "metric": "erlmcp_uptime_percentage",
+          "op": "lt",
+          "value": 99.9
+        }
+      ],
+      "duration": "1m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P0"
+      },
+      "annotations": {
+        "summary": "SLA violation - Uptime",
+        "description": "Uptime fell below 99.9% SLA target",
+        "runbook": "https://runbook.erlmcp.com/sla-uptime"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "pagerduty"
+        },
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "SLA Alert - Response Time",
+      "severity": "high",
+      "conditions": [
+        {
+          "metric": "erlmcp_p99_response_time",
+          "op": "gt",
+          "value": 1
+        }
+      ],
+      "duration": "10m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P1"
+      },
+      "annotations": {
+        "summary": "SLA violation - Response Time",
+        "description": "P99 response time exceeded 1 second for 10 minutes",
+        "runbook": "https://runbook.erlmcp.com/sla-response-time"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "API Quota Alert",
+      "severity": "medium",
+      "conditions": [
+        {
+          "metric": "erlmcp_api_quota_usage_percent",
+          "op": "gt",
+          "value": 0.8
+        }
+      ],
+      "duration": "10m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P2"
+      },
+      "annotations": {
+        "summary": "API quota approaching limit",
+        "description": "API quota usage exceeded 80% for 10 minutes",
+        "runbook": "https://runbook.erlmcp.com/api-quota"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "Maintenance Window",
+      "severity": "info",
+      "conditions": [
+        {
+          "metric": "maintenance_active",
+          "op": "eq",
+          "value": 1
+        }
+      ],
+      "duration": "1h",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P3"
+      },
+      "annotations": {
+        "summary": "Maintenance window active",
+        "description": "System maintenance is in progress",
+        "runbook": "https://runbook.erlmcp.com/maintenance"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "Disk Space Alert",
+      "severity": "medium",
+      "conditions": [
+        {
+          "metric": "disk_usage_percent",
+          "op": "gt",
+          "value": 0.8
+        }
+      ],
+      "duration": "1h",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P2"
+      },
+      "annotations": {
+        "summary": "Low disk space",
+        "description": "Disk usage exceeded 80% for 1 hour",
+        "runbook": "https://runbook.erlmcp.com/disk-space"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "Network Latency Alert",
+      "severity": "medium",
+      "conditions": [
+        {
+          "metric": "network_latency_ms",
+          "op": "gt",
+          "value": 100
+        }
+      ],
+      "duration": "10m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P2"
+      },
+      "annotations": {
+        "summary": "High network latency",
+        "description": "Network latency exceeded 100ms for 10 minutes",
+        "runbook": "https://runbook.erlmcp.com/network-latency"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    },
+    {
+      "name": "Connection Pool Alert",
+      "severity": "high",
+      "conditions": [
+        {
+          "metric": "erlmcp_connection_pool_utilization",
+          "op": "gt",
+          "value": 0.9
+        }
+      ],
+      "duration": "5m",
+      "labels": {
+        "team": "erlmcp",
+        "priority": "P1"
+      },
+      "annotations": {
+        "summary": "Connection pool exhausted",
+        "description": "Connection pool utilization exceeded 90% for 5 minutes",
+        "runbook": "https://runbook.erlmcp.com/connection-pool"
+      },
+      "actions": [
+        {
+          "type": "notification",
+          "channel": "slack"
+        }
+      ]
+    }
+  ],
+  "silences": {
+    "default_duration": "1h",
+    "max_duration": "24h",
+    "reasons": [
+      "Scheduled maintenance",
+      "Deployment",
+      "Infrastructure issue",
+      "Emergency fix",
+      "Testing",
+      "Incident investigation"
+    ]
+  },
+  "escalation_policies": {
+    "P0": {
+      "levels": [
+        {
+          "delay": "0m",
+          "channels": ["pagerduty", "slack", "sms"]
+        },
+        {
+          "delay": "15m",
+          "channels": ["phone", "oncall"]
+        }
+      ]
+    },
+    "P1": {
+      "levels": [
+        {
+          "delay": "0m",
+          "channels": ["slack", "email"]
+        },
+        {
+          "delay": "30m",
+          "channels": ["oncall"]
+        }
+      ]
+    },
+    "P2": {
+      "levels": [
+        {
+          "delay": "0m",
+          "channels": ["slack", "email"]
+        },
+        {
+          "delay": "1h",
+          "channels": ["oncall"]
+        }
+      ]
+    },
+    "P3": {
+      "levels": [
+        {
+          "delay": "0m",
+          "channels": ["email"]
+        }
+      ]
+    }
+  }
+}

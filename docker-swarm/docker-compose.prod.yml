@@ -1,0 +1,890 @@
+version: '3.8'
+
+# Production-Grade Docker Stack for erlmcp v3
+# Fortune 500 Scale Configuration with High Availability & Fault Tolerance
+
+services:
+  # erlmcp Core Services - Multi-Region Deployment
+  erlmcp-core-1:
+    image: ${ERLMCP_IMAGE:-erlmcp/erlmcp:v3.0.0}
+    environment:
+      - ERLMCP_CONFIG_PATH=/etc/erlmcp/docker/prod.sys.config
+      - ERLMCP_VM_ARGS_PATH=/etc/erlmcp/vm.args
+      - ERLMCP_NODE_NAME=erlmcp-core-1@erlmcp-core-1
+      - ERLMCP_COOKIE=${ERLMCP_COOKIE:-erlmcp_secret}
+      - ERLMCP_ENVIRONMENT=production
+      - ERLMCP_REGION=us-east-1
+      - ERLMCP_ZONE=a
+      - RUST_LOG=info
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=erlmcp-core
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=erlmcp-core,deployment.environment=production,cluster.name=erlmcp-v3-cluster,region=us-east-1,zone=a
+    ports:
+      - "8080:8080"          # HTTP API
+      - "8443:8443"          # HTTPS API
+      - "9100:9100"          # Metrics
+      - "9090:9090"          # Health checks
+      - "9187:9187"          # Prometheus config
+    volumes:
+      - erlmcp_core_data:/data
+      - erlmcp_core_logs:/var/log/erlmcp
+      - erlmcp_secrets:/run/secrets
+      - ./config/docker/sys.config.prod:/etc/erlmcp/docker/prod.sys.config
+      - ./config/docker/vm.args.prod:/etc/erlmcp/vm.args
+      - ./config/docker/health_check.conf:/etc/erlmcp/health_check.conf
+      - ./config/docker/prometheus.yml:/etc/erlmcp/prometheus.yml
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+    depends_on:
+      redis-cluster:
+        condition: service_healthy
+      postgres-primary:
+        condition: service_healthy
+    deploy:
+      mode: replicated
+      replicas: ${ERLMCP_CORE_REPLICAS:-5}
+      placement:
+        constraints:
+          - node.role == manager
+          - node.labels.erlmcp-region == us-east-1
+          - node.labels.erlmcp-zone == a
+        preferences:
+          - spread: node.id
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+          pids: 5000
+        reservations:
+          cpus: '2'
+          memory: 2G
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 120s
+        max_failure_ratio: 0.2
+      rollback_config:
+        parallelism: 1
+        delay: 30s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    security_opt:
+      - apparmor:erlmcp-core
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.erlmcp.rule=Host(`api.example.com`) && PathPrefix(`/`)"
+      - "traefik.http.routers.erlmcp.entrypoints=websecure"
+      - "traefik.http.routers.erlmcp.tls=true"
+      - "traefik.http.routers.erlmcp.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.erlmcp.middlewares=erlmcp-stripprefix"
+      - "traefik.http.middlewares.erlmcp-stripprefix.stripprefix.prefixes=/"
+      - "traefik.http.services.erlmcp.loadbalancer.server.port=8080"
+      - "traefik.enable=true"
+      - "traefik.http.routers.erlmcp-staging.rule=Host(`staging-api.example.com`)"
+      - "traefik.http.routers.erlmcp-staging.entrypoints=websecure"
+      - "traefik.http.routers.erlmcp-staging.tls=true"
+      - "traefik.http.routers.erlmcp-staging.tls.certresolver=letsencrypt"
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/path=/metrics"
+      - "prometheus.io/port=9100"
+      - "prometheus.io/target=http://localhost:9187"
+
+  erlmcp-core-2:
+    image: ${ERLMCP_IMAGE:-erlmcp/erlmcp:v3.0.0}
+    environment:
+      - ERLMCP_CONFIG_PATH=/etc/erlmcp/docker/prod.sys.config
+      - ERLMCP_VM_ARGS_PATH=/etc/erlmcp/vm.args
+      - ERLMCP_NODE_NAME=erlmcp-core-2@erlmcp-core-2
+      - ERLMCP_COOKIE=${ERLMCP_COOKIE:-erlmcp_secret}
+      - ERLMCP_ENVIRONMENT=production
+      - ERLMCP_REGION=us-east-1
+      - ERLMCP_ZONE=b
+    volumes:
+      - erlmcp_core_data_2:/data
+      - erlmcp_core_logs_2:/var/log/erlmcp
+      - erlmcp_secrets:/run/secrets
+      - ./config/docker/sys.config.prod:/etc/erlmcp/docker/prod.sys.config
+      - ./config/docker/vm.args.prod:/etc/erlmcp/vm.args
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+    depends_on:
+      redis-cluster:
+        condition: service_healthy
+      postgres-primary:
+        condition: service_healthy
+    deploy:
+      mode: replicated
+      replicas: ${ERLMCP_CORE_REPLICAS:-5}
+      placement:
+        constraints:
+          - node.role == worker
+          - node.labels.erlmcp-region == us-east-1
+          - node.labels.erlmcp-zone == b
+        preferences:
+          - spread: node.id
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+          pids: 5000
+        reservations:
+          cpus: '2'
+          memory: 2G
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 120s
+        max_failure_ratio: 0.2
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.erlmcp-backup.rule=Host(`api.example.com`) && PathPrefix(`/backup`)"
+      - "traefik.http.services.erlmcp-backup.loadbalancer.server.port=8080"
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/path=/metrics"
+      - "prometheus.io/port=9100"
+
+  # Redis Cluster with Sentinel
+  redis-cluster:
+    image: redis:7.2-alpine
+    command: >
+      redis-server /etc/redis/redis.conf
+      --cluster-enabled yes
+      --cluster-config-file nodes-6379.conf
+      --cluster-node-timeout 5000
+      --appendonly yes
+      --appendfilename appendonly.aof
+      --dbfilename dump.rdb
+      --logfile /var/log/redis/redis-server.log
+    environment:
+      - REDIS_PASSWORD=${ERLMCP_REDIS_PASSWORD:-erlmcp_redis_secure_pass}
+      - REDIS_REPLICATION_MODE=master
+      - REDIS_CLUSTER_REPLICAS=1
+      - REDIS_CLUSTER_ENABLED=yes
+    volumes:
+      - redis_data:/data
+      - redis_logs:/var/log/redis
+      - ./config/docker/redis/redis.conf:/etc/redis/redis.conf
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+    depends_on:
+      - redis-sentinel
+    deploy:
+      mode: replicated
+      replicas: ${REDIS_MASTER_REPLICAS:-3}
+      placement:
+        constraints:
+          - node.labels.erlmcp-zone != a
+        preferences:
+          - spread: node.labels.rack
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 60s
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${ERLMCP_REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/port=9121"
+
+  redis-sentinel:
+    image: redis:7.2-alpine
+    command: redis-sentinel /etc/redis/sentinel.conf
+    volumes:
+      - ./config/docker/redis/sentinel.conf:/etc/redis/sentinel.conf
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+    deploy:
+      mode: global
+      placement:
+        constraints:
+          - node.labels.erlmcp-zone != a
+      update_config:
+        parallelism: 1
+        delay: 10s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    labels:
+      - "prometheus.io/scrape=true"
+
+  # PostgreSQL with Patroni
+  postgres-primary:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=erlmcp
+      - POSTGRES_USER=erlmcp_user
+      - POSTGRES_PASSWORD=${ERLMCP_POSTGRES_PASSWORD}
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=${ERLMCP_REPL_PASSWORD}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./config/docker/postgresql/pg_hba.conf:/var/lib/postgresql/data/pg_hba.conf
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+    depends_on:
+      - postgres-etcd
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.erlmcp-zone == a
+        preferences:
+          - spread: node.labels.rack
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: pause
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+        window: 300s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erlmcp_user"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    labels:
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/port=9187"
+      - "prometheus.io/metrics_path=metrics"
+
+  postgres-replica-1:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=erlmcp
+      - POSTGRES_USER=erlmcp_user
+      - POSTGRES_PASSWORD=${ERLMCP_POSTGRES_PASSWORD}
+      - POSTGRES_REPLICATION_USER=replicator
+      - POSTGRES_REPLICATION_PASSWORD=${ERLMCP_REPL_PASSWORD}
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_replica_data_1:/var/lib/postgresql/data
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.erlmcp-zone == b
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: pause
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+        window: 300s
+    labels:
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/port=9187"
+
+  # Kafka Cluster
+  kafka-broker-1:
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      - zookeeper-1
+      - schema-registry
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-1:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker-1:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,EXTERNAL:SSL
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+      KAFKA_MIN_INSYNC_REPLICAS: 2
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_CONFLUENT_BALANCER_TOPIC_REPLICATION_FACTOR: 3
+      KAFKA_CONFLUENT_BALANCER_TOPIC_ENABLED: true
+      KAFKA_CONFLUENT_BALANCER_NUM_LOAD_BALANCER_SHARDS: 3
+    volumes:
+      - kafka_data_1:/var/lib/kafka/data
+      - kafka_logs_1:/var/log/kafka
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.erlmcp-zone == a
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 120s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 300s
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    labels:
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/port=9101"
+
+  # Monitoring Stack
+  prometheus:
+    image: prom/prometheus:v2.49.0
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--storage.tsdb.no-lockfile=true'
+      - '--web.route-prefix=/'
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus
+      - prometheus_config:/etc/prometheus
+      - ./config/docker/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_rules:/prometheus/rules
+    networks:
+      - monitoring-overlay
+    depends_on:
+      - erlmcp-core-1
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.erlmcp-region == us-east-1
+        preferences:
+          - spread: node.labels.rack
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: pause
+        monitor: 60s
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`monitoring.example.com`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+
+  grafana:
+    image: grafana/grafana-10.4.0
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin123}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_AUTH_BASIC_ENABLED=true
+      - GF_DATABASE_TYPE=postgres
+      - GF_DATABASE_HOST=postgres-primary
+      - GF_DATABASE_NAME=erlmcp
+      - GF_DATABASE_USER=grafana_user
+      - GF_DATABASE_PASSWORD=${GRAFANA_DB_PASSWORD}
+      - GF_FEATURE_TOGGLES_ENABLE=traceEditor
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - grafana_config:/etc/grafana/provisioning
+      - ./config/docker/grafana/grafana.ini:/etc/grafana/grafana.ini
+      - ./config/docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./config/docker/grafana/datasources:/etc/grafana/provisioning/datasources
+      - ./config/docker/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - monitoring-overlay
+      - erlmcp-overlay
+    depends_on:
+      - prometheus
+      - postgres-primary
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.erlmcp-region == us-east-1
+        preferences:
+          - spread: node.labels.rack
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 512M
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`monitoring.example.com`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  # Observability Stack
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.106.0
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./config/docker/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    ports:
+      - "8888:8888"        # Metrics
+      - "8889:8889"        # Health
+      - "4317:4317"        # OTLP gRPC
+      - "4318:4318"        # OTLP HTTP
+      - "14250:14250"      # Jaeger gRPC
+      - "14268:14268"      # Jaeger HTTP
+      - "9411:9411"        # Zipkin
+    networks:
+      - monitoring-overlay
+      - erlmcp-overlay
+    depends_on:
+      - jaeger
+      - victoria-metrics
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.erlmcp-region == us-east-1
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    labels:
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/port=8888"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    environment:
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+      - QUERY_UI_MAX_TRACES=1000
+    ports:
+      - "16686:16686"      # Query UI
+      - "14268:14268"      # Collector HTTP
+      - "14250:14250"      # Collector gRPC
+    networks:
+      - monitoring-overlay
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.erlmcp-region == us-east-1
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  victoria-metrics:
+    image: victoriametrics/victoriametrics:v1.95.0
+    command:
+      - "--storageDataPath=/vmdata"
+      - "--retentionPeriod=30d"
+      - "--httpAuth.username=admin"
+      - "--httpAuth.password=${VM_PASSWORD}"
+      - "--httpAuth.passwordFile=/etc/victoria-metrics/password"
+      - "--tsdb.compress=1"
+    volumes:
+      - victoria_metrics_data:/vmdata
+      - ./config/docker/vm_password:/etc/victoria-metrics/password
+    ports:
+      - "8428:8428"
+    networks:
+      - monitoring-overlay
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.erlmcp-region == us-east-1
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    labels:
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/port=8428"
+
+  # Traefik Load Balancer
+  traefik:
+    image: traefik:v3.0.0
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.web.http.redirections.entrypoint.permanent=true"
+      - "--entryPoints.websecure.http.tls.certresolver=letsencrypt"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=${LETSENCRYPT_EMAIL}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/acme.json"
+      - "--metrics.prometheus=true"
+      - "--metrics.prometheus.entrypoint=metrics"
+      - "--metrics.prometheus.buckets=0.1,0.3,1.2,5.0"
+      - "--global.checknewversion=false"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"        # API dashboard
+      - "8883:8883"        # Metrics
+    volumes:
+      - traefik_acme:/acme.json
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config/docker/traefik:/traefik
+      - ./config/docker/traefik/traefik.yml:/etc/traefik/traefik.yml
+      - ./config/docker/traefik/dynamic:/etc/traefik/dynamic
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+          - node.labels.traefik == true
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.example.com`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.service=api@internal"
+
+  # Additional Services
+  postgres-etcd:
+    image: quay.io/coreos/etcd:v3.5.9
+    environment:
+      - ETCDCTL_API=3
+      - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://0.0.0.0:2379
+      - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://0.0.0.0:2380
+      - ETCD_INITIAL_CLUSTER=postgres-etcd=http://0.0.0.0:2380
+      - ETCD_INITIAL_CLUSTER_TOKEN=postgres-etcd-cluster
+      - ETCD_INITIAL_CLUSTER_STATE=new
+    volumes:
+      - etcd_data:/etcd-data
+    networks:
+      - erlmcp-overlay
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+          - node.labels.etcd == true
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '512m'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  zookeeper-1:
+    image: confluentinc/cp-zookeeper:7.6.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 5
+      ZOOKEEPER_HEAP_SIZE: 2G
+    volumes:
+      - zookeeper_data_1:/var/lib/zookeeper/data
+      - zookeeper_logs_1:/var/lib/zookeeper/log
+    networks:
+      - erlmcp-overlay
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.erlmcp-zone == a
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.6.0
+    depends_on:
+      - kafka-broker-1
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKA_BROKERS: kafka-broker-1:9092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+      SCHEMA_REGISTRY_SCHEMA_REGISTRY_TOPIC_SCHEMA_REPLICATION_FACTOR: 3
+    volumes:
+      - schema_registry_data:/var/lib/schema-registry/data
+    networks:
+      - erlmcp-overlay
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+            constraints:
+              - node.labels.erlmcp-zone == a
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '1'
+          memory: 512M
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+volumes:
+  # erlmcp Data Volumes
+  erlmcp_core_data:
+    driver: local
+  erlmcp_core_data_2:
+    driver: local
+  erlmcp_core_logs:
+    driver: local
+  erlmcp_core_logs_2:
+    driver: local
+  erlmcp_secrets:
+    driver: local
+
+  # Redis Volumes
+  redis_data:
+    driver: local
+  redis_logs:
+    driver: local
+
+  # PostgreSQL Volumes
+  postgres_data:
+    driver: local
+  postgres_replica_data_1:
+    driver: local
+
+  # Kafka Volumes
+  kafka_data_1:
+    driver: local
+  kafka_logs_1:
+    driver: local
+  zookeeper_data_1:
+    driver: local
+  zookeeper_logs_1:
+    driver: local
+  schema_registry_data:
+    driver: local
+
+  # Monitoring Volumes
+  prometheus_data:
+    driver: local
+  prometheus_config:
+    driver: local
+  prometheus_rules:
+    driver: local
+  grafana_data:
+    driver: local
+  grafana_config:
+    driver: local
+  victoria_metrics_data:
+    driver: local
+  traefik_acme:
+    driver: local
+
+  # Additional Volumes
+  etcd_data:
+    driver: local
+
+networks:
+  erlmcp-overlay:
+    external: true
+    driver: overlay
+    attachable: true
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/24
+          gateway: 172.20.0.1
+          aux_addresses:
+            erlmcp-core-1: 172.20.0.101
+            erlmcp-core-2: 172.20.0.102
+            redis-cluster: 172.20.0.103
+            postgres-primary: 172.20.0.104
+            postgres-replica-1: 172.20.0.105
+            kafka-broker-1: 172.20.0.106
+            zookeeper-1: 172.20.0.107
+
+  monitoring-overlay:
+    driver: overlay
+    attachable: true
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.30.0.0/24
+          gateway: 172.30.0.1
+          aux_addresses:
+            prometheus: 172.30.0.101
+            grafana: 172.30.0.102
+            otel-collector: 172.30.0.103
+            jaeger: 172.30.0.104
+            victoria-metrics: 172.30.0.105
+            traefik: 172.30.0.106

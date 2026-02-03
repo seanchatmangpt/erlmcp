@@ -1,0 +1,729 @@
+# erlmcp v3 Helm Values
+
+# Global settings
+global:
+  # Override for all erlmcp components
+  image:
+    repository: banyanplatform/erlmcp
+    tag: "3.0.0"
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+
+  # Service account settings
+  serviceAccount:
+    create: true
+    name: erlmcp-sa
+    annotations: {}
+    automountServiceAccountToken: true
+
+  # Service mesh settings
+  serviceMesh:
+    enabled: false
+    istio:
+      enabled: false
+      gateway: "istio-system/ingressgateway"
+    linkerd:
+      enabled: false
+
+  # Security context
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  # Pod security context
+  podSecurityContext:
+    fsGroup: 1000
+    runAsUser: 1000
+    runAsGroup: 1000
+
+# Cluster configuration
+cluster:
+  enabled: true
+  cookie: "erlmcp-cluster-3-0-0"
+  heartbeatInterval: "10s"
+  nodeCheckInterval: "5s"
+  splitBrain:
+    strategy: "winner_takes_all"
+    checkInterval: "30s"
+  discovery:
+    provider: "kubernetes"  # kubernetes, dns, manual
+    kubernetes:
+      serviceName: "erlmcp-cluster"
+      servicePort: 9000
+      namespace: {{ .Release.Namespace | quote }}
+
+# Node configuration
+node:
+  replicaCount: 3
+  podTemplate:
+    annotations: {}
+    labels: {}
+  # Pod Affinity/Anti-affinity settings
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [erlmcp]
+          topologyKey: "kubernetes.io/hostname"
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                  values: [erlmcp]
+            topologyKey: "topology.kubernetes.io/zone"
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - matchExpressions:
+            - key: kubernetes.io/arch
+              operator: In
+              values: ["amd64", "arm64"]
+        - matchExpressions:
+            - key: node.kubernetes.io/memory-pressure
+              operator: NotIn
+              values: ["true"]
+  # Tolerations for node taints
+  tolerations: []
+  # Node selector for specific nodes
+  nodeSelector: {}
+  # Priority class name
+  priorityClassName: "system-cluster-critical"
+
+# Resource management
+resources:
+  core:
+    requests:
+      cpu: "2"
+      memory: "4Gi"
+    limits:
+      cpu: "4"
+      memory: "8Gi"
+    extra: {}
+
+  # Overhead for Erlang runtime and sidecar containers
+  overhead:
+    cpu: "0.5"
+    memory: "1Gi"
+
+  # Limits for different pod types
+  limits:
+    maxPods: 10
+    maxConnectionsPerNode: 5000
+    maxSessions: 10000
+    maxRegistrySize: 1000000
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+  hosts:
+    - host: erlmcp.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+  # Example:
+  # tls:
+  #   - secretName: erlmcp-tls
+  #     hosts:
+  #       - erlmcp.example.com
+
+# Services configuration
+services:
+  # Main HTTP service for client connections
+  http:
+    enabled: true
+    type: LoadBalancer
+    port: 3000
+    targetPort: 3000
+    nodePort: 30000
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    externalTrafficPolicy: Local
+    healthCheckNodePort: 30001
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 3600
+    # Additional service ports
+    additionalPorts: []
+    # Example:
+    # additionalPorts:
+    #   - name: https
+    #     port: 443
+    #     targetPort: 443
+    #     nodePort: 30443
+
+  # Cluster internal service for node communication
+  cluster:
+    enabled: true
+    type: ClusterIP
+    port: 9000
+    targetPort: 9000
+    annotations: {}
+
+  # Metrics service for Prometheus
+  metrics:
+    enabled: true
+    type: ClusterIP
+    port: 9090
+    targetPort: 9090
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9090"
+      prometheus.io/path: "/metrics"
+
+  # OTEL exporter service
+  otel:
+    enabled: true
+    type: ClusterIP
+    port: 4317
+    targetPort: 4317
+    annotations: {}
+
+# Liveness and Readiness Probes
+probes:
+  liveness:
+    enabled: true
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+    successThreshold: 1
+    readiness:
+      enabled: true
+      httpGet:
+        path: /ready
+        port: http
+      initialDelaySeconds: 5
+      periodSeconds: 5
+      timeoutSeconds: 3
+      failureThreshold: 3
+      successThreshold: 1
+    startup:
+      enabled: true
+      httpGet:
+        path: /ready
+        port: http
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 5
+      failureThreshold: 30
+      successThreshold: 1
+
+# Auto Scaling
+autoscaling:
+  enabled: true
+  # Horizontal Pod Autoscaler
+  hpa:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    customMetrics: []
+    # Example custom metrics:
+    # customMetrics:
+    #   - type: Pods
+    #     pods:
+    #       metric:
+    #         name: active_connections
+    #       target:
+    #         type: AverageValue
+    #         averageValue: 1000
+
+  # Cluster Autoscaler (for node scaling)
+  clusterAutoscaler:
+    enabled: true
+    scaleDownDisabled: false
+    balanceSimilarNodeGroups: true
+    expander: "random"
+    scaleDownDelayAfterAdd: "10m"
+    scaleDownDelayAfterDelete: "30s"
+    scaleDownUnneededTime: "10m"
+    scaleDownUtilizationThreshold: 0.5
+    estimators: ["binpacking", "resources"]
+    ignoreOperatingSystem: false
+    bindPodsToNode:
+      enabled: true
+      weight: 1
+
+  # Vertical Pod Autoscaler
+  vpa:
+    enabled: false
+    updateMode: "Auto"
+    recommendations:
+      enabled: true
+      resourcesPreset: "Dynamic"
+      defaultContainerPolicy: "Auto"
+      constraints:
+        minAllowed:
+          cpu: "2"
+          memory: "4Gi"
+        maxAllowed:
+          cpu: "8"
+          memory: "16Gi"
+
+# Pod Disruption Budgets
+pdb:
+  enabled: true
+  minAvailable: "2"
+  maxUnavailable: "1"
+  # For cluster disruption:
+  cluster:
+    enabled: true
+    minAvailable: 1
+    maxUnavailable: 1
+
+# Networking
+networking:
+  # Network policies
+  networkPolicy:
+    enabled: true
+    ingress:
+      - from: []
+        # Example:
+        # - namespaceSelector: {}
+        #   podSelector:
+        #     matchLabels:
+        #       app: my-app
+      - ports:
+          - protocol: TCP
+            port: 3000
+          - protocol: TCP
+            port: 9000
+    egress:
+      - to: []
+      - ports:
+          - protocol: TCP
+            port: 443
+          - protocol: TCP
+            port: 80
+          - protocol: UDP
+            port: 53
+      # Allow DNS
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
+
+  # Service annotations for load balancers
+  annotations:
+    # AWS specific
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    # Generic annotations
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+
+# Persistence
+persistence:
+  # Session persistence
+  sessions:
+    enabled: true
+    storageClass: "fast-ssd"
+    size: 10Gi
+    accessModes:
+      - ReadWriteOnce
+    mountPath: /data/sessions
+    subPath: sessions
+    annotations: {}
+    labels: {}
+
+  # Registry persistence
+  registry:
+    enabled: true
+    storageClass: "fast-ssd"
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+    mountPath: /data/registry
+    subPath: registry
+    annotations: {}
+    labels: {}
+
+  # Config persistence
+  config:
+    enabled: true
+    storageClass: "fast-ssd"
+    size: 1Gi
+    accessModes:
+      - ReadWriteOnce
+    mountPath: /data/config
+    subPath: config
+    annotations: {}
+    labels: {}
+
+# Monitoring and Observability
+monitoring:
+  # Prometheus
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: "30s"
+      scrapeTimeout: "10s"
+      honorLabels: false
+      metricRelabelings: []
+      relabelings: []
+      selector:
+        matchLabels:
+          prometheus: k8s
+
+  # Grafana dashboards
+  grafana:
+    enabled: false
+    dashboards:
+      erlmcp: {}
+
+  # OpenTelemetry
+  otel:
+    enabled: true
+    enabledFor: ["core", "transports", "observability"]
+    sampling:
+      type: "based_on_parent"
+      rate: "1.0"
+    exporters:
+      otlp:
+        enabled: true
+        endpoint: "otel-collector.observability.svc.cluster.local:4317"
+        compression: "gzip"
+      jaeger:
+        enabled: false
+        endpoint: "jaeger-collector.observability.svc.cluster.local:14250"
+      prometheus:
+        enabled: true
+        endpoint: "prometheus.monitoring.svc.cluster.local:9090"
+
+  # Logging
+  logging:
+    enabled: true
+    level: "info"
+    format: "json"
+    output: "stdout"
+    logrotate:
+      enabled: true
+      maxFiles: 10
+      maxSize: "100MB"
+    # Log forwarders
+    forwarders:
+      fluentd:
+        enabled: false
+        host: fluentd.logging.svc.cluster.local
+        port: 24224
+      loki:
+        enabled: false
+        url: "http://loki.logging.svc.cluster.local:3100"
+        labels:
+          app: "erlmcp"
+          version: "3.0.0"
+
+# Security
+security:
+  # RBAC
+  rbac:
+    enabled: true
+    create: true
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "configmaps", "secrets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: [""]
+        resources: ["pods/log", "pods/exec"]
+        verbs: ["get", "list", "create"]
+      - apiGroups: ["networking.k8s.io"]
+        resources: ["networkpolicies"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Pod Security Policy (if supported)
+  podSecurityPolicy:
+    enabled: false
+    name: "erlmcp-psp"
+
+  # Secret management
+  secrets:
+    enabled: true
+    # Kubernetes Secret template
+    template:
+      type: Opaque
+      data: {}
+      # Example:
+      # data:
+      #   database-password: <base64-encoded-password>
+      #   api-keys: <base64-encoded-keys>
+
+  # Certificate management
+  certificates:
+    enabled: true
+    # Cert-Manager integration
+    certManager:
+      enabled: true
+      issuer: "letsencrypt-prod"
+      dnsNames: []
+      # Example:
+      # dnsNames:
+      #   - erlmcp.example.com
+
+# ConfigMaps
+configMaps:
+  # Main configuration
+  main:
+    enabled: true
+    data:
+      # erlmcp configuration
+      config.json: |
+        {
+          "cluster": {
+            "enabled": true,
+            "cookie": "{{ .Values.cluster.cookie }}",
+            "heartbeat_interval": "{{ .Values.cluster.heartbeatInterval }}",
+            "node_check_interval": "{{ .Values.cluster.nodeCheckInterval }}",
+            "split_brain": {
+              "strategy": "{{ .Values.cluster.splitBrain.strategy }}",
+              "check_interval": "{{ .Values.cluster.splitBrain.checkInterval }}"
+            }
+          },
+          "server": {
+            "max_subscriptions_per_resource": 1000,
+            "max_progress_tokens": 10000
+          },
+          "transports": {
+            "tcp": {
+              "connect_timeout": 5000,
+              "keepalive": true,
+              "nodelay": true,
+              "port": 3000
+            },
+            "http": {
+              "connect_timeout": 5000,
+              "request_timeout": 30000,
+              "max_connections": 100,
+              "port": 3001
+            }
+          },
+          "logging": {
+            "level": "{{ .Values.monitoring.logging.level }}",
+            "format": "{{ .Values.monitoring.logging.format }}"
+          }
+        }
+
+  # Environment variables
+  env:
+    enabled: true
+    data:
+      ERLMCP_CLUSTER_ENABLED: "{{ .Values.cluster.enabled }}"
+      ERLMCP_CLUSTER_COOKIE: "{{ .Values.cluster.cookie }}"
+      ERLMCP_OTP_VERSION: "28.3.1"
+      POD_IP: "$(POD_IP)"
+      POD_NAME: "{{ .Release.Name }}-{{ .Values.node.replicaCount | int | add 1 }}"
+
+  # TLS certificates
+  tls:
+    enabled: false
+    data: {}
+    # Example:
+    # data:
+    #   tls.crt: |-
+    #     -----BEGIN CERTIFICATE-----
+    #     ...
+    #   tls.key: |-
+    #     -----BEGIN PRIVATE KEY-----
+    #     ...
+
+# Init containers
+initContainers:
+  # Wait for dependencies
+  wait-for-deps:
+    enabled: true
+    image: busybox:1.35
+    command: ["sh", "-c", "until nc -z erlmcp-cluster 9000; do echo waiting; sleep 2; done"]
+    resources:
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+
+  # Health check init
+  health-check:
+    enabled: true
+    image: curlimages/curl:7.83.0
+    command: ["sh", "-c", "for i in $(seq 1 30); do if curl -f http://localhost:3000/ready; then exit 0; else sleep 1; fi; done; exit 1"]
+    resources:
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+
+# Sidecars
+sidecars:
+  # Prometheus exporter
+  prometheus-exporter:
+    enabled: true
+    image: prom/node-exporter:v1.5.0
+    ports:
+      - name: metrics
+        containerPort: 9100
+        protocol: TCP
+    resources:
+      limits:
+        cpu: "100m"
+        memory: "128Mi"
+      requests:
+        cpu: "50m"
+        memory: "64Mi"
+    livenessProbe:
+      httpGet:
+        path: /metrics
+        port: metrics
+      initialDelaySeconds: 30
+      periodSeconds: 10
+    readinessProbe:
+      httpGet:
+        path: /metrics
+        port: metrics
+      initialDelaySeconds: 5
+      periodSeconds: 5
+
+  # OpenTelemetry collector sidecar
+  otel-collector:
+    enabled: false
+    image: otel/opentelemetry-collector-contrib:0.78.0
+    ports:
+      - name: otlp
+        containerPort: 4317
+        protocol: TCP
+      - name: metrics
+        containerPort: 8888
+        protocol: TCP
+    resources:
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+      requests:
+        cpu: "200m"
+        memory: "256Mi"
+    volumeMounts:
+      - name: otel-config
+        mountPath: /etc/otel-collector
+    env:
+      - name: HOST_IP
+        valueFrom:
+          fieldRef:
+            fieldPath: status.hostIP
+
+  # Logging sidecar
+  fluentd:
+    enabled: false
+    image: fluent/fluentd:v1.16-1
+    ports:
+      - name: metrics
+        containerPort: 24231
+        protocol: TCP
+    resources:
+      limits:
+        cpu: "200m"
+        memory: "256Mi"
+      requests:
+        cpu: "100m"
+        memory: "128Mi"
+    volumeMounts:
+      - name: varlog
+        mountPath: /var/log
+      - name: varlibdockercontainers
+        mountPath: /var/lib/docker/containers
+        readOnly: true
+
+# Jobs and CronJobs
+jobs:
+  # Migration job
+  migration:
+    enabled: true
+    backoffLimit: 3
+    activeDeadlineSeconds: 3600
+    template:
+      spec:
+        containers:
+          - name: migration
+            image: "{{ .Values.global.image.repository }}-migrations:{{ .Values.global.image.tag }}"
+            command: ["./run-migrations.sh"]
+            envFrom:
+              - configMapRef:
+                  name: erlmcp-config
+            resources:
+              limits:
+                cpu: "500m"
+                memory: "1Gi"
+              requests:
+                cpu: "250m"
+                memory: "512Mi"
+
+  # Backup job
+  backup:
+    enabled: true
+    schedule: "0 2 * * *"
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 1
+    template:
+      spec:
+        containers:
+          - name: backup
+            image: "{{ .Values.global.image.repository }}-backup:{{ .Values.global.image.tag }}"
+            command: ["./backup.sh"]
+            envFrom:
+              - configMapRef:
+                  name: erlmcp-config
+            resources:
+              limits:
+                cpu: "250m"
+                memory: "512Mi"
+              requests:
+                cpu: "125m"
+                memory: "256Mi"
+
+# Extra manifests
+extraManifests: []
+# Example:
+# extraManifests:
+#   - apiVersion: networking.k8s.io/v1
+#     kind: NetworkPolicy
+#     metadata:
+#       name: erlmcp-network-policy
+#     spec:
+#       ...
+
+# Test values
+tests:
+  enabled: true
+  image:
+    repository: busybox
+    tag: "1.35"
+    pullPolicy: IfNotPresent
+  command: ["sh", "-c", "echo 'erlmcp test successful'"]
+  resources:
+    limits:
+      cpu: "100m"
+      memory: "128Mi"
+    requests:
+      cpu: "50m"
+      memory: "64Mi"

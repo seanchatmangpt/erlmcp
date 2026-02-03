@@ -1,0 +1,162 @@
+{
+  "monitoring_systems": {
+    "splunk": {
+      "enabled": true,
+      "host": "splunk.example.com",
+      "port": 8088,
+      "token": "your-splunk-token",
+      "index": "main",
+      "source": "erlmcp",
+      "sourcetype": "json",
+      "host_override": "erlmcp-enterprise",
+      "connection_pool_size": 5,
+      "timeout": 30000,
+      "retry_attempts": 3,
+      "batch_size": 1000,
+      "flush_interval": 5000,
+      "use_https": false,
+      "verify_ssl": false,
+      "compression": true,
+      "events": {
+        "include_timestamp": true,
+        "include_hostname": true,
+        "include_app": true,
+        "extra_fields": {
+          "environment": "production",
+          "version": "3.0.0",
+          "component": "erlmcp-enterprise"
+        }
+      },
+      "dashboards": {
+        "enabled": true,
+        "refresh_interval": 30,
+        "default_time_range": "-24h",
+        "dashboards": [
+          {
+            "name": "System Health",
+            "id": "system-health-dashboard",
+            "views": ["overview", "detailed", "alerts"]
+          },
+          {
+            "name": "Performance Metrics",
+            "id": "performance-metrics-dashboard",
+            "views": ["cpu", "memory", "io", "network"]
+          }
+        ]
+      }
+    },
+    "datadog": {
+      "enabled": false,
+      "api_key": "",
+      "app_key": "",
+      "host": "",
+      "port": 8125,
+      "timeout": 5000,
+      "retry_attempts": 3,
+      "buffer_size": 10000,
+      "flush_interval": 10000,
+      "namespace": "erlmcp.enterprise",
+      "tags": {
+        "environment": "production",
+        "version": "3.0.0",
+        "component": "erlmcp-enterprise"
+      },
+      "metrics": {
+        "enable_system_metrics": true,
+        "enable_business_metrics": true,
+        "enable_custom_metrics": true,
+        "sampling_rate": 1.0,
+        "exclude_metrics": []
+      },
+      "traces": {
+        "enable_tracing": true,
+        "sampling_rate": 1.0,
+        "service_name": "erlmcp-enterprise",
+        "span_attributes": {
+          "component": "erlmcp-enterprise",
+          "version": "3.0.0"
+        }
+      }
+    },
+    "new_relic": {
+      "enabled": false,
+      "api_key": "",
+      "account_id": "",
+      "app_name": "erlmcp-enterprise",
+      "host": "",
+      "timeout": 30000,
+      "retry_attempts": 3,
+      "batch_size": 1000,
+      "flush_interval": 5000,
+      "enable_metrics": true,
+      "enable_logs": true,
+      "enable_traces": true,
+      "host_display_name": "erlmcp-enterprise",
+      "high_security": false,
+      "distributed_tracing": {
+        "enabled": true,
+        "exclude_newrelic_header": false
+      },
+      "custom_events": {
+        "enabled": true,
+        "priority": "normal",
+        "use_custom_event_type": false
+      }
+    }
+  },
+  "alerting": {
+    "enabled": true,
+    "providers": {
+      "email": {
+        "enabled": true,
+        "smtp_server": "smtp.example.com",
+        "smtp_port": 587,
+        "username": "alerts@example.com",
+        "password": "your-smtp-password",
+        "from_address": "alerts@example.com",
+        "to_addresses": ["admin@example.com", "ops@example.com"],
+        "use_tls": true
+      },
+      "slack": {
+        "enabled": false,
+        "webhook_url": "",
+        "channel": "#alerts",
+        "username": "erlmcp-alerts",
+        "icon_emoji": ":warning:"
+      },
+      "pagerduty": {
+        "enabled": false,
+        "integration_key": "",
+        "severity_mapping": {
+          "critical": "P1",
+          "high": "P2",
+          "medium": "P3",
+          "low": "P4"
+        }
+      }
+    },
+    "rules": [
+      {
+        "name": "Service Degraded",
+        "condition": "status == 'degraded'",
+        "threshold": 300,
+        "severity": "medium",
+        "notification_channels": ["email", "slack"]
+      },
+      {
+        "name": "Service Unhealthy",
+        "condition": "status == 'unhealthy'",
+        "threshold": 60,
+        "severity": "high",
+        "notification_channels": ["email", "slack", "pagerduty"]
+      },
+      {
+        "name": "High Error Rate",
+        "condition": "error_rate > 10",
+        "threshold": 900,
+        "severity": "high",
+        "notification_channels": ["email", "slack"]
+      }
+    ]
+  }
+}

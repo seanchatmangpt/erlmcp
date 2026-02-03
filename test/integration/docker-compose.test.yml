@@ -1,0 +1,229 @@
+# ============================================================================
+# erlmcp Integration Test Docker Compose Configuration
+# ============================================================================
+# End-to-end testing environment with full service stack:
+#   - erlmcp: Main MCP server application
+#   - postgres: PostgreSQL for session persistence and testing
+#   - redis: Redis for caching and pub/sub testing
+#
+# Quality Gate: erlmcp-integration
+# Usage: docker compose -f test/integration/docker-compose.test.yml up --abort-on-container-exit
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # ==========================================================================
+  # PostgreSQL - Database for session persistence and testing
+  # ==========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: erlmcp-test-postgres
+    hostname: postgres-test
+    restart: unless-stopped
+    networks:
+      - erlmcp-test-network
+    ports:
+      - "${TEST_DB_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${TEST_DB_NAME:-erlmcp_test}
+      POSTGRES_USER: ${TEST_DB_USER:-erlmcp_test}
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:-erlmcp_test_password}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      # Performance tuning for tests
+      POSTGRES_SHARED_BUFFERS: 256MB
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 1GB
+      POSTGRES_MAX_CONNECTIONS: 200
+      POSTGRES_WORK_MEM: 4MB
+    volumes:
+      - postgres-test-data:/var/lib/postgresql/data
+      - ./test/integration/init-db.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_DB_USER:-erlmcp_test} -d ${TEST_DB_NAME:-erlmcp_test}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  # ==========================================================================
+  # Redis - Caching layer for subscription testing
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: erlmcp-test-redis
+    hostname: redis-test
+    restart: unless-stopped
+    networks:
+      - erlmcp-test-network
+    ports:
+      - "${TEST_REDIS_PORT:-6380}:6379"
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --save ""
+    volumes:
+      - redis-test-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+  # ==========================================================================
+  # erlmcp Integration Test Runner
+  # ==========================================================================
+  erlmcp-integration:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      target: builder
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-main}
+        VERSION: ${VERSION:-3.0.0}
+    image: erlmcp:3.0.0-integration
+    container_name: erlmcp-integration
+    hostname: erlmcp-integration
+    restart: "no"
+    networks:
+      - erlmcp-test-network
+    environment:
+      # Test environment
+      ERLMCP_ENV: integration
+      ERLMCP_PROFILE: test
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_integration_cookie}
+      ERLMCP_NODE_NAME: erlmcp-integration@erlmcp-integration
+
+      # Test configuration
+      TERM: dumb
+      CT_OPTS: "-logdir log/ct -cover log/ct/cover"
+      CT_RUN_SUITE_TIMEOUT: 1800
+
+      # Coverage settings
+      COVER_ENABLED: "true"
+      COVER_EXPORT_ENABLED: "true"
+
+      # Database connection
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${TEST_DB_NAME:-erlmcp_test}
+      DB_USER: ${TEST_DB_USER:-erlmcp_test}
+      DB_PASSWORD: ${TEST_DB_PASSWORD:-erlmcp_test_password}
+
+      # Redis connection
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+
+      # Performance tuning for tests
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 50000
+      ERL_FLAGS: "+MBacul 0 +Msbagf 512"
+
+      # Integration test specific
+      INTEGRATION_TEST: "true"
+      TEST_TIMEOUT: 30000
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+          pids: 4096
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+    volumes:
+      - ../..:/workspace:cached
+      - erlmcp-test-logs:/workspace/log/ct
+      - erlmcp-test-cover:/workspace/_build/test/cover
+      - erlmcp-build-cache:/workspace/_build
+      - hex-cache:/root/.cache/rebar3
+    working_dir: /workspace
+    entrypoint: ["/bin/sh", "-c"]
+    # Run integration tests via Common Test
+    command:
+      - |
+        echo "=== Starting erlmcp Integration Tests ===" && \
+        echo "Waiting for services..." && \
+        sleep 5 && \
+        echo "Running Common Test integration suite..." && \
+        rebar3 as test ct --dir=/workspace/test/integration --sys_config=/workspace/config/test.config && \
+        echo "=== Integration Tests Complete ===" && \
+        echo "Generating coverage report..." && \
+        rebar3 cover && \
+        exit 0
+
+  # ==========================================================================
+  # Optional: Test HTTP client for external API testing
+  # ==========================================================================
+  test-client:
+    image: curlimages/curl:latest
+    container_name: erlmcp-test-client
+    hostname: test-client
+    restart: "no"
+    networks:
+      - erlmcp-test-network
+    command:
+      - /bin/sh
+      - -c
+      - |
+        echo "Waiting for erlmcp-integration to start..." && \
+        sleep 30 && \
+        echo "Testing MCP endpoint health..." && \
+        curl -f http://erlmcp-integration:8080/health || exit 1 && \
+        echo "Health check passed" && \
+        echo "Testing resources/list endpoint..." && \
+        curl -f -X POST http://erlmcp-integration:8080/mcp \
+          -H "Content-Type: application/json" \
+          -d '{"jsonrpc":"2.0","id":1,"method":"resources/list","params":{}}' || exit 1 && \
+        echo "Resources list passed" && \
+        exit 0
+    depends_on:
+      - erlmcp-integration
+    profiles:
+      - client
+
+networks:
+  erlmcp-test-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  postgres-test-data:
+    driver: local
+  redis-test-data:
+    driver: local
+  erlmcp-test-logs:
+    driver: local
+  erlmcp-test-cover:
+    driver: local
+  erlmcp-build-cache:
+    driver: local
+  hex-cache:
+    driver: local

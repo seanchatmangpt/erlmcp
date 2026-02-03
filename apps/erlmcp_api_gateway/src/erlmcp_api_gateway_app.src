@@ -1,0 +1,50 @@
+{application, erlmcp_api_gateway,
+ [{description, "Enterprise API Gateway for erlmcp"},
+  {vsn, "3.0.0"},
+  {modules, [erlmcp_api_gateway_app,
+             erlmcp_api_gateway_sup,
+             erlmcp_api_gateway_routes,
+             erlmcp_api_gateway_config,
+             erlmcp_api_management,
+             erlmcp_api_rate_limiter,
+             erlmcp_api_analytics,
+             erlmcp_api_auth,
+             erlmcp_api_health,
+             erlmcp_api_balancer,
+             erlmcp_api_circuit_breaker,
+             erlmcp_cache,
+             erlmcp_api_monitor]},
+  {registered, []},
+  {applications, [kernel, stdlib, cowboy, jsx, mnesia]},
+  {mod, {erlmcp_api_gateway_app, []}},
+  {start_phases, []},
+  {env, [
+         %% Gateway Configuration
+         {gateway_port, 8080},
+         {gateway_ssl_port, 8443},
+         {bind_address, {0, 0, 0, 0}},
+         {ssl_enabled, true},
+         {max_connections, 10000},
+
+         %% Security Configuration
+         {auth_method, oauth2},
+         {token_ttl, 3600},
+         {secret_key, undefined},
+
+         %% Rate Limiting
+         {rate_limit_enabled, true},
+         {default_rate_limit, #{
+             requests_per_minute => 1000,
+             requests_per_hour => 10000,
+             requests_per_day => 100000
+         }},
+
+         %% Analytics
+         {analytics_enabled, true},
+         {metrics_retention, 86400},
+
+         %% Health Check
+         {health_check_interval, 30000},
+         {health_check_timeout, 5000}
+        ]}
+ ]}.

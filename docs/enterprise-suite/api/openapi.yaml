@@ -1,0 +1,926 @@
+openapi: 3.0.3
+info:
+  title: erlmcp v3 API
+  description: |
+    erlmcp v3 is an enterprise-grade Erlang/OTP-based MCP (Message Communication Protocol) platform.
+
+    This API provides client-server communication capabilities with support for:
+    - Session management
+    - Resource subscriptions
+    - Tool calls
+    - Prompt templates
+    - Real-time events
+
+    ## Authentication
+    All API requests require authentication using Bearer tokens.
+
+    ## Rate Limiting
+    - 1000 requests per minute per client
+    - Burst up to 5000 requests per minute
+  version: 3.0.0
+  contact:
+    name: Enterprise Support
+    email: enterprise-support@erlmcp.com
+    url: https://enterprise.erlmcp.com
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.erlmcp.com/v3
+    description: Production server
+  - url: https://staging-api.erlmcp.com/v3
+    description: Staging server
+  - url: http://localhost:8080/v3
+    description: Local development
+
+security:
+  - BearerAuth: []
+
+paths:
+  /initialize:
+    post:
+      tags:
+        - Client
+      summary: Initialize client connection
+      description: |
+        Initializes a new client connection and returns a client ID and capabilities.
+        This is the first step in establishing a connection with erlmcp.
+
+        The client should use the returned capabilities to understand what features
+        are available and how to format subsequent requests.
+      operationId: initializeClient
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                protocolVersion:
+                  type: string
+                  description: Protocol version to use
+                  default: "2024-11-05"
+                  example: "2024-11-05"
+                protocol:
+                  type: string
+                  description: Protocol to use for communication
+                  default: "stdio"
+                  enum: [stdio, tcp, http, websocket]
+                capabilities:
+                  type: array
+                  items:
+                    type: string
+                  description: Client capabilities
+                  example: ["tools", "resources", "prompts"]
+              required:
+                - protocolVersion
+      responses:
+        '200':
+          description: Successful initialization
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/InitializeResponse'
+                  - type: object
+                    properties:
+                      protocolVersion:
+                        type: string
+                        example: "2024-11-05"
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /tools/call:
+    post:
+      tags:
+        - Tools
+      summary: Call a tool
+      description: |
+        Executes a tool with the provided arguments.
+
+        Tools can be user-defined or built-in. The tool execution happens
+        within the erlmcp cluster and the result is returned asynchronously.
+      operationId: callTool
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BaseRequest'
+                - type: object
+                  properties:
+                    name:
+                      type: string
+                      description: Name of the tool to call
+                      example: "calculator"
+                    arguments:
+                      type: object
+                      description: Tool arguments
+                      example:
+                        expression: "2 + 2"
+                    inputSchema:
+                      type: object
+                      description: Input schema for validation
+                      example:
+                        type: "object"
+                        properties:
+                          expression:
+                            type: "string"
+                    outputSchema:
+                      type: object
+                      description: Expected output schema
+                      example:
+                        type: "number"
+                  required:
+                    - name
+                    - arguments
+      responses:
+        '200':
+          $ref: '#/components/schemas/ToolResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /resources/subscribe:
+    post:
+      tags:
+        - Resources
+      summary: Subscribe to a resource
+      description: |
+        Subscribes to changes for a specific resource URI.
+
+        The client will receive notifications when the resource changes.
+        Supports multiple event types for comprehensive event monitoring.
+      operationId: subscribeResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BaseRequest'
+                - type: object
+                  properties:
+                    uri:
+                      type: string
+                      description: Resource URI to subscribe to
+                      example: "resource://example.com/data/123"
+                    events:
+                      type: array
+                      items:
+                        type: string
+                      description: Event types to subscribe to
+                      example: ["create", "update", "delete"]
+                    label:
+                      type: string
+                      description: Optional label for the subscription
+                      example: "user-data-updates"
+                    options:
+                      type: object
+                      description: Subscription options
+                      properties:
+                        batchSize:
+                          type: integer
+                          description: Batch size for event delivery
+                          example: 100
+                        throttleMs:
+                          type: integer
+                          description: Throttle window in milliseconds
+                          example: 1000
+                      example:
+                        batchSize: 100
+                        throttleMs: 1000
+                  required:
+                    - uri
+                    - events
+      responses:
+        '200':
+          $ref: '#/components/schemas/SubscriptionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /resources/unsubscribe:
+    post:
+      tags:
+        - Resources
+      summary: Unsubscribe from a resource
+      description: |
+        Unsubscribes from a specific resource URI.
+
+        After unsubscribing, the client will no longer receive notifications
+        for changes to this resource.
+      operationId: unsubscribeResource
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BaseRequest'
+                - type: object
+                  properties:
+                    uri:
+                      type: string
+                      description: Resource URI to unsubscribe from
+                      example: "resource://example.com/data/123"
+                    subscriptionId:
+                      type: string
+                      description: Subscription ID to remove
+                      example: "sub-123"
+                  required:
+                    - uri
+      responses:
+        '200':
+          description: Successful unsubscribe
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    description: Whether unsubscribe was successful
+                    example: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /prompts/create:
+    post:
+      tags:
+        - Prompts
+      summary: Create a prompt template
+      description: |
+        Creates a reusable prompt template.
+
+        Templates can include variables that get substituted at runtime.
+        Supports complex template structures and validation.
+      operationId: createPrompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BaseRequest'
+                - type: object
+                  properties:
+                    name:
+                      type: string
+                      description: Template name
+                      example: "summarize-email"
+                    description:
+                      type: string
+                      description: Template description
+                      example: "Summarizes an email thread"
+                    template:
+                      type: string
+                      description: Prompt template
+                      example: "Summarize the following email:\n\n{{content}}"
+                    variables:
+                      type: array
+                      items:
+                        $ref: '#/components/schemas/TemplateVariable'
+                    validation:
+                      type: object
+                      description: Template validation rules
+                      properties:
+                        required:
+                          type: array
+                          items:
+                            type: string
+                          description: Required variables
+                          example: ["content", "author"]
+                        maxLength:
+                          type: integer
+                          description: Maximum length
+                          example: 1000
+                    metadata:
+                      type: object
+                      description: Additional metadata
+                      example:
+                        category: "email-processing"
+                        version: "1.0"
+                  required:
+                    - name
+                    - template
+      responses:
+        '200':
+          $ref: '#/components/schemas/PromptResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /prompts/render:
+    post:
+      tags:
+        - Prompts
+      summary: Render a prompt template
+      description: |
+        Renders a prompt template with provided variables.
+
+        The template variables are substituted and the rendered
+        prompt is returned ready for use.
+      operationId: renderPrompt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/BaseRequest'
+                - type: object
+                  properties:
+                    template:
+                      type: string
+                      description: Template name or ID
+                      example: "summarize-email"
+                    variables:
+                      type: object
+                      description: Template variables
+                      example:
+                        content: "Meeting about Q4 planning..."
+                        author: "John Doe"
+                    format:
+                      type: string
+                      description: Output format
+                      enum: [json, text, markdown]
+                      default: "text"
+                      example: "text"
+                  required:
+                    - template
+                    - variables
+      responses:
+        '200':
+          description: Rendered prompt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  prompt:
+                    type: string
+                    description: Rendered prompt
+                    example: "Summarize the following email:\n\nMeeting about Q4 planning..."
+                  metadata:
+                    type: object
+                    properties:
+                      renderTime:
+                        type: number
+                        description: Render time in milliseconds
+                        example: 5.2
+                      variablesUsed:
+                        type: array
+                        items:
+                          type: string
+                        example: ["content", "author"]
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /events/poll:
+    get:
+      tags:
+        - Events
+      summary: Poll for events
+      description: |
+        Polls for pending events for the client.
+
+        Returns any events that have occurred since the last poll.
+        Can be used with long polling for real-time updates.
+      operationId: pollEvents
+      parameters:
+        - name: lastEventId
+          in: query
+          description: ID of the last received event
+          schema:
+            type: string
+          example: "event-123"
+        - name: timeout
+          in: query
+          description: Poll timeout in milliseconds
+          schema:
+            type: integer
+            default: 30000
+            maximum: 60000
+          example: 30000
+        - name: batchSize
+          in: query
+          description: Maximum number of events to return
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+          example: 100
+      responses:
+        '200':
+          $ref: '#/components/schemas/EventsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /health:
+    get:
+      tags:
+        - System
+      summary: Health check
+      description: |
+        Performs a health check of the erlmcp system.
+
+        Returns the health status of various components including
+        database connectivity, authentication service, and
+        resource availability.
+      operationId: healthCheck
+      parameters: []
+      responses:
+        '200':
+          description: Health check response
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    description: Overall system status
+                    enum: [healthy, degraded, unhealthy]
+                    example: "healthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    description: Check timestamp
+                    example: "2024-01-01T00:00:00Z"
+                  components:
+                    type: object
+                    description: Component health status
+                    properties:
+                      database:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            enum: [healthy, degraded, unhealthy]
+                            example: "healthy"
+                          latencyMs:
+                            type: number
+                            description: Database latency in milliseconds
+                            example: 5.2
+                      authentication:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            enum: [healthy, degraded, unhealthy]
+                            example: "healthy"
+                          latencyMs:
+                            type: number
+                            description: Auth service latency in milliseconds
+                            example: 10.5
+                      registry:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            enum: [healthy, degraded, unhealthy]
+                            example: "healthy"
+                          registeredResources:
+                            type: integer
+                            description: Number of registered resources
+                            example: 12345
+        '503':
+          description: System unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "unhealthy"
+                  timestamp:
+                    type: string
+                    format: date-time
+                    example: "2024-01-01T00:00:00Z"
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        component:
+                          type: string
+                          example: "database"
+                        message:
+                          type: string
+                          example: "Connection timeout"
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    BaseRequest:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Unique request identifier
+          example: "req-12345"
+        sessionId:
+          type: string
+          description: Session identifier
+          example: "session-12345"
+        metadata:
+          type: object
+          description: Additional metadata
+          example:
+            traceId: "trace-12345"
+            correlationId: "corr-12345"
+
+    InitializeResponse:
+      type: object
+      properties:
+        protocolVersion:
+          type: string
+          description: Protocol version in use
+          example: "2024-11-05"
+        capabilities:
+          type: array
+          description: Available capabilities
+          items:
+            type: string
+          example: ["tools", "resources", "prompts", "sessions"]
+        serverInfo:
+          type: object
+          properties:
+            name:
+              type: string
+              example: "erlmcp-v3"
+            version:
+              type: string
+              example: "3.0.0"
+            maxSessions:
+              type: integer
+              example: 10000
+        authentication:
+          type: object
+          properties:
+            required:
+              type: boolean
+              example: true
+            methods:
+              type: array
+              items:
+                type: string
+              example: ["bearer", "oauth2"]
+            scopes:
+              type: array
+              items:
+                type: string
+              example: ["read", "write", "admin"]
+
+    ToolResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Request identifier
+          example: "req-12345"
+        status:
+          type: string
+          enum: [success, error, pending]
+          example: "success"
+        content:
+          type: object
+          description: Tool execution result
+          example:
+            result: 4
+            type: "number"
+            message: "Calculation completed"
+        executionTime:
+          type: number
+          description: Execution time in milliseconds
+          example: 15.5
+        usage:
+          type: object
+          description: Usage metrics
+          properties:
+            tokens:
+              type: integer
+              example: 100
+            cost:
+              type: number
+              example: 0.01
+        error:
+          type: object
+          description: Error details if status is error
+          properties:
+            code:
+              type: string
+              example: "TOOL_EXECUTION_ERROR"
+            message:
+              type: string
+              example: "Division by zero"
+            details:
+              type: object
+              example:
+                tool: "calculator"
+                error: "/ by zero"
+
+    SubscriptionResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Request identifier
+          example: "req-12345"
+        subscriptionId:
+          type: string
+          description: Subscription identifier
+          example: "sub-12345"
+        uri:
+          type: string
+          description: Resource URI
+          example: "resource://example.com/data/123"
+        events:
+          type: array
+          description: Subscribed events
+          items:
+            type: string
+          example: ["update", "delete"]
+        status:
+          type: string
+          enum: [active, paused, cancelled]
+          example: "active"
+        expiresAt:
+          type: string
+          format: date-time
+          description: Subscription expiration
+          example: "2024-01-01T00:00:00Z"
+
+    PromptResponse:
+      type: object
+      properties:
+        requestId:
+          type: string
+          description: Request identifier
+          example: "req-12345"
+        promptId:
+          type: string
+          description: Prompt template ID
+          example: "prompt-12345"
+        name:
+          type: string
+          description: Template name
+          example: "summarize-email"
+        template:
+          type: string
+          description: Template content
+          example: "Summarize the following email:\n\n{{content}}"
+        variables:
+          type: array
+          items:
+            $ref: '#/components/schemas/TemplateVariable'
+        metadata:
+          type: object
+          description: Additional metadata
+          example:
+            category: "email-processing"
+            version: "1.0"
+            created: "2024-01-01T00:00:00Z"
+
+    TemplateVariable:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Variable name
+          example: "content"
+        type:
+          type: string
+          enum: [string, number, boolean, array, object]
+          example: "string"
+        description:
+          type: string
+          example: "Email content to summarize"
+        required:
+          type: boolean
+          example: true
+        default:
+          type: any
+          description: Default value
+        validation:
+          type: object
+          description: Validation rules
+          properties:
+            pattern:
+              type: string
+              example: ".*"
+            minLength:
+              type: integer
+              example: 1
+            maxLength:
+              type: integer
+              example: 10000
+
+    EventsResponse:
+      type: object
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        nextPollTimeout:
+          type: integer
+          description: Recommended next poll timeout in milliseconds
+          example: 30000
+        totalPending:
+          type: integer
+          description: Total pending events
+          example: 5
+
+    Event:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Event ID
+          example: "event-12345"
+        type:
+          type: string
+          description: Event type
+          example: "resource.update"
+        timestamp:
+          type: string
+          format: date-time
+          description: Event timestamp
+          example: "2024-01-01T00:00:00Z"
+        source:
+          type: string
+          description: Event source
+          example: "resource://example.com/data/123"
+        data:
+          type: object
+          description: Event data
+          example:
+            oldValue: null
+            newValue: { name: "John", age: 30 }
+        correlationId:
+          type: string
+          description: Correlation ID
+          example: "corr-12345"
+        metadata:
+          type: object
+          description: Event metadata
+          example:
+            traceId: "trace-12345"
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: "VALIDATION_ERROR"
+                  message:
+                    type: string
+                    example: "Invalid request parameters"
+                  details:
+                    type: object
+                    example:
+                      field: "email"
+                      message: "Invalid email format"
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: "UNAUTHORIZED"
+                  message:
+                    type: string
+                    example: "Authentication required"
+                  details:
+                    type: object
+                    example:
+                      method: "bearer"
+                      error: "invalid_token"
+    TooManyRequests:
+      description: Too many requests
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: "RATE_LIMIT_EXCEEDED"
+                  message:
+                    type: string
+                    example: "Rate limit exceeded"
+                  details:
+                    type: object
+                    properties:
+                      retryAfter:
+                        type: integer
+                        description: Retry after in seconds
+                        example: 60
+                      limit:
+                        type: integer
+                        description: Request limit
+                        example: 1000
+                      window:
+                        type: integer
+                        description: Time window in seconds
+                        example: 60
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    example: "INTERNAL_ERROR"
+                  message:
+                    type: string
+                    example: "Internal server error"
+                  details:
+                    type: object
+                    example:
+                      stackTrace: "..."
+
+tags:
+  - name: Client
+    description: Client initialization and management
+  - name: Tools
+    description: Tool execution and management
+  - name: Resources
+    description: Resource subscription and management
+  - name: Prompts
+    description: Prompt template rendering and management
+  - name: Events
+    description: Event polling and streaming
+  - name: System
+    description: System health and monitoring

@@ -1,0 +1,830 @@
+version: '3.8'
+
+services:
+  # === Core erlmcp Services ===
+  erlmcp-core:
+    image: erlmcp/erlmcp:v3.0.0-rc1
+    hostname: "{{.Node.Hostname}}-erlmcp-core"
+    deploy:
+      mode: replicated
+      replicas: 3
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == core
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+        order: stop-first
+      rollback_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: pause
+    networks:
+      - erlmcp-backend
+      - erlmcp-frontend
+      - erlmcp-mgmt
+    environment:
+      - ERLMCP_PROFILE=prod
+      - ERLMCP_CLUSTER_NAME={{.Swarm.Name}}-erlmcp-cluster
+      - ERLMCP_NODE_NAME=core-{{.Task.Slot}}
+      - ERLMCP_COOKIE=swarm-secret-cookie
+      - RLOG_LEVEL=info
+      - OTEL_SERVICE_NAME=erlmcp-core
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://erlmcp-otel-collector:4317
+    secrets:
+      - erlmcp-db-password
+      - erlmcp-api-key
+      - erlmcp-jwt-secret
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health", || exit 1]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - erlmcp-data-core:/data/core
+      - erlmcp-logs-core:/var/log/erlmcp
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.erlmcp-core.rule=Host(`erlmcp-core.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.erlmcp-core.loadbalancer.server.port=8080"
+      - "traefik.http.routers.erlmcp-core.entrypoints=websecure"
+      - "traefik.http.routers.erlmcp-core.tls.certresolver=default"
+
+  erlmcp-server:
+    image: erlmcp/erlmcp:v3.0.0-rc1
+    hostname: "{{.Node.Hostname}}-erlmcp-server"
+    deploy:
+      mode: replicated
+      replicas: 6
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == server
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1.5G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+      update_config:
+        parallelism: 2
+        delay: 20s
+        failure_action: rollback
+        monitor: 60s
+        order: stop-first
+    networks:
+      - erlmcp-backend
+      - erlmcp-frontend
+      - erlmcp-mgmt
+    environment:
+      - ERLMCP_PROFILE=prod
+      - ERLMCP_CLUSTER_NAME={{.Swarm.Name}}-erlmcp-cluster
+      - ERLMCP_NODE_NAME=server-{{.Task.Slot}}
+      - ERLMCP_COOKIE=swarm-secret-cookie
+      - RLOG_LEVEL=info
+      - OTEL_SERVICE_NAME=erlmcp-server
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://erlmcp-otel-collector:4317
+    secrets:
+      - erlmcp-db-password
+      - erlmcp-api-key
+      - erlmcp-jwt-secret
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health", || exit 1]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - erlmcp-data-server:/data/server
+      - erlmcp-logs-server:/var/log/erlmcp
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.erlmcp-server.rule=Host(`erlmcp-server.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.erlmcp-server.loadbalancer.server.port=8081"
+      - "traefik.http.routers.erlmcp-server.entrypoints=websecure"
+      - "traefik.http.routers.erlmcp-server.tls.certresolver=default"
+
+  erlmcp-session:
+    image: erlmcp/erlmcp:v3.0.0-rc1
+    hostname: "{{.Node.Hostname}}-erlmcp-session"
+    deploy:
+      mode: replicated
+      replicas: 4
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == session
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.3'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 20s
+        failure_action: rollback
+        monitor: 60s
+        order: stop-first
+    networks:
+      - erlmcp-backend
+      - erlmcp-mgmt
+    environment:
+      - ERLMCP_PROFILE=prod
+      - ERLMCP_CLUSTER_NAME={{.Swarm.Name}}-erlmcp-cluster
+      - ERLMCP_NODE_NAME=session-{{.Task.Slot}}
+      - ERLMCP_COOKIE=swarm-secret-cookie
+      - RLOG_LEVEL=info
+      - OTEL_SERVICE_NAME=erlmcp-session
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://erlmcp-otel-collector:4317
+    secrets:
+      - erlmcp-redis-password
+      - erlmcp-session-secret
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health", || exit 1]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - erlmcp-data-session:/data/session
+      - erlmcp-logs-session:/var/log/erlmcp
+    labels:
+      - "traefik.enable=false"  # Internal service
+
+  # === Load Balancers ===
+  traefik:
+    image: traefik:v2.10
+    hostname: "{{.Node.Hostname}}-traefik"
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.websecure.tls.options.default.minversion=VersionTLS12"
+      - "--entrypoints.websecure.tls.certresolver.default.acme.tosca=https://letsencrypt.org/documents/LE-SA-v1.3-September-21-2022.pdf"
+      - "--entrypoints.websecure.tls.certresolver.default.acme.email=devops@{{.Swarm.Name}}.example.com"
+      - "--entrypoints.websecure.tls.certresolver.default.acme.storage=/letsencrypt/acme.json"
+      - "--metrics.prometheus=true"
+      - "--log.level=info"
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == ingress
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+    networks:
+      - erlmcp-frontend
+      - erlmcp-mgmt
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik dashboard
+    volumes:
+      - "traefik-config:/etc/traefik"
+      - "traefik-letsencrypt:/etc/traefik/letsencrypt"
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+
+  haproxy:
+    image: haproxy:2.6-alpine
+    hostname: "{{.Node.Hostname}}-haproxy"
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == ingress
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+    networks:
+      - erlmcp-frontend
+      - erlmcp-backend
+      - erlmcp-mgmt
+    volumes:
+      - ./swarm/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+      - "haproxy-logs:/var/log/haproxy"
+    labels:
+      - "traefik.enable=false"
+
+  # === Monitoring Stack ===
+  prometheus:
+    image: prom/prometheus:v2.47
+    hostname: "{{.Node.Hostname}}-prometheus"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/data'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == monitoring
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+    networks:
+      - erlmcp-mgmt
+      - erlmcp-monitoring
+    volumes:
+      - "prometheus-data:/data"
+      - "./swarm/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "prometheus-config:/etc/prometheus"
+    ports:
+      - "9090:9090"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls.certresolver=default"
+
+  grafana:
+    image: grafana/grafana:10.3
+    hostname: "{{.Node.Hostname}}-grafana"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD={{.Secrets.grafana_password}}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://grafana.{{.Swarm.Name}}.example.com
+      - GF_SERVER_DOMAIN={{.Swarm.Name}}.example.com
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == monitoring
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+    networks:
+      - erlmcp-mgmt
+      - erefmcp-monitoring
+    volumes:
+      - "grafana-data:/var/lib/grafana"
+      - "./swarm/grafana/provisioning:/etc/grafana/provisioning:ro"
+    ports:
+      - "3000:3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=default"
+
+  loki:
+    image: grafana/loki:2.9
+    hostname: "{{.Node.Hostname}}-loki"
+    command: -config.file=/etc/loki/local-config.yaml
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == logging
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+    networks:
+      - erlmcp-mgmt
+      - erlmcp-logging
+    volumes:
+      - "loki-data:/loki"
+      - "./swarm/loki.yml:/etc/loki/local-config.yaml:ro"
+      - "loki-config:/etc/loki"
+    ports:
+      - "3100:3100"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.loki.rule=Host(`loki.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.loki.loadbalancer.server.port=3100"
+      - "traefik.http.routers.loki.entrypoints=websecure"
+      - "traefik.http.routers.loki.tls.certresolver=default"
+
+  fluentd:
+    image: fluent/fluentd:v1.16
+    hostname: "{{.Node.Hostname}}-fluentd"
+    deploy:
+      mode: replicated
+      replicas: 4
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == logging
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+    networks:
+      - erlmcp-mgmt
+      - erlmcp-logging
+    volumes:
+      - "fluentd-config:/fluentd/etc"
+      - "fluentd-logs:/var/log/fluentd"
+      - "/var/log/erlmcp:/var/log/erlmcp:ro"
+      - "./swarm/fluentd/conf:/fluentd/etc/fluent.conf:ro"
+    labels:
+      - "traefik.enable=false"
+
+  # === Observability Stack ===
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.95
+    hostname: "{{.Node.Hostname}}-otel-collector"
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == observability
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+    networks:
+      - erlmcp-mgmt
+      - erlmcp-monitoring
+    volumes:
+      - "otel-data:/data"
+      - "./swarm/otel-collector.yml:/etc/otel-collector-config.yaml:ro"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.otel-collector.rule=Host(`otel-collector.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.otel-collector.loadbalancer.server.port=8888"
+      - "traefik.http.routers.otel-collector.entrypoints=websecure"
+      - "traefik.http.routers.otel-collector.tls.certresolver=default"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.58
+    hostname: "{{.Node.Hostname}}-jaeger"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - QUERY_UI=true
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == observability
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+    networks:
+      - erlmcp-mgmt
+      - erlmcp-monitoring
+    volumes:
+      - "jaeger-data:/jaeger"
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jaeger.rule=Host(`jaeger.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
+      - "traefik.http.routers.jaeger.entrypoints=websecure"
+      - "traefik.http.routers.jaeger.tls.certresolver=default"
+
+  # === Data Storage ===
+  redis:
+    image: redis:7.2-alpine
+    hostname: "{{.Node.Hostname}}-redis"
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    deploy:
+      mode: replicated
+      replicas: 3
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == data
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+        order: stop-first
+    networks:
+      - erlmcp-backend
+      - erlmcp-mgmt
+    secrets:
+      - erlmcp-redis-password
+    volumes:
+      - "redis-data:/data"
+      - "redis-logs:/var/log/redis"
+    labels:
+      - "traefik.enable=false"
+
+  postgres:
+    image: postgres:15-alpine
+    hostname: "{{.Node.Hostname}}-postgres"
+    environment:
+      - POSTGRES_DB=erlmcp
+      - POSTGRES_USER=erlmcp
+      - POSTGRES_PASSWORD_FILE=/run/secrets/erlmcp-db-password
+    deploy:
+      mode: replicated
+      replicas: 3
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == data
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+        order: stop-first
+    networks:
+      - erlmcp-backend
+      - erlmcp-mgmt
+    secrets:
+      - erlmcp-db-password
+    volumes:
+      - "postgres-data:/var/lib/postgresql/data"
+      - "postgres-logs:/var/log/postgresql"
+    labels:
+      - "traefik.enable=false"
+
+  # === Service Mesh ===
+  envoy:
+    image: envoyproxy/envoy:v1.28-latest
+    hostname: "{{.Node.Hostname}}-envoy"
+    command: ["--config-path", "/etc/envoy/envoy.yaml"]
+    deploy:
+      mode: replicated
+      replicas: 6
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == mesh
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+    networks:
+      - erlmcp-frontend
+      - erlmcp-backend
+      - erlmcp-mesh
+    volumes:
+      - "envoy-config:/etc/envoy"
+      - "./swarm/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro"
+    labels:
+      - "traefik.enable=false"
+
+  # === Backup & Restore ===
+  minio:
+    image: minio/minio:RELEASE.2023-12-15T02-27-30Z
+    hostname: "{{.Node.Hostname}}-minio"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+    command: server /data --console-address ":9001"
+    deploy:
+      mode: replicated
+      replicas: 4
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == storage
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 5
+    networks:
+      - erlmcp-mgmt
+      - erlmcp-storage
+    volumes:
+      - "minio-data:/data"
+      - "minio-logs:/var/log/minio"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.minio.rule=Host(`minio.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.minio.loadbalancer.server.port=9001"
+      - "traefik.http.routers.minio.entrypoints=websecure"
+      - "traefik.http.routers.minio.tls.certresolver=default"
+
+  # === Utility Services ===
+  vault:
+    image: vault:1.15
+    hostname: "{{.Node.Hostname}}-vault"
+    environment:
+      - VAULT_ADDR=https://vault.{{.Swarm.Name}}.example.com
+      - VAULT_API_ADDR=https://vault.{{.Swarm.Name}}.example.com:8200
+      - VAULT_CLUSTER_ADDR=https://vault.{{.Swarm.Name}}.example.com:8201
+      - VAULT_LOG_LEVEL=info
+    command: ["server", "-dev", "-dev-listen-address=0.0.0.0:8200", "-dev-root-token-id=root"]
+    deploy:
+      mode: replicated
+      replicas: 3
+      placement:
+        constraints:
+          - node.labels.erlmcp-role == security
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 5
+    networks:
+      - erlmcp-mgmt
+      - erlmcp-security
+    volumes:
+      - "vault-data:/vault/data"
+      - "vault-logs:/var/log/vault"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vault.rule=Host(`vault.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.vault.loadbalancer.server.port=8200"
+      - "traefik.http.routers.vault.entrypoints=websecure"
+      - "traefik.http.routers.vault.tls.certresolver=default"
+
+  # === Health Monitoring ===
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.47
+    hostname: "{{.Node.Hostname}}-cadvisor"
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk/:ro
+    deploy:
+      mode: global
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+    networks:
+      - erlmcp-mgmt
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.cadvisor.rule=Host(`cadvisor.{{.Swarm.Name}}.example.com`)"
+      - "traefik.http.services.cadvisor.loadbalancer.server.port=8080"
+      - "traefik.http.routers.cadvisor.entrypoints=websecure"
+      - "traefik.http.routers.cadvisor.tls.certresolver=default"
+
+networks:
+  erlmcp-frontend:
+    external: true
+    name: erlmcp-frontend
+  erlmcp-backend:
+    external: true
+    name: erlmcp-backend
+  erlmcp-mgmt:
+    external: true
+    name: erlmcp-mgmt
+  erlmcp-mesh:
+    external: true
+    name: erlmcp-mesh
+  erlmcp-monitoring:
+    external: true
+    name: erlmcp-monitoring
+  erlmcp-logging:
+    external: true
+    name: erlmcp-logging
+  erlmcp-storage:
+    external: true
+    name: erlmcp-storage
+  erlmcp-security:
+    external: true
+    name: erlmcp-security
+
+volumes:
+  erlmcp-data-core:
+    driver: local
+  erlmcp-data-server:
+    driver: local
+  erlmcp-data-session:
+    driver: local
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  loki-data:
+    driver: local
+  minio-data:
+    driver: local
+  vault-data:
+    driver: local
+  erlmcp-logs-core:
+    driver: local
+  erlmcp-logs-server:
+    driver: local
+  erlmcp-logs-session:
+    driver: local
+  redis-logs:
+    driver: local
+  postgres-logs:
+    driver: local
+  fluentd-logs:
+    driver: local
+  minio-logs:
+    driver: local
+  vault-logs:
+    driver: local
+  traefik-config:
+    driver: local
+  traefik-letsencrypt:
+    driver: local
+  haproxy-logs:
+    driver: local
+  prometheus-config:
+    driver: local
+  loki-config:
+    driver: local
+  envoy-config:
+    driver: local
+  otel-data:
+    driver: local
+  jaeger-data:
+    driver: local
+
+secrets:
+  erlmcp-db-password:
+    external: true
+  erlmcp-redis-password:
+    external: true
+  erlmcp-api-key:
+    external: true
+  erlmcp-jwt-secret:
+    external: true
+  erlmcp-session-secret:
+    external: true
+  grafana_password:
+    external: true
+  minio_root_password:
+    external: true

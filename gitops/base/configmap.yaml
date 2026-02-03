@@ -1,0 +1,77 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-config
+  namespace: erlmcp
+data:
+  erlmcp.conf: |
+    %% erlmcp Configuration
+    {session_backend, ets}.
+    {session_backend_config, #{
+      retention => "24h",
+      max_sessions => 10000,
+      cleanup_interval => "5m"
+    }}.
+    {registry_type, distributed}.
+    {registry_config, #{
+      max_entries => 100000,
+      cleanup_interval => "10m"
+    }}.
+    {transport_tcp_port, 8080}.
+    {transport_http_port, 8081}.
+    {transport_ws_port, 8082}.
+    {transport_sse_port, 8083}.
+    {otel_endpoint, "http://opentelemetry-collector.observability.svc.cluster.local:4317"}.
+    {otel_headers, []}.
+  vm.args: |
+    %% Erlang VM Arguments
+    -name erlmcp@127.0.0.1
+    -setcookie erlmcp_cookie
+    +K true
+    +A 64
+    +P 262144
+    +Q 65536
+    -env ERL_MAX_PORTS 65536
+    -env ERL_MAX_ETS_TABLES 20000
+    +sdcpu 1
+    +spp true
+    +sbwt none
+    +sbwtdcpu none
+    +sbwtdio none
+  sys.config: |
+    %% erlmcp sys.config
+    [
+      {erlmcp, [
+        {log_level, info},
+        {session_backend, ets},
+        {registry_type, distributed},
+        {transports, [
+          {tcp, [{port, 8080}, {max_connections, 10000}]},
+          {http, [{port, 8081}, {max_connections, 5000}]},
+          {ws, [{port, 8082}, {max_connections, 5000}]},
+          {sse, [{port, 8083}, {max_connections, 5000}]}
+        ]},
+        {otel, #{
+          endpoint => "http://opentelemetry-collector.observability.svc.cluster.local:4317",
+          headers => []
+        }}
+      ]},
+      {kernel, [
+        {logger_level, info},
+        {logger, #{
+          handler => default,
+          config => #{
+            type => standard_io
+          }
+        }}
+      ]},
+      {opentelemetry, [
+        {processors, [{
+          otel_batch_processor, #{
+            exporter => {otel_exporter_otlp_http, #{
+              endpoint => "http://opentelemetry-collector.observability.svc.cluster.local:4317"
+            }}
+          }
+        }]}
+      ]}
+    ].

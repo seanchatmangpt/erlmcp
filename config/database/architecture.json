@@ -1,0 +1,119 @@
+{
+  "database_architecture": {
+    "version": "3.0.0",
+    "clustering": {
+      "mode": "active-passive",
+      "cluster_nodes": [
+        {
+          "node_id": "primary",
+          "host": "db-primary.erlmcp.local",
+          "port": 5432,
+          "role": "primary",
+          "priority": 1,
+          "backup_priority": 1
+        },
+        {
+          "node_id": "replica-1",
+          "host": "db-replica-1.erlmcp.local",
+          "port": 5432,
+          "role": "replica",
+          "priority": 1,
+          "backup_priority": 2
+        },
+        {
+          "node_id": "replica-2",
+          "host": "db-replica-2.erlmcp.local",
+          "port": 5432,
+          "role": "replica",
+          "priority": 1,
+          "backup_priority": 3
+        }
+      ],
+      "failover": {
+        "enabled": true,
+        "election_timeout_ms": 5000,
+        "consensus_protocol": "raft",
+        "heartbeat_interval_ms": 1000,
+        "leader_lease_ms": 3000
+      },
+      "replication": {
+        "replication_type": "streaming",
+        "synchronous_mode": "quorum",
+        "connection_pool_size": 20,
+        "slot_management": "automatic",
+        "max_wal_senders": 10,
+        "max_replication_slots": 10,
+        "wal_level": "logical"
+      }
+    },
+    "partitioning": {
+      "sharding_strategy": "consistent_hashing",
+      "shards": 16,
+      "replication_factor": 3,
+      "partition_keys": {
+        "sessions": "session_id",
+        "tools": "tool_id",
+        "resources": "resource_id",
+        "events": "timestamp_hash"
+      },
+      "sharding_algorithm": {
+        "type": "murmur3",
+        "hash_ring_size": 16777216,
+        "virtual_nodes": 100
+      },
+      "rebalancing": {
+        "enabled": true,
+        "threshold_percent": 20,
+        "rebalance_interval_ms": 3600000,
+        "migrate_parallel": 4,
+        "migrate_batch_size": 1000
+      }
+    },
+    "load_balancing": {
+      "strategy": "least_connections",
+      "health_check_interval_ms": 1000,
+      "nodes": [
+        {
+          "host": "lb-primary.erlmcp.local",
+          "port": 5432,
+          "weight": 1.0,
+          "max_connections": 1000
+        },
+        {
+          "host": "lb-replica-1.erlmcp.local",
+          "port": 5432,
+          "weight": 1.0,
+          "max_connections": 1000
+        }
+      ],
+      "routing": {
+        "read_mode": "replica",
+        "write_mode": "primary",
+        "auto_failover": true,
+        "connection_timeout_ms": 3000
+      }
+    }
+  },
+  "performance_targets": {
+    "throughput": {
+      "reads_per_second": 50000,
+      "writes_per_second": 10000,
+      "qps_peak": 100000
+    },
+    "latency": {
+      "p50_ms": 10,
+      "p95_ms": 50,
+      "p99_ms": 100,
+      "p999_ms": 500
+    },
+    "availability": {
+      "percent": "99.999",
+      "downtime_per_year": "5.26 minutes"
+    },
+    "consistency": {
+      "level": "strong",
+      "rpo_ms": 0,
+      "rto_ms": 30000
+    }
+  }
+}

@@ -1,0 +1,97 @@
+{{/*
+  erlmcp Service for GCP Marketplace
+  GKE service with Network Endpoint Groups and NEG annotation
+*/}}
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: service
+  annotations:
+    {{- if eq .Values.service.type "LoadBalancer" }}
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"ports": {"8080": "{{ include "erlmcp.fullname" . }}-backend-config"}}'
+    {{- end }}
+    {{- with .Values.service.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  sessionAffinity: {{ .Values.service.sessionAffinity | default "None" }}
+  {{- if and (eq .Values.service.sessionAffinity "ClientIP") .Values.service.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: {{ .Values.service.sessionAffinityConfig.clientIP.timeoutSeconds | default 10800 }}
+  {{- end }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port | default 80 }}
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort.http }}
+      nodePort: {{ .Values.service.nodePort.http }}
+      {{- end }}
+    - name: https
+      port: {{ .Values.service.httpsPort | default 443 }}
+      targetPort: http
+      protocol: TCP
+      {{- if and (eq .Values.service.type "NodePort") .Values.service.nodePort.https }}
+      nodePort: {{ .Values.service.nodePort.https }}
+      {{- end }}
+    - name: metrics
+      port: {{ .Values.metrics.port | default 9090 }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+---
+{{/* Service for metrics (separate for NetworkPolicy) */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-metrics
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{ .Values.metrics.port | default 9090 }}"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+    - name: metrics
+      port: {{ .Values.metrics.port | default 9090 }}
+      targetPort: metrics
+      protocol: TCP
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+---
+{{/* Headless service for cluster discovery */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-headless
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: headless
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: http
+      port: {{ .Values.service.port | default 80 }}
+      targetPort: http
+      protocol: TCP
+    - name: distribution
+      port: {{ .Values.distribution.port | default 9100 }}
+      targetPort: distribution
+      protocol: TCP
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}

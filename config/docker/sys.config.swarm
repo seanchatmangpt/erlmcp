@@ -1,0 +1,222 @@
+%% Docker Swarm System Configuration for erlmcp v3
+%% Production hardened configuration for Swarm deployment
+
+[
+    %% erlmcp application configuration
+    {erlmcp, [
+        {log_level, info},
+        {logger_level, info},
+
+        %% Client defaults - production optimized
+        {client_defaults, #{
+            timeout => 5000,
+            strict_mode => true,
+            max_pending_requests => 100,
+            retry_attempts => 2,
+            retry_backoff_ms => 1000,
+            circuit_breaker_enabled => true,
+            connection_timeout => 5000,
+            keepalive_enabled => true
+        }},
+
+        %% Server defaults - production optimized
+        {server_defaults, #{
+            max_subscriptions_per_resource => 1000,
+            max_progress_tokens => 10000,
+            enable_debug_endpoints => false,
+            session_timeout => 3600000,  % 1 hour
+            max_concurrent_requests => 10000
+        }},
+
+        %% Transport settings - production hardened
+        {transport_defaults, #{
+            tcp => #{
+                connect_timeout => 5000,
+                keepalive => true,
+                nodelay => true,
+                listen_backlog => 1024,
+                send_timeout => 30000,
+                recv_timeout => 30000,
+                buffer => #{
+                    recbuf => 16384,
+                    sndbuf => 16384
+                }
+            },
+            http => #{
+                connect_timeout => 5000,
+                request_timeout => 30000,
+                max_connections => 500,
+                connection_keepalive => true,
+                http2_enabled => true,
+                max_keepalive => 1000
+            },
+            stdio => #{
+                enabled => false
+            },
+            ws => #{
+                enabled => true,
+                timeout => 60000,
+                max_frame_size => 1048576,  % 1MB
+            },
+            sse => #{
+                enabled => true,
+                heartbeat => 30000,
+                retry => 5000
+            }
+        }},
+
+        %% Connection pooling - Swarm optimized
+        {connection_pooling, #{
+            enabled => true,
+            pool_size => 50,
+            max_overflow => 25,
+            pool_timeout => 30000,
+            idle_timeout_ms => 600000,  % 10 minutes
+            auto_return => true
+        }},
+
+        %% Caching configuration
+        {cache_enabled, true},
+        {cache_ttl_seconds, 3600},
+        {cache_max_size, 100000},
+        {cache_compression, true},
+
+        %% Cluster configuration for Swarm
+        {cluster_enabled, true},
+        {cluster_autoconnect, true},
+        {cluster_discovery, swarm},
+        {cluster_nodes, []},  % Discovered via Docker DNS
+        {cluster_cookie_file, "/run/secrets/erlang.cookie"},
+        {cluster_heartbeat_interval, 10000},
+        {cluster_node_cleanup_interval, 60000},
+        {split_brain_strategy, majority},
+        {split_brain_check_interval, 30000},
+
+        %% Health check configuration
+        {health_check_enabled, true},
+        {health_check_interval, 30000},
+        {health_check_timeout, 10000},
+
+        %% Metrics and monitoring
+        {metrics_enabled, true},
+        {metrics_port, 9100},
+        {otel_enabled, true},
+        {otel_endpoint, "http://otel-collector:4317"},
+        {otel_service_name, "erlmcp"},
+
+        %% Security settings
+        {security, #{
+            tls_enabled, true,
+            tls_cert_file, "/run/secrets/tls.crt",
+            tls_key_file, "/run/secrets/tls.key",
+            tls_verify, verify_peer,
+            tls_versions, ['tlsv1.3', 'tlsv1.2'],
+            rate_limiting_enabled, true,
+            rate_limit_per_second, 1000,
+            rate_limit_burst, 100
+        }},
+
+        %% Database connection
+        {database, #{
+            enabled, true,
+            host, "postgres",
+            port, 5432,
+            database, "erlmcp",
+            pool_size, 20,
+            password_file, "/run/secrets/db.password"
+        }},
+
+        %% Redis connection
+        {redis, #{
+            enabled, true,
+            host, "redis",
+            port, 6379,
+            password_file, "/run/secrets/redis.password",
+            pool_size, 10,
+            database, 0
+        }}
+    ]},
+
+    %% Kernel configuration
+    {kernel, [
+        {logger_level, info},
+        {logger, [
+            %% Console handler
+            {handler, default, logger_std_h, #{
+                config => #{
+                    type => standard_io,
+                    sync_mode_qlen => 500,
+                    drop_mode_qlen => 5000,
+                    flush_qlen => 10000
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", msg, "\n"],
+                    time_offset => "",
+                    time_designator => $T,
+                    single_line => true,
+                    max_size => 2048
+                }},
+                filters => [
+                    {progress_reports, {fun logger_filters:progress/2, stop}},
+                    {sasl_reports, {fun logger_filters:domain/2, {stop, sub, [otp, sasl]}}}
+                ],
+                level => info
+            }},
+
+            %% File handler - persistent logging
+            {handler, file_swarm, logger_std_h, #{
+                config => #{
+                    file => "/var/log/erlmcp/erlmcp.log",
+                    max_no_bytes => 104857600,  % 100 MB
+                    max_no_files => 50,         % Keep 50 files
+                    compress_on_rotate => true
+                },
+                formatter => {logger_formatter, #{
+                    template => [time, " [", level, "] ", pid, " ", mfa, ":", line, " ", msg, "\n"]
+                }},
+                level => info
+            }}
+        ]}
+    ]},
+
+    %% SASL configuration
+    {sasl, [
+        {sasl_error_logger, false},
+        {errlog_type, error},
+        {error_logger_format_depth, 20}
+    ]},
+
+    %% SSL/TLS configuration for distribution
+    {ssl, [
+        {protocol, tlsv1_3},
+        {verify, verify_peer},
+        {fail_if_no_peer_cert, false},
+        {honor_cipher_order, true},
+        {client_renegotiation, false},
+        {secure_renegotiate, true},
+        {reuse_sessions, true},
+        {versions, ['tlsv1.3', 'tlsv1.2']},
+        {ciphers, [
+            "TLS_AES_128_GCM_SHA256",
+            "TLS_AES_256_GCM_SHA384",
+            "TLS_CHACHA20_POLY1305_SHA256"
+        ]}
+    ]},
+
+    %% Ranch configuration for connection handling
+    {ranch, [
+        {listener_max, 1000},
+        {transport_options, #{
+            max_connections, 10000,
+            num_acceptors, 100
+        }}
+    ]},
+
+    %% Cowboy HTTP server configuration
+    {cowboy, [
+        {max_empty_lines, 10},
+        {max_keepalive, 1000},
+        {timeout, 5000},
+        {connection_type, supervisor}
+    ]}
+].

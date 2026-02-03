@@ -1,0 +1,23 @@
+apiVersion: v2
+name: erlmcp
+description: ErlMCP v3 - Erlang/OTP MCP SDK with enterprise CI/CD pipeline
+version: 3.0.0
+appVersion: "3.0.0"
+home: https://erlmcp.io
+sources:
+  - https://github.com/erlmcp/erlmcp
+  - https://erlmcp.io
+keywords:
+  - erlang
+  - otp
+  - mcp
+  - json-rpc
+  - messaging
+  - distributed-systems
+maintainers:
+  - name: ErlMCP Team
+    email: support@erlmcp.io
+    url: https://erlmcp.io
+annotations:
+  category: Communication
+  licenses: Apache-2.0

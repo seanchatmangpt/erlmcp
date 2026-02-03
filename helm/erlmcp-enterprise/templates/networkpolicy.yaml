@@ -1,0 +1,224 @@
+{{/*
+  ERLMCP Enterprise NetworkPolicy
+  Zero-trust network security with explicit ingress/egress rules
+*/}}
+{{- if .Values.security.networkPolicy.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: networkpolicy
+  annotations:
+    "erlmcp.io/network-policy": "zero-trust"
+spec:
+  {{- /* Policy Types */}}
+  policyTypes:
+    - Ingress
+    - Egress
+
+  {{- /* Pod Selector */}}
+  podSelector:
+    matchLabels:
+      {{- include "erlmcp-enterprise.selectorLabels" . | nindent 6 }}
+
+  {{- /* Ingress Rules */}}
+  ingress:
+    {{- /* Allow from ingress controller */}}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- if .Values.security.networkPolicy.ingressNamespaceLabels }}
+              {{- toYaml .Values.security.networkPolicy.ingressNamespaceLabels | nindent 14 }}
+              {{- else }}
+              kubernetes.io/metadata.name: ingress-nginx
+              {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.ports.http.port | default 80 }}
+        - protocol: TCP
+          port: {{ .Values.service.ports.https.port | default 443 }}
+
+    {{- /* Allow from same namespace */}}
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.ports.http.port | default 80 }}
+        - protocol: TCP
+          port: {{ .Values.service.ports.https.port | default 443 }}
+        - protocol: TCP
+          port: 9090
+
+    {{- /* Allow from monitoring namespace */}}
+    {{- if .Values.global.monitoring.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- if .Values.security.networkPolicy.monitoringNamespaceLabels }}
+              {{- toYaml .Values.security.networkPolicy.monitoringNamespaceLabels | nindent 14 }}
+              {{- else }}
+              kubernetes.io/metadata.name: monitoring
+              {{- end }}
+      ports:
+        - protocol: TCP
+          port: 9090
+    {{- end }}
+
+    {{- /* Custom ingress rules */}}
+    {{- with .Values.security.networkPolicy.customIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+  {{- /* Egress Rules */}}
+  egress:
+    {{- /* Allow DNS */}}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    {{- /* Allow to same namespace */}}
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.ports.http.port | default 80 }}
+
+    {{- /* Allow to database */}}
+    {{- if .Values.app.database.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- if .Values.security.networkPolicy.databaseNamespaceLabels }}
+              {{- toYaml .Values.security.networkPolicy.databaseNamespaceLabels | nindent 14 }}
+              {{- else }}
+              kubernetes.io/metadata.name: database
+              {{- end }}
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    {{- end }}
+
+    {{- /* Allow to Redis */}}
+    {{- if .Values.app.cache.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- if .Values.security.networkPolicy.redisNamespaceLabels }}
+              {{- toYaml .Values.security.networkPolicy.redisNamespaceLabels | nindent 14 }}
+              {{- else }}
+              kubernetes.io/metadata.name: cache
+              {{- end }}
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+    {{- end }}
+
+    {{- /* Allow to message queue */}}
+    {{- if .Values.app.queue.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- if .Values.security.networkPolicy.queueNamespaceLabels }}
+              {{- toYaml .Values.security.networkPolicy.queueNamespaceLabels | nindent 14 }}
+              {{- else }}
+              kubernetes.io/metadata.name: messaging
+              {{- end }}
+        - podSelector:
+            matchLabels:
+              app: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 5672
+        - protocol: TCP
+          port: 15672
+    {{- end }}
+
+    {{- /* Allow to OpenTelemetry collector */}}
+    {{- if .Values.global.monitoring.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- if .Values.security.networkPolicy.otelNamespaceLabels }}
+              {{- toYaml .Values.security.networkPolicy.otelNamespaceLabels | nindent 14 }}
+              {{- else }}
+              kubernetes.io/metadata.name: observability
+              {{- end }}
+        - podSelector:
+            matchLabels:
+              app: opentelemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    {{- end }}
+
+    {{- /* Allow external HTTPS */}}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            {{- with .Values.security.networkPolicy.externalExcept }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    {{- /* Custom egress rules */}}
+    {{- with .Values.security.networkPolicy.customEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}
+---
+{{/*
+  ERLMCP Enterprise NetworkPolicy for Egress Only
+  For workloads that only initiate connections
+*/}}
+{{- if .Values.security.networkPolicy.egressOnly }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-egress-only
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: networkpolicy-egress
+  annotations:
+    "erlmcp.io/network-policy": "egress-only"
+spec:
+  policyTypes:
+    - Egress
+  podSelector:
+    matchLabels:
+      {{- include "erlmcp-enterprise.selectorLabels" . | nindent 6 }}
+      network-policy: egress-only
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 80
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

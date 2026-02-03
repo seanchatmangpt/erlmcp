@@ -1,0 +1,182 @@
+name: Security Scanning
+
+on:
+  push:
+    branches: [main, develop, feature/*]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    # Run weekly security scan
+    - cron: '0 3 * * 1'
+
+jobs:
+  vulnerability-scan:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tool: [trivy, grype, snyk]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/trivy
+            ~/.cache/grype
+          key: ${{ matrix.tool }}-cache-${{ hashFiles('rebar.config') }}
+
+      - name: Run ${{ matrix.tool }} Scan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          case ${{ matrix.tool }} in
+            trivy)
+              docker pull ghcr.io/aquasecurity/trivy:latest
+              trivy image --format json --output trivy-results.json \
+                --exit-code 0 \
+                --severity HIGH,CRITICAL \
+                $(pwd)
+              ;;
+            grype)
+              grype --output json grype-results.json $(pwd)
+              ;;
+            snyk)
+              snyk container test --json --file=snyk-results.json $(pwd)
+              ;;
+          esac
+
+      - name: Upload Scan Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-${{ matrix.tool }}
+          path: |
+            trivy-results.json
+            grype-results.json
+            snyk-results.json
+          retention-days: 90
+
+  code-analysis:
+    name: Code Analysis
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        tool: [semgrep, bandit, flawfinder]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run ${{ matrix.tool }}
+        run: |
+          case ${{ matrix.tool }} in
+            semgrep)
+              docker run --rm -v $(pwd):/src returntocorp/semgrep:latest
+              ;;
+            bandit)
+              pip install bandit[toml]
+              bandit -r ./apps/ -f json -o bandit-results.json
+              ;;
+            flawfinder)
+              flawfinder --language erlang --json ./apps/ > flawfinder-results.json
+              ;;
+          esac
+
+      - name: Upload Analysis Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: code-analysis-${{ matrix.tool }}
+          path: |
+            bandit-results.json
+            flawfinder-results.json
+          retention-days: 90
+
+  dependency-check:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Dependency Check
+        uses: dependency-check/dependency-check-action@v6
+        with:
+          project: 'erlmcp'
+          path: '.'
+          fail-build: true
+
+  license-compliance:
+    name: License Compliance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install License Compliance Tools
+        run: |
+          pip install license-compliance
+
+      - name: Check Licenses
+        run: |
+          compliance \
+            --rules ./licenses/rules.yaml \
+            --format json \
+            --output license-compliance.json \
+            --fail-on any \
+            ./apps/
+
+  security-report:
+    name: Generate Security Report
+    runs-on: ubuntu-latest
+    needs: [vulnerability-scan, code-analysis, dependency-check, license-compliance]
+
+    steps:
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: security-reports/
+
+      - name: Generate Report
+        run: |
+          mkdir -p security-reports
+          python scripts/security/combine-reports.py
+          ./scripts/security/generate-dashboard.sh
+
+      - name: Upload Combined Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-combined-report
+          path: security-reports/
+          retention-days: 180
+
+      - name: Create Security Advisory
+        if: github.ref == 'refs/heads/main'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('security-reports/summary.json'));
+
+            if (report.critical > 0) {
+              github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: `🚨 Critical Security Vulnerabilities Detected`,
+                body: `## Security Summary
+- Critical: ${report.critical}
+- High: ${report.high}
+- Medium: ${report.medium}
+- Low: ${report.low}
+\nView detailed report in artifacts.`
+              });
+            }

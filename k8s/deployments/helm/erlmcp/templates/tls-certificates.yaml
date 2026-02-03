@@ -1,0 +1,523 @@
+{{/*
+  TLS Certificate Configuration for erlmcp
+  Creates TLS secrets and configurations for all transport protocols
+*/}}
+
+{{- if .Values.tls.enabled }}
+{{- /* Main TLS Secret for server certificates */}}
+---
+{{- if not .Values.externalSecrets.enabled }}
+{{- if not .Values.tls.certManager.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "erlmcp.tlsSecretName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    type: server
+  annotations:
+    "erlmcp.io/tls-type": "server"
+    "erlmcp.io/managed-by": "manual"
+type: kubernetes.io/tls
+data:
+  {{- with .Values.tls.certificates }}
+  {{- if .server.tlsCrt }}
+  tls.crt: {{ .server.tlsCrt | b64enc }}
+  {{- else }}
+  tls.crt: {{ "" | b64enc }}  # REQUIRED: Set via Helm values or ExternalSecret
+  {{- end }}
+  {{- if .server.tlsKey }}
+  tls.key: {{ .server.tlsKey | b64enc }}
+  {{- else }}
+  tls.key: {{ "" | b64enc }}  # REQUIRED: Set via Helm values or ExternalSecret
+  {{- end }}
+  {{- if .server.caCrt }}
+  ca.crt: {{ .server.caCrt | b64enc }}
+  {{- else }}
+  ca.crt: {{ "" | b64enc }}
+  {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- /* CA Certificate Secret for trust bundle */}}
+---
+{{- if .Values.tls.caCertificate }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-ca-bundle
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    type: ca-bundle
+  annotations:
+    "erlmcp.io/tls-type": "ca-bundle"
+type: kubernetes.io/tls
+data:
+  tls.crt: {{ .Values.tls.caCertificate | b64enc }}
+  ca.crt: {{ .Values.tls.caCertificate | b64enc }}
+{{- end }}
+
+{{- /* TLS Secret for HTTP transport */}}
+---
+{{- if .Values.tls.transport.http.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-http-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    transport: http
+  annotations:
+    "erlmcp.io/transport": "http"
+    "erlmcp.io/port": "8081"
+type: kubernetes.io/tls
+data:
+  {{- if .Values.tls.transport.http.cert }}
+  tls.crt: {{ .Values.tls.transport.http.cert | b64enc }}
+  tls.key: {{ .Values.tls.transport.http.key | b64enc }}
+  {{- else if .Values.tls.certificates.server.tlsCrt }}
+  tls.crt: {{ .Values.tls.certificates.server.tlsCrt | b64enc }}
+  tls.key: {{ .Values.tls.certificates.server.tlsKey | b64enc }}
+  {{- else }}
+  tls.crt: {{ "" | b64enc }}
+  tls.key: {{ "" | b64enc }}
+  {{- end }}
+  {{- if .Values.tls.transport.http.ca }}
+  ca.crt: {{ .Values.tls.transport.http.ca | b64enc }}
+  {{- end }}
+{{- end }}
+
+{{- /* TLS Secret for WebSocket transport */}}
+---
+{{- if .Values.tls.transport.ws.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-ws-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    transport: websocket
+  annotations:
+    "erlmcp.io/transport": "websocket"
+    "erlmcp.io/port": "8082"
+type: kubernetes.io/tls
+data:
+  {{- if .Values.tls.transport.ws.cert }}
+  tls.crt: {{ .Values.tls.transport.ws.cert | b64enc }}
+  tls.key: {{ .Values.tls.transport.ws.key | b64enc }}
+  {{- else if .Values.tls.certificates.server.tlsCrt }}
+  tls.crt: {{ .Values.tls.certificates.server.tlsCrt | b64enc }}
+  tls.key: {{ .Values.tls.certificates.server.tlsKey | b64enc }}
+  {{- else }}
+  tls.crt: {{ "" | b64enc }}
+  tls.key: {{ "" | b64enc }}
+  {{- end }}
+  {{- if .Values.tls.transport.ws.ca }}
+  ca.crt: {{ .Values.tls.transport.ws.ca | b64enc }}
+  {{- end }}
+{{- end }}
+
+{{- /* TLS Secret for SSE transport */}}
+---
+{{- if .Values.tls.transport.sse.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-sse-tls
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    transport: sse
+  annotations:
+    "erlmcp.io/transport": "sse"
+    "erlmcp.io/port": "8083"
+type: kubernetes.io/tls
+data:
+  {{- if .Values.tls.transport.sse.cert }}
+  tls.crt: {{ .Values.tls.transport.sse.cert | b64enc }}
+  tls.key: {{ .Values.tls.transport.sse.key | b64enc }}
+  {{- else if .Values.tls.certificates.server.tlsCrt }}
+  tls.crt: {{ .Values.tls.certificates.server.tlsCrt | b64enc }}
+  tls.key: {{ .Values.tls.certificates.server.tlsKey | b64enc }}
+  {{- else }}
+  tls.crt: {{ "" | b64enc }}
+  tls.key: {{ "" | b64enc }}
+  {{- end }}
+  {{- if .Values.tls.transport.sse.ca }}
+  ca.crt: {{ .Values.tls.transport.sse.ca | b64enc }}
+  {{- end }}
+{{- end }}
+
+{{- /* TLS Configuration ConfigMap */}}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-tls-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    type: config
+  annotations:
+    "erlmcp.io/tls-version": "{{ .Values.tls.minVersion | default "1.3" }}"
+data:
+  tls.conf: |
+    %% TLS configuration for erlmcp transports
+    {tls, [
+      {enabled, true},
+      {min_version, '{{ .Values.tls.minVersion | default "tlsv1.3" }}'},
+      {max_version, '{{ .Values.tls.maxVersion | default "tlsv1.3" }}'},
+      {honor_cipher_order, true},
+      {secure_renegotiate, true},
+      {client_renegotiation, false},
+      {session_tickets, {{ .Values.tls.sessionTickets | default "disabled" }}},
+      {session_lifetime, {{ .Values.tls.sessionLifetime | default 7200 }}},
+      {secure_renegotiate, true},
+
+      %% Cipher suites (FIPS 140-2 compliant)
+      {ciphers, [
+        {{- if eq (include "erlmcp.tls-version" .) "1.3" }}
+        %% TLS 1.3 cipher suites
+        "TLS_AES_128_GCM_SHA256",
+        "TLS_AES_256_GCM_SHA384",
+        "TLS_CHACHA20_POLY1305_SHA256"
+        {{- else }}
+        %% TLS 1.2 cipher suites (FIPS compliant)
+        "ECDHE-RSA-AES128-GCM-SHA256",
+        "ECDHE-RSA-AES256-GCM-SHA384",
+        "ECDHE-ECDSA-AES128-GCM-SHA256",
+        "ECDHE-ECDSA-AES256-GCM-SHA384",
+        "ECDHE-RSA-AES128-SHA256",
+        "ECDHE-RSA-AES256-SHA384"
+        {{- end }}
+      ]},
+
+      %% Elliptic curves
+      {eccs, [
+        x25519,
+        prime256v1,
+        secp384r1,
+        secp521r1
+      ]},
+
+      %% Signature algorithms
+      {signature_algs, [
+        ecdsa_secp256r1_sha256,
+        ecdsa_secp384r1_sha384,
+        ed25519,
+        rsa_pss_rsae_sha256,
+        rsa_pss_pss_sha256,
+        rsa_pkcs1_sha256
+      ]},
+
+      %% Protocol options
+      {protocol_options, [
+        {no_sslv2, true},
+        {no_sslv3, true},
+        {no_tlsv1, true},
+        {no_tlsv1_1, true}
+      ]},
+
+      %% Handshake configuration
+      {handshake, [
+        {timeout, {{ .Values.tls.handshakeTimeout | default 10000 }}},
+        {max_renegotiations, 0},
+        {verify, verify_peer},
+        {verify_fun, {ssl_verify_fun, [
+          {fail_if_no_peer_cert, {{ .Values.tls.requireClientCert | default false }}},
+          {verify_client_once, true},
+          {depth, {{ .Values.tls.verifyDepth | default 3 }}}
+        ]}}
+      ]},
+
+      %% Certificate chain
+      {certfile, "/etc/erlmcp/certs/server.crt"},
+      {keyfile, "/etc/erlmcp/certs/server.key"},
+      {cacertfile, "/etc/erlmcp/certs/ca.crt"},
+      {dhfile, "/etc/erlmcp/certs/dhparams.pem"},
+
+      %% OCSP stapling
+      {use_ocsp_stapling, {{ .Values.tls.ocspStapling | default true }}},
+      {ocsp_responder_url, "{{ .Values.tls.ocspResponderUrl | default "http://ocsp.erlmcp.io" }}"},
+
+      %% Certificate revocation
+      {crl_check, {{ .Values.tls.crlCheck | default true }}},
+      {crl_cache_dir, "/var/cache/erlmcp/crl"},
+      {crl_refresh_interval, {{ .Values.tls.crlRefreshInterval | default 3600 }}}
+    ]}.
+
+    %% Transport-specific TLS configurations
+    {transports, [
+      {http, [
+        {port, 8081},
+        {tls_options, [{server_name_indication, disable}]},
+        {alpn_protocols, ["h2", "http/1.1"]}
+      ]},
+      {websocket, [
+        {port, 8082},
+        {tls_options, [{server_name_indication, disable}]},
+        {alpn_protocols, []}
+      ]},
+      {sse, [
+        {port, 8083},
+        {tls_options, [{server_name_indication, disable}]},
+        {alpn_protocols, ["http/1.1"]}
+      ]}
+    ]}.
+  ssl-args.conf: |
+    %% Erlang SSL configuration for all ports
+    [
+      {server, [
+        {certfile, "/etc/erlmcp/certs/server.crt"},
+        {keyfile, "/etc/erlmcp/certs/server.key"},
+        {cacertfile, "/etc/erlmcp/certs/ca.crt"},
+        {verify, verify_peer},
+        {verify_fun, {ssl_verify_fun, [
+          {fail_if_no_peer_cert, {{ .Values.tls.requireClientCert | default false }}},
+          {verify_client_once, true}
+        ]}},
+        {versions, ['tlsv1.3', 'tlsv1.2']},
+        {ciphers, [
+          {{- if eq (include "erlmcp.tls-version" .) "1.3" }}
+          {cipher, 'TLS_AES_128_GCM_SHA256', {key_exchange, 'any'}, {cipher, 'aes_128_gcm'}, {mac, 'aead'}},
+          {cipher, 'TLS_AES_256_GCM_SHA384', {key_exchange, 'any'}, {cipher, 'aes_256_gcm'}, {mac, 'aead'}},
+          {cipher, 'TLS_CHACHA20_POLY1305_SHA256', {key_exchange, 'any'}, {cipher, 'chacha20_poly1305'}, {mac, 'aead'}}
+          {{- else }}
+          {cipher, 'ECDHE-RSA-AES128-GCM-SHA256', {key_exchange, 'ecdhe_rsa'}, {cipher, 'aes_128_gcm'}, {mac, 'aead'}},
+          {cipher, 'ECDHE-RSA-AES256-GCM-SHA384', {key_exchange, 'ecdhe_rsa'}, {cipher, 'aes_256_gcm'}, {mac, 'aead'}},
+          {cipher, 'ECDHE-ECDSA-AES128-GCM-SHA256', {key_exchange, 'ecdhe_ecdsa'}, {cipher, 'aes_128_gcm'}, {mac, 'aead'}},
+          {cipher, 'ECDHE-ECDSA-AES256-GCM-SHA384', {key_exchange, 'ecdhe_ecdsa'}, {cipher, 'aes_256_gcm'}, {mac, 'aead'}}
+          {{- end }}
+        ]},
+        {honor_cipher_order, true},
+        {secure_renegotiate, true},
+        {client_renegotiation, false},
+        {session_tickets, disabled},
+        {secure_renegotiate, true}
+      ]}
+    ].
+  cipher-order.txt: |
+    # Preferred cipher order (most secure first)
+    TLS_AES_128_GCM_SHA256
+    TLS_AES_256_GCM_SHA384
+    TLS_CHACHA20_POLY1305_SHA256
+  trusted-ca-certificates.pem: |
+    # Trust bundle for verifying client certificates
+    # Place your CA certificates here
+  {{- if .Values.tls.caCertificate }}
+    {{ .Values.tls.caCertificate }}
+  {{- end }}
+
+{{- /* Diffie-Hellman Parameters Secret */}}
+---
+{{- if .Values.tls.dhParams }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-dhparams
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    type: dhparams
+  annotations:
+    "erlmcp.io/dh-group-size": "{{ .Values.tls.dhGroupSize | default "2048" }}"
+type: Opaque
+data:
+  dhparams.pem: {{ .Values.tls.dhParams | b64enc }}
+{{- end }}
+
+{{- /* OCSP Response Secret */}}
+---
+{{- if .Values.tls.ocspStapling }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-ocsp-response
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    type: ocsp
+  annotations:
+    "erlmcp.io/ocsp-stapling": "enabled"
+type: Opaque
+data:
+  ocsp-response.der: {{ .Values.tls.ocspResponse | default "" | b64enc }}
+{{- end }}
+
+{{- /* Certificate Revocation List Secret */}}
+---
+{{- if .Values.tls.crlCheck }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-crl
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    type: crl
+  annotations:
+    "erlmcp.io/crl-check": "enabled"
+type: Opaque
+data:
+  crl.pem: {{ .Values.tls.crl | default "" | b64enc }}
+{{- end }}
+
+{{- /* TLS Health Check Script */}}
+---
+{{- if .Values.tls.healthCheck.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-tls-health
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: health
+    type: tls-health
+data:
+  tls-health-check.sh: |
+    #!/bin/sh
+    # TLS certificate health check
+
+    set -e
+
+    ALERT_THRESHOLD_DAYS={{ .Values.tls.healthCheck.alertDays | default 30 }}
+    TLS_DIR="${TLS_DIR:-/etc/erlmcp/certs}"
+    SERVER_CERT="$TLS_DIR/server.crt"
+    SERVER_KEY="$TLS_DIR/server.key"
+    CA_CERT="$TLS_DIR/ca.crt"
+
+    echo "Checking TLS configuration..."
+
+    # Check certificate existence
+    if [ ! -f "$SERVER_CERT" ]; then
+      echo "ERROR: Server certificate not found at $SERVER_CERT"
+      exit 1
+    fi
+
+    if [ ! -f "$SERVER_KEY" ]; then
+      echo "ERROR: Server key not found at $SERVER_KEY"
+      exit 1
+    fi
+
+    if [ ! -f "$CA_CERT" ]; then
+      echo "ERROR: CA certificate not found at $CA_CERT"
+      exit 1
+    fi
+
+    # Check certificate validity
+    EXPIRY=$(openssl x509 -in "$SERVER_CERT" -noout -enddate | cut -d= -f2)
+    EXPIRY_EPOCH=$(date -d "$EXPIRY" +%s 2>/dev/null || date -j -f "%b %d %T %Y %Z" "$EXPIRY" +%s)
+    CURRENT_EPOCH=$(date +%s)
+    DAYS_LEFT=$(( ($EXPIRY_EPOCH - $CURRENT_EPOCH) / 86400 ))
+
+    echo "Certificate expires: $EXPIRY ($DAYS_LEFT days)"
+
+    if [ $DAYS_LEFT -lt $ALERT_THRESHOLD_DAYS ]; then
+      echo "ERROR: Certificate expires in less than $ALERT_THRESHOLD_DAYS days"
+      exit 1
+    fi
+
+    # Verify certificate chain
+    if ! openssl verify -CAfile "$CA_CERT" "$SERVER_CERT" > /dev/null 2>&1; then
+      echo "ERROR: Certificate chain verification failed"
+      exit 1
+    fi
+    echo "OK: Certificate chain valid"
+
+    # Check key match
+    CERT_MODULUS=$(openssl x509 -noout -modulus -in "$SERVER_CERT" 2>/dev/null | openssl md5 | awk '{print $2}')
+    KEY_MODULUS=$(openssl rsa -noout -modulus -in "$SERVER_KEY" 2>/dev/null | openssl md5 | awk '{print $2}')
+
+    if [ "$CERT_MODULUS" != "$KEY_MODULUS" ]; then
+      echo "ERROR: Certificate and key do not match"
+      exit 1
+    fi
+    echo "OK: Certificate and key match"
+
+    # Check certificate attributes
+    SUBJECT=$(openssl x509 -in "$SERVER_CERT" -noout -subject | cut -d= -f2-)
+    ISSUER=$(openssl x509 -in "$SERVER_CERT" -noout -issuer | cut -d= -f2-)
+    echo "Subject: $SUBJECT"
+    echo "Issuer: $ISSUER"
+
+    # Check TLS version
+    MIN_TLS_VERSION="{{ .Values.tls.minVersion | default "1.3" }}"
+    echo "Minimum TLS version: $MIN_TLS_VERSION"
+
+    echo "OK: TLS configuration is valid"
+    exit 0
+{{- end }}
+
+{{- /* PKCS12 Keystore for Java interoperability */}}
+---
+{{- if .Values.tls.pkcs12.enabled }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-pkcs12
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    type: pkcs12
+  annotations:
+    "erlmcp.io/pkcs12": "enabled"
+type: Opaque
+data:
+  {{- if .Values.tls.pkcs12.keystore }}
+  keystore.p12: {{ .Values.tls.pkcs12.keystore | b64enc }}
+  {{- else }}
+  keystore.p12: ""
+  {{- end }}
+  {{- if .Values.tls.pkcs12.password }}
+  password.txt: {{ .Values.tls.pkcs12.password | b64enc }}
+  {{- else }}
+  password.txt: {{ randAlphaNum 32 | b64enc }}
+  {{- end }}
+{{- end }}
+
+---
+{{- /* Trust Store for client verification */}}
+---
+{{- if .Values.tls.trustStore.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-trust-store
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: tls
+    type: trust-store
+data:
+  trusted-ca.pem: |
+    # Trusted CA certificates for client verification
+    {{- range .Values.tls.trustStore.certificates }}
+    {{ . }}
+    {{- end }}
+  trust-store.conf: |
+    {trust_store, [
+      {enabled, true},
+      {ca_file, "/etc/erlmcp/trust/trusted-ca.pem"},
+      {crl_check, {{ .Values.tls.trustStore.crlCheck | default true }}},
+      {ocsp_check, {{ .Values.tls.trustStore.ocspCheck | default true }}},
+      {verify_depth, {{ .Values.tls.trustStore.verifyDepth | default 3 }}}
+    ]}.
+{{- end }}
+
+{{- end }}

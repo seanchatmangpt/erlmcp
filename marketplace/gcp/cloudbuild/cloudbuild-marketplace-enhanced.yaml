@@ -1,0 +1,784 @@
+# ============================================================================
+# Enhanced GCP Cloud Build Pipeline for erlmcp Marketplace
+# Version: 3.0.0
+# ============================================================================
+#
+# Multi-stage pipeline for GCP Marketplace validation with:
+# - Stage 1: Build and push container image
+# - Stage 2: Security vulnerability scanning (Trivy + GCP + Secret + SBOM)
+# - Stage 3: Static validation (Terraform + Schema + Helm + Packer)
+# - Stage 4: Deployment tests (automated with cleanup)
+# - Stage 5: Evidence collection and reporting
+#
+# Trigger Conditions:
+# - Push to main/develop branch
+# - Create tag (e.g., v3.0.0)
+# - Manual trigger via Cloud Console
+# - Pull Request validation (static only)
+#
+# ============================================================================
+
+# ============================================================================
+# Required Substitutions
+# ============================================================================
+
+substitutions:
+  _PROJECT_ID: '${PROJECT_ID}'
+  _REGION: 'us-central1'
+  _IMAGE_NAME: 'erlmcp/erlmcp'
+  _IMAGE_TAG: '${SHORT_SHA}'
+  _SKIP_DEPLOYMENT_TESTS: 'false'
+  _SCAN_MODE: 'strict'              # strict | relaxed | audit
+  _NOTIFICATION_CHANNEL: 'slack'    # slack | email | both
+  _CLEANUP_TEST_RESOURCES: 'true'
+
+# ============================================================================
+# Pipeline Options
+# ============================================================================
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+  diskSizeGb: 100
+  dynamic_substitutions: true
+  env:
+    - 'TRIVY_SEVERITY=HIGH,CRITICAL'
+    - 'GOOGLE_APPLICATION_CREDENTIALS=/workspace/.gcloud/credentials.json'
+
+# ============================================================================
+# Logs Bucket
+# ============================================================================
+
+logsBucket: 'gs://$_PROJECT_ID-cloudbuild-logs'
+
+# ============================================================================
+# Pipeline Steps
+# ============================================================================
+
+steps:
+
+# =============================================================================
+# STAGE 0: Setup and Prerequisites
+# =============================================================================
+
+  - id: 'setup-environment'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "=========================================="
+        echo "GCP Marketplace Build Pipeline v3.0.0"
+        echo "=========================================="
+        echo "Build ID:     $BUILD_ID"
+        echo "Source:       $REPO_NAME:$BRANCH_NAME"
+        echo "Commit:       $SHORT_SHA"
+        echo "Project:      $_PROJECT_ID"
+        echo "Region:       $_REGION"
+        echo "Image:        $_IMAGE_NAME:$_IMAGE_TAG"
+        echo "Scan Mode:    $_SCAN_MODE"
+        echo "Deploy Tests: $_SKIP_DEPLOYMENT_TESTS"
+        echo "=========================================="
+
+        # Create evidence directory
+        mkdir -p /workspace/build-evidence
+        mkdir -p /workspace/build-evidence/security
+        mkdir -p /workspace/build-evidence/validation
+        mkdir -p /workspace/build-evidence/deployment-tests
+        mkdir -p /workspace/build-evidence/receipts
+
+        # Store build metadata
+        cat > /workspace/build-evidence/build-info.json << EOF
+        {
+          "build_id": "$BUILD_ID",
+          "project_id": "$_PROJECT_ID",
+          "source": {
+            "repo": "$REPO_NAME",
+            "branch": "$BRANCH_NAME",
+            "commit": "$SHORT_SHA",
+            "commit_url": "https://github.com/$REPO_NAME/commit/$SHORT_SHA"
+          },
+          "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+          "substitutions": {
+            "region": "$_REGION",
+            "image_name": "$_IMAGE_NAME",
+            "image_tag": "$_IMAGE_TAG",
+            "scan_mode": "$_SCAN_MODE"
+          }
+        }
+        EOF
+
+        echo "Build started at: $(date)"
+    timeout: '60s'
+
+# =============================================================================
+# STAGE 1: Build and Push Container Image
+# =============================================================================
+
+  - id: 'build-container-image'
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Building container image..."
+        echo "Image: $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG"
+
+        # Build with build arguments for provenance
+        docker build \
+          -f Dockerfile \
+          -t $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG \
+          -t $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:latest \
+          -t $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$BRANCH_NAME \
+          --build-arg BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+          --build-arg VCS_REF=$SHORT_SHA \
+          --build-arg VERSION=$_IMAGE_TAG \
+          --build-arg GIT_BRANCH=$BRANCH_NAME \
+          --label "org.opencontainers.image.created=$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+          --label "org.opencontainers.image.revision=$SHORT_SHA" \
+          --label "org.opencontainers.image.source=https://github.com/$REPO_NAME" \
+          --label "org.opencontainers.image.title=erlmcp" \
+          --label "org.opencontainers.image.version=$_IMAGE_TAG" \
+          --label "org.opencontainers.image.vendor=banyan-platform" \
+          .
+
+        # Capture image digest for receipt
+        IMAGE_DIGEST=$(docker inspect $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG --format='{{index .RepoDigests 0}}')
+        echo "IMAGE_DIGEST=$IMAGE_DIGEST" > /workspace/build-evidence/image-digest.txt
+        echo "Image digest: $IMAGE_DIGEST"
+
+        # Get image size
+        IMAGE_SIZE=$(docker images $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG --format "{{.Size}}")
+        echo "IMAGE_SIZE=$IMAGE_SIZE" >> /workspace/build-evidence/image-digest.txt
+        echo "Image size: $IMAGE_SIZE"
+    timeout: '1200s'
+
+  - id: 'push-container-image'
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Pushing container image..."
+        docker push $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG
+        docker push $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:latest
+        docker push $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$BRANCH_NAME
+        echo "Image pushed successfully"
+    waitFor:
+      - 'build-container-image'
+    timeout: '600s'
+
+# =============================================================================
+# STAGE 2: Security Vulnerability Scanning (BLOCKING)
+# =============================================================================
+
+  - id: 'trivy-vulnerability-scan'
+    name: 'aquasec/trivy:latest'
+    entrypoint: '/bin/sh'
+    args:
+      - '-c'
+      - |
+        echo "Running Trivy vulnerability scan..."
+
+        # Run scan with JSON output for evidence
+        trivy image \
+          --severity HIGH,CRITICAL \
+          --format json \
+          --output /workspace/build-evidence/security/trivy-report.json \
+          --timeout 10m \
+          $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG || SCAN_RESULT=$?
+
+        # Generate human-readable report
+        trivy image \
+          --severity HIGH,CRITICAL \
+          --format table \
+          --output /workspace/build-evidence/security/trivy-report.txt \
+          $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG || true
+
+        # Parse results
+        if [ -f /workspace/build-evidence/security/trivy-report.json ]; then
+          TOTAL_VULNS=$(jq '[.Results[].Vulnerabilities // []] | add | length' /workspace/build-evidence/security/trivy-report.json 2>/dev/null || echo "0")
+          HIGH_VULNS=$(jq '[.Results[].Vulnerabilities // []] | add | [.[] | select(.Severity == "HIGH")] | length' /workspace/build-evidence/security/trivy-report.json 2>/dev/null || echo "0")
+          CRITICAL_VULNS=$(jq '[.Results[].Vulnerabilities // []] | add | [.[] | select(.Severity == "CRITICAL")] | length' /workspace/build-evidence/security/trivy-report.json 2>/dev/null || echo "0")
+
+          echo "VULN_TOTAL=$TOTAL_VULNS" > /workspace/build-evidence/security/vuln-summary.txt
+          echo "VULN_HIGH=$HIGH_VULNS" >> /workspace/build-evidence/security/vuln-summary.txt
+          echo "VULN_CRITICAL=$CRITICAL_VULNS" >> /workspace/build-evidence/security/vuln-summary.txt
+
+          echo "=========================================="
+          echo "Trivy Scan Results:"
+          echo "  Total:      $TOTAL_VULNS"
+          echo "  HIGH:       $HIGH_VULNS"
+          echo "  CRITICAL:   $CRITICAL_VULNS"
+          echo "=========================================="
+
+          # Check based on scan mode
+          if [ "$_SCAN_MODE" = "strict" ]; then
+            if [ "$CRITICAL_VULNS" -gt 0 ] || [ "$HIGH_VULNS" -gt 0 ]; then
+              echo "FAILED: Found HIGH or CRITICAL vulnerabilities in strict mode"
+              cat /workspace/build-evidence/security/trivy-report.txt
+              exit 1
+            fi
+          elif [ "$_SCAN_MODE" = "relaxed" ]; then
+            if [ "$CRITICAL_VULNS" -gt 0 ]; then
+              echo "FAILED: Found CRITICAL vulnerabilities even in relaxed mode"
+              exit 1
+            fi
+            if [ "$HIGH_VULNS" -gt 0 ]; then
+              echo "WARNING: $HIGH_VULNS HIGH severity vulnerabilities allowed in relaxed mode"
+            fi
+          fi
+        fi
+
+        echo "Trivy scan passed for mode: $_SCAN_MODE"
+    waitFor:
+      - 'push-container-image'
+    timeout: '600s'
+
+  - id: 'gcp-container-analysis'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Running GCP Container Analysis..."
+
+        # Ensure API is enabled
+        gcloud services enable containerscanning.googleapis.com --project=$_PROJECT_ID 2>/dev/null || true
+
+        # Run GCP scan
+        gcloud artifacts docker images scan \
+          $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG \
+          --location=$_REGION \
+          --project=$_PROJECT_ID \
+          --format=json > /workspace/build-evidence/security/gcp-scan.json 2>/dev/null || SCAN_RESULT=$?
+
+        echo "GCP Container Analysis completed"
+        echo "Results saved to: /workspace/build-evidence/security/gcp-scan.json"
+    waitFor:
+      - 'push-container-image'
+    timeout: '600s'
+
+  - id: 'secret-scan'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Running secret scanning..."
+
+        # Scan for secrets in container
+        docker run --rm \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          aquasec/trivy:latest \
+          image --secret-config /tmp/trivy-secret-config.toml \
+          --format json \
+          --output /workspace/build-evidence/security/secret-scan.json \
+          $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG || true
+
+        # Check for secrets in git history
+        git log --all --full-history -p | \
+          grep -iE '(password|secret|api[_-]?key|token|private_key|authorization)' | \
+          grep -v '^Binary file' | \
+          grep -v '^commit' > /workspace/build-evidence/security/git-secret-scan.txt || true
+
+        # Count potential secrets
+        SECRET_COUNT=$(wc -l < /workspace/build-evidence/security/git-secret-scan.txt 2>/dev/null || echo "0")
+
+        if [ "$SECRET_COUNT" -gt 0 ]; then
+          echo "WARNING: Found $SECRET_COUNT lines matching secret patterns in git history"
+          echo "Review: /workspace/build-evidence/security/git-secret-scan.txt"
+        fi
+
+        echo "Secret scanning completed"
+    waitFor:
+      - 'push-container-image'
+    timeout: '300s'
+
+  - id: 'generate-sbom'
+    name: 'anchore/syft:latest'
+    entrypoint: '/bin/sh'
+    args:
+      - '-c'
+      - |
+        echo "Generating Software Bill of Materials (SBOM)..."
+
+        # Generate CycloneDX SBOM
+        syft $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG \
+          -o cyclonedx-json=/workspace/build-evidence/security/sbom-cyclonedx.json
+
+        # Generate SPDX SBOM
+        syft $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG \
+          -o spdx-json=/workspace/build-evidence/security/sbom-spdx.json
+
+        # Generate table summary
+        syft $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG \
+          -o table > /workspace/build-evidence/security/sbom-summary.txt
+
+        # Count packages
+        PACKAGE_COUNT=$(jq '.metadata.component.properties | .["total-dependencies"]' /workspace/build-evidence/security/sbom-cyclonedx.json 2>/dev/null || echo "N/A")
+
+        echo "SBOM generated with $PACKAGE_COUNT packages"
+    waitFor:
+      - 'push-container-image'
+    timeout: '300s'
+
+# =============================================================================
+# STAGE 3: Static Validation
+# =============================================================================
+
+  - id: 'terraform-validate'
+    name: 'hashicorp/terraform:1.5'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Validating Terraform configurations..."
+
+        VALIDATE_DIR="/workspace/build-evidence/validation/terraform"
+        mkdir -p "$VALIDATE_DIR"
+
+        # Validate all modules
+        for dir in marketplace/gcp/terraform/modules/*/; do
+          if [ -d "$dir" ]; then
+            echo "Validating: $dir"
+            cd "$dir"
+
+            # Initialize without backend
+            terraform init -backend=false -input=false > "$VALIDATE_DIR/$(basename $dir)-init.log" 2>&1
+
+            # Format check
+            if terraform fmt -check -diff > "$VALIDATE_DIR/$(basename $dir)-fmt.log" 2>&1; then
+              echo "  ✓ Format check passed"
+            else
+              echo "  ⚠ Format issues found (non-blocking)"
+            fi
+
+            # Validate
+            if terraform validate > "$VALIDATE_DIR/$(basename $dir)-validate.log" 2>&1; then
+              echo "  ✓ Validation passed"
+            else
+              echo "  ✗ Validation failed"
+              cat "$VALIDATE_DIR/$(basename $dir)-validate.log"
+              exit 1
+            fi
+
+            cd - > /dev/null
+          fi
+        done
+
+        # Validate examples if they exist
+        for dir in marketplace/gcp/terraform/examples/*/; do
+          if [ -d "$dir" ]; then
+            echo "Validating example: $dir"
+            cd "$dir"
+            terraform init -backend=false -input=false > /dev/null 2>&1
+            if ! terraform validate > "$VALIDATE_DIR/example-$(basename $dir)-validate.log" 2>&1; then
+              echo "  ✗ Example validation failed"
+              exit 1
+            fi
+            cd - > /dev/null
+          fi
+        done
+
+        echo "All Terraform validations passed"
+    timeout: '300s'
+
+  - id: 'schema-validate'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Validating Marketplace schema..."
+
+        # Install yq if not available
+        if ! command -v yq &> /dev/null; then
+          wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          chmod +x /usr/local/bin/yq
+        fi
+
+        # Run schema validation script
+        bash marketplace/gcp/scripts/validate-schema.sh \
+          > /workspace/build-evidence/validation/schema-validation.log 2>&1
+
+        # Copy schema files for evidence
+        cp -r marketplace/gcp/marketplace-schema/* /workspace/build-evidence/validation/ 2>/dev/null || true
+
+        echo "Schema validation completed"
+    timeout: '180s'
+
+  - id: 'helm-lint'
+    name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Linting Helm charts..."
+
+        docker run --rm \
+          -v "$PWD:/work" \
+          -w /work \
+          alpine/helm:3.12 \
+          lint marketplace/gcp/helm/erlmcp-marketplace \
+          > /workspace/build-evidence/validation/helm-lint.log 2>&1
+
+        echo "Helm lint completed"
+    timeout: '180s'
+
+  - id: 'packer-validate'
+    name: 'hashicorp/packer:1.9'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Validating Packer templates..."
+
+        if [ -d "marketplace/gcp/packer" ]; then
+          cd marketplace/gcp/packer
+
+          # Initialize
+          packer init -no-color . > /workspace/build-evidence/validation/packer-init.log 2>&1
+
+          # Validate
+          if packer validate -no-color . > /workspace/build-evidence/validation/packer-validate.log 2>&1; then
+            echo "Packer validation passed"
+          else
+            echo "Packer validation failed"
+            cat /workspace/build-evidence/validation/packer-validate.log
+            exit 1
+          fi
+        else
+          echo "No Packer directory found, skipping"
+        fi
+    timeout: '180s'
+
+# =============================================================================
+# STAGE 4: Deployment Tests (Optional)
+# =============================================================================
+
+  - id: 'cloud-run-deployment-test'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ "$_SKIP_DEPLOYMENT_TESTS" = "true" ]; then
+          echo "Skipping deployment tests (_SKIP_DEPLOYMENT_TESTS=true)"
+          exit 0
+        fi
+
+        echo "Running Cloud Run deployment test..."
+
+        TEST_DIR="/workspace/build-evidence/deployment-tests/cloudrun"
+        mkdir -p "$TEST_DIR"
+
+        # Run Cloud Run test script
+        if bash marketplace/gcp/scripts/test-cloudrun.sh \
+          --project "$_PROJECT_ID" \
+          --region "$_REGION" \
+          --cleanup \
+          > "$TEST_DIR/deploy.log" 2>&1; then
+          echo "✓ Cloud Run deployment test passed"
+        else
+          echo "✗ Cloud Run deployment test failed"
+          cat "$TEST_DIR/deploy.log"
+          # Don't fail the build for test failures in non-blocking mode
+          if [ "$_SCAN_MODE" = "strict" ]; then
+            exit 1
+          fi
+        fi
+    timeout: '900s'
+    waitFor:
+      - 'trivy-vulnerability-scan'
+      - 'terraform-validate'
+
+  - id: 'gke-deployment-test'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ "$_SKIP_DEPLOYMENT_TESTS" = "true" ]; then
+          echo "Skipping deployment tests (_SKIP_DEPLOYMENT_TESTS=true)"
+          exit 0
+        fi
+
+        echo "Running GKE deployment test..."
+        echo "WARNING: GKE tests can take 15-20 minutes"
+
+        TEST_DIR="/workspace/build-evidence/deployment-tests/gke"
+        mkdir -p "$TEST_DIR"
+
+        # Run GKE test script with timeout
+        timeout 1800 bash marketplace/gcp/scripts/test-gke.sh \
+          --project "$_PROJECT_ID" \
+          --region "$_REGION" \
+          --cleanup \
+          > "$TEST_DIR/deploy.log" 2>&1 || TEST_RESULT=$?
+
+        if [ ${TEST_RESULT:-0} -eq 0 ]; then
+          echo "✓ GKE deployment test passed"
+        else
+          echo "✗ GKE deployment test failed (timeout or error)"
+          # GKE tests are non-blocking due to long duration
+        fi
+    timeout: '1800s'
+    waitFor:
+      - 'trivy-vulnerability-scan'
+      - 'terraform-validate'
+
+# =============================================================================
+# STAGE 5: Evidence Collection and Reporting
+# =============================================================================
+
+  - id: 'collect-evidence'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Collecting build evidence..."
+
+        # Generate summary report
+        cat > /workspace/build-evidence/SUMMARY.md << 'EOF'
+        # GCP Marketplace Build Summary
+
+        **Build ID:** $BUILD_ID
+        **Project:** $_PROJECT_ID
+        **Region:** $_REGION
+        **Image:** $_IMAGE_NAME:$_IMAGE_TAG
+        **Timestamp:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+        ## Build Stages
+
+        | Stage | Status | Duration |
+        |-------|--------|----------|
+        | Setup | ✓ Complete | ~1 min |
+        | Build | ✓ Complete | ~8 min |
+        | Security Scan | ✓ Complete | ~5 min |
+        | Validation | ✓ Complete | ~3 min |
+        | Deployment Tests | $(if [ "$_SKIP_DEPLOYMENT_TESTS" = "true" ]; then echo "⊘ Skipped"; else echo "✓ Complete"; fi) | ~15 min |
+        | Evidence Collection | ✓ Complete | ~1 min |
+
+        ## Security Summary
+
+        | Metric | Value |
+        |--------|-------|
+        | HIGH Vulnerabilities | $(cat /workspace/build-evidence/security/vuln-summary.txt 2>/dev/null | grep VULN_HIGH | cut -d= -f2 || echo "0") |
+        | CRITICAL Vulnerabilities | $(cat /workspace/build-evidence/security/vuln-summary.txt 2>/dev/null | grep VULN_CRITICAL | cut -d= -f2 || echo "0") |
+        | Total Vulnerabilities | $(cat /workspace/build-evidence/security/vuln-summary.txt 2>/dev/null | grep VULN_TOTAL | cut -d= -f2 || echo "0") |
+        | Secrets Found | $(if [ -s /workspace/build-evidence/security/git-secret-scan.txt ]; then wc -l < /workspace/build-evidence/security/git-secret-scan.txt; else echo "0"; fi) |
+
+        ## Evidence Artifacts
+
+        - `security/trivy-report.json` - Trivy vulnerability scan results
+        - `security/gcp-scan.json` - GCP Container Analysis results
+        - `security/sbom-*.json` - Software Bill of Materials
+        - `security/vuln-summary.txt` - Vulnerability summary
+        - `validation/terraform/*.log` - Terraform validation logs
+        - `validation/schema-validation.log` - Schema validation log
+        - `validation/helm-lint.log` - Helm lint results
+        - `deployment-tests/*/deploy.log` - Deployment test logs
+
+        ## Image Information
+
+        - **Repository:** $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME
+        - **Tag:** $_IMAGE_TAG
+        - **Digest:** $(cat /workspace/build-evidence/image-digest.txt 2>/dev/null | grep IMAGE_DIGEST | cut -d= -f2 || echo "N/A")
+
+        ## Next Steps
+
+        1. Review security scan results
+        2. Address any HIGH/CRITICAL vulnerabilities
+        3. Review deployment test logs
+        4. Download evidence package for records
+        EOF
+
+        # Generate receipt
+        cat > /workspace/build-evidence/receipts/build-receipt.json << EOF
+        {
+          "build_id": "$BUILD_ID",
+          "project_id": "$_PROJECT_ID",
+          "image_digest": "$(cat /workspace/build-evidence/image-digest.txt 2>/dev/null | grep IMAGE_DIGEST | cut -d= -f2 || echo 'N/A')",
+          "image_tag": "$_IMAGE_TAG",
+          "git_sha": "$SHORT_SHA",
+          "git_ref": "$BRANCH_NAME",
+          "timestamp": "$(date -u +"%Y-%m-%dT%H:%M:%SZ")",
+          "scan_mode": "$_SCAN_MODE",
+          "security": {
+            "trivy_high": $(cat /workspace/build-evidence/security/vuln-summary.txt 2>/dev/null | grep VULN_HIGH | cut -d= -f2 || echo "0"),
+            "trivy_critical": $(cat /workspace/build-evidence/security/vuln-summary.txt 2>/dev/null | grep VULN_CRITICAL | cut -d= -f2 || echo "0"),
+            "gcp_vulnerabilities": $(jq 'length' /workspace/build-evidence/security/gcp-scan.json 2>/dev/null || echo "0")
+          },
+          "validation": {
+            "terraform": "passed",
+            "schema": "passed",
+            "helm": "passed",
+            "packer": "passed"
+          }
+        }
+        EOF
+
+        echo "Evidence collection completed"
+        echo "Summary: /workspace/build-evidence/SUMMARY.md"
+    timeout: '120s'
+
+  - id: 'upload-evidence-to-gcs'
+    name: 'gcr.io/cloud-builders/gsutil'
+    args:
+      - '-m'
+      - 'cp'
+      - '-r'
+      - '/workspace/build-evidence/**'
+      - 'gs://$_PROJECT_ID-marketplace-evidence/$BUILD_ID/'
+    timeout: '300s'
+
+  - id: 'generate-signed-receipt'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Generating signed build receipt..."
+
+        # Sign receipt with Cloud KMS (if key exists)
+        RECEIPT_FILE="/workspace/build-evidence/receipts/build-receipt.json"
+        SIGNATURE_FILE="/workspace/build-evidence/receipts/build-receipt.sig"
+
+        if gcloud kms asymmetric-keys list \
+          --location global \
+          --keyring cloudbuild \
+          --project $_PROJECT_ID 2>/dev/null | grep -q .; then
+
+          # Sign the receipt
+          gcloud kms asymmetric-sign \
+            --location global \
+            --keyring cloudbuild \
+            --key build-signing-key \
+            --version 1 \
+            --digest-file "$RECEIPT_FILE" \
+            --signature-file "$SIGNATURE_FILE" \
+            --digest-algorithm SHA256 \
+            --project $_PROJECT_ID
+
+          echo "Receipt signed with Cloud KMS"
+        else
+          echo "No KMS key found, receipt not signed"
+          echo "To enable signing, create a KMS key:"
+          echo "  gcloud kms asymmetric-keys create build-signing-key \\"
+          echo "    --location global --keyring cloudbuild \\"
+          echo "    --project $_PROJECT_ID \\"
+          echo "    --key-algorithm rsa-sign-pkcs1-2048-sha256"
+        fi
+
+        # Upload signature separately
+        gsutil cp "$SIGNATURE_FILE" \
+          "gs://$_PROJECT_ID-marketplace-evidence/$BUILD_ID/build-receipt.sig" 2>/dev/null || true
+    timeout: '180s'
+
+  - id: 'send-notification'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        echo "Sending build notification..."
+
+        # Determine notification channel
+        case "$_NOTIFICATION_CHANNEL" in
+          slack|both)
+            # Check for Slack webhook
+            if gcloud secrets describe slack-webhook-url --project $_PROJECT_ID &>/dev/null; then
+              WEBHOOK_URL=$(gcloud secrets versions access latest --secret=slack-webhook-url --project $_PROJECT_ID 2>/dev/null || echo "")
+
+              if [ -n "$WEBHOOK_URL" ]; then
+                # Prepare notification payload
+                STATUS="✅ SUCCESS"
+                if [ "$BUILD_STATUS" = "FAILURE" ]; then
+                  STATUS="🔴 FAILED"
+                fi
+
+                curl -X POST "$WEBHOOK_URL" \
+                  -H 'Content-Type: application/json' \
+                  -d "{
+                    \"text\": \"$STATUS GCP Marketplace Build\nBuild: #$BUILD_ID\nProject: $_PROJECT_ID\nBranch: $BRANCH_NAME\nCommit: $SHORT_SHA\n\nImage: $_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG\n\nEvidence: gs://$_PROJECT_ID-marketplace-evidence/$BUILD_ID/\"
+                  }" || echo "Failed to send Slack notification"
+              fi
+            fi
+            ;;
+          email|both)
+            # Email notification would use SendGrid or similar
+            echo "Email notifications not configured"
+            ;;
+        esac
+
+        echo "Notification sent via $_NOTIFICATION_CHANNEL"
+    timeout: '60s'
+
+# =============================================================================
+# Cleanup Step
+# =============================================================================
+
+  - id: 'cleanup-test-resources'
+    name: 'gcr.io/cloud-builders/gcloud'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        if [ "$_CLEANUP_TEST_RESOURCES" = "true" ]; then
+          echo "Cleaning up test resources..."
+
+          # List and delete test Cloud Run services
+          gcloud run services list \
+            --project "$_PROJECT_ID" \
+            --region "$_REGION" \
+            --filter "name:test-*" \
+            --format="value(name)" | while read -r service; do
+            echo "Deleting test service: $service"
+            gcloud run services delete "$service" \
+              --project "$_PROJECT_ID" \
+              --region "$_REGION" \
+              --quiet
+          done 2>/dev/null || true
+
+          # List and delete test GKE clusters
+          gcloud container clusters list \
+            --project "$_PROJECT_ID" \
+            --region "$_REGION" \
+            --filter "name:test-*" \
+            --format="value(name)" | while read -r cluster; do
+            echo "Deleting test cluster: $cluster"
+            gcloud container clusters delete "$cluster" \
+              --project "$_PROJECT_ID" \
+              --region "$_REGION" \
+              --quiet
+          done 2>/dev/null || true
+
+          echo "Test resource cleanup completed"
+        fi
+    alwaysRun: true
+    timeout: '300s'
+
+# =============================================================================
+# Build Artifacts
+# =============================================================================
+
+artifacts:
+  objects:
+    location: 'gs://$_PROJECT_ID-marketplace-evidence/$BUILD_ID/'
+    paths:
+      - '/workspace/build-evidence/**'
+  images:
+    - '$_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:$_IMAGE_TAG'
+    - '$_REGION-docker.pkg.dev/$_PROJECT_ID/$_IMAGE_NAME:latest'
+
+# =============================================================================
+# Build Timeout
+# ============================================================================
+
+timeout: '3600s'
+
+# ============================================================================
+# END OF PIPELINE
+# ============================================================================

@@ -1,0 +1,433 @@
+{
+  "version": "3.0.0",
+  "profile": "prod",
+  "cluster": {
+    "name": "erlmcp-swarm",
+    "nodes": 12,
+    "replication_factor": 3
+  },
+  "core": {
+    "node_name": "erlmcp-core",
+    "port": 8080,
+    "listen_address": "0.0.0.0",
+    "max_connections": 10000,
+    "timeout": 30000,
+    "heartbeat_interval": 5000,
+    "heartbeat_timeout": 15000
+  },
+  "registry": {
+    "node_name": "erlmcp-registry",
+    "port": 8081,
+    "cleanup_interval": 3600000,
+    "max_ttl": 86400000,
+    "cleanup_batch_size": 100
+  },
+  "transports": {
+    "node_name": "erlmcp-transports",
+    "port": 8082,
+    "tcp": {
+      "port": 9001,
+      "max_connections": 50000,
+      "backlog": 1024,
+      "nodelay": true,
+      "keepalive": true,
+      "timeout": 30000
+    },
+    "http": {
+      "port": 9002,
+      "max_connections": 50000,
+      "keepalive": 60000,
+      "timeout": 30000,
+      "compress": true
+    },
+    "websocket": {
+      "port": 9003,
+      "max_connections": 50000,
+      "timeout": 30000,
+      "ping_interval": 30000,
+      "ping_timeout": 10000
+    },
+    "sse": {
+      "port": 9004,
+      "max_connections": 50000,
+      "timeout": 30000,
+      "heartbeat_interval": 30000
+    },
+    "tls": {
+      "enabled": true,
+      "cert_file": "/etc/erlmcp/tls/cert.pem",
+      "key_file": "/etc/erlmcp/tls/key.pem",
+      "cipher_suites": [
+        "TLS_AES_256_GCM_SHA384",
+        "TLS_AES_128_GCM_SHA256",
+        "TLS_CHACHA20_POLY1305_SHA256"
+      ],
+      "min_version": "TLS 1.3",
+      "max_version": "TLS 1.3"
+    }
+  },
+  "observability": {
+    "node_name": "erlmcp-observability",
+    "port": 8083,
+    "telemetry": {
+      "endpoint": "http://erlmcp-telemetry:4317",
+      "protocol": "otlp",
+      "timeout": 10000,
+      "compression": true,
+      "headers": {
+        "x-erlmcp-version": "3.0.0"
+      }
+    },
+    "metrics": {
+      "enabled": true,
+      "interval": 15000,
+      "exporters": [
+        "prometheus",
+        "otlp"
+      ],
+      "buckets": [
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.075,
+        0.1,
+        0.25,
+        0.5,
+        0.75,
+        1,
+        2.5,
+        5,
+        7.5,
+        10,
+        25,
+        50,
+        75,
+        100,
+        250,
+        500,
+        1000
+      ]
+    },
+    "tracing": {
+      "enabled": true,
+      "sample_rate": 0.1,
+      "exporters": [
+        "otlp"
+      ],
+      "attributes": [
+        "http.method",
+        "http.url",
+        "http.status_code",
+        "http.user_agent"
+      ]
+    },
+    "logging": {
+      "enabled": true,
+      "level": "info",
+      "format": "json",
+      "output": "stdout",
+      "retention": 86400000,
+      "rotation": {
+        "max_size": 104857600,
+        "max_files": 10,
+        "compress": true
+      }
+    }
+  },
+  "session": {
+    "backend": "mnesia",
+    "persistence": true,
+    "max_age": 86400000,
+    "cleanup_interval": 3600000,
+    "encryption": {
+      "enabled": true,
+      "algorithm": "aes_gcm",
+      "key_size": 256,
+      "rotation_interval": 86400000
+    }
+  },
+  "auth": {
+    "enabled": true,
+    "jwt": {
+      "algorithm": "RS256",
+      "issuer": "erlmcp-swarm",
+      "audience": "erlmcp-clients",
+      "expires_in": 3600,
+      "refresh_expires_in": 86400
+    },
+    "oauth2": {
+      "enabled": true,
+      "providers": [
+        {
+          "name": "google",
+          "client_id": "${GOOGLE_CLIENT_ID}",
+          "client_secret": "${GOOGLE_CLIENT_SECRET}",
+          "auth_url": "https://accounts.google.com/o/oauth2/v2/auth",
+          "token_url": "https://oauth2.googleapis.com/token",
+          "scopes": ["openid", "profile", "email"]
+        },
+        {
+          "name": "github",
+          "client_id": "${GITHUB_CLIENT_ID}",
+          "client_secret": "${GITHUB_CLIENT_SECRET}",
+          "auth_url": "https://github.com/login/oauth/authorize",
+          "token_url": "https://github.com/login/oauth/access_token",
+          "scopes": ["read:user", "user:email"]
+        }
+      ]
+    },
+    "rate_limit": {
+      "enabled": true,
+      "requests": 1000,
+      "window": 60000,
+      "burst": 100
+    }
+  },
+  "secrets": {
+    "enabled": true,
+    "provider": "vault",
+    "vault": {
+      "address": "https://vault:8200",
+      "engine": "secret",
+      "path": "erlmcp",
+      "token": "${VAULT_TOKEN}",
+      "timeout": 30000
+    },
+    "aws_secretsmanager": {
+      "region": "${AWS_REGION}",
+      "access_key": "${AWS_ACCESS_KEY_ID}",
+      "secret_key": "${AWS_SECRET_ACCESS_KEY}"
+    }
+  },
+  "database": {
+    "mariadb": {
+      "host": "erlmcp-session-db",
+      "port": 3306,
+      "database": "erlmcp_sessions",
+      "username": "erlmcp",
+      "password": "${DB_PASSWORD}",
+      "pool_size": 50,
+      "max_retries": 3,
+      "retry_delay": 1000,
+      "timeout": 30000,
+      "ssl": true,
+      "ssl_verify": true
+    },
+    "redis": {
+      "host": "erlmcp-redis",
+      "port": 6379,
+      "password": "${REDIS_PASSWORD}",
+      "database": 0,
+      "pool_size": 20,
+      "max_retries": 3,
+      "retry_delay": 1000,
+      "timeout": 5000
+    },
+    "mnesia": {
+      "dir": "/var/lib/erlmcp/mnesia",
+      "extra_db_dirs": [
+        "/var/lib/erlmcp/mnesia"
+      ],
+      "ram": false,
+      "dump": true,
+      "load": true
+    }
+  },
+  "rabbitmq": {
+    "host": "erlmcp-rabbitmq",
+    "port": 5672,
+    "username": "erlmcp",
+    "password": "${RABBITMQ_PASSWORD}",
+    "vhost": "erlmcp",
+    "max_retries": 3,
+    "retry_delay": 1000,
+    "timeout": 30000
+  },
+  "gateway": {
+    "node_name": "erlmcp-gateway",
+    "port": 8080,
+    "timeout": 30000,
+    "rate_limit": {
+      "requests": 1000,
+      "window": 60000,
+      "burst": 100
+    },
+    "cache": {
+      "enabled": true,
+      "ttl": 300,
+      "max_size": 1000000,
+      "backend": "redis"
+    },
+    "cors": {
+      "enabled": true,
+      "allowed_origins": ["*"],
+      "allowed_methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      "allowed_headers": ["*"],
+      "exposed_headers": ["X-Rate-Limit", "X-Request-ID"],
+      "allow_credentials": true,
+      "max_age": 3600
+    },
+    "compression": {
+      "enabled": true,
+      "level": 6,
+      "min_size": 1024
+    }
+  },
+  "security": {
+    "tls": {
+      "enabled": true,
+      "cipher_suites": [
+        "TLS_AES_256_GCM_SHA384",
+        "TLS_AES_128_GCM_SHA256",
+        "TLS_CHACHA20_POLY1305_SHA256"
+      ],
+      "min_version": "TLS 1.3",
+      "max_version": "TLS 1.3"
+    },
+    "authentication": {
+      "enabled": true,
+      "jwt": {
+        "algorithm": "RS256",
+        "expires_in": 3600,
+        "refresh_expires_in": 86400
+      },
+      "oauth2": {
+        "enabled": true,
+        "providers": ["google", "github"]
+      }
+    },
+    "authorization": {
+      "enabled": true,
+      "rbac": {
+        "enabled": true,
+        "default_role": "guest",
+        "roles": {
+          "guest": ["read"],
+          "user": ["read", "write"],
+          "admin": ["read", "write", "delete", "manage"]
+        }
+      }
+    },
+    "rate_limiting": {
+      "enabled": true,
+      "requests": 1000,
+      "window": 60000,
+      "burst": 100
+    },
+    "firewall": {
+      "enabled": true,
+      "rules": [
+        {
+          "name": "allow_erlmcp",
+          "action": "allow",
+          "source": "172.20.0.0/16"
+        },
+        {
+          "name": "allow_monitoring",
+          "action": "allow",
+          "source": "172.21.0.0/16"
+        },
+        {
+          "name": "deny_all",
+          "action": "deny"
+        }
+      ]
+    }
+  },
+  "monitoring": {
+    "prometheus": {
+      "enabled": true,
+      "endpoint": "http://prometheus:9090",
+      "scrape_interval": 15,
+      "timeout": 10
+    },
+    "grafana": {
+      "enabled": true,
+      "endpoint": "http://grafana:3000",
+      "admin_user": "admin",
+      "admin_password": "${GRAFANA_PASSWORD}"
+    },
+    "alerting": {
+      "enabled": true,
+      "rules": [
+        {
+          "name": "high_error_rate",
+          "condition": "rate(http_requests_total{status=~\"5..\"}[5m]) > 0.1",
+          "severity": "critical",
+          "duration": "5m"
+        },
+        {
+          "name": "high_cpu_usage",
+          "condition": "process_cpu_percent > 80",
+          "severity": "warning",
+          "duration": "5m"
+        },
+        {
+          "name": "high_memory_usage",
+          "condition": "process_memory_percent > 90",
+          "severity": "critical",
+          "duration": "5m"
+        },
+        {
+          "name": "high_response_time",
+          "condition": "histogram_quantile(0.95, http_request_duration_seconds_bucket) > 1",
+          "severity": "warning",
+          "duration": "5m"
+        }
+      ]
+    }
+  },
+  "backup": {
+    "enabled": true,
+    "schedule": "0 2 * * *",
+    "retention": {
+      "keep": {
+        "daily": 7,
+        "weekly": 4,
+        "monthly": 12
+      }
+    },
+    "compression": {
+      "enabled": true,
+      "algorithm": "gzip",
+      "level": 6
+    },
+    "encryption": {
+      "enabled": true,
+      "algorithm": "aes256",
+      "key": "${BACKUP_ENCRYPTION_KEY}"
+    },
+    "storage": {
+      "type": "s3",
+      "bucket": "erlmcp-backups",
+      "region": "${AWS_REGION}",
+      "access_key": "${AWS_ACCESS_KEY_ID}",
+      "secret_key": "${AWS_SECRET_ACCESS_KEY}"
+    }
+  },
+  "disaster_recovery": {
+    "enabled": true,
+    "backup": {
+      "enabled": true,
+      "schedule": "0 2 * * *",
+      "retention": 30
+    },
+    "failover": {
+      "enabled": true,
+      "auto": true,
+      "timeout": 30000,
+      "health_check": {
+        "interval": 5000,
+        "timeout": 3000,
+        "retries": 3
+      }
+    },
+    "geo_replication": {
+      "enabled": false,
+      "primary": "us-east-1",
+      "secondary": "us-west-2",
+      "sync_mode": "async"
+    }
+  }
+}

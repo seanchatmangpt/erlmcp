@@ -1,0 +1,157 @@
+%% Docker Swarm VM Args for erlmcp v3
+%% Production tuned VM configuration for Swarm deployment
+
+%% Node name - set dynamically via environment
+%% -name erlmcp@${HOSTNAME}
+
+%% Cookie - loaded from Docker secrets
+%% -setcookie ${ERLANG_COOKIE}
+
+%% Heartbeat management
+-heart
+-heart_kill_threshold 60
+-heartbeat 30
+
+%% Enable kernel poll for better I/O performance
++K true
+
+%% VM port limit for increased connection capacity
++Q 65536
+
+%% Environment settings
+-env ERL_MAX_PORTS 65536
+-env ERL_MAX_ETS_TABLES 50000
+-env ERL_CRASH_DUMP /var/log/erlmcp/erl_crash.dump
+-env ERL_CRASH_DUMP_SECONDS 10
+
+%% Increase number of processes
++P 262144
+
+%% Increase atom table size
++t 5000000
+
+%% Enable time correction
++c true
+
+%% Set scheduler bind type (dirty CPU bind type)
++sbt db
++sbtac
+
+%% Enable busy wait for better latency
++sbwt very_short
+
+%% Async thread pool size
++A 64
+
+%% Scheduler threads (auto-detect, but ensure minimum)
++st \"tuning:0.0001\"
+
+%% Distribution buffer busy limit (KB)
++zdbbl 8192
+
+%% Enable fullsweep after hibernation
++hms 46422
++hmbs 46422
+
+%% Microstate accounting for monitoring
++Muacul true
+
+%% Enable scheduler utilization balancing
++sub true
+
+%% Set the logger burst limit
+-kernel logger_burst_limit 5000
+
+%% Set process heap size for fragmentation control
+-MSab 512
+
+%% Memory allocator settings for better performance
++MBas aobf
++MBlmbcs 512
++MBsmbcs 1024
++MBsbct 2048
+
+%% Cgroups-aware memory detection (OTP 26+)
+%% +MBacul 0: Disable carrier utilization limit for cgroups v2
+%% +Msbagf 512: Set carrier size alignment to 512 bytes
+%% +MBacgs 0: Auto-detect cgroups memory limits
++MBacul 0
++Msbagf 512
++MBacgs 0
+
+%% SMP auto
++smp auto
+
+%% Disable error logger for production
+-bnoshell
+
+%% Enable time warp mode for cluster synchronization
+%% (disabled for production stability)
+%% -C no_time_warp
+
+%% Net tick time for cluster health
+-kernel net_ticktime 60
+
+%% Global garbage collection
+%% Fullsweep after 60 seconds of inactivity
+-env ERL_FULLSWEEP_AFTER 60
+
+%% Distribution buffer busy limit
+-env ERL_DIST_BUF_BUSY_LIMIT 65536
+
+%% Enable SSL distribution for secure clustering
+-proto_dist inet_tls
+
+%% TLS distribution options
+-ssl_dist_opt client_secure_renegotiate on
+-ssl_dist_opt client_secure_renegotiate 60
+-ssl_dist_opt server_secure_renegotiate on
+-ssl_dist_opt server_secure_renegotiate 60
+-ssl_dist_opt client_verify verify_peer
+-ssl_dist_opt server_verify verify_peer
+-ssl_dist_opt client_fail_if_no_peer_cert true
+-ssl_dist_opt server_fail_if_no_peer_cert true
+-ssl_dist_opt client_cacertfile /run/secrets/tls.crt
+-ssl_dist_opt server_cacertfile /run/secrets/tls.crt
+-ssl_dist_opt client_certfile /run/secrets/tls.crt
+-ssl_dist_opt server_certfile /run/secrets/tls.crt
+-ssl_dist_opt client_keyfile /run/secrets/tls.key
+-ssl_dist_opt server_keyfile /run/secrets/tls.key
+
+%% +PC for portable character set
++pc unicode
+
+%% +A for async thread pool (already set above)
+%% +MBacul for allocator utilization
+
+%% Disable hibernate for production (uncomment if needed)
+%% -env ERL_HIBERNATE_AFTER 600
+
+%% Old heap allocation strategy (uncomment for debugging)
+%% +IOt 16
+
+%% Backtrace depth for errors
+-bd 1000
+
+%% Enable SMP statistics for monitoring
++MMScs true
++MFac true
+
+%% Memory carrier settings (OTP 28+)
++MScrvm true
++MSscl true
+
+%% Enable signal monitoring
++k true
+
+%% Per-process statistics
++Ppi 1024
+
+%% Snapshot tool for introspection
+-snapshot tool false
+
+%% +S for SMP scheduling
++S 8:auto
+
+%% Enable lock counting for debugging (production: disabled)
+%% +cl 0.01

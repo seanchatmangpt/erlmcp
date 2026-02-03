@@ -1,0 +1,415 @@
+# OpenTelemetry Collector configuration for erlmcp v3
+
+receivers:
+  # erlmcp metrics receiver
+  erlmcp_metrics:
+    endpoint: "0.0.0.0:9100"
+    transport: http
+    compression: gzip
+
+  # Prometheus receiver
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'erlmcp'
+          scrape_interval: 15s
+          static_configs:
+            - targets:
+              - erlmcp-core-1:8080
+              - erlmcp-core-2:8080
+          metrics_path: /metrics
+          relabel_configs:
+            - source_labels: [__address__]
+              target_label: instance
+        - job_name: 'redis'
+          scrape_interval: 15s
+          static_configs:
+            - targets:
+              - redis-1:6379
+              - redis-2:6379
+          metrics_path: /metrics
+          metrics_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'redis_.*'
+              replacement: '$1'
+              action: keep
+        - job_name: 'node-exporter'
+          scrape_interval: 30s
+          static_configs:
+            - targets:
+              - node-exporter-1:9100
+              - node-exporter-2:9100
+          metrics_path: /metrics
+          relabel_configs:
+            - source_labels: [__address__]
+              target_label: instance
+
+  # Jaeger receiver
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:14250"
+      thrift_binary:
+        endpoint: "0.0.0.0:6832"
+      thrift_http:
+        endpoint: "0.0.0.0:14268"
+
+  # OTLP receiver
+  otlp:
+    protocols:
+      grpc:
+        endpoint: "0.0.0.0:4317"
+      http:
+        endpoint: "0.0.0.0:4318"
+
+  # Fluentd receiver
+  fluentforward:
+    endpoint: "0.0.0.0:24224"
+
+  # Filelog receiver (for application logs)
+  filelog/erlmcp:
+    include: ['/var/log/erlmcp/*.log']
+    start_at: beginning
+    include_file_path: true
+    include_file_name: false
+    operators:
+      - type: regex_parser
+        regex: '(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z) (?P<level>\w+) (?P<message>.*)'
+        timestamp:
+          layout: '%Y-%m-%dT%H:%M:%S.%LZ'
+          parse_from: attributes.timestamp
+      - type: groupby
+        group_by: [service_name]
+      - type: resource
+        attributes:
+          service.name: erlmcp
+      - type: filter
+        name: traces_filter
+        filter: not(span.name =~ "health_check")
+
+  # Docker logs receiver
+  docker_logs:
+    include: ['erlmcp-core*', 'redis*', 'prometheus*', 'grafana*']
+    start_at: beginning
+    include_file_path: true
+    include_file_name: false
+    operators:
+      - type: regex_parser
+        regex: '(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z) (?P<level>\w+) (?P<message>.*)'
+      - type: groupby
+        group_by: [service_name]
+      - type: resource
+        attributes:
+          service.name: docker
+      - type: filter
+        filter: not((span.name =~ "GET /") and (span.http.status_code == 200))
+
+processors:
+  # Resource transformation
+  resource/erlmcp:
+    attributes:
+      - key: service.name
+        action: upcase
+        from_attribute: service.name
+      - key: deployment.environment
+        from_attribute: deployment.environment
+        action: insert
+        value: ${ERLMCP_ENV:-production}
+      - key: telemetry.sdk.name
+        action: insert
+        value: opentelemetry
+      - key: telemetry.sdk.language
+        action: insert
+        value: erlang
+      - key: telemetry.sdk.version
+        action: insert
+        value: 1.0.0
+
+  # Batch processor
+  batch:
+    timeout: 10s
+    send_batch_max_size: 1000
+    send_batch_max_bytes: 4194304
+
+  # Memory usage processor
+  memory_limiter:
+    check_interval: 5s
+    limit_mib: 512
+    spike_limit_mib: 256
+
+  # Attributes processor
+  attributes/erlmcp:
+    actions:
+      - key: network.protocol_name
+        action: insert
+        value: http
+      - key: network.transport
+        action: insert
+        value: tcp
+      - key: error.message
+        action: delete
+        regex: ".*password.*"
+      - key: user.id
+        action: hash
+        salt: ${SALT_VALUE}
+
+  # Span processor
+  span/erlmcp:
+    attributes:
+      - key: span.kind
+        from_attribute: span.kind
+        action: insert
+      - key: rpc.service
+        from_attribute: rpc.service
+        action: insert
+      - key: rpc.method
+        from_attribute: rpc.method
+        action: insert
+    filter:
+      span.kind: server
+
+  # Metrics processor
+  metrics/erlmcp:
+    filter:
+      metric.name: [erlmcp_request_duration, erlmcp_connections_active]
+      metric.type: histogram
+
+  # Logs processor
+  logs/erlmcp:
+    filter:
+      severity_text: [ERROR, WARN]
+    attributes:
+      - key: log_level
+        from_attribute: severity_text
+        action: insert
+      - key: log_source
+        from_attribute: service.name
+        action: insert
+
+  # Service graph processor
+  service_graph:
+    dimensions: [service.name]
+
+  # Filter logs
+  filter/erlmcp_logs:
+    error_mode: ignore
+    log_record:
+      severity: >=INFO
+
+  # Filter metrics
+  filter/erlmcp_metrics:
+    error_mode: ignore
+    metric:
+      type: counter
+      name: [erlmcp_requests_total, erlmcp_errors_total]
+
+  # Filter traces
+  filter/erlmcp_traces:
+    error_mode: ignore
+    span:
+      name: !regexp ".*health.*"
+      duration: <= 1s
+
+exporters:
+  # Jaeger exporter
+  jaeger:
+    endpoint: jaeger:14250
+    tls:
+      insecure: true
+
+  # Prometheus exporter
+  prometheus:
+    endpoint: "0.0.0.0:8888"
+    resource_to_telemetry_conversion:
+      enabled: true
+      add_native_histogram_attributes: true
+    metric_expiration: 60s
+
+  # OTLP exporter to backend
+  otlp:
+    endpoint: "victoria-metrics:4317"
+    compression: gzip
+    tls:
+      insecure: true
+      ca_file: /etc/otel-collector/certs/ca.pem
+      cert_file: /etc/otel-collector/certs/cert.pem
+      key_file: /etc/otel-collector/certs/key.pem
+
+  # Loki exporter for logs
+  loki:
+    endpoint: loki:3100
+    labels:
+      job: erlmcp-logs
+      service_name: service.name
+      host: host.name
+    timeout: 10s
+
+  # Elasticsearch exporter
+  elasticsearch:
+    endpoints: ["elasticsearch:9200"]
+    api_key: ${ELASTICSEARCH_API_KEY}
+    index: "erlmcp-logs-%Y-%m-%d"
+
+  # AWS CloudWatch exporter
+  cloudwatch:
+    region: ${AWS_REGION:-us-east-1}
+    endpoint: ${AWS_ENDPOINT}
+    log_group_name: /erlmcp/${ERLMCP_ENV:-production}
+    log_stream_name: "otel-logs"
+
+  # New Relic exporter
+  newrelic:
+    endpoint: "https://trace-api.newrelic.com/trace/v1"
+    api_key: ${NEW_RELIC_API_KEY}
+    resource_attributes:
+      service.name: erlmcp
+      deployment.environment: ${ERLMCP_ENV:-production}
+
+  # Zipkin exporter
+  zipkin:
+    endpoint: "http://zipkin:9411/api/v2/spans"
+    tls:
+      insecure: true
+
+  # OpenTelemetry Protocol exporter
+  otlphttp:
+    endpoint: "http://backend:4318"
+    compression: gzip
+    tls:
+      insecure: true
+
+  # Prometheus remote write exporter
+  prometheusremotewrite:
+    endpoint: "http://prometheus:9091/api/v1/write"
+    compression: gzip
+    protocol_version: v2.0
+
+  # Logstash exporter
+  logstash:
+    endpoint: "tcp://logstash:5044"
+    compression: gzip
+
+  # Kafka exporter
+  kafka:
+    brokers: ["kafka:9092"]
+    topic: "erlmcp-telemetry"
+    compression: gzip
+    max_bytes_per_message: 1048576  # 1MB
+    max_in_flight_requests: 10
+
+extensions:
+  # Health check extension
+  health_check:
+    endpoint: "0.0.0.0:13133"
+
+  # Pprof extension for profiling
+  pprof:
+    endpoint: "0.0.0.0:1777"
+
+  # Zpages extension for debugging
+  zpages:
+    endpoint: "0.0.0.0:55679"
+
+  # Memory allocator extension
+  memory_ballast:
+    size_mib: 512
+
+  # SQS extension for AWS
+  sqs:
+    aws:
+      region: ${AWS_REGION:-us-east-1}
+
+  # S3 extension for AWS
+  s3:
+    aws:
+      region: ${AWS_REGION:-us-east-1}
+      endpoint: ${AWS_ENDPOINT}
+
+  # File storage extension
+  file_storage:
+    directory: /tmp/otel-collector
+
+# Service pipeline configuration
+service:
+  telemetry:
+    memory_limiter:
+      check_interval: 5s
+      limit_mib: 512
+      spike_limit_mib: 256
+      export_on_spike: true
+    processors:
+      - memory_limiter
+      - resource/erlmcp
+      - batch
+    exporters:
+      - otlp
+      - prometheus
+      - loki
+
+  traces:
+    receivers:
+      - otlp
+      - jaeger
+    processors:
+      - memory_limiter
+      - resource/erlmcp
+      - batch
+      - span/erlmcp
+      - filter/erlmcp_traces
+      - service_graph
+    exporters:
+      - jaeger
+      - otlp
+      - zipkin
+
+  metrics:
+    receivers:
+      - prometheus
+      - erlmcp_metrics
+    processors:
+      - memory_limiter
+      - resource/erlmcp
+      - batch
+      - attributes/erlmcp
+      - filter/erlmcp_metrics
+    exporters:
+      - prometheus
+      - prometheusremotewrite
+      - cloudwatch
+
+  logs:
+    receivers:
+      - filelog/erlmcp
+      - docker_logs
+      - fluentforward
+    processors:
+      - memory_limiter
+      - filter/erlmcp_logs
+      - resource/erlmcp
+      - batch
+      - logs/erlmcp
+    exporters:
+      - loki
+      - elasticsearch
+      - logstash
+
+  # Custom pipeline for erlmcp specific telemetry
+  erlmcp_custom:
+    pipelines:
+      traces:
+        receivers:
+          - otlp
+        processors:
+          - resource/erlmcp
+          - span/erlmcp
+          - filter/erlmcp_traces
+        exporters:
+          - otlp
+      metrics:
+        receivers:
+          - erlmcp_metrics
+        processors:
+          - metrics/erlmcp
+        exporters:
+          - prometheus
+          - otlp

@@ -1,0 +1,61 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Namespace
+namespace: erlmcp
+
+# Labels applied to all resources
+commonLabels:
+  app.kubernetes.io/name: erlmcp
+  app.kubernetes.io/component: mcp-server
+  app.kubernetes.io/part-of: erlmcp-system
+  app.kubernetes.io/managed-by: argocd
+  app.kubernetes.io/created-by: gitops
+
+# Resources
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - service-account.yaml
+  - rbac.yaml
+  - service.yaml
+  - statefulset.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - network-policy.yaml
+  - ingress.yaml
+  - service-monitor.yaml
+
+# Images to use
+images:
+  - name: erlmcp
+    newName: ghcr.io/seanchatmangpt/erlmcp
+    newTag: main
+
+# Replicas
+replicas:
+  - name: erlmcp
+    count: 3
+
+# ConfigMap generator
+configMapGenerator:
+  - name: erlmcp-config
+    literals:
+      - ERLMCP_LOG_LEVEL=info
+      - ERLMCP_SESSION_BACKEND=ets
+      - ERLMCP_REGISTRY_TYPE=distributed
+      - ERLMCP_TRANSPORT_TCP_PORT=8080
+      - ERLMCP_TRANSPORT_HTTP_PORT=8081
+      - ERLMCP_TRANSPORT_WS_PORT=8082
+      - ERLMCP_OTEL_ENDPOINT=http://opentelemetry-collector.observability.svc.cluster.local:4317
+
+# Secret generator (reference existing secrets)
+secretGenerator:
+  - name: erlmcp-secrets
+    behavior: merge
+    literals:
+      - ERLMCP_COOKIE=change-me-in-production
+
+# Patches
+patches: []

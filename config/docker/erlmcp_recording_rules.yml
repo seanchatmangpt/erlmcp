@@ -1,0 +1,301 @@
+# Prometheus Recording Rules for erlmcp v3
+# ============================================
+# Pre-computed queries for improved dashboard performance
+#
+# Categories:
+# - Rate calculations (requests, errors, latency)
+# - Percentiles (p50, p95, p99, p999)
+# - Aggregations (by instance, transport, session)
+# - Ratios (error rate, saturation)
+
+groups:
+  # ============================================
+  # Request Rate Rules
+  # ============================================
+  - name: erlmcp_request_rates
+    interval: 30s
+    rules:
+      # Request rate per instance
+      - record: erlmcp_requests_per_second:rate5m
+        expr: |
+          sum(rate(erlmcp_requests_total[5m])) by (instance)
+
+      # Request rate by status
+      - record: erlmcp_requests_per_second:by_status
+        expr: |
+          sum(rate(erlmcp_requests_total[5m])) by (instance, status)
+
+      # Request rate by transport type
+      - record: erlmcp_requests_per_second:by_transport
+        expr: |
+          sum(rate(erlmcp_transport_messages_total[5m])) by (instance, transport_type)
+
+  # ============================================
+  # Error Rate Rules
+  # ============================================
+  - name: erlmcp_error_rates
+    interval: 30s
+    rules:
+      # Overall error rate
+      - record: erlmcp_error_rate:5m
+        expr: |
+          sum(rate(erlmcp_requests_total{status=~"5.."}[5m])) by (instance)
+          /
+          sum(rate(erlmcp_requests_total[5m])) by (instance)
+
+      # Error rate by status
+      - record: erlmcp_error_rate:by_status
+        expr: |
+          sum(rate(erlmcp_requests_total[5m])) by (instance, status)
+          /
+          sum(rate(erlmcp_requests_total[5m])) by (instance)
+
+      # Transport error rate
+      - record: erlmcp_transport_error_rate:5m
+        expr: |
+          sum(rate(erlmcp_transport_errors_total[5m])) by (instance, transport_type)
+          /
+          sum(rate(erlmcp_transport_messages_total[5m])) by (instance, transport_type)
+
+  # ============================================
+  # Latency Percentiles
+  # ============================================
+  - name: erlmcp_latency
+    interval: 30s
+    rules:
+      # P50 latency
+      - record: erlmcp_request_latency:p50:5m
+        expr: |
+          histogram_quantile(0.50,
+            sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le, instance)
+          )
+
+      # P95 latency
+      - record: erlmcp_request_latency:p95:5m
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le, instance)
+          )
+
+      # P99 latency
+      - record: erlmcp_request_latency:p99:5m
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le, instance)
+          )
+
+      # P999 latency
+      - record: erlmcp_request_latency:p999:5m
+        expr: |
+          histogram_quantile(0.999,
+            sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le, instance)
+          )
+
+      # Average latency
+      - record: erlmcp_request_latency:avg:5m
+        expr: |
+          sum(rate(erlmcp_request_duration_seconds_sum[5m])) by (instance)
+          /
+          sum(rate(erlmcp_request_duration_seconds_count[5m])) by (instance)
+
+  # ============================================
+  # Memory Rules
+  # ============================================
+  - name: erlmcp_memory
+    interval: 30s
+    rules:
+      # Total memory usage
+      - record: erlmcp_memory_total:bytes
+        expr: |
+          sum(erlmcp_memory_total_bytes) by (instance)
+
+      # Memory usage percentage
+      - record: erlmcp_memory_usage:percent
+        expr: |
+          erlmcp_memory_total_bytes
+          /
+          erlmcp_memory_available_bytes
+          *
+          100
+
+      # ETS memory percentage
+      - record: erlmcp_ets_memory:percent
+        expr: |
+          erlmcp_ets_memory_bytes
+          /
+          erlmcp_memory_total_bytes
+          *
+          100
+
+      # Binary memory percentage
+      - record: erlmcp_binary_memory:percent
+        expr: |
+          erlmcp_binary_memory_bytes
+          /
+          erlmcp_memory_total_bytes
+          *
+          100
+
+      # Memory growth rate
+      - record: erlmcp_memory_growth:bytes_per_second
+        expr: |
+          rate(erlmcp_memory_total_bytes[10m])
+
+  # ============================================
+  # Process Rules
+  # ============================================
+  - name: erlmcp_processes
+    interval: 30s
+    rules:
+      # Process count percentage of limit
+      - record: erlmcp_process_usage:percent
+        expr: |
+          erlmcp_process_count
+          /
+          erlmcp_process_limit
+          *
+          100
+
+      # Process creation rate
+      - record: erlmcp_process_spawn_rate:per_second
+        expr: |
+          rate(erlmcp_process_spawned_total[5m])
+
+  # ============================================
+  # Scheduler Rules
+  # ============================================
+  - name: erlmcp_schedulers
+    interval: 30s
+    rules:
+      # Average scheduler utilization
+      - record: erlmcp_scheduler_utilization:avg
+        expr: |
+          avg(erlmcp_scheduler_utilization) by (instance)
+
+      # Max scheduler utilization
+      - record: erlmcp_scheduler_utilization:max
+        expr: |
+          max(erlmcp_scheduler_utilization) by (instance)
+
+      # Total reduction rate
+      - record: erlmcp_reductions:per_second
+        expr: |
+          sum(rate(erlmcp_reductions_total[5m])) by (instance)
+
+  # ============================================
+  # GC Rules
+  # ============================================
+  - name: erlmcp_gc
+    interval: 30s
+    rules:
+      # GC time percentage
+      - record: erlmcp_gc_time:percent
+        expr: |
+          (
+            rate(erlmcp_gc_ms_total[5m]) / 1000
+          )
+          /
+          5
+          *
+          100
+
+      # GC rate per second
+      - record: erlmcp_gc_rate:per_second
+        expr: |
+          sum(rate(erlmcp_gc_count_total[5m])) by (instance)
+
+      # Words reclaimed per second
+      - record: erlmcp_gc_words_reclaimed:per_second
+        expr: |
+          sum(rate(erlmcp_gc_words_reclaimed_total[5m])) by (instance)
+
+  # ============================================
+  # Connection Rules
+  # ============================================
+  - name: erlmcp_connections
+    interval: 30s
+    rules:
+      # Connection rate
+      - record: erlmcp_connections:rate
+        expr: |
+          sum(rate(erlmcp_connections_total[5m])) by (instance)
+
+      # Active connections
+      - record: erlmcp_connections:active
+        expr: |
+          sum(erlmcp_connections_active) by (instance)
+
+      # Connection rejection rate
+      - record: erlmcp_connections_rejected:rate
+        expr: |
+          sum(rate(erlmcp_connections_rejected_total[5m])) by (instance)
+
+  # ============================================
+  # Session Rules
+  # ============================================
+  - name: erlmcp_sessions
+    interval: 30s
+    rules:
+      # Session creation rate
+      - record: erlmcp_sessions:rate
+        expr: |
+          sum(rate(erlmcp_sessions_total[5m])) by (instance)
+
+      # Active sessions
+      - record: erlmcp_sessions:active
+        expr: |
+          sum(erlmcp_sessions_active) by (instance)
+
+      # Session timeout rate
+      - record: erlmcp_sessions_timeout:rate
+        expr: |
+          sum(rate(erlmcp_sessions_timed_out_total[5m])) by (instance)
+
+      # Session error rate
+      - record: erlmcp_sessions_error:rate
+        expr: |
+          sum(rate(erlmcp_sessions_errored_total[5m])) by (instance)
+
+  # ============================================
+  # Transport Rules
+  # ============================================
+  - name: erlmcp_transports
+    interval: 30s
+    rules:
+      # Transport message rate by type
+      - record: erlmcp_transport_messages:by_type
+        expr: |
+          sum(rate(erlmcp_transport_messages_total[5m])) by (instance, transport_type)
+
+      # Transport bytes rate
+      - record: erlmcp_transport_bytes:rate
+        expr: |
+          sum(rate(erlmcp_transport_bytes_total[5m])) by (instance, transport_type)
+
+      # Transport backlog
+      - record: erlmcp_transport_backlog:bytes
+        expr: |
+          sum(erlmcp_transport_backlog_bytes) by (instance, transport_type)
+
+  # ============================================
+  # Cluster Rules
+  # ============================================
+  - name: erlmcp_cluster
+    interval: 30s
+    rules:
+      # Cluster size (number of nodes)
+      - record: erlmcp_cluster:size
+        expr: |
+          count(up{job="erlmcp-cluster"} == 1)
+
+      # Cluster available nodes
+      - record: erlmcp_cluster:available_nodes
+        expr: |
+          count(up{job="erlmcp-cluster"} == 1)
+
+      # Cluster partition ratio
+      - record: erlmcp_cluster:partition_ratio
+        expr: |
+          count(up{job="erlmcp-cluster"} == 0)
+          /
+          count(up{job="erlmcp-cluster"})

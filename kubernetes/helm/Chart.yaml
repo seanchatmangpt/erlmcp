@@ -1,0 +1,28 @@
+apiVersion: v2
+name: erlmcp
+description: Enterprise-grade Erlang MCP distribution on Kubernetes
+type: application
+version: 3.0.0
+appVersion: "3.0.0"
+home: https://github.com/banyan-platform/erlmcp
+sources:
+  - https://github.com/banyan-platform/erlmcp
+keywords:
+  - erlang
+  - mcp
+  - messaging
+  - json-rpc
+  - distributed
+maintainers:
+  - name: erlmcp-team
+    email: team@banyanplatform.com
+annotations:
+  category: Messaging & Communication
+  complexity: Advanced
+  "helm.sh/tags": "erlang, mcp, distributed, messaging"
+  "artifacthub.io/pricing": "free"
+  "artifacthub.io/links":
+    - name: Documentation
+      url: https://erlmcp.github.io/docs/
+    - name: GitHub
+      url: https://github.com/banyan-platform/erlmcp

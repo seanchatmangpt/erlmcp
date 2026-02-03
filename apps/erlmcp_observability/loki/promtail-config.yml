@@ -1,0 +1,165 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /data/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Files
+  - job_name: erlmcp-logs
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: erlmcp-logs
+          __path__: /var/log/erlmcp/*.log
+
+  # Systemd logs
+  - job_name: systemd
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: systemd
+          __path__: /var/log/journal/*.log
+
+  # Application logs
+  - job_name: erlmcp-application
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: erlmcp-app
+          __path__: /var/log/erlmcp/application/*.log
+
+  # Error logs
+  - job_name: erlmcp-errors
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: erlmcp-errors
+          __path__: /var/log/erlmcp/error/*.log
+
+  # Access logs
+  - job_name: erlmcp-access
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: erlmcp-access
+          __path__: /var/log/erlmcp/access/*.log
+
+  # Security logs
+  - job_name: erlmcp-security
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: erlmcp-security
+          __path__: /var/log/erlmcp/security/*.log
+
+  # Audit logs
+  - job_name: erlmcp-audit
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: erlmcp-audit
+          __path__: /var/log/erlmcp/audit/*.log
+
+# Pipeline configurations for log parsing
+pipeline_stages:
+  # Parse log level
+  - regex:
+      expression: '^(?P<timestamp>\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z) (?P<level>\w+) (?P<message>.*)$'
+      source: message
+
+  # Convert timestamp to Unix nanoseconds
+  - timestamp:
+      source: timestamp
+      format: RFC3339
+
+  # Add labels based on log level
+  - labels:
+      level:
+        debug: debug
+        info: info
+        warn: warning
+        error: error
+        fatal: error
+
+  # Filter out debug logs in production
+  - match:
+      select:
+        - level: debug
+      action: drop
+
+  # Add trace ID to labels if present
+  - regex:
+      expression: 'trace_id=(?P<trace_id>[0-9a-f]+)'
+      source: message
+
+  # Add span ID to labels if present
+  - regex:
+      expression: 'span_id=(?P<span_id>[0-9a-f]+)'
+      source: message
+
+  # Add component label
+  - regex:
+      expression: 'component=(?P<component>\w+)'
+      source: message
+
+  # Add service label
+  - regex:
+      expression: 'service=(?P<service>\w+)'
+      source: message
+
+  # Kubernetes metadata (if running in K8s)
+  - kubernetes_metadata:
+      pod: ${POD_NAME}
+      namespace: ${NAMESPACE}
+
+  # Add structured log support
+  - json:
+      source: message
+
+  # Remove sensitive information
+  - replace:
+      source: message
+      expression: 'password=[^\\s]+'
+      replace: 'password=****'
+    match_type: regex
+
+  - replace:
+      source: message
+      expression: 'token=[^\\s]+'
+      replace: 'token=****'
+    match_type: regex
+
+  # Add metrics from logs
+  - metrics:
+      - name: erlmcp_log_messages_total
+        type: counter
+        action: inc
+        source: message
+        labels:
+          level: ${level}
+          component: ${component}
+          service: ${service}
+      - name: erlmcp_log_errors_total
+        type: counter
+        action: inc
+        source: message
+        match: level=~"error|fatal"
+        labels:
+          component: ${component}
+          service: ${service}
+
+  # Add alerting for error patterns
+  - alert:
+      alertname: HighErrorRate
+      expr: rate(erlmcp_log_errors_total[5m]) > 10
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is {{ $value }} errors/5m"

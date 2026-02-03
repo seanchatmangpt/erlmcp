@@ -1,0 +1,403 @@
+name: GitOps Deployment - erlmcp v3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gitops/**'
+      - '.github/workflows/gitops-deploy.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - production
+        default: 'staging'
+      auto_approve:
+        description: 'Auto-approve deployment'
+        type: boolean
+        default: false
+
+env:
+  ARGOCD_SERVER: 'argocd.erlmcp.io'
+  ARGOCD_NAMESPACE: 'argocd'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: read
+  pull-requests: write
+  actions: write
+
+jobs:
+  # ============================================================================
+  # Pre-deployment Validation
+  # ============================================================================
+  pre-deploy-check:
+    name: Pre-deployment Validation
+    runs-on: ubuntu-latest
+    outputs:
+      can_deploy: ${{ steps.validation.outputs.can_deploy }}
+      environment: ${{ steps.env.outputs.environment }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine target environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          else
+            ENV="staging"
+          fi
+          echo "environment=$ENV" >> $GITHUB_OUTPUT
+
+      - name: Validate manifests
+        run: |
+          # Validate Kustomize overlays
+          for overlay in gitops/overlays/*/; do
+            echo "Validating $overlay"
+            kustomize build "$overlay" > /tmp/manifest.yaml
+            kubeval --ignore-missing-schemas /tmp/manifest.yaml
+          done
+
+      - name: Check required secrets
+        id: validation
+        run: |
+          SECRETS_OK=true
+
+          # Check if secrets are defined for target environment
+          case "${{ steps.env.outputs.environment }}" in
+            production)
+              if [ -z "${{ secrets.PRODUCTION_DB_PASSWORD }}" ]; then
+                echo "::warning::PRODUCTION_DB_PASSWORD not set"
+                SECRETS_OK=false
+              fi
+              ;;
+            staging)
+              if [ -z "${{ secrets.STAGING_DB_PASSWORD }}" ]; then
+                echo "::warning::STAGING_DB_PASSWORD not set"
+                SECRETS_OK=false
+              fi
+              ;;
+          esac
+
+          echo "can_deploy=$SECRETS_OK" >> $GITHUB_OUTPUT
+
+  # ============================================================================
+  # Dev Environment Deployment (Automatic)
+  # ============================================================================
+  deploy-dev:
+    name: Deploy to Dev
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: https://dev.erlmcp.io
+    needs: pre-deploy-check
+    if: github.ref == 'refs/heads/main' || github.event.inputs.environment == 'dev'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.29.0'
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_DEV }}" | base64 -d > ~/.kube/config
+
+      - name: Deploy with Kustomize
+        run: |
+          kustomize build gitops/overlays/dev | kubectl apply -f -
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/erlmcp -n erlmcp-dev --timeout=5m
+
+      - name: Run health checks
+        run: |
+          ./scripts/health-check.sh dev
+
+  # ============================================================================
+  # Staging Environment Deployment (Manual Approval)
+  # ============================================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://staging.erlmcp.io
+    needs: pre-deploy-check
+    if: |
+      github.event_name == 'workflow_dispatch' && \
+      github.event.inputs.environment == 'staging' || \
+      (github.ref == 'refs/heads/main' && github.event_name == 'push')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.29.0'
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > ~/.kube/config
+
+      - name: Deploy with Kustomize
+        run: |
+          kustomize build gitops/overlays/staging | kubectl apply -f -
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/erlmcp -n erlmcp-staging --timeout=5m
+
+      - name: Run smoke tests
+        run: |
+          ./scripts/smoke-tests.sh staging
+
+      - name: Run integration tests
+        run: |
+          ./scripts/integration-tests.sh staging
+
+      - name: Verify deployment
+        run: |
+          # Check pod status
+          kubectl get pods -n erlmcp-staging -l app=erlmcp
+
+          # Check service endpoints
+          kubectl get endpoints -n erlmcp-staging -l app=erlmcp
+
+          # Check ingress
+          kubectl get ingress -n erlmcp-staging
+
+  # ============================================================================
+  # Production Deployment (Manual Approval + Gates)
+  # ============================================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: https://erlmcp.io
+    needs: [pre-deploy-check, deploy-staging]
+    if: |
+      github.event_name == 'workflow_dispatch' && \
+      github.event.inputs.environment == 'production' && \
+      github.event.inputs.auto_approve == 'true'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Pre-production checklist
+        run: |
+          echo "## Pre-Production Checklist" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] All tests passed in staging" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Performance benchmarks within SLA" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Security scan passed" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] Rollback plan verified" >> $GITHUB_STEP_SUMMARY
+          echo "- [ ] On-call team notified" >> $GITHUB_STEP_SUMMARY
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.29.0'
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > ~/.kube/config
+
+      - name: Create pre-deployment snapshot
+        run: |
+          kubectl get all -n erlmcp-prod -o yaml > /tmp/pre-deploy-state.yaml
+          echo "Pre-deployment state saved"
+
+      - name: Deploy with Kustomize (Canary)
+        run: |
+          # Deploy canary first (10% traffic)
+          kustomize build gitops/overlays/production/canary | kubectl apply -f -
+
+      - name: Wait for canary rollout
+        run: |
+          kubectl rollout status deployment/erlmcp-canary -n erlmcp-prod --timeout=5m
+
+      - name: Run canary validation
+        run: |
+          ./scripts/canary-validation.sh
+
+      - name: Deploy to production (Full rollout)
+        if: success()
+        run: |
+          kustomize build gitops/overlays/production | kubectl apply -f -
+
+      - name: Wait for production rollout
+        run: |
+          kubectl rollout status statefulset/erlmcp -n erlmcp-prod --timeout=10m
+
+      - name: Run production smoke tests
+        run: |
+          ./scripts/production-smoke-tests.sh
+
+      - name: Verify health endpoints
+        run: |
+          ENDPOINT="https://erlmcp.io/health"
+
+          # Check health endpoint
+          curl -f $ENDPOINT || exit 1
+
+          # Check ready endpoint
+          curl -f $ENDPOINT/ready || exit 1
+
+          # Check metrics endpoint
+          curl -f $ENDPOINT/metrics || exit 1
+
+      - name: Create post-deployment report
+        if: always()
+        run: |
+          kubectl get all -n erlmcp-prod -o yaml > /tmp/post-deploy-state.yaml
+
+          echo "## Deployment Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Pods" >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -n erlmcp-prod >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Services" >> $GITHUB_STEP_SUMMARY
+          kubectl get svc -n erlmcp-prod >> $GITHUB_STEP_SUMMARY
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "::error::Production deployment failed, initiating rollback"
+          kubectl apply -f /tmp/pre-deploy-state.yaml
+          kubectl rollout status statefulset/erlmcp -n erlmcp-prod --timeout=5m
+          exit 1
+
+  # ============================================================================
+  # Flagger Progressive Delivery
+  # ============================================================================
+  canary-analysis:
+    name: Canary Analysis
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: github.event.inputs.environment == 'production'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure kubectl
+        uses: azure/setup-kubectl@v3
+
+      - name: Setup kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG_PROD }}" | base64 -d > ~/.kube/config
+
+      - name: Monitor Flagger canary
+        run: |
+          # Wait for canary analysis to complete
+          kubectl -n erlmcp-prod wait canary/erlmcp --for=condition=ready --timeout=30m
+
+      - name: Get canary results
+        run: |
+          kubectl get canary/erlmcp -n erlmcp-prod -o yaml
+
+      - name: Report canary metrics
+        run: |
+          echo "## Canary Analysis Results" >> $GITHUB_STEP_SUMMARY
+          kubectl describe canary/erlmcp -n erlmcp-prod >> $GITHUB_STEP_SUMMARY || true
+
+  # ============================================================================
+  # Post-deployment Notification
+  # ============================================================================
+  notify:
+    name: Post-deployment Notification
+    runs-on: ubuntu-latest
+    needs: [deploy-dev, deploy-staging, deploy-production]
+    if: always()
+
+    steps:
+      - name: Determine deployment status
+        id: status
+        run: |
+          if [ "${{ needs.deploy-production.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "environment=production" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.deploy-staging.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.deploy-dev.result }}" == "success" ]; then
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "environment=dev" >> $GITHUB_OUTPUT
+          else
+            echo "status=failure" >> $GITHUB_OUTPUT
+            echo "environment=unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Deployment ${{ steps.status.outputs.status }} - ${{ steps.status.outputs.environment }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*Deployment ${{ steps.status.outputs.status }}*\n*Environment:* ${{ steps.status.outputs.environment }}\n*Commit:* ${{ github.sha }}\n*Actor:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  # ============================================================================
+  # Update Deployment Runbook
+  # ============================================================================
+  update-runbook:
+    name: Update Deployment Runbook
+    runs-on: ubuntu-latest
+    needs: [deploy-production, canary-analysis]
+    if: success()
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update deployment history
+        run: |
+          cat >> docs/runbooks/deployment-history.md << EOF
+          ## Deployment - $(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          - **Commit**: ${{ github.sha }}
+          - **Actor**: ${{ github.actor }}
+          - **Environment**: production
+          - **Status**: success
+          - **Image**: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          EOF
+
+      - name: Commit runbook update
+        run: |
+          git config user.name "erlmcp-ci"
+          git config user.email "ci@erlmcp.io"
+          git add docs/runbooks/deployment-history.md
+          git commit -m "docs: update deployment history"
+          git push

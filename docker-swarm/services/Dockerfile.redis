@@ -1,0 +1,44 @@
+# Redis for erlmcp v3 (session storage, caching, pub/sub)
+FROM redis:7.2.4-alpine
+
+# Install redis-plus-CLI for monitoring
+RUN apk add --no-cache redis-cli
+
+# Create redis user
+RUN addgroup -g 1002 -S redis && \
+    adduser -S redis -u 1002
+
+# Create directories
+RUN mkdir -p /data /var/log/redis /etc/redis && \
+    chown -R redis:redis /data /var/log/redis /etc/redis
+
+# Copy configuration
+COPY config/docker/redis.conf /etc/redis/redis.conf
+
+# Create health check script
+RUN echo '#!/bin/sh
+redis-cli ping > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+    redis-cli info server | grep -q "redis_version"
+    exit $?
+else
+    exit 1
+fi' > /usr/local/bin/healthcheck.sh
+
+RUN chmod +x /usr/local/bin/healthcheck.sh
+
+# Set working directory
+WORKDIR /data
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD /usr/local/bin/healthcheck.sh
+
+# Expose ports
+EXPOSE 6379
+
+# Run as redis user
+USER redis
+
+# Override entrypoint
+ENTRYPOINT ["redis-server", "/etc/redis/redis.conf"]

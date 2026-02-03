@@ -1,0 +1,432 @@
+{{/*
+  erlmcp RBAC Configuration
+  Role-Based Access Control for erlmcp
+*/}}
+
+{{- if .Values.rbac.enabled }}
+{{- /* Role for erlmcp operations */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "erlmcp.clusterRoleName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: operator
+  annotations:
+    "rbac.authorization.kubernetes.io/autoupdate": "true"
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+rules:
+  {{- /* Application management */}}
+  - apiGroups: ["apps"]
+    resources: ["statefulsets", "deployments", "replicasets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Network management */}}
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Service management */}}
+  - apiGroups: [""]
+    resources: ["services", "endpoints"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Configuration management */}}
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Pod management */}}
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "pods/exec", "pods/attach"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Node management */}}
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  {{- /* Events management */}}
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Monitoring management */}}
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "prometheusrules", "alertmanagers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Horizontal Pod Autoscaler */}}
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Pod Disruption Budget */}}
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Custom resources */}}
+  - apiGroups: ["erlmcp.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Resource management */}}
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  {{- /* Storage management */}}
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+
+{{- /* Cluster Role */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "erlmcp.clusterRoleName" . }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: operator-cluster
+  annotations:
+    "rbac.authorization.kubernetes.io/autoupdate": "true"
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+rules:
+  {{- /* Cluster-wide resources */}}
+  - apiGroups: [""]
+    resources: ["namespaces", "nodes", "persistentvolumes"]
+    verbs: ["get", "list", "watch"]
+  {{- /* Cluster-wide configuration */}}
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  {{- /* Storage cluster-wide */}}
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses", "csidrivers"]
+    verbs: ["get", "list", "watch"]
+
+{{- /* Role Binding */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "erlmcp.clusterRoleBindingName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: binding
+  annotations:
+    "rbac.authorization.kubernetes.io/autoupdate": "true"
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "erlmcp.rbacServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "erlmcp.clusterRoleName" . }}
+  apiGroup: rbac.authorization.k8s.io
+
+{{- /* Cluster Role Binding */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "erlmcp.clusterRoleBindingName" . }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: cluster-binding
+  annotations:
+    "rbac.authorization.kubernetes.io/autoupdate": "true"
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "erlmcp.rbacServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ include "erlmcp.clusterRoleName" . }}
+  apiGroup: rbac.authorization.k8s.io
+
+{{- /* Additional roles based on configuration */}}
+{{- if .Values.rbac.roles }}
+{{- range $role := .Values.rbac.roles }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $role.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: {{ $role.name }}
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+rules:
+  {{- $role.rules | toYaml | nindent 4 }}
+---
+{{- end }}
+{{- end }}
+
+{{- /* Additional role bindings */}}
+{{- if .Values.rbac.roleBindings }}
+{{- range $binding := .Values.rbac.roleBindings }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $binding.name }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: {{ $binding.name }}
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+subjects:
+  {{- range $subject := $binding.subjects }}
+  - kind: {{ $subject.kind }}
+    name: {{ $subject.name }}
+    namespace: {{ $subject.namespace | default .Release.Namespace }}
+  {{- end }}
+roleRef:
+  kind: {{ $binding.roleRef.kind }}
+  name: {{ $binding.roleRef.name }}
+  apiGroup: {{ $binding.roleRef.apiGroup }}
+---
+{{- end }}
+{{- end }}
+
+{{- /* Additional cluster role bindings */}}
+{{- if .Values.rbac.clusterRoleBindings }}
+{{- range $binding := .Values.rbac.clusterRoleBindings }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $binding.name }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: {{ $binding.name }}
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+subjects:
+  {{- range $subject := $binding.subjects }}
+  - kind: {{ $subject.kind }}
+    name: {{ $subject.name }}
+    namespace: {{ $subject.namespace | default .Release.Namespace }}
+  {{- end }}
+roleRef:
+  kind: {{ $binding.roleRef.kind }}
+  name: {{ $binding.roleRef.name }}
+  apiGroup: {{ $binding.roleRef.apiGroup }}
+---
+{{- end }}
+{{- end }}
+
+{{- /* Reader role */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "erlmcp.clusterRoleName" . }}-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: reader
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+rules:
+  - apiGroups: ["apps"]
+    resources: ["statefulsets", "deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps", "secrets", "pods", "pods/log", "endpoints"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "prometheusrules"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources: ["poddisruptionbudgets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["erlmcp.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+
+{{- /* Reader role binding */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "erlmcp.clusterRoleBindingName" . }}-reader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: reader-binding
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "erlmcp.rbacServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+  - kind: ServiceAccount
+    name: default
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "erlmcp.clusterRoleName" . }}-reader
+  apiGroup: rbac.authorization.k8s.io
+
+{{- /* Backup and recovery roles */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "erlmcp.clusterRoleName" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: backup
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+rules:
+  - apiGroups: ["velero.io"]
+    resources: ["backups", "restores", "backupstorages"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["velero.io"]
+    resources: ["backupschedules", "restoreschedules"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+{{- /* Backup role binding */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "erlmcp.clusterRoleBindingName" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: backup-binding
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "erlmcp.rbacServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "erlmcp.clusterRoleName" . }}-backup
+  apiGroup: rbac.authorization.k8s.io
+
+{{- /* Disaster recovery roles */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "erlmcp.clusterRoleName" . }}-dr
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: disaster-recovery
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["autoscaling"]
+    resources: ["horizontalpodautoscalers"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+{{- /* Disaster recovery role binding */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "erlmcp.clusterRoleBindingName" . }}-dr
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: dr-binding
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "erlmcp.rbacServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "erlmcp.clusterRoleName" . }}-dr
+  apiGroup: rbac.authorization.k8s.io
+
+{{- /* Compliance roles */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "erlmcp.clusterRoleName" . }}-compliance
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: compliance
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "secrets", "nodes"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "prometheusrules"]
+    verbs: ["get", "list", "watch"]
+
+{{- /* Compliance role binding */}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "erlmcp.clusterRoleBindingName" . }}-compliance
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: rbac
+    role: compliance-binding
+  annotations:
+    "erlmcp.io/rbac": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "erlmcp.rbacServiceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ include "erlmcp.clusterRoleName" . }}-compliance
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

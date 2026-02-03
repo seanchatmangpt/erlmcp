@@ -1,0 +1,254 @@
+---
+# Argo Rollout for Canary Deployment Strategy
+# Provides gradual traffic shifting with automated rollback
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: erlmcp-canary-rollout
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    deployment-strategy: canary
+  annotations:
+    description: "Canary rollout with progressive traffic shifting and automated rollback"
+spec:
+  replicas: 3
+  strategy:
+    canary:
+      # Stable service - receives baseline traffic
+      stableService: erlmcp-active
+      # Canary service - receives progressive traffic
+      canaryService: erlmcp-canary
+      # Traffic routing configuration
+      trafficRouting:
+        nginx:
+          stableIngress: erlmcp-blue-green-ingress
+      # Progressive rollout steps with automatic analysis
+      steps:
+      # Step 1: Set canary weight to 5%
+      - setWeight: 5
+      # Pause for analysis
+      - pause:
+          duration: 1m
+      # Run analysis at 5% traffic
+      - analysis:
+          templates:
+          - templateName: erlmcp-success-rate
+          - templateName: erlmcp-latency
+          - templateName: erlmcp-error-rate
+          args:
+          - name: service-name
+            value: erlmcp-canary
+          - name: namespace
+            value: erlmcp-staging
+          - name: url
+            value: http://erlmcp-canary.erlmcp-staging.svc.cluster.local:8080
+      # Step 2: Increase to 10%
+      - setWeight: 10
+      - pause:
+          duration: 2m
+      - analysis:
+          templates:
+          - templateName: erlmcp-success-rate
+          - templateName: erlmcp-latency
+          - templateName: erlmcp-error-rate
+          - templateName: erlmcp-resource-usage
+          args:
+          - name: service-name
+            value: erlmcp-canary
+          - name: namespace
+            value: erlmcp-staging
+      # Step 3: Increase to 25%
+      - setWeight: 25
+      - pause:
+          duration: 3m
+      - analysis:
+          templates:
+          - templateName: erlmcp-success-rate
+          - templateName: erlmcp-latency
+          - templateName: erlmcp-error-rate
+          args:
+          - name: service-name
+            value: erlmcp-canary
+          - name: namespace
+            value: erlmcp-staging
+      # Step 4: Increase to 50%
+      - setWeight: 50
+      - pause:
+          duration: 5m
+      - analysis:
+          templates:
+          - templateName: erlmcp-success-rate
+          - templateName: erlmcp-latency
+          - templateName: erlmcp-error-rate
+          - templateName: erlmcp-resource-usage
+          args:
+          - name: service-name
+            value: erlmcp-canary
+          - name: namespace
+            value: erlmcp-staging
+      # Step 5: Full traffic to canary (promote)
+      - setWeight: 100
+      # Scale down delay for old version
+      scaleDownDelaySeconds: 600
+      # Analysis failure threshold
+      maxUnavailable: 1
+      # Surface canary pods for analysis
+      analysisRunMetadata:
+        labels:
+          app: erlmcp
+          environment: staging
+          deployment: canary
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: staging
+  template:
+    metadata:
+      labels:
+        app: erlmcp
+        environment: staging
+        deployment-strategy: canary
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - erlmcp
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: erlmcp
+        image: ghcr.io/your-org/erlmcp:staging-latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "staging"
+        - name: DEPLOYMENT_TYPE
+          value: "canary"
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: HEALTH_CHECK_PATH
+          value: "/mcp/health"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-staging-db-secret
+              key: url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-staging-redis-secret
+              key: url
+        - name: FEATURE_FLAGS
+          valueFrom:
+            configMapKeyRef:
+              name: feature-flags
+              key: flags
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "128Mi"
+          limits:
+            cpu: "250m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /mcp/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /mcp/health?ready=1
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        startupProbe:
+          httpGet:
+            path: /mcp/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+          successThreshold: 1
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+        volumeMounts:
+        - name: config
+          mountPath: /etc/erlmcp
+          readOnly: true
+        - name: certs
+          mountPath: /etc/erlmcp/certs
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "curl -X POST http://localhost:8080/mcp/shutdown || true; sleep 15"]
+      volumes:
+      - name: config
+        configMap:
+          name: erlmcp-config
+      - name: certs
+        secret:
+          secretName: erlmcp-staging-certs
+          defaultMode: 0400
+      - name: tmp
+        emptyDir: {}
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+      - name: erlmcp-regcred
+---
+# PodDisruptionBudget for Canary
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-canary-pdb
+  namespace: erlmcp-staging
+spec:
+  minAvailable: 0
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: staging
+  unhealthyPodEvictionPolicy: IfHealthyBudget

@@ -1,0 +1,387 @@
+# Prometheus Alerting Rules for erlmcp v3
+# =========================================
+# Production alerting for Erlang/OTP MCP server
+#
+# Categories:
+# - Availability alerts (service down, health check failures)
+# - Performance alerts (latency, throughput degradation)
+# - Resource alerts (memory, CPU, process count)
+# - Application alerts (errors, connection issues)
+# - Cluster alerts (node down, partition)
+#
+# Severity levels:
+# - critical: Immediate action required
+# - warning: Investigate soon
+# - info: Informational
+
+groups:
+  # ============================================
+  # Availability Alerts
+  # ============================================
+  - name: erlmcp_availability
+    interval: 30s
+    rules:
+      # Service down alert
+      - alert: ErlmcpServiceDown
+        expr: up{job="erlmcp"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          tier: availability
+        annotations:
+          summary: "erlmcp service is down"
+          description: "erlmcp instance {{ $labels.instance }} has been down for more than 1 minute."
+          runbook_url: "https://docs.erlmcp.dev/runbooks/service-down"
+
+      # Health check failing
+      - alert: ErlmcpHealthCheckFailing
+        expr: erlmcp_health_status{job="erlmcp"} != 1
+        for: 2m
+        labels:
+          severity: critical
+          tier: availability
+        annotations:
+          summary: "erlmcp health check failing"
+          description: "Health check for {{ $labels.instance }} has been failing for 2 minutes."
+
+      # High error rate
+      - alert: ErlmcpHighErrorRate
+        expr: |
+          (
+            rate(erlmcp_requests_total{status=~"5.."}[5m])
+            /
+            rate(erlmcp_requests_total[5m])
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          tier: availability
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate for {{ $labels.instance }} is {{ $value | humanizePercentage }} (threshold: 5%)."
+
+  # ============================================
+  # Performance Alerts
+  # ============================================
+  - name: erlmcp_performance
+    interval: 30s
+    rules:
+      # High request latency
+      - alert: ErlmcpHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le, instance)
+          ) > 1
+        for: 10m
+        labels:
+          severity: warning
+          tier: performance
+        annotations:
+          summary: "High request latency detected"
+          description: "P95 latency for {{ $labels.instance }} is {{ $value }}s (threshold: 1s)."
+
+      # Critical latency
+      - alert: ErlmcpCriticalLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(erlmcp_request_duration_seconds_bucket[5m])) by (le, instance)
+          ) > 5
+        for: 5m
+        labels:
+          severity: critical
+          tier: performance
+        annotations:
+          summary: "Critical latency detected"
+          description: "P99 latency for {{ $labels.instance }} is {{ $value }}s (threshold: 5s)."
+
+      # Low throughput
+      - alert: ErlmcpLowThroughput
+        expr: |
+          rate(erlmcp_requests_total[5m]) < 10
+        for: 15m
+        labels:
+          severity: info
+          tier: performance
+        annotations:
+          summary: "Low request throughput"
+          description: "Throughput for {{ $labels.instance }} is {{ $value }} req/s (expected: >10 req/s)."
+
+  # ============================================
+  # Memory Alerts
+  # ============================================
+  - name: erlmcp_memory
+    interval: 30s
+    rules:
+      # High system memory usage
+      - alert: ErlmcpHighMemoryUsage
+        expr: |
+          erlmcp_memory_total_bytes{job="erlmcp"} / erlmcp_memory_available_bytes{job="erlmcp"} > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          tier: resource
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage for {{ $labels.instance }} is {{ $value | humanizePercentage }}."
+
+      # Critical memory usage
+      - alert: ErlmcpCriticalMemoryUsage
+        expr: |
+          erlmcp_memory_total_bytes{job="erlmcp"} / erlmcp_memory_available_bytes{job="erlmcp"} > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          tier: resource
+        annotations:
+          summary: "Critical memory usage"
+          description: "Memory usage for {{ $labels.instance }} is {{ $value | humanizePercentage }}. Immediate action required."
+
+      # High process memory (ETS)
+      - alert: ErlmcpHighETSMemory
+        expr: |
+          erlmcp_ets_memory_bytes / erlmcp_memory_total_bytes > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          tier: resource
+        annotations:
+          summary: "High ETS memory usage"
+          description: "ETS memory usage is {{ $value | humanizePercentage }} of total memory."
+
+      # Memory growth rate
+      - alert: ErlmcpMemoryGrowth
+        expr: |
+          rate(erlmcp_memory_total_bytes[10m]) > 10485760
+        for: 10m
+        labels:
+          severity: warning
+          tier: resource
+        annotations:
+          summary: "Rapid memory growth detected"
+          description: "Memory growing at {{ $value | humanize }}B/s."
+
+  # ============================================
+  # Process Alerts
+  # ============================================
+  - name: erlmcp_processes
+    interval: 30s
+    rules:
+      # High process count
+      - alert: ErlmcpHighProcessCount
+        expr: |
+          erlmcp_process_count{job="erlmcp"} > 100000
+        for: 5m
+        labels:
+          severity: warning
+          tier: resource
+        annotations:
+          summary: "High process count detected"
+          description: "Process count for {{ $labels.instance }} is {{ $value }} (threshold: 100,000)."
+
+      # Process limit approaching
+      - alert: ErlmcpProcessLimitNear
+        expr: |
+          erlmcp_process_count{job="erlmcp"} / erlmcp_process_limit{job="erlmcp"} > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          tier: resource
+        annotations:
+          summary: "Process limit near capacity"
+          description: "Process count is at {{ $value | humanizePercentage }} of limit."
+
+  # ============================================
+  # Reduction/Load Alerts
+  # ============================================
+  - name: erlmcp_load
+    interval: 30s
+    rules:
+      # High reduction count (CPU load)
+      - alert: ErlmcpHighReductionRate
+        expr: |
+          rate(erlmcp_reductions_total[5m]) > 1000000
+        for: 10m
+        labels:
+          severity: warning
+          tier: performance
+        annotations:
+          summary: "High CPU load detected"
+          description: "Reduction rate for {{ $labels.instance }} is {{ $value }}/s."
+
+      # Scheduler utilization
+      - alert: ErlmcpHighSchedulerUtilization
+        expr: |
+          erlmcp_scheduler_utilization > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          tier: performance
+        annotations:
+          summary: "High scheduler utilization"
+          description: "Scheduler utilization is {{ $value | humanizePercentage }}."
+
+  # ============================================
+  # Connection Alerts
+  # ============================================
+  - name: erlmcp_connections
+    interval: 30s
+    rules:
+      # Connection count high
+      - alert: ErlmcpHighConnectionCount
+        expr: |
+          erlmcp_connections_active{job="erlmcp"} > 10000
+        for: 5m
+        labels:
+          severity: warning
+          tier: resource
+        annotations:
+          summary: "High connection count"
+          description: "Active connections: {{ $value }} (threshold: 10,000)."
+
+      # Connection rejection
+      - alert: ErlmcpConnectionsRejected
+        expr: |
+          rate(erlmcp_connections_rejected_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: critical
+          tier: availability
+        annotations:
+          summary: "Connections being rejected"
+          description: "Connections are being rejected at {{ $value }}/s."
+
+  # ============================================
+  # Session Alerts
+  # ============================================
+  - name: erlmcp_sessions
+    interval: 30s
+    rules:
+      # Session timeout rate
+      - alert: ErlmcpHighSessionTimeoutRate
+        expr: |
+          (
+            rate(erlmcp_sessions_timed_out_total[5m])
+            /
+            rate(erlmcp_sessions_total[5m])
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          tier: performance
+        annotations:
+          summary: "High session timeout rate"
+          description: "Session timeout rate is {{ $value | humanizePercentage }} (threshold: 10%)."
+
+      # Session error rate
+      - alert: ErlmcpHighSessionErrorRate
+        expr: |
+          (
+            rate(erlmcp_sessions_errored_total[5m])
+            /
+            rate(erlmcp_sessions_total[5m])
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          tier: availability
+        annotations:
+          summary: "High session error rate"
+          description: "Session error rate is {{ $value | humanizePercentage }} (threshold: 5%)."
+
+  # ============================================
+  # Cluster Alerts
+  # ============================================
+  - name: erlmcp_cluster
+    interval: 30s
+    rules:
+      # Node down
+      - alert: ErlmcpClusterNodeDown
+        expr: |
+          up{job="erlmcp-cluster"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          tier: cluster
+        annotations:
+          summary: "Cluster node is down"
+          description: "Cluster node {{ $labels.instance }} is unreachable."
+
+      # Partition detected
+      - alert: ErlmcpClusterPartition
+        expr: |
+          count(up{job="erlmcp-cluster"} == 0) > floor(count(up{job="erlmcp-cluster"}) / 2)
+        for: 1m
+        labels:
+          severity: critical
+          tier: cluster
+        annotations:
+          summary: "Cluster partition detected"
+          description: "Majority of cluster nodes may be partitioned."
+
+  # ============================================
+  # Transport Alerts
+  # ============================================
+  - name: erlmcp_transports
+    interval: 30s
+    rules:
+      # Transport error rate
+      - alert: ErlmcpTransportErrors
+        expr: |
+          (
+            rate(erlmcp_transport_errors_total[5m])
+            /
+            rate(erlmcp_transport_messages_total[5m])
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: warning
+          tier: availability
+        annotations:
+          summary: "High transport error rate"
+          description: "Transport error rate for {{ $labels.transport_type }} is {{ $value | humanizePercentage }}."
+
+      # Transport backlog
+      - alert: ErlmcpTransportBacklog
+        expr: |
+          erlmcp_transport_backlog_bytes > 10485760
+        for: 5m
+        labels:
+          severity: warning
+          tier: performance
+        annotations:
+          summary: "Transport message backlog detected"
+          description: "Transport backlog is {{ $value | humanize }}."
+
+  # ============================================
+  # Garbage Collection Alerts
+  # ============================================
+  - name: erlmcp_gc
+    interval: 30s
+    rules:
+      # High GC time
+      - alert: ErlmcpHighGCTime
+        expr: |
+          (
+            rate(erlmcp_gc_ms_total[5m])
+            /
+            1000
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          tier: performance
+        annotations:
+          summary: "High GC time percentage"
+          description: "GC time is {{ $value | humanizePercentage }} of wall time."
+
+      # High GC count
+      - alert: ErlmcpHighGCCount
+        expr: |
+          rate(erlmcp_gc_count_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          tier: performance
+        annotations:
+          summary: "High GC frequency"
+          description: "GC rate is {{ $value }}/s."

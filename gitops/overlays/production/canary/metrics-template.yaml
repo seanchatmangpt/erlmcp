@@ -1,0 +1,28 @@
+apiVersion: flagger.app/v1beta1
+kind: MetricTemplate
+metadata:
+  name: erlmcp-error-rate
+  namespace: erlmcp-prod
+spec:
+  provider:
+    type: prometheus
+    address: http://prometheus.observability.svc.cluster.local:9090
+  query: |
+    sum(
+      rate(
+        erlmcp_errors_total{
+          namespace="{{ namespace }}",
+          service="{{ service }}",
+          canary!="true"
+        }[1m]
+      )
+    ) /
+    sum(
+      rate(
+        erlmcp_requests_total{
+          namespace="{{ namespace }}",
+          service="{{ service }}",
+          canary!="true"
+        }[1m]
+      )
+    ) * 100

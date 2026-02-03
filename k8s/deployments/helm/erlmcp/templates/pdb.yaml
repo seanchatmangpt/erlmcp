@@ -1,0 +1,39 @@
+{{/*
+  erlmcp Pod Disruption Budget (PDB)
+  Ensures minimum availability during voluntary disruptions
+*/}}
+
+{{- if .Values.erlmcp.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erlmcp.pdbName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: pdb
+  annotations:
+    "policy.kubernetes.io/egress": "allow-all"
+    "policy.kubernetes.io/ingress": "allow-all"
+    "erlmcp.io/pdb": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+spec:
+  {{- /* Min available */}}
+  minAvailable: {{ .Values.erlmcp.podDisruptionBudget.minAvailable }}
+  {{- /* Max unavailable */}}
+  maxUnavailable: {{ .Values.erlmcp.podDisruptionBudget.maxUnavailable | default "25%" }}
+  {{- /* Selector */}}
+  selector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+  {{- /* Namespace selector */}}
+  namespaceSelector:
+    matchLabels:
+      {{- if .Values.erlmcp.podDisruptionBudget.namespaceSelector }}
+      {{- toYaml .Values.erlmcp.podDisruptionBudget.namespaceSelector | nindent 6 }}
+      {{- else }}
+      app: erlmcp
+      {{- end }}
+  {{- /* Namespace */}}
+  namespace: {{ .Release.Namespace }}
+{{- end }}

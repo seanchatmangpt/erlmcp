@@ -1,0 +1,62 @@
+{{/*
+  ERLMCP Enterprise PodDisruptionBudget
+  Ensures minimum availability during voluntary disruptions
+*/}}
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: pdb
+  annotations:
+    "erlmcp.io/pdb": "enabled"
+spec:
+  {{- /* Min Available or Max Unavailable */}}
+  {{- if .Values.podDisruptionBudget.minAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  {{- else if .Values.podDisruptionBudget.maxUnavailable }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.maxUnavailable }}
+  {{- else }}
+  minAvailable: 1
+  {{- end }}
+
+  {{- /* Selector */}}
+  selector:
+    matchLabels:
+      {{- include "erlmcp-enterprise.selectorLabels" . | nindent 6 }}
+{{- end }}
+---
+{{/*
+  ERLMCP Enterprise PodDisruptionBudget for Cluster
+  Higher availability requirements for clustered nodes
+*/}}
+{{- if and .Values.statefulset.enabled .Values.podDisruptionBudget.clusterEnabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-cluster
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: pdb-cluster
+  annotations:
+    "erlmcp.io/pdb": "cluster"
+spec:
+  {{- /* Cluster nodes need higher availability */}}
+  {{- if .Values.podDisruptionBudget.clusterMinAvailable }}
+  minAvailable: {{ .Values.podDisruptionBudget.clusterMinAvailable }}
+  {{- else if .Values.podDisruptionBudget.clusterMaxUnavailable }}
+  maxUnavailable: {{ .Values.podDisruptionBudget.clusterMaxUnavailable }}
+  {{- else }}
+  minAvailable: 2
+  {{- end }}
+
+  {{- /* Selector for cluster pods only */}}
+  selector:
+    matchLabels:
+      {{- include "erlmcp-enterprise.selectorLabels" . | nindent 6 }}
+      component: cluster
+{{- end }}

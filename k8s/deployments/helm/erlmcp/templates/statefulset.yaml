@@ -1,0 +1,621 @@
+{{/*
+  erlmcp StatefulSet for production-grade Erlang clustering
+  Features:
+  - Stateful pod management with stable network identifiers
+  - Erlang clustering with proper node discovery
+  - Multi-tier supervision tree isolation
+  - Pod anti-affinity for high availability
+  - Resource management and autoscaling
+  - Health monitoring and graceful shutdown
+*/}}
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    {{- with .Values.erlmcp.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    {{- with .Values.erlmcp.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- /* Enterprise annotations */}}
+    "prometheus.io/scrape": "true"
+    "prometheus.io/path": "/metrics"
+    "prometheus.io/port": "9090"
+    "sidecar.istio.io/inject": "true"
+    "linkerd.io/inject": "enabled"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+    "erlmcp.io/environment": {{ .Values.global.environment | default "production" | quote }}
+    "erlmcp.io/instance": {{ .Release.Name | quote }}
+    "app.kubernetes.io/component": "core"
+    "app.kubernetes.io/tier": "backend"
+    "app.kubernetes.io/part-of": "erlmcp-system"
+    "app.kubernetes.io/managed-by": "helm"
+    "helm.sh/chart": {{ include "erlmcp.chart" . }}
+    "helm.sh/managed-by": {{ .Release.Service }}
+    "helm.sh/release": {{ .Release.Name }}
+    "helm.sh/app-version": {{ .Chart.AppVersion }}
+spec:
+  {{- /* Pod management policy */}}
+  podManagementPolicy: {{ .Values.erlmcp.podManagementPolicy }}
+
+  {{- /* Update strategy */}}
+  updateStrategy:
+    type: {{ .Values.erlmcp.upgradeType }}
+    rollingUpdate:
+      partition: {{ .Values.erlmcp.replicaCount | int | div 2 | int }}
+      maxUnavailable: {{ .Values.erlmcp.maxUnavailable }}
+      maxSurge: {{ .Values.erlmcp.maxSurge }}
+
+  {{- /* Service name for headless service */}}
+  serviceName: {{ include "erlmcp.fullname" . }}-headless
+
+  {{- /* Replica configuration */}}
+  replicas: {{ .Values.erlmcp.replicaCount | int }}
+
+  {{- /* Template configuration */}}
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp.selectorLabels" . | nindent 8 }}
+        {{- with .Values.erlmcp.labels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- with .Values.erlmcp.annotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- /* Enterprise annotations */}}
+        "prometheus.io/scrape": "true"
+        "prometheus.io/path": "/metrics"
+        "prometheus.io/port": "9090"
+        "prometheus.io/interval": "30s"
+        "prometheus.io/cancel": "true"
+        "sidecar.istio.io/inject": "true"
+        "linkerd.io/inject": "enabled"
+        "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+        "erlmcp.io/environment": {{ .Values.global.environment | default "production" | quote }}
+        "erlmcp.io/instance": {{ .Release.Name | quote }}
+        "app.kubernetes.io/component": "core"
+        "app.kubernetes.io/tier": "backend"
+        "app.kubernetes.io/part-of": "erlmcp-system"
+        "app.kubernetes.io/managed-by": "helm"
+        "helm.sh/chart": {{ include "erlmcp.chart" . }}
+        "helm.sh/managed-by": {{ .Release.Service }}
+        "helm.sh/release": {{ .Release.Name }}
+    spec:
+      {{- /* Service account */}}
+      serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+
+      {{- /* Priority class */}}
+      priorityClassName: {{ include "erlmcp.priorityClassName" . }}
+
+      {{- /* Node affinity */}}
+      {{- if .Values.erlmcp.affinity }}
+      affinity:
+        {{- if .Values.erlmcp.affinity.nodeAffinity }}
+        nodeAffinity:
+          {{- toYaml .Values.erlmcp.affinity.nodeAffinity | nindent 12 }}
+        {{- end }}
+        {{- if .Values.erlmcp.affinity.podAffinity }}
+        podAffinity:
+          {{- toYaml .Values.erlmcp.affinity.podAffinity | nindent 12 }}
+        {{- end }}
+        {{- if .Values.erlmcp.affinity.podAntiAffinity }}
+        podAntiAffinity:
+          {{- toYaml .Values.erlmcp.affinity.podAntiAffinity | nindent 12 }}
+        {{- end }}
+      {{- end }}
+
+      {{- /* Node selector */}}
+      {{- if .Values.erlmcp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.erlmcp.nodeSelector | nindent 8 }}
+      {{- end }}
+
+      {{- /* Tolerations */}}
+      {{- if .Values.erlmcp.tolerations }}
+      tolerations:
+        {{- toYaml .Values.erlmcp.tolerations | nindent 8 }}
+      {{- end }}
+
+      {{- /* Security context */}}
+      securityContext:
+        {{- toYaml .Values.erlmcp.securityContext | nindent 8 }}
+
+      {{- /* Volumes */}}
+      volumes:
+        {{- /* Config volume */}}
+        - name: config
+          configMap:
+            name: {{ include "erlmcp.configMapName" . }}
+            defaultMode: 420
+        {{- /* TLS volume */}}
+        - name: tls
+          secret:
+            secretName: {{ include "erlmcp.tlsSecretName" . }}
+        {{- /* Auth volume */}}
+        - name: auth
+          secret:
+            secretName: {{ include "erlmcp.authSecretName" . }}
+        {{- /* Sessions volume */}}
+        - name: sessions
+          persistentVolumeClaim:
+            claimName: {{ include "erlmcp.sessionsPVCName" . }}
+        {{- /* Logs volume */}}
+        - name: logs
+          persistentVolumeClaim:
+            claimName: {{ include "erlmcp.logsPVCName" . }}
+        {{- /* Env variables volume */}}
+        - name: env
+          projected:
+            sources:
+              - secret:
+                  name: {{ include "erlmcp.authSecretName" . }}
+              - secret:
+                  name: {{ include "erlmcp.tlsSecretName" . }}
+            defaultMode: 420
+      {{- /* Init containers */}}
+      initContainers:
+        {{- if .Values.erlmcp.initContainers }}
+        {{- toYaml .Values.erlmcp.initContainers | nindent 8 }}
+        {{- end }}
+        {{- /* Init container for Erlang cookie */}}
+        - name: erlang-cookie
+          image: "{{ .Values.erlmcp.image.repository }}:{{ .Values.erlmcp.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.erlmcp.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.erlmcp.containerSecurityContext | nindent 12 }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Generate Erlang cookie for distributed Erlang
+              mkdir -p /home/erlang/.erlang
+              echo "{{ .Values.erlmcp.erlang.cookie }}" > /home/erlang/.erlang.cookie
+              chmod 400 /home/erlang/.erlang.cookie
+          volumeMounts:
+            - name: sessions
+              mountPath: /home/erlang/.erlang
+              readOnly: false
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+        {{- /* Init container for readiness check */}}
+        - name: readiness-check
+          image: "{{ .Values.erlmcp.image.repository }}:{{ .Values.erlmcp.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.erlmcp.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.erlmcp.containerSecurityContext | nindent 12 }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Wait for erlmcp to be ready
+              timeout=300
+              interval=5
+              count=0
+
+              while [ $count -lt $timeout ]; do
+                if curl -f http://localhost:8080/ready > /dev/null 2>&1; then
+                  echo "erlmcp is ready"
+                  exit 0
+                fi
+                sleep $interval
+                count=$((count + interval))
+              done
+
+              echo "erlmcp did not become ready within $timeout seconds"
+              exit 1
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+
+      {{- /* Containers */}}
+      containers:
+        {{- /* Main erlmcp container */}}
+        - name: erlmcp
+          image: "{{ .Values.erlmcp.image.repository }}:{{ .Values.erlmcp.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.erlmcp.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.erlmcp.containerSecurityContext | nindent 12 }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Start erlmcp with proper configuration
+              export ERLANG_COOKIE="{{ .Values.erlmcp.erlang.cookie }}"
+              export ERLMCP_CONFIG="/etc/erlmcp/erlmcp.conf"
+              export LOG_LEVEL="{{ .Values.logging.level | default "info" }}"
+              export LOG_FORMAT="{{ .Values.logging.format | default "json" }}"
+              export LOG_OUTPUT="{{ .Values.logging.output | default "stdout" }}"
+
+              # Start the application
+              exec erlmcp start
+
+          ports:
+            {{- /* TCP transport */}}
+            - name: tcp
+              containerPort: 8080
+              protocol: TCP
+            {{- /* HTTP transport */}}
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+            {{- /* HTTPS transport for TLS */}}
+            {{- if (include "erlmcp.tls.enabled" .) }}
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+            {{- end }}
+            {{- /* WebSocket transport */}}
+            - name: ws
+              containerPort: 8082
+              protocol: TCP
+            {{- /* WebSocket Secure transport */}}
+            {{- if (include "erlmcp.tls.enabled" .) }}
+            - name: wss
+              containerPort: 8086
+              protocol: TCP
+            {{- end }}
+            {{- /* SSE transport */}}
+            - name: sse
+              containerPort: 8083
+              protocol: TCP
+            {{- /* Metrics port */}}
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            {{- /* EPMD port for Erlang clustering */}}
+            - name: epmd
+              containerPort: 4369
+              protocol: TCP
+            {{- /* Distributed Erlang port range */}}
+            - name: dist-erlang
+              containerPort: 9100
+              protocol: TCP
+          {{- /* Environment variables */}}
+          env:
+            {{- /* Cluster discovery */}}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: SERVICE_NAME
+              value: {{ include "erlmcp.fullname" . }}-headless
+            - name: CLUSTER_DOMAIN
+              value: {{ .Values.multicluster.discovery.domain | default "erlmcp-cluster.local" }}
+
+            {{- /* Erlang configuration */}}
+            - name: ERLANG_COOKIE
+              value: {{ .Values.erlmcp.erlang.cookie | quote }}
+            - name: ERLMCP_CONFIG
+              value: /etc/erlmcp/erlmcp.conf
+            - name: LOG_LEVEL
+              value: {{ .Values.logging.level | default "info" | quote }}
+            - name: LOG_FORMAT
+              value: {{ .Values.logging.format | default "json" | quote }}
+            - name: LOG_OUTPUT
+              value: {{ .Values.logging.output | default "stdout" | quote }}
+
+            {{- /* OpenTelemetry configuration */}}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.global.monitoring.otel.endpoint | default "http://otel-collector:4317" | quote }}
+            - name: OTEL_EXPORTER_OTLP_COMPRESSION
+              value: {{ .Values.global.monitoring.otel.compression | default "gzip" | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ include "erlmcp.fullname" . | quote }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.name={{ include "erlmcp.fullname" . }},service.version={{ .Chart.AppVersion }},deployment.environment={{ .Values.global.environment }}"
+
+            {{- /* Service mesh configuration */}}
+            - name: ISTIO_SIDECARBOR_INJECT
+              value: "true"
+            - name: LINKERD_INJECT
+              value: "enabled"
+
+            {{- /* Configuration from ConfigMap */}}
+            - name: SESSION_BACKEND
+              value: {{ .Values.erlmcp.config.sessionBackend | default "ets" | quote }}
+            - name: MAX_SESSIONS
+              value: {{ .Values.erlmcp.config.session.maxSessions | default "10000" | quote }}
+            - name: REGISTRY_TYPE
+              value: {{ .Values.erlmcp.config.registry.type | default "distributed" | quote }}
+            - name: REGISTRY_MAX_ENTRIES
+              value: {{ .Values.erlmcp.config.registry.maxEntries | default "100000" | quote }}
+            - name: TRANSPORT_TCP_PORT
+              value: {{ .Values.erlmcp.config.transport.tcp.port | default "8080" | quote }}
+            - name: TRANSPORT_HTTP_PORT
+              value: {{ .Values.erlmcp.config.transport.http.port | default "8081" | quote }}
+            - name: TRANSPORT_WS_PORT
+              value: {{ .Values.erlmcp.config.transport.ws.port | default "8082" | quote }}
+            - name: TRANSPORT_SSE_PORT
+              value: {{ .Values.erlmcp.config.transport.sse.port | default "8083" | quote }}
+
+            {{- /* Resource limits */}}
+            - name: ERLMCP_CPU_LIMIT
+              value: {{ .Values.erlmcp.resources.limits.cpu | default "2000m" | quote }}
+            - name: ERLMCP_MEMORY_LIMIT
+              value: {{ .Values.erlmcp.resources.limits.memory | default "2Gi" | quote }}
+            - name: ERLMCP_CPU_REQUEST
+              value: {{ .Values.erlmcp.resources.requests.cpu | default "500m" | quote }}
+            - name: ERLMCP_MEMORY_REQUEST
+              value: {{ .Values.erlmcp.resources.requests.memory | default "1Gi" | quote }}
+
+            {{- /* From environment variables secret */}}
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "erlmcp.authSecretName" . }}
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "erlmcp.authSecretName" . }}
+                  key: redis-url
+            - name: EXTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "erlmcp.authSecretName" . }}
+                  key: external-api-key
+            - name: MONITORING_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "erlmcp.authSecretName" . }}
+                  key: monitoring-api-key
+
+          {{- /* Volume mounts */}}
+          volumeMounts:
+            {{- /* Configuration mount */}}
+            - name: config
+              mountPath: /etc/erlmcp
+              readOnly: true
+            {{- /* TLS mount */}}
+            - name: tls
+              mountPath: /etc/erlmcp/certs
+              readOnly: true
+            {{- /* Auth mount */}}
+            - name: auth
+              mountPath: /etc/erlmcp/auth
+              readOnly: true
+            {{- /* Sessions mount */}}
+            - name: sessions
+              mountPath: /data/sessions
+              readOnly: false
+            {{- /* Logs mount */}}
+            - name: logs
+              mountPath: /var/log/erlmcp
+              readOnly: false
+            {{- /* Home directory for Erlang */}}
+            - name: sessions
+              mountPath: /home/erlang
+              readOnly: false
+            {{- /* Environment variables */}}
+            - name: env
+              mountPath: /etc/erlmcp/env
+              readOnly: false
+
+          {{- /* Readiness probe */}}
+          readinessProbe:
+            {{- if .Values.erlmcp.readinessProbe.enabled }}
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: {{ .Values.erlmcp.readinessProbe.initialDelaySeconds | default 5 }}
+            periodSeconds: {{ .Values.erlmcp.readinessProbe.periodSeconds | default 5 }}
+            timeoutSeconds: {{ .Values.erlmcp.readinessProbe.timeoutSeconds | default 3 }}
+            failureThreshold: {{ .Values.erlmcp.readinessProbe.failureThreshold | default 3 }}
+            {{- else }}
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "exit 0"
+            {{- end }}
+
+          {{- /* Liveness probe */}}
+          livenessProbe:
+            {{- if .Values.erlmcp.livenessProbe.enabled }}
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: {{ .Values.erlmcp.livenessProbe.initialDelaySeconds | default 30 }}
+            periodSeconds: {{ .Values.erlmcp.livenessProbe.periodSeconds | default 10 }}
+            timeoutSeconds: {{ .Values.erlmcp.livenessProbe.timeoutSeconds | default 5 }}
+            failureThreshold: {{ .Values.erlmcp.livenessProbe.failureThreshold | default 3 }}
+            {{- else }}
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "exit 0"
+            {{- end }}
+
+          {{- /* Resource limits */}}
+          resources:
+            requests:
+              cpu: {{ .Values.erlmcp.resources.requests.cpu | default "500m" }}
+              memory: {{ .Values.erlmcp.resources.requests.memory | default "1Gi" }}
+            limits:
+              cpu: {{ .Values.erlmcp.resources.limits.cpu | default "2000m" }}
+              memory: {{ .Values.erlmcp.resources.limits.memory | default "2Gi" }}
+
+          {{- /* Lifecycle hooks */}}
+          lifecycle:
+            {{- if .Values.erlmcp.lifecycle.preStop }}
+            preStop:
+              {{- toYaml .Values.erlmcp.lifecycle.preStop | nindent 16 }}
+            {{- else }}
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "erlmcp graceful-shutdown"]
+            {{- end }}
+            {{- if .Values.erlmcp.lifecycle.postStart }}
+            postStart:
+              {{- toYaml .Values.erlmcp.lifecycle.postStart | nindent 16 }}
+            {{- else }}
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "erlmcp health-check"]
+            {{- end }}
+
+        {{- /* OpenTelemetry sidecar container */}}
+        {{- if .Values.erlmcp.sidecars.otel.enabled }}
+        - name: otel
+          image: {{ .Values.erlmcp.sidecars.otel.image | default "otel/opentelemetry-collector-contrib:0.102.0" }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            {{- toYaml .Values.erlmcp.containerSecurityContext | nindent 12 }}
+          args:
+            - "--config=/etc/otel/collector-config.yaml"
+            - "--log-level={{ .Values.logging.level | default "info" }}"
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+              readOnly: true
+          ports:
+            - name: otlp
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: metrics
+              containerPort: 8888
+              protocol: TCP
+          resources:
+            requests:
+              cpu: {{ .Values.erlmcp.sidecars.otel.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.erlmcp.sidecars.otel.resources.requests.memory | default "128Mi" }}
+            limits:
+              cpu: {{ .Values.erlmcp.sidecars.otel.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.erlmcp.sidecars.otel.resources.limits.memory | default "512Mi" }}
+        {{- end }}
+
+        {{- /* Promtail sidecar container */}}
+        {{- if .Values.erlmcp.sidecars.promtail.enabled }}
+        - name: promtail
+          image: {{ .Values.erlmcp.sidecars.promtail.image | default "grafana/promtail:latest" }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            {{- toYaml .Values.erlmcp.containerSecurityContext | nindent 12 }}
+          args:
+            - "--config.file=/etc/promtail/config.yaml"
+            - "--log-level={{ .Values.logging.level | default "info" }}"
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/erlmcp
+              readOnly: true
+          ports:
+            - name: http
+              containerPort: 9080
+              protocol: TCP
+          resources:
+            requests:
+              cpu: {{ .Values.erlmcp.sidecars.promtail.resources.requests.cpu | default "50m" }}
+              memory: {{ .Values.erlmcp.sidecars.promtail.resources.requests.memory | default "64Mi" }}
+            limits:
+              cpu: {{ .Values.erlmcp.sidecars.promtail.resources.limits.cpu | default "100m" }}
+              memory: {{ .Values.erlmcp.sidecars.promtail.resources.limits.memory | default "128Mi" }}
+        {{- end }}
+
+      {{- /* Termination grace period */}}
+      terminationGracePeriodSeconds: {{ .Values.erlmcp.terminationGracePeriodSeconds | default 60 }}
+
+      {{- /* DNS policy */}}
+      dnsPolicy: ClusterFirst
+
+      {{- /* Subdomain */}}
+      subdomain: {{ include "erlmcp.fullname" . }}-headless
+
+      {{- /* DNS config */}}
+      dnsConfig:
+        searches:
+          - {{ .Release.Namespace }}.svc.cluster.local
+          - {{ .Release.Namespace }}.svc
+          - default.svc.cluster.local
+          - cluster.local
+          - {{ .Values.multicluster.discovery.domain | default "erlmcp-cluster.local" }}
+
+      {{- /* Overhead */}}
+      overhead:
+        cpu: "100m"
+        memory: "128Mi"
+
+      {{- /* Initial delay seconds */}}
+      initContainerStartupTimeoutSeconds: {{ .Values.erlmcp.initContainerStartupTimeoutSeconds | default 300 }}
+
+      {{- /* Startup timeout */}}
+      startupTimeoutSeconds: {{ .Values.erlmcp.startupTimeoutSeconds | default 300 }}
+
+      {{- /* ActiveDeadlineSeconds */}}
+      activeDeadlineSeconds: {{ .Values.erlmcp.activeDeadlineSeconds | default 600 }}
+
+      {{- /* Restarts policy */}}
+      restartPolicy: Always
+
+      {{- /* Allocation mode */}}
+      allocationMode: OrderedReady
+
+      {{- /* Min ready seconds */}}
+      minReadySeconds: {{ .Values.erlmcp.minReadySeconds | default 30 }}
+
+      {{- /* Default revision history limit */}}
+      revisionHistoryLimit: {{ .Values.erlmcp.revisionHistoryLimit | default 10 }}
+
+  {{- /* Claim templates for persistent volumes */}}
+  volumeClaimTemplates:
+    {{- /* Sessions volume */}}
+    - metadata:
+        name: sessions
+        annotations:
+          volume.beta.kubernetes.io/storage-class: {{ .Values.storage.sessions.storageClass | default "fast-ssd" }}
+      spec:
+        accessModes: [{{ .Values.storage.sessions.accessMode | default "ReadWriteOnce" }}]
+        resources:
+          requests:
+            storage: {{ .Values.storage.sessions.size | default "10Gi" }}
+        storageClassName: {{ .Values.storage.sessions.storageClass | default "fast-ssd" }}
+
+    {{- /* Logs volume */}}
+    - metadata:
+        name: logs
+        annotations:
+          volume.beta.kubernetes.io/storage-class: {{ .Values.storage.logs.storageClass | default "fast-ssd" }}
+      spec:
+        accessModes: [{{ .Values.storage.logs.accessMode | default "ReadWriteOnce" }}]
+        resources:
+          requests:
+            storage: {{ .Values.storage.logs.size | default "5Gi" }}
+        storageClassName: {{ .Values.storage.logs.storageClass | default "fast-ssd" }}
+
+  {{- /* Selector */}}
+  selector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+
+  {{- /* Revision history limit */}}
+  revisionHistoryLimit: {{ .Values.erlmcp.revisionHistoryLimit | default 10 }}

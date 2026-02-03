@@ -1,0 +1,155 @@
+%% -*- erlang -*-
+%% vim: set ft=erlang ts=4 sw=4 et:
+%%%
+%%% erlmcp_zero_trust.appup - Hot Code Upgrade Instructions
+%%%
+%%% Purpose: Zero-downtime upgrade for zero trust security layer
+%%% Version: 2.1.0 -> 3.0.0
+%%%
+%%% Upgrade Strategy:
+%%%   1. Pause policy enforcement (non-blocking)
+%%%   2. Reload security modules
+%%%   3. Migrate policy state
+%%%   4. Resume enforcement
+%%%
+%%% Supported Versions:
+%%%   - From: 2.1.0
+%%%   - To: 3.0.0
+%%%   - Downgrade: 3.0.0 -> 2.1.0
+%%%
+%%% State Changes:
+%%%   - Added: Behavioral analytics state
+%%%   - Added: Continuous verification cache
+%%%   - Modified: Policy engine with adaptive enforcement
+%%%   - Added: Supply chain security validation
+%%%
+%%% Dependencies:
+%%%   - Requires crypto 5.3+
+%%%   - Requires public_key 1.15+
+%%%   - Requires ssl 10.9+
+%%%
+%%% See: docs/HOT_CODE_UPGRADE.md
+
+{"3.0.0",
+ [
+  %% Upgrade from 2.1.0 to 3.0.0
+  {"2.1.0",
+   [
+    %% Step 1: Suspend zero trust supervisor
+    {apply, {supervisor, suspend, [erlmcp_zero_trust_sup]}},
+
+    %% Step 2: Pause policy enforcement (safe to pause briefly)
+    {apply, {erlmcp_policy_engine, pause_enforcement, []}},
+
+    %% Step 3: Load new zero trust modules
+    {load_module, erlmcp_zero_trust_app, brutal_purge, purge},
+    {load_module, erlmcp_zero_trust_sup, brutal_purge, purge},
+    {load_module, erlmcp_policy_engine, brutal_purge, purge},
+    {load_module, erlmcp_access_control, brutal_purge, purge},
+    {load_module, erlmcp_application_security, brutal_purge, purge},
+    {load_module, erlmcp_behavioral_analytics, brutal_purge, purge},
+    {load_module, erlmcp_compliance_automation, brutal_purge, purge},
+    {load_module, erlmcp_compliance_manager, brutal_purge, purge},
+    {load_module, erlmcp_continuous_verification, brutal_purge, purge},
+    {load_module, erlmcp_crypto, brutal_purge, purge},
+    {load_module, erlmcp_data_protection, brutal_purge, purge},
+    {load_module, erlmcp_identity_manager, brutal_purge, purge},
+    {load_module, erlmcp_identity_provider, brutal_purge, purge},
+    {load_module, erlmcp_least_privilege, brutal_purge, purge},
+    {load_module, erlmcp_mfa_provider, brutal_purge, purge},
+    {load_module, erlmcp_micro_segmentation, brutal_purge, purge},
+    {load_module, erlmcp_network_isolation, brutal_purge, purge},
+    {load_module, erlmcp_security_monitor, brutal_purge, purge},
+    {load_module, erlmcp_supply_chain_security, brutal_purge, purge},
+    {load_module, erlmcp_threat_intelligence, brutal_purge, purge},
+    {load_module, erlmcp_zero_trust_audit, brutal_purge, purge},
+
+    %% Step 4: Apply code_change to upgrade state
+    {apply, {erlmcp_policy_engine, code_change, [3.0.0]}},
+    {apply, {erlmcp_access_control, code_change, [3.0.0]}},
+    {apply, {erlmcp_behavioral_analytics, code_change, [3.0.0]}},
+    {apply, {erlmcp_compliance_manager, code_change, [3.0.0]}},
+    {apply, {erlmcp_continuous_verification, code_change, [3.0.0]}},
+    {apply, {erlmcp_identity_manager, code_change, [3.0.0]}},
+    {apply, {erlmcp_security_monitor, code_change, [3.0.0]}},
+
+    %% Step 5: Migrate policy state to v3.0.0
+    {apply, {erlmcp_state_migration, migrate_policy_state, [2.1.0, 3.0.0]}},
+
+    %% Step 6: Migrate behavioral analytics cache
+    {apply, {erlmcp_state_migration, migrate_analytics_state, [2.1.0, 3.0.0]}},
+
+    %% Step 7: Resume policy enforcement
+    {apply, {erlmcp_policy_engine, resume_enforcement, []}},
+
+    %% Step 8: Resume supervisor
+    {apply, {supervisor, resume, [erlmcp_zero_trust_sup]}},
+
+    %% Step 9: Verify zero trust layer
+    {apply, {erlmcp_upgrade_coordinator, verify_zero_trust_upgrade, [3.0.0]}},
+
+    %% Step 10: Log successful upgrade
+    {apply, {logger, info, ["erlmcp_zero_trust upgraded from 2.1.0 to 3.0.0", []]}}
+   ],
+   [
+    %% Downgrade from 3.0.0 to 2.1.0
+    {"3.0.0",
+     [
+      %% Step 1: Suspend zero trust supervisor
+      {apply, {supervisor, suspend, [erlmcp_zero_trust_sup]}},
+
+      %% Step 2: Pause policy enforcement
+      {apply, {erlmcp_policy_engine, pause_enforcement, []}},
+
+      %% Step 3: Load old zero trust modules
+      {load_module, erlmcp_zero_trust_app, brutal_purge, purge},
+      {load_module, erlmcp_zero_trust_sup, brutal_purge, purge},
+      {load_module, erlmcp_policy_engine, brutal_purge, purge},
+      {load_module, erlmcp_access_control, brutal_purge, purge},
+      {load_module, erlmcp_application_security, brutal_purge, purge},
+      {load_module, erlmcp_behavioral_analytics, brutal_purge, purge},
+      {load_module, erlmcp_compliance_automation, brutal_purge, purge},
+      {load_module, erlmcp_compliance_manager, brutal_purge, purge},
+      {load_module, erlmcp_continuous_verification, brutal_purge, purge},
+      {load_module, erlmcp_crypto, brutal_purge, purge},
+      {load_module, erlmcp_data_protection, brutal_purge, purge},
+      {load_module, erlmcp_identity_manager, brutal_purge, purge},
+      {load_module, erlmcp_identity_provider, brutal_purge, purge},
+      {load_module, erlmcp_least_privilege, brutal_purge, purge},
+      {load_module, erlmcp_mfa_provider, brutal_purge, purge},
+      {load_module, erlmcp_micro_segmentation, brutal_purge, purge},
+      {load_module, erlmcp_network_isolation, brutal_purge, purge},
+      {load_module, erlmcp_security_monitor, brutal_purge, purge},
+      {load_module, erlmcp_supply_chain_security, brutal_purge, purge},
+      {load_module, erlmcp_threat_intelligence, brutal_purge, purge},
+      {load_module, erlmcp_zero_trust_audit, brutal_purge, purge},
+
+      %% Step 4: Apply code_change to downgrade state
+      {apply, {erlmcp_policy_engine, code_change, [2.1.0]}},
+      {apply, {erlmcp_access_control, code_change, [2.1.0]}},
+      {apply, {erlmcp_behavioral_analytics, code_change, [2.1.0]}},
+      {apply, {erlmcp_compliance_manager, code_change, [2.1.0]}},
+      {apply, {erlmcp_continuous_verification, code_change, [2.1.0]}},
+      {apply, {erlmcp_identity_manager, code_change, [2.1.0]}},
+      {apply, {erlmcp_security_monitor, code_change, [2.1.0]}},
+
+      %% Step 5: Rollback policy state to v2.1.0
+      {apply, {erlmcp_state_migration, rollback_policy_state, [3.0.0, 2.1.0]}},
+
+      %% Step 6: Rollback analytics cache
+      {apply, {erlmcp_state_migration, rollback_analytics_state, [3.0.0, 2.1.0]}},
+
+      %% Step 7: Resume policy enforcement
+      {apply, {erlmcp_policy_engine, resume_enforcement, []}},
+
+      %% Step 8: Resume supervisor
+      {apply, {supervisor, resume, [erlmcp_zero_trust_sup]}},
+
+      %% Step 9: Verify zero trust layer
+      {apply, {erlmcp_upgrade_coordinator, verify_zero_trust_downgrade, [2.1.0]}},
+
+      %% Step 10: Log successful downgrade
+      {apply, {logger, info, ["erlmcp_zero_trust downgraded from 3.0.0 to 2.1.0", []]}}
+     ]}
+   ]}
+ ]}.

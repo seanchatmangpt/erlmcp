@@ -1,0 +1,111 @@
+groups:
+  - name: erlmcp-alerts
+    rules:
+      # High CPU Usage
+      - alert: erlmcp_high_cpu_usage
+        expr: 100 - (avg by (service) (rate(container_cpu_usage_seconds_total[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for 5 minutes on {{ $labels.service }}"
+          runbook_url: "https://github.com/ruvnet/erlmcp/wiki/High-CPU-Usage"
+
+      # High Memory Usage
+      - alert: erlmcp_high_memory_usage
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 85% on {{ $labels.service }}"
+          runbook_url: "https://github.com/ruvnet/erlmcp/wiki/High-Memory-Usage"
+
+      # Service Down
+      - alert: erlmcp_service_down
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service is down"
+          description: "Service {{ $labels.service }} on node {{ $labels.node }} is down"
+          runbook_url: "https://github.com/ruvnet/erlmcp/wiki/Service-Recovery"
+
+      # High Error Rate
+      - alert: erlmcp_high_error_rate
+        expr: (rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m])) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is above 5% for service {{ $labels.service }}"
+          runbook_url: "https://github.com/ruvnet/erlmcp/wiki/Error-Rate-Analysis"
+
+      # Slow Response Time
+      - alert: erlmcp_slow_response_time
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow response time detected"
+          description: "95th percentile response time is above 2 seconds for service {{ $labels.service }}"
+          runbook_url: "https://github.com/ruvnet/erlmcp/wiki/Performance-Optimization"
+
+      # Connection Pool Exhausted
+      - alert: erlmcp_connection_pool_exhausted
+        expr: erlmcp_connections_active / erlmcp_connections_max * 100 > 90
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Connection pool exhaustion"
+          description: "Connection pool is 90% full for service {{ $labels.service }}"
+          runbook_url: "https://github.com/ruvnet/erlmcp/wiki/Connection-Pool-Tuning"
+
+      # Session Limit Reached
+      - alert: erlmcp_session_limit_reached
+        expr: erlmcp_sessions_active / erlmcp_sessions_max * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Session limit approaching"
+          description: "Active sessions are 85% of maximum capacity"
+          runbook_url: "https://github.com/ruvnet/erlmcp/wiki/Session-Management"
+
+  - name: system-alerts
+    rules:
+      # High Disk Usage
+      - alert: disk_usage_high
+        expr: (1 - (disk_free_bytes / disk_total_bytes)) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is above 85% on {{ $labels.instance }}"
+
+      # Low Disk Space
+      - alert: disk_space_low
+        expr: disk_free_bytes < 10 * 1024 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space"
+          description: "Less than 10GB of disk space remaining on {{ $labels.instance }}"
+
+      # File Descriptors Exhausted
+      - alert: file_descriptor_limit
+        expr: process_file descriptors / process_file descriptors_limit * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "File descriptor limit approaching"
+          description: "File descriptors usage is above 90%"

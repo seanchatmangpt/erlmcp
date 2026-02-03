@@ -1,0 +1,239 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erlmcp-canary
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    version: v3.0.0
+    component: erlmcp-canary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: staging
+      version: v3.0.0
+      component: erlmcp-canary
+  template:
+    metadata:
+      labels:
+        app: erlmcp
+        environment: staging
+        version: v3.0.0
+        component: erlmcp-canary
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        traffic.argoproj.io/traffic: '{"percent": 10}'
+        traffic.argoproj.io/service: "erlmcp-blue"
+        traffic.argoproj.io/canary: "true"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values:
+                  - erlmcp-blue
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: erlmcp
+        image: ghcr.io/your-org/erlmcp:staging-${{ github.sha }}-canary
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8443
+          name: https
+        resources:
+          requests:
+            cpu: "50m"
+            memory: "128Mi"
+          limits:
+            cpu: "250m"
+            memory: "512Mi"
+        env:
+        - name: ENVIRONMENT
+          value: "staging"
+        - name: LOG_LEVEL
+          value: "debug"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: HEALTH_CHECK_PATH
+          value: "/mcp/health"
+        - name: DATABASE_URL
+          value: "postgresql://erlmcp-staging-db.REGION.rds.amazonaws.com:5432/erlmcp_staging"
+        - name: REDIS_URL
+          value: "redis://erlmcp-staging-redis.REGION.cache.amazonaws.com:6379/0"
+        - name: FEATURE_FLAGS
+          valueFrom:
+            configMapKeyRef:
+              name: feature-flags
+              key: flags
+        - name: CANARY_ENABLED
+          value: "true"
+        - name: TRAFFIC_PERCENT
+          value: "10"
+        livenessProbe:
+          httpGet:
+            path: /mcp/health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /mcp/health?ready=1
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          failureThreshold: 3
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+        volumeMounts:
+        - name: config
+          mountPath: /etc/erlmcp
+        - name: certs
+          mountPath: /etc/erlmcp/certs
+      volumes:
+      - name: config
+        configMap:
+          name: erlmcp-config
+      - name: certs
+        secret:
+          secretName: erlmcp-staging-certs
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+      - name: erlmcp-regcred
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-canary
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    version: v3.0.0
+    component: erlmcp-canary
+spec:
+  selector:
+    app: erlmcp
+    environment: staging
+    version: v3.0.0
+    component: erlmcp-canary
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+  - name: https
+    port: 8443
+    targetPort: 8443
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-canary-ingress
+  namespace: erlmcp-staging
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    rollouts.argoproj.io/canary: "true"
+    rollouts.argoproj.io/scale-down-delay: "5m"
+spec:
+  tls:
+  - hosts:
+    - canary.staging.erlmcp.com
+    secretName: erlmcp-staging-canary-tls
+  rules:
+  - host: canary.staging.erlmcp.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-canary
+            port:
+              name: http
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: erlmcp-blue
+  namespace: erlmcp-staging
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: staging
+  strategy:
+    canary:
+      stableService: erlmcp-blue
+      canaryService: erlmcp-canary
+      trafficRouting:
+        nginx:
+          stableIngress: erlmcp-blue-ingress
+      steps:
+      - setWeight: 10
+      - pause:
+          duration: 30s
+      - setWeight: 25
+      - pause:
+          duration: 60s
+      - setWeight: 50
+      - pause:
+          duration: 60s
+      - setWeight: 100
+  template:
+    spec:
+      containers:
+      - name: erlmcp
+        image: ghcr.io/your-org/erlmcp:staging-${{ github.sha }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8443
+          name: https
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        env:
+        - name: ENVIRONMENT
+          value: "staging"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: METRICS_ENABLED
+          value: "true"
+        livenessProbe:
+          httpGet:
+            path: /mcp/health
+            port: 8080
+        readinessProbe:
+          httpGet:
+            path: /mcp/health?ready=1
+            port: 8080

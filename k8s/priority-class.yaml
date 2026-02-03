@@ -1,0 +1,41 @@
+---
+# PriorityClass for erlmcp production workloads
+# Ensures critical pods are scheduled before non-critical workloads
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+  labels:
+    app: erlmcp
+    component: scheduling
+  annotations:
+    description: "High priority class for erlmcp production workloads"
+value: 1000
+globalDefault: false
+description: "Priority class for erlmcp production-critical pods"
+
+---
+# PriorityClass for medium priority workloads
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: medium-priority
+  labels:
+    app: erlmcp
+    component: scheduling
+value: 500
+globalDefault: false
+description: "Priority class for erlmcp medium priority pods"
+
+---
+# PriorityClass for low priority batch jobs
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: low-priority
+  labels:
+    app: erlmcp
+    component: scheduling
+value: 100
+globalDefault: false
+description: "Priority class for erlmcp batch jobs and background tasks"

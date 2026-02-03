@@ -1,0 +1,160 @@
+{{/*
+  erlmcp Client Service for external access
+  Provides load balancing and service discovery for client connections
+  Supports TLS termination and certificate management
+*/}}
+
+{{- if .Values.erlmcp.network.serviceType }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    service: client
+    {{- if (include "erlmcp.tls.enabled" .) }}
+    "erlmcp.io/tls-enabled": "true"
+    {{- end }}
+  annotations:
+    {{- if .Values.global.serviceMesh.enabled }}
+    "service.beta.kubernetes.io/aws-load-balancer-type": "nlb"
+    "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true"
+    "service.beta.kubernetes.io/aws-load-balancer-scheme": "external"
+    {{- if (include "erlmcp.tls.enabled" .) }}
+    "service.beta.kubernetes.io/aws-load-balancer-ssl-cert": "{{ include "erlmcp.tlsSecretName" . }}"
+    "service.beta.kubernetes.io/aws-load-balancer-ssl-ports": "443"
+    {{- end }}
+    "service.beta.kubernetes.io/aws-load-balancer-proxy-protocol": "*"
+    {{- end }}
+    {{- if .Values.erlmcp.network.externalTrafficPolicy }}
+    "service.beta.kubernetes.io/aws-load-balancer-type": "nlb"
+    "service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled": "true"
+    {{- if (include "erlmcp.tls.enabled" .) }}
+    "service.beta.kubernetes.io/aws-load-balancer-ssl-cert": "{{ include "erlmcp.tlsSecretName" . }}"
+    "service.beta.kubernetes.io/aws-load-balancer-ssl-ports": "443"
+    {{- end }}
+    {{- end }}
+    {{- if .Values.erlmcp.network.loadBalancer.annotations }}
+    {{- toYaml .Values.erlmcp.network.loadBalancer.annotations | nindent 4 }}
+    {{- end }}
+    {{- if (include "erlmcp.certManager.enabled" .) }}
+    "cert-manager.io/cluster-issuer": "{{ include "erlmcp.certIssuer.name" . }}"
+    {{- end }}
+    "prometheus.io/scrape": "true"
+    "prometheus.io/port": "9090"
+    {{- if (include "erlmcp.tls.enabled" .) }}
+    "prometheus.io/scheme": "https"
+    {{- else }}
+    "prometheus.io/scheme": "http"
+    {{- end }}
+    "erlmcp.io/service": "client"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+    "erlmcp.io/environment": {{ .Values.global.environment | default "production" | quote }}
+    {{- if (include "erlmcp.mtls.enabled" .) }}
+    "erlmcp.io/mtls-enabled": "true"
+    {{- end }}
+spec:
+  type: {{ .Values.erlmcp.network.serviceType }}
+  {{- if .Values.erlmcp.network.serviceType | contains "LoadBalancer" }}
+  {{- if .Values.erlmcp.network.loadBalancer.sourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml .Values.erlmcp.network.loadBalancer.sourceRanges | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  {{- if .Values.erlmcp.network.nodePort.enabled }}
+  {{- if .Values.erlmcp.network.serviceType | contains "NodePort" }}
+  nodePort: {{ .Values.erlmcp.network.nodePort.port | default 30080 }}
+  {{- end }}
+  {{- end }}
+  externalTrafficPolicy: {{ .Values.erlmcp.network.externalTrafficPolicy | default "Cluster" }}
+  internalTrafficPolicy: Local
+  sessionAffinity: {{ .Values.erlmcp.network.sessionAffinity | default "ClientIP" }}
+  {{- if .Values.erlmcp.network.sessionAffinityConfig }}
+  sessionAffinityConfig:
+    {{- toYaml .Values.erlmcp.network.sessionAffinityConfig | nindent 4 }}
+  {{- end }}
+  ports:
+    {{- /* TCP transport port with TLS */}}
+    - name: tcp
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+      {{- if (include "erlmcp.tls.enabled" .) }}
+      appProtocol: {{ .Values.tls.appProtocol.tcp | default "kubernetes.io/h2" }}
+      {{- end }}
+      {{- if .Values.erlmcp.network.serviceType | contains "NodePort" }}
+      nodePort: {{ .Values.erlmcp.network.nodePort.port | default 30080 }}
+      {{- end }}
+    {{- /* HTTP transport port with TLS */}}
+    - name: http
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+      {{- if (include "erlmcp.tls.enabled" .) }}
+      appProtocol: {{ .Values.tls.appProtocol.http | default "https" }}
+      {{- end }}
+      {{- if and .Values.erlmcp.network.serviceType (eq "NodePort" .Values.erlmcp.network.serviceType) }}
+      nodePort: {{ add (int .Values.erlmcp.network.nodePort.port | default 30080) 1 }}
+      {{- end }}
+    {{- /* HTTPS transport port for TLS */}}
+    {{- if (include "erlmcp.tls.enabled" .) }}
+    - name: https
+      port: 8443
+      targetPort: 8443
+      protocol: TCP
+      appProtocol: https
+      {{- if and .Values.erlmcp.network.serviceType (eq "NodePort" .Values.erlmcp.network.serviceType) }}
+      nodePort: {{ add (int .Values.erlmcp.network.nodePort.port | default 30080) 10 }}
+      {{- end }}
+    {{- end }}
+    {{- /* WebSocket transport port with TLS */}}
+    - name: ws
+      port: 8082
+      targetPort: 8082
+      protocol: TCP
+      {{- if (include "erlmcp.tls.enabled" .) }}
+      appProtocol: {{ .Values.tls.appProtocol.ws | default "wss" }}
+      {{- end }}
+      {{- if and .Values.erlmcp.network.serviceType (eq "NodePort" .Values.erlmcp.network.serviceType) }}
+      nodePort: {{ add (int .Values.erlmcp.network.nodePort.port | default 30080) 2 }}
+      {{- end }}
+    {{- /* WebSocket Secure port */}}
+    {{- if (include "erlmcp.tls.enabled" .) }}
+    - name: wss
+      port: 8086
+      targetPort: 8086
+      protocol: TCP
+      appProtocol: wss
+      {{- if and .Values.erlmcp.network.serviceType (eq "NodePort" .Values.erlmcp.network.serviceType) }}
+      nodePort: {{ add (int .Values.erlmcp.network.nodePort.port | default 30080) 6 }}
+      {{- end }}
+    {{- end }}
+    {{- /* SSE transport port with TLS */}}
+    - name: sse
+      port: 8083
+      targetPort: 8083
+      protocol: TCP
+      {{- if (include "erlmcp.tls.enabled" .) }}
+      appProtocol: {{ .Values.tls.appProtocol.sse | default "https" }}
+      {{- end }}
+      {{- if and .Values.erlmcp.network.serviceType (eq "NodePort" .Values.erlmcp.network.serviceType) }}
+      nodePort: {{ add (int .Values.erlmcp.network.nodePort.port | default 30080) 3 }}
+      {{- end }}
+    {{- /* Metrics port */}}
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+      protocol: TCP
+      appProtocol: http
+      {{- if and .Values.erlmcp.network.serviceType (eq "NodePort" .Values.erlmcp.network.serviceType) }}
+      nodePort: {{ add (int .Values.erlmcp.network.nodePort.port | default 30080) 4 }}
+      {{- end }}
+  {{- if and .Values.global.ingress.enabled .Values.global.ingress.host }}
+  externalIPs:
+    - {{ .Values.global.ingress.host }}
+  {{- end }}
+  selector:
+    {{- include "erlmcp.selectorLabels" . | nindent 4 }}
+{{- end }}

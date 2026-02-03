@@ -1,0 +1,108 @@
+%% -*- erlang -*-
+%% vim: set ft=erlang ts=4 sw=4 et:
+%%%
+%%% erlmcp_validation.appup - Hot Code Upgrade Instructions
+%%%
+%%% Purpose: Zero-downtime upgrade for validation layer
+%%% Version: 2.1.0 -> 3.0.0
+%%%
+%%% Upgrade Strategy:
+%%%   1. Pause validation checks (non-blocking)
+%%%   2. Reload schema validators
+%%%   3. Update compliance rules
+%%%   4. Resume validation
+%%%
+%%% Supported Versions:
+%%%   - From: 2.1.0
+%%%   - To: 3.0.0
+%%%   - Downgrade: 3.0.0 -> 2.1.0
+%%%
+%%% State Changes:
+%%%   - Added: Protocol version 3.0.0 validation rules
+%%%   - Added: Upgrade validation checks
+%%%   - Modified: Schema registry for new message formats
+%%%
+%%% Dependencies:
+%%%   - Requires jesse 1.8.1+
+%%%
+%%% See: docs/HOT_CODE_UPGRADE.md
+
+{"3.0.0",
+ [
+  %% Upgrade from 2.1.0 to 3.0.0
+  {"2.1.0",
+   [
+    %% Step 1: Suspend validation supervisor (if applicable)
+    {apply, {supervisor, suspend, [erlmcp_validation_sup]}},
+
+    %% Step 2: Load new validation modules
+    {load_module, erlmcp_validation_app, brutal_purge, purge},
+    {load_module, erlmcp_validation_sup, brutal_purge, purge},
+    {load_module, erlmcp_protocol_validator, brutal_purge, purge},
+    {load_module, erlmcp_transport_validator, brutal_purge, purge},
+    {load_module, erlmcp_security_validator, brutal_purge, purge},
+    {load_module, erlmcp_performance_validator, brutal_purge, purge},
+    {load_module, erlmcp_spec_parser, brutal_purge, purge},
+    {load_module, erlmcp_compliance_report, brutal_purge, purge},
+    {load_module, erlmcp_schema_validator, brutal_purge, purge},
+    {load_module, erlmcp_uri_validator, brutal_purge, purge},
+
+    %% Step 3: Apply code_change
+    {apply, {erlmcp_protocol_validator, code_change, [3.0.0]}},
+    {apply, {erlmcp_schema_validator, code_change, [3.0.0]}},
+
+    %% Step 4: Update validation schemas for v3.0.0
+    {apply, {erlmcp_schema_validator, load_schemas, [3.0.0]}},
+
+    %% Step 5: Update compliance rules
+    {apply, {erlmcp_compliance_report, update_rules, [3.0.0]}},
+
+    %% Step 6: Resume supervisor
+    {apply, {supervisor, resume, [erlmcp_validation_sup]}},
+
+    %% Step 7: Verify validation layer
+    {apply, {erlmcp_upgrade_coordinator, verify_validation_upgrade, [3.0.0]}},
+
+    %% Step 8: Log successful upgrade
+    {apply, {logger, info, ["erlmcp_validation upgraded from 2.1.0 to 3.0.0", []]}}
+   ],
+   [
+    %% Downgrade from 3.0.0 to 2.1.0
+    {"3.0.0",
+     [
+      %% Step 1: Suspend validation supervisor
+      {apply, {supervisor, suspend, [erlmcp_validation_sup]}},
+
+      %% Step 2: Load old validation modules
+      {load_module, erlmcp_validation_app, brutal_purge, purge},
+      {load_module, erlmcp_validation_sup, brutal_purge, purge},
+      {load_module, erlmcp_protocol_validator, brutal_purge, purge},
+      {load_module, erlmcp_transport_validator, brutal_purge, purge},
+      {load_module, erlmcp_security_validator, brutal_purge, purge},
+      {load_module, erlmcp_performance_validator, brutal_purge, purge},
+      {load_module, erlmcp_spec_parser, brutal_purge, purge},
+      {load_module, erlmcp_compliance_report, brutal_purge, purge},
+      {load_module, erlmcp_schema_validator, brutal_purge, purge},
+      {load_module, erlmcp_uri_validator, brutal_purge, purge},
+
+      %% Step 3: Apply code_change (downgrade)
+      {apply, {erlmcp_protocol_validator, code_change, [2.1.0]}},
+      {apply, {erlmcp_schema_validator, code_change, [2.1.0]}},
+
+      %% Step 4: Load v2.1.0 schemas
+      {apply, {erlmcp_schema_validator, load_schemas, [2.1.0]}},
+
+      %% Step 5: Restore v2.1.0 compliance rules
+      {apply, {erlmcp_compliance_report, update_rules, [2.1.0]}},
+
+      %% Step 6: Resume supervisor
+      {apply, {supervisor, resume, [erlmcp_validation_sup]}},
+
+      %% Step 7: Verify validation layer
+      {apply, {erlmcp_upgrade_coordinator, verify_validation_downgrade, [2.1.0]}},
+
+      %% Step 8: Log successful downgrade
+      {apply, {logger, info, ["erlmcp_validation downgraded from 3.0.0 to 2.1.0", []]}}
+     ]}
+   ]}
+ ]}.

@@ -1,0 +1,289 @@
+# ============================================================================
+# Staging Docker Compose Override for erlmcp v3
+# ============================================================================
+# Purpose: Production-like environment for testing and validation
+# Usage: docker compose -f docker-compose.yml -f docker-compose.override.staging.yml --env-file .env.staging up
+#
+# Features:
+# - Production-like resource limits
+# - Monitoring fully enabled
+# - TLS/SSL configured
+# - Health checks active
+# - Debug endpoints available for troubleshooting
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # Override erlmcp service for staging
+  erlmcp:
+    image: ${ERLMCP_IMAGE:-ghcr.io/your-org/erlmcp:3.0.0-staging}
+    container_name: erlmcp-staging
+    hostname: erlmcp-staging
+
+    # Staging port mappings
+    ports:
+      - "${ERLMCP_PORT:-8080}:8080"    # HTTP API
+      - "${ERL_DIST_PORT:-9100}:9100" # EPMD-less distribution
+      - "${METRICS_PORT:-9100}:9100"  # Metrics/monitoring
+      - "${HEALTH_PORT:-9090}:9090"   # Health checks
+
+    # Environment for staging
+    environment:
+      ERLMCP_ENV: staging
+      ERLMCP_LOG_LEVEL: ${ERLMCP_LOG_LEVEL:-info}
+      ERLANG_COOKIE_FILE: ${ERLANG_COOKIE_FILE:-/run/secrets/erlang.cookie}
+      ERLMCP_NODE_NAME: ${ERLMCP_NODE_NAME:-erlmcp_staging@${HOSTNAME}}
+
+      # Distribution settings
+      ERL_AFLAGS: "-proto_dist inet_tls"
+      ERL_DIST_PORT: "${ERL_DIST_PORT:-9100}"
+      ERLANG_DISTRIBUTION_PORT_RANGE: "${ERL_DIST_PORT_MIN:-9100}-${ERL_DIST_PORT_MAX:-9200}"
+
+      # Logging
+      ERLMCP_LOG_LEVEL: info
+
+      # Database
+      ERLMCP_DB_HOST: ${ERLMCP_DB_HOST:-postgres-staging}
+      ERLMCP_DB_PORT: ${ERLMCP_DB_PORT:-5432}
+      ERLMCP_DB_NAME: ${ERLMCP_DB_NAME:-erlmcp_staging}
+      ERLMCP_DB_USER: ${ERLMCP_DB_USER:-erlmcp}
+      ERLMCP_DB_PASSWORD_FILE: ${ERLMCP_DB_PASSWORD_FILE:-/run/secrets/db_password}
+
+      # Redis
+      REDIS_ENABLED: ${REDIS_ENABLED:-true}
+      REDIS_HOST: ${REDIS_HOST:-redis-staging}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD_FILE: ${REDIS_PASSWORD_FILE:-/run/secrets/redis_password}
+
+      # OpenTelemetry
+      OTEL_ENABLED: ${OTEL_ENABLED:-true}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-erlmcp-staging}
+      OTEL_SAMPLING_RATE: ${OTEL_SAMPLING_RATE:-0.1}
+
+      # Security (moderate for staging)
+      ALLOW_INSECURE_HTTP: "false"
+      TLS_ENABLED: ${TLS_ENABLED:-true}
+      ERLMCP_TLS_CERT_FILE: ${ERLMCP_TLS_CERT_FILE:-/run/secrets/tls.crt}
+      ERLMCP_TLS_KEY_FILE: ${ERLMCP_TLS_KEY_FILE:-/run/secrets/tls.key}
+
+      # Feature flags (experimental enabled for testing)
+      FEATURE_RATE_LIMITING: "true"
+      FEATURE_EXPERIMENTAL: "true"
+      ENABLE_DEBUG_ENDPOINTS: "true"
+
+    # Staging resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '${ERLMCP_CPU_LIMIT:-2.0}'
+          memory: '${ERLMCP_MEMORY_LIMIT:-4G}'
+          pids: ${ERLMCP_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: '${ERLMCP_CPU_RESERVATION:-0.5}'
+          memory: '${ERLMCP_MEMORY_RESERVATION:-1G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        delay: 5s
+
+    # Secrets for staging
+    secrets:
+      - erlang.cookie
+      - db_password
+      - redis.password
+      - tls.crt
+      - tls.key
+      - source: jwt_secret
+        target: /run/secrets/jwt_secret
+
+    volumes:
+      - ./config/sys.env.staging:/opt/erlmcp/etc/sys.config:ro
+      - ./config/staging-vm.args:/opt/erlmcp/releases/3.0.0/vm.args:ro
+      - erlmcp-staging-logs:/var/log/erlmcp
+      - erlmcp-staging-data:/var/lib/erlmcp
+
+    healthcheck:
+      test: [CMD, "/opt/erlmcp/bin/healthcheck.sh"]
+      interval: 15s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - erlmcp-staging-network
+
+  # Staging PostgreSQL
+  postgres:
+    image: postgres:16-alpine
+    container_name: erlmcp-postgres-staging
+    hostname: postgres-staging
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-erlmcp_staging}
+      POSTGRES_USER: ${DB_USER:-erlmcp}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets:
+      - db_password
+    volumes:
+      - postgres-staging-data:/var/lib/postgresql/data
+      - ./scripts/init-db-staging.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-erlmcp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erlmcp-staging-network
+
+  # Staging Redis
+  redis:
+    image: redis:7-alpine
+    container_name: erlmcp-redis-staging
+    hostname: redis-staging
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    secrets:
+      - redis.password
+    volumes:
+      - redis-staging-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erlmcp-staging-network
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    container_name: erlmcp-otel-staging
+    hostname: otel-collector-staging
+    restart: unless-stopped
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "8888:8888"   # Prometheus metrics
+    volumes:
+      - ./config/docker/otel-collector-staging.yml:/etc/otelcol/config.yaml:ro
+    command: --config=/etc/otelcol/config.yaml
+    networks:
+      - erlmcp-staging-network
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: erlmcp-prometheus-staging
+    hostname: prometheus-staging
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./config/docker/prometheus-staging.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-staging-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    networks:
+      - erlmcp-staging-network
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: erlmcp-grafana-staging
+    hostname: grafana-staging
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD_FILE: /run/secrets/grafana_password
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+      GF_LOG_LEVEL: info
+    secrets:
+      - grafana_password
+    volumes:
+      - grafana-staging-data:/var/lib/grafana
+      - ./config/grafana/provisioning-staging:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - erlmcp-staging-network
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: erlmcp-jaeger-staging
+    hostname: jaeger-staging
+    restart: unless-stopped
+    ports:
+      - "5775:5775/udp"   # accept zipkin.thrift over compact thrift protocol
+      - "6831:6831/udp"   # accept jaeger.thrift over compact thrift protocol
+      - "6832:6832/udp"   # accept jaeger.thrift over binary thrift protocol
+      - "5778:5778"       # serve configs
+      - "16686:16686"     # serve frontend (Jaeger UI)
+      - "14268:14268"     # accept jaeger.thrift directly from clients
+      - "14250:14250"     # accept model.proto
+      - "9411:9411"       # Zipkin compatible endpoint
+    environment:
+      COLLECTOR_ZIPKIN_HOST_PORT: :9411
+    networks:
+      - erlmcp-staging-network
+
+# Staging network
+networks:
+  erlmcp-staging-network:
+    driver: bridge
+    name: erlmcp-staging
+    ipam:
+      config:
+        - subnet: 172.29.0.0/16
+
+# Staging volumes
+volumes:
+  erlmcp-staging-logs:
+    driver: local
+  erlmcp-staging-data:
+    driver: local
+  postgres-staging-data:
+    driver: local
+  redis-staging-data:
+    driver: local
+  prometheus-staging-data:
+    driver: local
+  grafana-staging-data:
+    driver: local
+
+# Staging secrets
+secrets:
+  erlang.cookie:
+    external: true
+    name: erlmcp-staging-erlang-cookie
+  db_password:
+    external: true
+    name: erlmcp-staging-db-password
+  redis.password:
+    external: true
+    name: erlmcp-staging-redis-password
+  tls.crt:
+    external: true
+    name: erlmcp-staging-tls-cert
+  tls.key:
+    external: true
+    name: erlmcp-staging-tls-key
+  jwt_secret:
+    external: true
+    name: erlmcp-staging-jwt-secret
+  grafana_password:
+    external: true
+    name: erlmcp-staging-grafana-password

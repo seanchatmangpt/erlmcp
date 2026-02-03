@@ -1,0 +1,223 @@
+# Vault Configuration for erlmcp v3
+# This file defines the Vault configuration for secret management
+#
+# Usage:
+#   vault operator init -config=vault-config.yaml
+#   or
+#   vault server -config=vault-config.yaml
+
+# ============================================================================
+# VAULT STORAGE BACKEND
+# ============================================================================
+storage "consul" {
+  path = "vault/"
+  token = "{{ VAULT_CONSUL_TOKEN }}"
+  address = "{{ VAULT_CONSUL_ADDR | default "127.0.0.1:8500" }}"
+
+  # HA settings
+  ha_enabled = "true"
+
+  # Performance settings
+  max_parallel = 128
+
+  # TLS settings
+  scheme = "https"
+  tls_skip_verify = false
+  tls_ca_file = "/etc/vault/tls/consul-ca.crt"
+  tls_cert_file = "/etc/vault/tls/consul-client.crt"
+  tls_key_file = "/etc/vault/tls/consul-client.key"
+}
+
+# Alternative storage backends (commented out)
+# storage "raft" {
+#   path = "/opt/vault/data"
+#   node_id = "{{ vault_node_id | default "vault_1" }}"
+#
+#   # HA settings
+#   retry_join {
+#     leader_api_addr = "https://vault-1.vault.svc.cluster.local:8200"
+#   }
+#   retry_join {
+#     leader_api_addr = "https://vault-2.vault.svc.cluster.local:8200"
+#   }
+#   retry_join {
+#     leader_api_addr = "https://vault-3.vault.svc.cluster.local:8200"
+#   }
+# }
+
+# storage "postgresql" {
+#   connection_url = "postgres://{{ vault_db_user }}:{{ vault_db_password }}@{{ vault_db_host }}:5432/{{ vault_db_name }}?sslmode=require"
+#   table = "vault_kv_store"
+#   max_parallel = "{{ vault_db_max_parallel | default 128 }}"
+#   max_open_connections = "{{ vault_db_max_open | default 64 }}"
+# }
+
+# ============================================================================
+# VAULT LISTENER
+# ============================================================================
+listener "tcp" {
+  address = "0.0.0.0:8200"
+  cluster_address = "0.0.0.0:8201"
+  tls_cert_file = "/etc/vault/tls/server.crt"
+  tls_key_file = "/etc/vault/tls/server.key"
+  tls_client_ca_file = "/etc/vault/tls/ca.crt"
+  tls_require_and_verify_client_cert = false
+  tls_prefer_server_cipher_suites = true
+  tls_cipher_suites = "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"
+  tls_min_version = "tls12"
+  tls_max_version = "tls13"
+}
+
+# Disable unencrypted listener in production
+# listener "tcp" {
+#   address = "127.0.0.1:8200"
+#   tls_disable = true  # ONLY for development
+# }
+
+# ============================================================================
+# VAULT API SETTINGS
+# ============================================================================
+api_addr = "https://{{ vault_dns_name | default "vault.vault.svc.cluster.local" }}:8200"
+cluster_addr = "https://{{ vault_pod_name | default "vault-0" }}.vault-internal:8201"
+
+# ============================================================================
+# VAULT CLUSTER SETTINGS
+# ============================================================================
+cluster_name = "{{ vault_cluster_name | default "erlmcp-vault-cluster" }}"
+
+# Leader election timeout
+raft_storage {
+  enabled = true
+}
+
+# ============================================================================
+# VAULT UI
+# ============================================================================
+ui = true
+
+# ============================================================================
+# VAULT LOGGING
+# ============================================================================
+log_level = "{{ vault_log_level | default "info" }}"
+log_format = "json"
+
+log_file = "/var/log/vault/vault.log"
+
+# Log rotation
+log_rotate_duration = "24h"
+log_rotate_max_files = 30
+
+# ============================================================================
+# VAULT PERFORMANCE
+# ============================================================================
+max_lease_ttl = "{{ vault_max_lease_ttl | default "720h" }}"  # 30 days
+default_lease_ttl = "{{ vault_default_lease_ttl | default "24h" }}"
+
+# Cluster performance
+performance {
+  # Request forwarding
+  request_forwarding_enabled = "{{ vault_request_forwarding | default "true" }}"
+
+  # Replication performance
+  replication {
+    primary {
+      enabled = "{{ vault_replication_primary | default "true" }}"
+    }
+    performance {
+      enabled = "{{ vault_replication_performance | default "true" }}"
+    }
+  }
+}
+
+# ============================================================================
+# VAULT TELEMERY
+# ============================================================================
+telemetry {
+  disable_hostname = false
+  enable_host_metric_label = true
+
+  # Prometheus metrics
+  prometheus_retention_time = "24h"
+
+  # Dogstatsd format
+  dogstatsd_addr = "localhost:8125"
+  dogstatsd_tag = ["service:vault", "environment:{{ vault_env | default "production" }}"]
+
+  # Statsd
+  statsd_address = "127.0.0.1:8125"
+  statsd_format = "datadog"
+  statsd_prefix = "vault"
+}
+
+# ============================================================================
+# VAULT SEAL CONFIGURATION
+# ============================================================================
+seal "awskms" {
+  region = "{{ aws_region }}"
+  kms_key_id = "{{ aws_kms_key_id }}"
+
+  # IAM role for authentication
+  iam_endpoint = "https://iam.amazonaws.com"
+  sts_endpoint = "https://sts.{{ aws_region }}.amazonaws.com"
+}
+
+# Alternative seal options (commented)
+# seal "gcpckms" {
+#   project = "{{ gcp_project }}"
+#   region = "{{ gcp_region }}"
+#   key_ring = "{{ gcp_key_ring }}"
+#   crypto_key = "{{ gcp_crypto_key }}"
+# }
+#
+# seal "azurekeyvault" {
+#   tenant_id = "{{ azure_tenant_id }}"
+#   client_id = "{{ azure_client_id }}"
+#   vault_name = "{{ azure_vault_name }}"
+#   key_name = "{{ azure_key_name }}"
+# }
+#
+# seal "transit" {
+#   address = "{{ transit_vault_addr }}"
+#   token = "{{ transit_vault_token }}"
+#   key_name = "{{ transit_key_name }}"
+#   mount_path = "transit"
+# }
+#
+# seal "shamir" {
+#   # Default Shamir seal (requires unseal keys)
+# }
+
+# ============================================================================
+# VAULT ENTERPRISE FEATURES (if available)
+# ============================================================================
+{{# if vault_enterprise_enabled }}
+# Replication (Enterprise)
+replication {
+  # Performance Replication
+  performance {
+    enabled = true
+
+    primary_cluster_addr = "https://vault-primary.{{ vault_domain }}:8201"
+  }
+
+  # Disaster Recovery Replication
+  dr {
+    enabled = true
+
+    primary_cluster_addr = "https://vault-dr-primary.{{ vault_domain }}:8201"
+  }
+}
+
+# License (Enterprise)
+license_path = "/etc/vault/license/vault.hclic"
+{{/if}}
+
+# ============================================================================
+# VAULT PLUGIN DIRECTORY
+# ============================================================================
+plugin_directory = "/etc/vault/plugins"
+
+# ============================================================================
+# VAULT MIGRATION
+# #-}
+disable_mlock = false

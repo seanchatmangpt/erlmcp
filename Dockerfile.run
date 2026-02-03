@@ -1,0 +1,26 @@
+# AGI Joe Armstrong style: "Make it WORK"
+# Skip the broken release system - run directly from source
+
+FROM erlang:28.3.1-alpine
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apk add --no-cache git openssl ncurses-libs bash
+
+# Copy source
+COPY . .
+
+# Compile only what works - skip broken modules
+RUN cd apps/erlmcp_core && rebar3 compile
+
+# Run directly from compile directory (no release)
+ENV ERL_LIBS=/app/apps/erlmcp_core/_build/default/lib
+ENV ERL_ZFLAGS=-shell
+
+WORKDIR /app/apps/erlmcp_core
+
+EXPOSE 8080
+
+# Start with erl - we'll use -eval to bootstrap the app
+CMD ["erl", "-pa", "_build/default/lib/*/ebin", "-eval", "application:ensure_all_started(erlmcp_core, permanent),", "-eval", "erlmcp_app:run()."]

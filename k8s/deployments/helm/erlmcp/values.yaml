@@ -1,0 +1,1074 @@
+# Global Configuration
+global:
+  buildDate: ""
+  buildNumber: "SNAPSHOT"
+  commitHash: "unknown"
+  company: "erlmcp.io"
+  environment: "production"
+  domain: "erlmcp.io"
+  cloud:
+    provider: "aws"
+    region: "us-east-1"
+    awsServiceAccount: ""
+    gcpServiceAccount: ""
+    azureIdentity: ""
+  ingress:
+    enabled: true
+    host: "erlmcp.erlmcp.io"
+    tls:
+      enabled: true
+      secretName: "erlmcp-tls"
+  serviceMesh:
+    enabled: true
+    provider: "istio"
+    istio:
+      enabled: true
+      gateway: "erlmcp-gateway"
+      namespace: "istio-system"
+    linkerd:
+      enabled: false
+      inject: true
+      namespace: "linkerd"
+  monitoring:
+    enabled: true
+    otel:
+      enabled: true
+      endpoint: "http://opentelemetry-collector.erlmcp.svc.cluster.local:4317"
+      compression: "gzip"
+    prometheus:
+      enabled: true
+    grafana:
+      enabled: true
+
+# erlmcp Core Application Configuration
+erlmcp:
+  image:
+    repository: "ghcr.io/seanchatmangpt/erlmcp"
+    pullPolicy: "IfNotPresent"
+    tag: "0.6.0"
+    digest: ""
+
+  replicaCount: 3
+  minReplicas: 1
+  maxReplicas: 5
+  podManagementPolicy: "OrderedReady"
+  revisionHistoryLimit: 10
+  upgradeType: "RollingUpdate"
+  strategyType: "RollingUpdate"
+  maxSurge: "25%"
+  maxUnavailable: "0%"
+
+  resources:
+    requests:
+      cpu: "500m"
+      memory: "1Gi"
+    limits:
+      cpu: "2000m"
+      memory: "2Gi"
+
+  erlang:
+    cookie: "erlmcp-secret-cookie-change-in-production"
+    schedulers: "logical"
+    maxProcessSize: 128
+    totalMemory: "70%"
+    processes: 20000
+
+  config:
+    sessionBackend: "ets"
+    session:
+      retention: "24h"
+      maxSessions: 10000
+      cleanupInterval: "5m"
+    registry:
+      type: "distributed"
+      maxEntries: 100000
+      cleanupInterval: "10m"
+    transport:
+      tcp:
+        port: 8080
+        backlog: 1024
+        maxConnections: 10000
+      http:
+        port: 8081
+        maxConnections: 5000
+      ws:
+        port: 8082
+        maxConnections: 5000
+      sse:
+        port: 8083
+        maxConnections: 5000
+    security:
+      mTLS:
+        enabled: true
+      rateLimit:
+        enabled: true
+        requests: 100
+        window: "1m"
+
+  network:
+    serviceType: "ClusterIP"
+    loadBalancer:
+      enabled: false
+      annotations: []
+    nodePort:
+      enabled: false
+      port: 30080
+    externalTrafficPolicy: "Cluster"
+
+  affinity:
+    podAffinity: []
+    podAntiAffinity:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: "app"
+                operator: "In"
+                values:
+                  - "erlmcp"
+          topologyKey: "kubernetes.io/hostname"
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: "kubernetes.io/os"
+                operator: "In"
+                values:
+                  - "linux"
+
+  tolerations: []
+  nodeSelector: {}
+  priorityClassName: "high-priority"
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+    maxUnavailable: "25%"
+
+  livenessProbe:
+    enabled: true
+    httpGet:
+      path: "/health"
+      port: 8080
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    enabled: true
+    httpGet:
+      path: "/ready"
+      port: 8080
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  sidecars:
+    otel:
+      enabled: true
+      image: "otel/opentelemetry-collector-contrib:0.102.0"
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+    promtail:
+      enabled: true
+      image: "grafana/promtail:latest"
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+        limits:
+          cpu: "200m"
+          memory: "256Mi"
+
+  hpa:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    externalMetrics:
+      requestRate:
+        metric:
+          name: "http_requests_per_second"
+        target:
+          type: "AverageValue"
+          averageValue: "1000"
+      connectionCount:
+        metric:
+          name: "active_connections"
+        target:
+          type: "AverageValue"
+          averageValue: "500"
+      responseTime:
+        metric:
+          name: "http_response_time_milliseconds"
+        target:
+          type: "AverageValue"
+          averageValue: "100"
+    scaleUpPolicy:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: "Pods"
+          value: 3
+          periodSeconds: 60
+    scaleDownPolicy:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: "Pods"
+          value: 1
+          periodSeconds: 60
+
+  annotations: {}
+  labels: {}
+  defaultAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/path: "/metrics"
+    prometheus.io/port: "9090"
+  defaultLabels:
+    app: "erlmcp"
+    component: "core"
+
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    runAsNonRoot: true
+
+  containerSecurityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - "ALL"
+
+  terminationGracePeriodSeconds: 60
+
+  lifecycle:
+    preStop:
+      exec:
+        command:
+          - /bin/sh
+          - -c
+          - sleep 15
+    postStart:
+      exec:
+        command:
+          - /bin/sh
+          - -c
+          - echo "Application started"
+
+# Dependencies configuration
+dependencies:
+  otelCollector:
+    image: "otel/opentelemetry-collector-contrib:0.102.0"
+  prometheusOperator:
+    image: "quay.io/prometheus-operator/prometheus-operator:v0.68.0"
+  grafana:
+    image: "grafana/grafana:10.3.0"
+
+# Storage configuration
+storage:
+  sessions:
+    size: "10Gi"
+    storageClass: "fast-ssd"
+    accessMode: "ReadWriteOnce"
+  logs:
+    size: "5Gi"
+    storageClass: "fast-ssd"
+    accessMode: "ReadWriteOnce"
+
+# Logging configuration
+logging:
+  level: "info"
+  format: "json"
+  output: "stdout"
+  retention: "7d"
+  rotateSize: "100MB"
+  rotateCount: 5
+
+# TLS configuration
+tls:
+  enabled: false
+  minVersion: "1.3"
+  maxVersion: "1.3"
+  certManager:
+    enabled: false
+    issuer:
+      name: "erlmcp-issuer"
+      kind: "Issuer"
+  mtls:
+    enforceStrict: false
+  appProtocol:
+    tcp: "tcp"
+    http: "http"
+    ws: "websocket"
+    sse: "http"
+  certificates:
+    server:
+      tlsCrt: ""
+      tlsKey: ""
+      caCrt: ""
+  caCertificate: ""
+  transport:
+    http:
+      enabled: false
+      cert: ""
+      key: ""
+      ca: ""
+    ws:
+      enabled: false
+      cert: ""
+      key: ""
+      ca: ""
+    sse:
+      enabled: false
+      cert: ""
+      key: ""
+      ca: ""
+  sessionTickets: "disabled"
+  sessionLifetime: 7200
+  requireClientCert: false
+  verifyDepth: 3
+  handshakeTimeout: 10000
+  ocspStapling: true
+  ocspResponderUrl: "http://ocsp.erlmcp.io"
+  crlCheck: true
+  crlRefreshInterval: 3600
+  dhParams: ""
+  dhGroupSize: "2048"
+  ocspResponse: ""
+  crl: ""
+  healthCheck:
+    enabled: false
+    alertDays: 30
+  pkcs12:
+    enabled: false
+    keystore: ""
+    password: ""
+  trustStore:
+    enabled: false
+    certificates: []
+    crlCheck: true
+    ocspCheck: true
+    verifyDepth: 3
+
+# RBAC configuration
+rbac:
+  enabled: true
+  serviceAccount:
+    create: true
+    name: "erlmcp"
+
+# Multi-cluster configuration
+multicluster:
+  enabled: false
+  discovery:
+    enabled: false
+    method: "dns"
+    domain: "erlmcp-cluster.local"
+  replication:
+    enabled: false
+    syncInterval: "5m"
+    syncTimeout: "30s"
+
+# Backup configuration
+backup:
+  enabled: false
+  schedule: "0 2 * * *"
+  retention: "7d"
+  strategy: "velero"
+  recovery:
+    enabled: true
+    strategy: "restore"
+    checkpoint: "auto"
+    snapshot: "auto"
+
+# Disaster recovery configuration
+disasterRecovery:
+  enabled: false
+  strategy: "active-passive"
+  activeCluster: "primary"
+  passiveCluster: "secondary"
+  failover:
+    enabled: true
+    timeout: "5m"
+    healthCheckInterval: "30s"
+  replication:
+    enabled: true
+    interval: "1m"
+    mode: "async"
+
+# =============================================================================
+# Network Policies - Zero-Trust Configuration
+# =============================================================================
+# All traffic is denied by default unless explicitly allowed
+# Each service can only communicate with what it explicitly needs
+# =============================================================================
+networking:
+  # Enable zero-trust network policies
+  policies:
+    enabled: true
+
+    # Ingress configuration - who can connect to erlmcp
+    ingress:
+      controllers:
+        - ingress-nginx
+        - traefik
+        - gateway-api
+      # Namespace where monitoring components are deployed
+      monitoringNamespace: "monitoring"
+      # Namespace where OpenTelemetry is deployed
+      otelNamespace: "observability"
+
+    # Egress configuration - where erlmcp can connect to
+    egress:
+      namespaceSelector:
+        matchLabels: {}
+      # IP block for private network ranges (for VPN/private endpoints)
+      ipBlock: "10.0.0.0/8"
+
+    # Custom ingress rules (added to the default rules)
+    customIngress: []
+      # Example: Allow from specific namespace
+      # - from:
+      #     - namespaceSelector:
+      #         matchLabels:
+      #           kubernetes.io/metadata.name: my-app
+      #   ports:
+      #     - protocol: TCP
+      #       port: 8080
+
+    # Custom egress rules (added to the default rules)
+    customEgress: []
+      # Example: Allow connection to specific external service
+      # - to:
+      #     - ipBlock:
+      #         cidr: "203.0.113.0/24"
+      #   ports:
+      #     - protocol: TCP
+      #       port: 443
+
+    # Network CIDRs for policy exceptions
+    controlPlaneCidr: "10.0.0.0/8"
+    pod_cidr: "10.244.0.0/16"
+    service_cidr: "10.96.0.0/12"
+
+# =============================================================================
+# Service Configuration
+# =============================================================================
+service:
+  enabled: true
+  type: "ClusterIP"
+  ports:
+    http:
+      port: 80
+      targetPort: 8080
+      nodePort: null
+    https:
+      port: 443
+      targetPort: 8443
+      nodePort: null
+  annotations: {}
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  externalTrafficPolicy: "Cluster"
+  sessionAffinity: "None"
+  sessionAffinityConfig: {}
+
+# =============================================================================
+# Application Configuration
+# =============================================================================
+app:
+  # Database configuration
+  database:
+    enabled: true
+    type: "postgresql"
+    host: ""
+    port: 5432
+    user: "erlmcp"
+    password: ""
+    name: "erlmcp"
+    sslMode: "require"
+    existingSecret: ""
+
+  # Cache configuration
+  cache:
+    enabled: true
+    type: "redis"
+    redis:
+      enabled: true
+      host: ""
+      port: 6379
+      password: ""
+      database: 0
+
+  # Message queue configuration
+  queue:
+    enabled: true
+    type: "rabbitmq"
+
+# Security configuration
+security:
+  # Network policy configuration for cross-namespace communication
+  networkPolicy:
+    enabled: true
+    egressOnly: false
+    # Namespace labels for identifying peer namespaces
+    ingressNamespaceLabels:
+      kubernetes.io/metadata.name: ingress-nginx
+    monitoringNamespaceLabels:
+      kubernetes.io/metadata.name: monitoring
+    databaseNamespaceLabels:
+      kubernetes_io_metadata_name: database
+    redisNamespaceLabels:
+      kubernetes_io_metadata_name: cache
+    queueNamespaceLabels:
+      kubernetes_io_metadata_name: messaging
+    otelNamespaceLabels:
+      kubernetes_io_metadata_name: observability
+    # External IP ranges to block from egress
+    externalExcept:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+    customIngress: []
+    customEgress: []
+
+  image:
+    trustedRegistries:
+      - "ghcr.io"
+      - "registry.k8s.io"
+      - "docker.io"
+  secrets:
+    vault:
+      enabled: false
+      address: ""
+      auth:
+        token: ""
+        method: "kubernetes"
+        path: "kubernetes"
+        role: "erlmcp"
+      secrets: {}
+    awsSecretsManager:
+      enabled: false
+      accessKeyId: ""
+      secretAccessKey: ""
+      region: "us-east-1"
+      secrets: {}
+    generic: {}
+    encrypted: {}
+    oauth:
+      clientId: ""
+      clientSecret: ""
+      redirectUri: ""
+      scope: ""
+      tokenUrl: ""
+      authUrl: ""
+      provider: ""
+      tenant: ""
+      domain: ""
+      accessToken: ""
+      refreshToken: ""
+      idToken: ""
+    jwt:
+      secret: ""
+      algorithm: "HS256"
+      issuer: "erlmcp"
+      audience: "erlmcp-users"
+      expiration: "3600"
+      publicKey: ""
+      privateKey: ""
+      customClaims: "{}"
+    database:
+      host: ""
+      port: "5432"
+      name: "erlmcp"
+      user: "erlmcp"
+      password: "change-me-in-production"
+      ssl: "true"
+      connectionString: ""
+      poolSettings: "{}"
+      replicationHost: ""
+      replicationPort: "5432"
+      replicationRole: "replica"
+    kubernetes:
+      kubeconfig: ""
+      serviceAccountToken: ""
+      clusterName: "erlmcp-cluster"
+      namespace: "erlmcp"
+      role: ""
+      roleBinding: ""
+      serviceAccount: "erlmcp"
+      apiServer: ""
+      caData: ""
+      caFile: ""
+
+# External Secrets Operator configuration
+externalSecrets:
+  enabled: false
+  secrets: []
+  clusterSecrets:
+    enabled: false
+    secrets: []
+    refreshInterval: "1h"
+  secretStore:
+    name: "erlmcp-secret-store"
+    kind: "SecretStore"
+    vault:
+      enabled: false
+      name: "erlmcp-vault-store"
+      address: ""
+      namespace: "vault"
+      path: "secret"
+      version: "v2"
+      auth:
+        method: "kubernetes"
+        mount: "kubernetes"
+        role: "erlmcp"
+        secretRef: "erlmcp-vault-auth"
+      authMountPath: "kubernetes"
+    aws:
+      enabled: false
+      name: "erlmcp-aws-store"
+      region: "us-east-1"
+      service: "SecretsManager"
+      serviceAccount: "erlmcp"
+    azure:
+      enabled: false
+      name: "erlmcp-azure-store"
+      vaultUrl: ""
+      tenantId: ""
+      identityId: ""
+    gcp:
+      enabled: false
+      name: "erlmcp-gcp-store"
+      project: ""
+      clusterLocation: ""
+      clusterName: ""
+      serviceAccount: "erlmcp"
+  clusterStore:
+    vault:
+      enabled: false
+      name: "erlmcp-cluster-vault-store"
+      address: ""
+      namespace: "erlmcp-system"
+      path: "secret"
+      version: "v2"
+      authMountPath: "kubernetes"
+      role: "erlmcp-cluster"
+      secretRef: "erlmcp-vault-auth"
+
+# Secret Rotation configuration
+secretRotation:
+  enabled: false
+  policies: []
+  tracking:
+    enabled: false
+    secrets: []
+  certificates:
+    enabled: false
+    certs: []
+  rollback:
+    enabled: false
+    maxRollbacks: 3
+    rollbackWindow: "24h"
+    validationTimeout: "5m"
+    notifyEnabled: true
+    notificationChannel: "slack"
+
+# Storage sub-configurations
+storage:
+  config:
+    enabled: true
+    data:
+      erlmcp:
+        conf: ""
+      transport:
+        conf: ""
+      security:
+        conf: ""
+      logging:
+        conf: ""
+      otel:
+        conf: ""
+      mesh:
+        conf: ""
+      multicluster:
+        conf: ""
+      monitoring:
+        conf: ""
+      backup:
+        conf: ""
+      disaster_recovery_conf: ""
+      compliance:
+        conf: ""
+  tls:
+    enabled: false
+    cert: ""
+    key: ""
+    ca: ""
+  auth:
+    enabled: false
+    username: ""
+    password: ""
+    token: ""
+    databaseUrl: ""
+    redisUrl: ""
+    externalApiKey: ""
+    monitoringApiKey: ""
+    sessionSecret: ""
+    configSecret: ""
+    vaultToken: ""
+    vaultSecret: ""
+  sessions:
+    size: "10Gi"
+    storageClass: "fast-ssd"
+    accessMode: "ReadWriteOnce"
+  logs:
+    size: "5Gi"
+    storageClass: "fast-ssd"
+    accessMode: "ReadWriteOnce"
+
+# Monitoring configuration
+monitoring:
+  prometheus:
+    enabled: true
+    port: 9090
+    path: "/metrics"
+    interval: 30
+    timeout: 10
+  grafana:
+    enabled: true
+    dashboard:
+      enabled: true
+      name: "erlmcp-dashboard"
+      path: "/dashboards/erlmcp.json"
+
+# Compliance configuration
+compliance:
+  cis:
+    enabled: true
+    version: "1.6"
+  iso27001:
+    enabled: true
+  assessment:
+    enabled: true
+    interval: "monthly"
+    schedule: "0 5 1 * *"
+
+# =============================================================================
+# TLS / mTLS Configuration
+# Complete TLS and mutual TLS configuration for all services
+# =============================================================================
+
+tls:
+  # Enable TLS for all services
+  enabled: true
+
+  # Minimum TLS version (1.2 or 1.3)
+  minVersion: "1.3"
+  maxVersion: "1.3"
+
+  # Custom secret name (overrides generated name)
+  secretName: ""
+
+  # CA certificate for trust bundle
+  caCertificate: ""
+  caSecretName: ""
+
+  # Certificate validation settings
+  requireClientCert: false
+  verifyDepth: 3
+
+  # Session configuration
+  sessionTickets: disabled
+  sessionLifetime: 7200
+
+  # Handshake timeout (milliseconds)
+  handshakeTimeout: 10000
+
+  # OCSP stapling
+  ocspStapling: true
+  ocspResponderUrl: "http://ocsp.erlmcp.io"
+  ocspResponse: ""
+
+  # CRL checking
+  crlCheck: true
+  crlRefreshInterval: 3600
+
+  # Application protocol settings
+  appProtocol:
+    tcp: "kubernetes.io/h2"
+    http: "https"
+    ws: "wss"
+    sse: "https"
+
+  # Cert-manager integration
+  certManager:
+    enabled: false
+    issuer:
+      # Type: letsencrypt, selfsigned, ca, vault
+      type: "letsencrypt"
+      name: "letsencrypt-prod"
+      kind: "ClusterIssuer"
+      email: "admin@erlmcp.io"
+      acme:
+        server: "https://acme-v02.api.letsencrypt.org/directory"
+      ca:
+        secretName: "erlmcp-ca-secret"
+      vault:
+        address: "https://vault.erlmcp.io"
+        path: "pki"
+        pkiPath: "pki"
+        caSecretName: "vault-ca"
+    solvers:
+      http01:
+        enabled: true
+        ingressClass: "nginx"
+        selector:
+          "cert-manager.io/solver": "http01"
+      dns01:
+        enabled: false
+        provider: "cloudflare"  # cloudflare, route53, azuredns, gcloud
+        selector:
+          "cert-manager.io/solver": "dns01"
+        cloudflare:
+          email: ""
+          secretName: "cloudflare-api-token"
+        route53:
+          region: "us-east-1"
+          hostedZoneID: ""
+          accessKeyID: ""
+          secretName: "route53-credentials"
+        azure:
+          subscriptionID: ""
+          resourceGroupName: ""
+          hostedZoneName: ""
+          tenantID: ""
+          clientID: ""
+          secretName: "azuredns-credentials"
+        gcloud:
+          project: ""
+          secretName: "clouddns-credentials"
+
+  # Certificate configurations
+  certificates:
+    server:
+      enabled: true
+      duration: "2160h"  # 90 days
+      renewBefore: "720h"  # 30 days before expiry
+      organization: "erlmcp"
+      country: "US"
+      locality: "San Francisco"
+      province: "California"
+      commonName: "erlmcp.erlmcp.io"
+      additionalDNSNames: []
+      additionalIPs: []
+      uriSANs: []
+      keyAlgorithm: "RSA"  # RSA or ECDSA
+      keySize: 4096
+      keyEncoding: "PKCS1"
+      rotationPolicy: "Always"
+      keystores:
+        pkcs12:
+          enabled: false
+      issuer:
+        name: "letsencrypt-prod"
+        kind: "ClusterIssuer"
+      tlsCrt: ""  # Set manually if certManager is disabled
+      tlsKey: ""
+      caCrt: ""
+
+    mtls:
+      # Create internal CA
+      createCA: false
+      caDuration: "87600h"  # 10 years
+      caRenewBefore: "43800h"  # 5 years
+      caKeyAlgorithm: "RSA"
+      caKeySize: "4096"
+      organization: "erlmcp"
+
+      # Client certificates
+      client:
+        enabled: true
+        generateSecret: true
+        secretName: ""
+        duration: "8760h"  # 1 year
+        renewBefore: "720h"
+        organization: "erlmcp"
+        ou: "Services"
+        keyAlgorithm: "ECDSA"
+        keySize: 256
+        additionalDNSNames: []
+        issuer:
+          name: "erlmcp-ca-issuer"
+          kind: "Issuer"
+        existingSecret:
+          crt: ""
+          key: ""
+          ca: ""
+
+      # Internal cluster certificates
+      internal:
+        enabled: true
+        secretName: ""
+        duration: "8760h"
+        renewBefore: "720h"
+        organization: "erlmcp Internal"
+        keyAlgorithm: "ECDSA"
+        keySize: 256
+        additionalNamespaces: []
+        additionalNames: []
+        issuer:
+          name: "erlmcp-internal-ca"
+          kind: "ClusterIssuer"
+
+      # Observability services
+      observability:
+        enabled: true
+        mode: "PERMISSIVE"  # STRICT or PERMISSIVE
+
+    # Transport-specific TLS
+    transport:
+      http:
+        enabled: true
+        secretName: ""
+        cert: ""
+        key: ""
+        ca: ""
+      ws:
+        enabled: true
+        secretName: ""
+        cert: ""
+        key: ""
+        ca: ""
+      sse:
+        enabled: true
+        secretName: ""
+        cert: ""
+        key: ""
+        ca: ""
+
+  # Transport-specific TLS (for templates)
+  transport:
+    http:
+      enabled: true
+      cert: ""
+      key: ""
+      ca: ""
+    ws:
+      enabled: true
+      cert: ""
+      key: ""
+      ca: ""
+    sse:
+      enabled: true
+      cert: ""
+      key: ""
+      ca: ""
+
+  # mTLS configuration
+  mtls:
+    enabled: true
+    enforceStrict: true
+    mode: "STRICT"  # STRICT, PERMISSIVE, DISABLE
+
+    # Client certificates (for templates)
+    client:
+      generateSecret: true
+      secretName: ""
+      duration: "8760h"
+      renewBefore: "720h"
+
+    # Observability
+    observability:
+      enabled: true
+      mode: "PERMISSIVE"
+
+    # Cipher suites (FIPS 140-2 compliant)
+    cipherSuites:
+      - "TLS_AES_128_GCM_SHA256"
+      - "TLS_AES_256_GCM_SHA384"
+      - "TLS_CHACHA20_POLY1305_SHA256"
+
+    # Minimum/maximum protocol
+    minProtocolVersion: "TLSV1_3"
+    maxProtocolVersion: "TLSV1_3"
+
+    # Connection pool
+    connectionPool:
+      tcp:
+        maxConnections: 100
+        connectTimeout: "10s"
+        keepAlive:
+          time: "300s"
+          interval: "60s"
+          probes: 3
+      http:
+        h2UpgradePolicy: "UPGRADE"
+        idleTimeout: "300s"
+        http2MaxRequests: 1000
+
+    loadBalancer: "ROUND_ROBIN"
+
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: "30s"
+      baseEjectionTime: "30s"
+      maxEjectionPercent: 50
+      minHealthPercent: 50
+
+    # Health check
+    healthCheck:
+      enabled: true
+      interval: "30s"
+      failureThreshold: 3
+
+    # Trusted domains
+    trustedDomains:
+      - "*.erlmcp.io"
+      - "*.erlmcp.svc.cluster.local"
+
+    # External services with mTLS
+    externalServices: []
+
+  # PKCS12 keystore for Java interop
+  pkcs12:
+    enabled: false
+    keystore: ""
+    password: ""
+
+  # DH parameters
+  dhGroupSize: "2048"
+  dhParams: ""
+
+  # Trust store
+  trustStore:
+    enabled: true
+    crlCheck: true
+    ocspCheck: true
+    verifyDepth: 3
+    certificates: []
+
+  # Monitoring
+  monitoring:
+    enabled: true
+    checkInterval: "1h"
+    alertThreshold: "720h"
+    metricsEnabled: true
+    scrapeInterval: "1m"
+    scrapeTimeout: "10s"
+
+  # Health check (for templates)
+  healthCheck:
+    enabled: true
+    alertDays: 30
+    scrapeInterval: "1m"
+    scrapeTimeout: "10s"

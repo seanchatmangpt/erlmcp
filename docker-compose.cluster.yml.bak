@@ -1,0 +1,305 @@
+version: '3.8'
+
+# === erlmcp Multi-Region Docker Compose Configuration ===
+# Multi-region cluster setup for production deployment
+#
+# Architecture:
+#   - erlmcp-region1 (us-east-1): Primary region with seed node
+#   - erlmcp-region2 (us-west-2): West coast US region
+#   - erlmcp-region3 (eu-west-1): Europe region
+#
+# Features:
+#   - Region-aware configuration via ERLMCP_REGION
+#   - TLS-secured distributed Erlang communication
+#   - Seed node discovery for automatic cluster formation
+#   - Overlay networking for cross-region communication
+#   - Per-region metrics and health endpoints
+#   - Resource limits appropriate for production
+#
+# Setup:
+#   export ERLANG_COOKIE=$(openssl rand -base64 32)
+#   docker-compose -f docker-compose.cluster.yml up -d
+#
+# Scaling:
+#   docker-compose -f docker-compose.cluster.yml up -d --scale erlmcp-region2=3
+#
+# Monitoring:
+#   - Region 1 (us-east-1):   http://localhost:8080
+#   - Region 2 (us-west-2):   http://localhost:8081
+#   - Region 3 (eu-west-1):   http://localhost:8082
+#   - Metrics endpoint:       http://localhost:9100/metrics
+#
+# Multi-region DNS (production):
+#   Use GeoDNS or Route53 latency-based routing to direct traffic
+#   to the nearest region endpoint.
+
+services:
+  # ==============================================================================
+  # Region 1: US East-1 (Primary / Seed Node)
+  # ==============================================================================
+  erlmcp-region1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-main}
+        VERSION: ${VERSION:-3.0.0}
+    container_name: erlmcp-region1
+    hostname: erlmcp-region1
+    restart: unless-stopped
+    networks:
+      - erlmcp-cluster
+    ports:
+      - "${ERLMCP_REGION1_PORT:-8080}:8080"    # HTTP API
+      - "${ERLMCP_REGION1_METRICS:-9100}:9100"  # Metrics
+      - "${ERLMCP_REGION1_HEALTH:-9090}:9090"   # Health
+      - "${ERLMCP_REGION1_EPMD:-4369}:4369"     # EPMD
+      - "${ERLMCP_REGION1_DIST:-9101}:9101"     # Distribution
+    environment:
+      # Node Identity
+      ERLMCP_NODE_NAME: erlmcp@erlmcp-region1
+      ERLMCP_REGION: us-east-1
+      ERLMCP_REGION_PRIMARY: "true"
+
+      # Cluster Configuration
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_multi_region_cookie}
+      ERLMCP_SEED_NODES: "erlmcp@erlmcp-region2,erlmcp@erlmcp-region3"
+      ERLMCP_DISTRIBUTION_MODE: cluster
+
+      # TLS Distribution (secure inter-node communication)
+      ERL_AFLAGS: "-proto_dist inet_tls"
+
+      # Environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-production}
+      ERLMCP_LOG_LEVEL: ${ERLMCP_LOG_LEVEL:-info}
+
+      # Performance Tuning
+      ERL_MAX_PORTS: ${ERL_MAX_PORTS:-65536}
+      ERL_MAX_ETS_TABLES: ${ERL_MAX_ETS_TABLES:-50000}
+      ERL_FULLSWEEP_AFTER: ${ERL_FULLSWEEP_AFTER:-0}
+      ERLANG_MAX_PROCESSES: ${ERLANG_MAX_PROCESSES:-2000000}
+
+      # Region-specific settings
+      ERLMCP_TIMEZONE: America/New_York
+      ERLMCP_LOCALE: en_US.UTF-8
+    volumes:
+      - erlmcp-region1-logs:/var/log/erlmcp
+      - erlmcp-region1-data:/var/lib/erlmcp
+    healthcheck:
+      test: [CMD, "/opt/erlmcp/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: ${ERLMCP_CPU_LIMIT:-2}
+          memory: ${ERLMCP_MEMORY_LIMIT:-2G}
+          pids: ${ERLMCP_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: ${ERLMCP_CPU_RESERVATION:-0.5}
+          memory: ${ERLMCP_MEMORY_RESERVATION:-1G}
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ==============================================================================
+  # Region 2: US West-2
+  # ==============================================================================
+  erlmcp-region2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-main}
+        VERSION: ${VERSION:-3.0.0}
+    container_name: erlmcp-region2
+    hostname: erlmcp-region2
+    restart: unless-stopped
+    networks:
+      - erlmcp-cluster
+    ports:
+      - "${ERLMCP_REGION2_PORT:-8081}:8080"
+      - "${ERLMCP_REGION2_METRICS:-9101}:9100"
+      - "${ERLMCP_REGION2_HEALTH:-9091}:9090"
+      - "${ERLMCP_REGION2_EPMD:-4370}:4369"
+      - "${ERLMCP_REGION2_DIST:-9102}:9101"
+    environment:
+      # Node Identity
+      ERLMCP_NODE_NAME: erlmcp@erlmcp-region2
+      ERLMCP_REGION: us-west-2
+
+      # Cluster Configuration - connects to primary seed
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_multi_region_cookie}
+      ERLMCP_SEED_NODES: "erlmcp@erlmcp-region1"
+      ERLMCP_DISTRIBUTION_MODE: cluster
+
+      # TLS Distribution
+      ERL_AFLAGS: "-proto_dist inet_tls"
+
+      # Environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-production}
+      ERLMCP_LOG_LEVEL: ${ERLMCP_LOG_LEVEL:-info}
+
+      # Performance Tuning
+      ERL_MAX_PORTS: ${ERL_MAX_PORTS:-65536}
+      ERL_MAX_ETS_TABLES: ${ERL_MAX_ETS_TABLES:-50000}
+      ERL_FULLSWEEP_AFTER: ${ERL_FULLSWEEP_AFTER:-0}
+      ERLANG_MAX_PROCESSES: ${ERLANG_MAX_PROCESSES:-2000000}
+
+      # Region-specific settings
+      ERLMCP_TIMEZONE: America/Los_Angeles
+      ERLMCP_LOCALE: en_US.UTF-8
+    volumes:
+      - erlmcp-region2-logs:/var/log/erlmcp
+      - erlmcp-region2-data:/var/lib/erlmcp
+    healthcheck:
+      test: [CMD, "/opt/erlmcp/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: ${ERLMCP_CPU_LIMIT:-2}
+          memory: ${ERLMCP_MEMORY_LIMIT:-2G}
+          pids: ${ERLMCP_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: ${ERLMCP_CPU_RESERVATION:-0.5}
+          memory: ${ERLMCP_MEMORY_RESERVATION:-1G}
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ==============================================================================
+  # Region 3: EU West-1
+  # ==============================================================================
+  erlmcp-region3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE:-2026-02-02}
+        VCS_REF: ${VCS_REF:-main}
+        VERSION: ${VERSION:-3.0.0}
+    container_name: erlmcp-region3
+    hostname: erlmcp-region3
+    restart: unless-stopped
+    networks:
+      - erlmcp-cluster
+    ports:
+      - "${ERLMCP_REGION3_PORT:-8082}:8080"
+      - "${ERLMCP_REGION3_METRICS:-9102}:9100"
+      - "${ERLMCP_REGION3_HEALTH:-9092}:9090"
+      - "${ERLMCP_REGION3_EPMD:-4371}:4369"
+      - "${ERLMCP_REGION3_DIST:-9103}:9101"
+    environment:
+      # Node Identity
+      ERLMCP_NODE_NAME: erlmcp@erlmcp-region3
+      ERLMCP_REGION: eu-west-1
+
+      # Cluster Configuration - connects to primary seed
+      ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_multi_region_cookie}
+      ERLMCP_SEED_NODES: "erlmcp@erlmcp-region1"
+      ERLMCP_DISTRIBUTION_MODE: cluster
+
+      # TLS Distribution
+      ERL_AFLAGS: "-proto_dist inet_tls"
+
+      # Environment
+      ERLMCP_ENV: ${ERLMCP_ENV:-production}
+      ERLMCP_LOG_LEVEL: ${ERLMCP_LOG_LEVEL:-info}
+
+      # Performance Tuning
+      ERL_MAX_PORTS: ${ERL_MAX_PORTS:-65536}
+      ERL_MAX_ETS_TABLES: ${ERL_MAX_ETS_TABLES:-50000}
+      ERL_FULLSWEEP_AFTER: ${ERL_FULLSWEEP_AFTER:-0}
+      ERLANG_MAX_PROCESSES: ${ERLANG_MAX_PROCESSES:-2000000}
+
+      # Region-specific settings
+      ERLMCP_TIMEZONE: Europe/Dublin
+      ERLMCP_LOCALE: en_GB.UTF-8
+    volumes:
+      - erlmcp-region3-logs:/var/log/erlmcp
+      - erlmcp-region3-data:/var/lib/erlmcp
+    healthcheck:
+      test: [CMD, "/opt/erlmcp/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: ${ERLMCP_CPU_LIMIT:-2}
+          memory: ${ERLMCP_MEMORY_LIMIT:-2G}
+          pids: ${ERLMCP_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: ${ERLMCP_CPU_RESERVATION:-0.5}
+          memory: ${ERLMCP_MEMORY_RESERVATION:-1G}
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+# ==============================================================================
+# Network Configuration
+# ==============================================================================
+networks:
+  erlmcp-cluster:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+    attachable: true
+    # For Docker Swarm deployment, use overlay driver:
+    # driver: overlay
+    # attachable: true
+    # For Kubernetes, this becomes a Service mesh
+
+# ==============================================================================
+# Persistent Volumes by Region
+# ==============================================================================
+volumes:
+  # Region 1 (us-east-1) storage
+  erlmcp-region1-logs:
+    driver: local
+  erlmcp-region1-data:
+    driver: local
+
+  # Region 2 (us-west-2) storage
+  erlmcp-region2-logs:
+    driver: local
+  erlmcp-region2-data:
+    driver: local
+
+  # Region 3 (eu-west-1) storage
+  erlmcp-region3-logs:
+    driver: local
+  erlmcp-region3-data:
+    driver: local

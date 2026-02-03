@@ -1,0 +1,104 @@
+# Docker Compose file for building custom monitoring images
+version: '3.8'
+
+services:
+  # Build custom Prometheus image
+  prometheus-builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.prometheus
+      args:
+        PROM_VERSION: v2.45.0
+    image: erlmcp/prometheus:v3.0.0
+    container_name: erlmcp-prometheus-builder
+    volumes:
+      - prometheus_data:/prometheus
+    networks:
+      - monitoring
+
+  # Build custom Grafana image
+  grafana-builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.grafana
+      args:
+        GRAFANA_VERSION: 10.2.0
+    image: erlmcp/grafana:v3.0.0
+    container_name: erlmcp-grafana-builder
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - monitoring
+
+  # Build custom Loki image
+  loki-builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.loki
+      args:
+        LOKI_VERSION: 2.8.0
+    image: erlmcp/loki:v3.0.0
+    container_name: erlmcp-loki-builder
+    volumes:
+      - loki_data:/loki
+    networks:
+      - monitoring
+
+  # Build custom Alertmanager image
+  alertmanager-builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.alertmanager
+      args:
+        ALERTMANAGER_VERSION: v0.25.0
+    image: erlmcp/alertmanager:v3.0.0
+    container_name: erlmcp-alertmanager-builder
+    volumes:
+      - alertmanager_data:/alertmanager
+    networks:
+      - monitoring
+
+  # Build custom Promtail image
+  promtail-builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.promtail
+      args:
+        PROMTAIL_VERSION: 2.8.0
+    image: erlmcp/promtail:v3.0.0
+    container_name: erlmcp-promtail-builder
+    networks:
+      - monitoring
+
+  # Build custom OpenTelemetry Collector image
+  otel-collector-builder:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.otel-collector
+      args:
+        OTEL_VERSION: 0.87.0
+    image: erlmcp/otel-collector:v3.0.0
+    container_name: erlmcp-otel-collector-builder
+    volumes:
+      - otel_data:/otel
+    networks:
+      - monitoring
+
+volumes:
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  otel_data:
+    driver: local
+
+networks:
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

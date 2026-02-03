@@ -1,0 +1,91 @@
+# Multi-stage build for erlmcp v3
+# Stage 1: Build
+FROM erlang:28.3.1-alpine3.20 AS builder
+
+# Build dependencies
+RUN apk add --no-cache \
+    git \
+    make \
+    curl \
+    tar
+
+# Create build user
+RUN addgroup -g 1001 -S erlmcp && \
+    adduser -S erlmcp -u 1001
+
+# Install rebar3
+RUN curl -Lo /usr/local/bin/rebar3 https://github.com/erlang/rebar3/releases/download/3.22.1/rebar3 && \
+    chmod +x /usr/local/bin/rebar3
+
+# Set working directory
+WORKDIR /opt/erlmcp
+
+# Copy rebar configuration first for better caching
+COPY rebar.config ./
+
+# Copy dependency specifications
+COPY apps/*/rebar.config apps/
+COPY apps/*/rebar.config.lock apps/
+
+# Build dependencies
+RUN rebar3 compile
+
+# Copy source code
+COPY . .
+
+# Build production release
+RUN rebar3 as prod release
+
+# Stage 2: Runtime
+FROM alpine:3.20 AS runtime
+
+# Runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    openssl \
+    tzdata \
+    ncurses-libs \
+    zlib \
+    tini
+
+# Create non-root user
+RUN addgroup -g 1001 -S erlmcp && \
+    adduser -S erlmcp -u 1001
+
+# Install tini for proper signal handling
+RUN apk add --no-cache tini
+
+# Create directories
+RUN mkdir -p /opt/erlmcp /data /etc/erlmcp /var/log/erlmcp && \
+    chown -R erlmcp:erlmcp /opt/erlmcp /data /etc/erlmcp /var/log/erlmcp
+
+# Copy from build stage
+COPY --from=builder /opt/erlmcp/_build/prod/rel/erlmcp /opt/erlmcp/
+
+# Copy configuration files
+COPY --chown=erlmcp:erlmcp config/docker/sys.config.prod /etc/erlmcp/sys.config
+COPY --chown=erlmcp:erlmcp config/docker/vm.args.prod /etc/erlmcp/vm.args
+COPY --chown=erlmcp:erlmcp config/docker/docker-entrypoint.sh /opt/erlmcp/bin/docker-entrypoint.sh
+
+# Create data directory structure
+RUN mkdir -p /data/{sessions,cache,logs,backups} && \
+    chown -R erlmcp:erlmcp /data
+
+# Set permissions
+RUN chmod +x /opt/erlmcp/bin/docker-entrypoint.sh
+
+# Switch to non-root user
+USER erlmcp
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD nc -z localhost 8080 || exit 1
+
+# Expose ports
+EXPOSE 8080 8443 8081 9090
+
+# Set entrypoint
+ENTRYPOINT ["/sbin/tini", "--", "/opt/erlmcp/bin/docker-entrypoint.sh"]
+
+# Default command
+CMD ["start"]

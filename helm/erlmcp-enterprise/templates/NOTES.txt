@@ -1,0 +1,159 @@
+Thank you for installing {{ .Chart.Name }}!
+
+Your release is named {{ .Release.Name }}.
+
+To learn more about the release, try:
+
+  $ helm status {{ .Release.Name }}
+  $ helm get all {{ .Release.Name }}
+
+{{- if .Values.ingress.enabled }}
+
+{{- range $host := .Values.ingress.hosts }}
+{{- range .paths }}
+
+ACCESS THE APPLICATION:
+
+  URL: http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+
+  {{- range .Values.ingress.hosts }}
+
+TLS CERTIFICATES:
+
+  {{- range .paths }}
+  For host {{ $.host }}:
+  {{- if $.Values.ingress.tls }}
+  {{- $tlsSecret := index $.Values.ingress.tls 0 }}
+  TLS secret: {{ $tlsSecret.secretName }}
+  {{- else }}
+  TLS is not enabled for this ingress
+  {{- end }}
+  {{- end }}
+  {{- end }}
+
+{{- end }}
+
+SERVICES:
+
+  The following services have been deployed:
+
+  - Main Service: {{ include "erlmcp-enterprise.fullname" . }}
+  - Headless Service (for clustering): {{ include "erlmcp-enterprise.fullname" . }}-headless
+  - Metrics Service (if enabled): {{ include "erlmcp-enterprise.fullname" . }}-metrics
+
+MANUAL SCALING:
+
+  You can manually scale the deployment using:
+
+  $ kubectl scale deployment {{ include "erlmcp-enterprise.fullname" . }}-core --replicas=<count> -n {{ .Release.Namespace }}
+
+  Or edit the deployment:
+
+  $ kubectl edit deployment {{ include "erlmcp-enterprise.fullname" . }}-core -n {{ .Release.Namespace }}
+
+CHECK STATUS:
+
+  To check the status of your pods:
+
+  $ kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "erlmcp-enterprise.name" . }}
+
+  To view logs:
+
+  $ kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "erlmcp-enterprise.name" . }} --tail=100 -f
+
+  To get a shell into a pod:
+
+  $ kubectl exec -it -n {{ .Release.Namespace }} $(kubectl get pod -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "erlmcp-enterprise.name" . }} -o jsonpath='{.items[0].metadata.name}') -- sh
+
+{{- if .Values.monitoring.prometheus.enabled }}
+
+MONITORING:
+
+  Prometheus ServiceMonitor has been deployed.
+
+  To access Prometheus, you may need to port-forward:
+
+  $ kubectl port-forward -n {{ .Values.monitoring.prometheus.namespace | default .Release.Namespace }} svc/prometheus-k8s 9090:9090
+
+  Then open http://localhost:9090
+{{- end }}
+
+{{- if .Values.monitoring.grafana.enabled }}
+
+GRAFANA DASHBOARD:
+
+  Grafana dashboards have been configured for ERLMCP.
+
+  To access Grafana, you may need to port-forward:
+
+  $ kubectl port-forward -n {{ .Values.monitoring.grafana.namespace | default .Release.Namespace }} svc/grafana 3000:3000
+
+  Then open http://localhost:3000
+
+  Default credentials:
+  - Username: {{ .Values.monitoring.grafana.adminUser | default "admin" }}
+  - Password: <check secret: {{ include "erlmcp-enterprise.fullname" . }}-grafana>
+{{- end }}
+
+UNINSTALL:
+
+  To uninstall the chart:
+
+  $ helm uninstall {{ .Release.Name }}
+
+  This will remove all Kubernetes resources associated with this release.
+
+UPGRADE:
+
+  To upgrade the chart:
+
+  $ helm upgrade {{ .Release.Name }} .
+
+  To upgrade with custom values:
+
+  $ helm upgrade {{ .Release.Name }} . --values custom-values.yaml
+
+  To upgrade and force a pod restart:
+
+  $ helm upgrade {{ .Release.Name }} . --reuse-values --set forceRestart=true
+
+DEBUGGING:
+
+  To get more information about the deployment:
+
+  $ kubectl describe deployment {{ include "erlmcp-enterprise.fullname" . }}-core -n {{ .Release.Namespace }}
+
+  To get events in the namespace:
+
+  $ kubectl get events -n {{ .Release.Namespace }} --sort-by='.lastTimestamp'
+
+  To check pod resource usage:
+
+  $ kubectl top pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "erlmcp-enterprise.name" . }}
+
+CLUSTERING:
+
+  {{- if .Values.statefulset.enabled }}
+
+  This release includes a StatefulSet for Erlang clustering.
+
+  To check cluster status from within a pod:
+
+  $ kubectl exec -it -n {{ .Release.Namespace }} {{ include "erlmcp-enterprise.fullname" . }}-cluster-0 -- erlmcp cluster status
+
+  To list all cluster nodes:
+
+  $ kubectl get statefulset -n {{ .Release.Namespace }} {{ include "erlmcp-enterprise.fullname" . }}-cluster
+  {{- end }}
+
+ENVIRONMENT: {{ .Values.global.cluster.environment | default "production" }}
+REGION: {{ .Values.global.cluster.region | default "us-east-1" }}
+CLUSTER: {{ .Values.global.cluster.name | default "erlmcp-enterprise" }}
+
+For more information, visit:
+  https://github.com/seanchatmangpt/erlmcp

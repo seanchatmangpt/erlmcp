@@ -1,0 +1,485 @@
+# ============================================================================
+# Production Docker Compose Override for erlmcp v3
+# ============================================================================
+# Purpose: Hardened production deployment with full security and monitoring
+# Usage: docker stack deploy -c docker-compose.yml -c docker-compose.override.prod.yml --env-file .env.prod erlmcp
+#
+# Features:
+# - Full TLS/SSL enforcement
+# - All secrets externalized to Docker secrets
+# - Health checks with restart policies
+# - Resource limits enforced
+# - No debug endpoints
+# - Comprehensive monitoring
+# - High availability support
+#
+# SECURITY WARNING:
+# - All secrets MUST be created as Docker secrets before deployment
+# - TLS certificates must be valid for production domains
+# - Network policies should restrict inter-service communication
+# ============================================================================
+
+version: '3.8'
+
+services:
+  # Production erlmcp service
+  erlmcp:
+    image: ${ERLMCP_IMAGE:-ghcr.io/your-org/erlmcp:3.0.0}
+    container_name: erlmcp-prod
+    hostname: erlmcp-prod
+
+    # Production port mappings
+    ports:
+      - "${ERLMCP_PORT:-8080}:8080"    # HTTP API
+      - "${ERL_DIST_PORT:-9100}:9100" # EPMD-less distribution
+      - "${METRICS_PORT:-9100}:9100"  # Metrics/monitoring
+      - "${HEALTH_PORT:-9090}:9090"   # Health checks
+
+    # Production environment
+    environment:
+      ERLMCP_ENV: production
+      ERLMCP_LOG_LEVEL: ${ERLMCP_LOG_LEVEL:-warn}
+      ERLANG_COOKIE_FILE: /run/secrets/erlang.cookie
+      ERLMCP_NODE_NAME: erlmcp@${HOSTNAME}
+
+      # Distribution settings - TLS required
+      ERL_AFLAGS: "-proto_dist inet_tls"
+      ERL_DIST_PORT: "${ERLMCP_PORT:-9100}"
+      ERLANG_DISTRIBUTION_PORT_RANGE: "${ERL_DIST_PORT_MIN:-9100}-${ERL_DIST_PORT_MAX:-9200}"
+
+      # Logging - minimal in production
+      ERLMCP_LOG_LEVEL: warn
+
+      # Database - with SSL required
+      ERLMCP_DB_HOST: ${DB_HOST:-postgres-prod}
+      ERLMCP_DB_PORT: 5432
+      ERLMCP_DB_NAME: erlmcp_prod
+      ERLMCP_DB_USER: erlmcp
+      ERLMCP_DB_PASSWORD_FILE: /run/secrets/db_password
+      DB_SSL_MODE: require
+
+      # Redis - with authentication
+      REDIS_ENABLED: "true"
+      REDIS_HOST: ${REDIS_HOST:-redis-prod}
+      REDIS_PORT: 6379
+      REDIS_PASSWORD_FILE: /run/secrets/redis.password
+      REDIS_CLUSTER_ENABLED: "true"
+
+      # OpenTelemetry - with TLS
+      OTEL_ENABLED: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+      OTEL_EXPORTER_OTLP_CERTIFICATE: /run/secrets/otel-ca.crt
+      OTEL_SERVICE_NAME: erlmcp
+      OTEL_SAMPLING_RATE: "0.01"
+
+      # Security - ALL enforced
+      ALLOW_INSECURE_HTTP: "false"
+      TLS_ENABLED: "true"
+      ERLMCP_TLS_CERT_FILE: /run/secrets/tls.crt
+      ERLMCP_TLS_KEY_FILE: /run/secrets/tls.key
+      ERLMCP_TLS_CA_FILE: /run/secrets/tls-ca.crt
+      TLS_VERIFY: verify_peer
+      TLS_FAIL_IF_NO_PEER_CERT: "true"
+
+      # Feature flags - NO experimental features
+      FEATURE_RATE_LIMITING: "true"
+      FEATURE_RATE_LIMIT_PER_SECOND: "1000"
+      FEATURE_ASYNC_PROCESSING: "true"
+      FEATURE_WEBHOOK_DELIVERY: "true"
+      FEATURE_EXPERIMENTAL: "false"
+      ENABLE_DEBUG_ENDPOINTS: "false"
+
+      # Session settings
+      ERLMCP_SESSION_TIMEOUT: "1800000"
+      ERLMCP_MAX_SUBSCRIPTIONS: "1000"
+      ERLMCP_MAX_PROGRESS_TOKENS: "10000"
+
+      # Connection pooling
+      ERLMCP_POOL_SIZE: "50"
+      ERLMCP_POOL_MAX_OVERFLOW: "25"
+      ERLMCP_POOL_TIMEOUT: "30000"
+
+      # Cluster settings
+      ERLMCP_CLUSTER_ENABLED: "true"
+      ERLMCP_CLUSTER_AUTOCONNECT: "true"
+      ERLMCP_CLUSTER_DISCOVERY: swarm
+      ERLMCP_CLUSTER_HEARTBEAT_INTERVAL: "10000"
+      ERLMCP_CLUSTER_NODE_CLEANUP_INTERVAL: "60000"
+      ERLMCP_SPLIT_BRAIN_STRATEGY: majority
+      ERLMCP_SPLIT_BRAIN_CHECK_INTERVAL: "30000"
+
+      # Version pinning
+      APP_VERSION: ${APP_VERSION:-3.0.0}
+      COMMIT_SHA: ${COMMIT_SHA:-unknown}
+      BUILD_TIMESTAMP: ${BUILD_TIMESTAMP:-}
+
+      # Audit logging
+      AUDIT_LOG_ENABLED: "true"
+      AUDIT_LOG_DESTINATION: ${AUDIT_LOG_DESTINATION:-gs://erlmcp-prod-audit-logs}
+
+    # Production resource limits
+    deploy:
+      mode: replicated
+      replicas: ${ERLMCP_REPLICAS:-5}
+      resources:
+        limits:
+          cpus: '${ERLMCP_CPU_LIMIT:-2.0}'
+          memory: '${ERLMCP_MEMORY_LIMIT:-4G}'
+          pids: ${ERLMCP_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: '${ERLMCP_CPU_RESERVATION:-0.5}'
+          memory: '${ERLMCP_MEMORY_RESERVATION:-1G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        delay: 5s
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        order: start-first
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: pause
+        order: stop-first
+      placement:
+        constraints:
+          - node.labels.erlmcp.enabled == true
+        preferences:
+          - spread: node.labels.zone
+
+    # ALL secrets for production
+    secrets:
+      - source: erlang.cookie
+        target: erlang.cookie
+      - source: db_password
+        target: db_password
+      - source: redis.password
+        target: redis.password
+      - source: tls.crt
+        target: tls.crt
+      - source: tls.key
+        target: tls.key
+      - source: tls-ca.crt
+        target: tls-ca.crt
+      - source: jwt-private-key.pem
+        target: /run/secrets/keys/jwt-private.pem
+      - source: jwt-public-key.pem
+        target: /run/secrets/keys/jwt-public.pem
+      - source: otel-ca.crt
+        target: otel-ca.crt
+
+    volumes:
+      - ./config/sys.env.prod:/opt/erlmcp/etc/sys.config:ro
+      - ./config/prod-vm.args:/opt/erlmcp/releases/3.0.0/vm.args:ro
+      - erlmcp-prod-logs:/var/log/erlmcp
+      - erlmcp-prod-data:/var/lib/erlmcp
+
+    healthcheck:
+      test: [CMD, "/opt/erlmcp/bin/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+    networks:
+      - erlmcp-prod-network
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "environment,service,version"
+        tag: "erlmcp-prod"
+
+  # Production PostgreSQL with HA
+  postgres:
+    image: postgres:16-alpine
+    container_name: erlmcp-postgres-prod
+    hostname: postgres-prod
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: erlmcp_prod
+      POSTGRES_USER: erlmcp
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      PGDATA: /var/lib/postgresql/data/pgdata
+    secrets:
+      - db_password
+    volumes:
+      - postgres-prod-data:/var/lib/postgresql/data
+      - ./scripts/init-db-prod.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erlmcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erlmcp-prod-network
+
+  # Production Redis with Sentinel
+  redis:
+    image: redis:7-alpine
+    container_name: erlmcp-redis-prod
+    hostname: redis-prod
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      sh -c '
+        redis-server
+        --appendonly yes
+        --requirepass $$(cat /run/secrets/redis.password)
+        --maxmemory 2gb
+        --maxmemory-policy allkeys-lru
+      '
+    secrets:
+      - redis.password
+    volumes:
+      - redis-prod-data:/data
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.25'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erlmcp-prod-network
+
+  # Production OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector:latest
+    container_name: erlmcp-otel-prod
+    hostname: otel-collector-prod
+    restart: unless-stopped
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "8888:8888"   # Prometheus metrics
+    volumes:
+      - ./config/docker/otel-collector-prod.yml:/etc/otelcol/config.yaml:ro
+    secrets:
+      - otel-ca.crt
+    command: --config=/etc/otelcol/config.yaml
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    networks:
+      - erlmcp-prod-network
+
+  # Production Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: erlmcp-prometheus-prod
+    hostname: prometheus-prod
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/docker/prometheus-prod.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-prod-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=90d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    networks:
+      - erlmcp-prod-network
+
+  # Production Grafana
+  grafana:
+    image: grafana/grafana:latest
+    container_name: erlmcp-grafana-prod
+    hostname: grafana-prod
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD_FILE: /run/secrets/grafana_password
+      GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-worldmap-panel
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-https://grafana.prod.example.com}
+      GF_LOG_LEVEL: warn
+      GF_SECURITY_COOKIE_SAMESITE: lax
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_CONTENT_TYPE_PROTECTION: "true"
+      GF_SECURITY_X_CONTENT_TYPE_OPTIONS: "nosniff"
+      GF_SECURITY_X_XSS_PROTECTION: "1; mode=block"
+    secrets:
+      - grafana_password
+    volumes:
+      - grafana-prod-data:/var/lib/grafana
+      - ./config/grafana/provisioning-prod:/etc/grafana/provisioning:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+    depends_on:
+      - prometheus
+    networks:
+      - erlmcp-prod-network
+
+  # AlertManager for alert routing
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: erlmcp-alertmanager-prod
+    hostname: alertmanager-prod
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./config/docker/alertmanager-prod.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-prod-data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://alertmanager.prod.example.com'
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+    networks:
+      - erlmcp-prod-network
+
+# Production network - overlay for multi-host
+networks:
+  erlmcp-prod-network:
+    driver: overlay
+    name: erlmcp-prod
+    attachable: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+    driver_opts:
+      encrypted: "true"
+
+# Production volumes
+volumes:
+  erlmcp-prod-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/erlmcp
+  erlmcp-prod-data:
+    driver: local
+  postgres-prod-data:
+    driver: local
+  redis-prod-data:
+    driver: local
+  prometheus-prod-data:
+    driver: local
+  grafana-prod-data:
+    driver: local
+  alertmanager-prod-data:
+    driver: local
+
+# Production secrets - ALL external
+secrets:
+  erlang.cookie:
+    external: true
+    name: erlmcp-erlang-cookie
+  db_password:
+    external: true
+    name: erlmcp-db-password
+  redis.password:
+    external: true
+    name: erlmcp-redis-password
+  tls.crt:
+    external: true
+    name: erlmcp-tls-cert
+  tls.key:
+    external: true
+    name: erlmcp-tls-key
+  tls-ca.crt:
+    external: true
+    name: erlmcp-tls-ca
+  jwt-private-key.pem:
+    external: true
+    name: erlmcp-jwt-private-key
+  jwt-public-key.pem:
+    external: true
+    name: erlmcp-jwt-public-key
+  grafana_password:
+    external: true
+    name: erlmcp-grafana-password
+  otel-ca.crt:
+    external: true
+    name: erlmcp-otel-ca-cert
+
+# ============================================================================
+# DEPLOYMENT INSTRUCTIONS:
+# ============================================================================
+#
+# 1. Create all required secrets:
+#    openssl rand -base64 48 | tr -d '\n' | docker secret create erlmcp-erlang-cookie -
+#    echo "your-db-password" | docker secret create erlmcp-db-password -
+#    echo "your-redis-password" | docker secret create erlmcp-redis-password -
+#    cat your-tls.crt | docker secret create erlmcp-tls-cert -
+#    cat your-tls.key | docker secret create erlmcp-tls-key -
+#    cat your-ca-bundle.crt | docker secret create erlmcp-tls-ca -
+#    cat jwt-private.pem | docker secret create erlmcp-jwt-private-key -
+#    cat jwt-public.pem | docker secret create erlmcp-jwt-public-key -
+#    echo "your-grafana-password" | docker secret create erlmcp-grafana-password -
+#    cat otel-ca.crt | docker secret create erlmcp-otel-ca-cert -
+#
+# 2. Initialize swarm (if not already):
+#    docker swarm init
+#
+# 3. Deploy stack:
+#    docker stack deploy -c docker-compose.yml -c docker-compose.override.prod.yml erlmcp
+#
+# 4. Verify deployment:
+#    docker stack ps erlmcp
+#    docker service logs erlmcp_erlmcp -f
+#
+# 5. Update stack:
+#    docker stack deploy -c docker-compose.yml -c docker-compose.override.prod.yml erlmcp
+#
+# 6. Remove stack:
+#    docker stack rm erlmcp
+# ============================================================================

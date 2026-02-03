@@ -1,0 +1,271 @@
+# Standalone StatefulSet for erlmcp v3 Deployment
+# Production-grade configuration with Erlang clustering support
+# Designed for Fortune 500 enterprise requirements
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: erlmcp
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    app: erlmcp
+spec:
+  serviceName: erlmcp-cluster
+  replicas: 3
+  selector:
+    matchLabels:
+      app: erlmcp
+  template:
+    metadata:
+      labels:
+        app: erlmcp
+        app.kubernetes.io/name: erlmcp
+        app.kubernetes.io/instance: erlmcp
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+        # Pod annotations
+        # Service mesh integration
+        sidecar.istio.io/inject: "true"
+        sidecar.istio.io/rewriteAppHTTPProxies: "true"
+        # Prometheus annotations
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        fsGroup: 1000
+        runAsUser: 1000
+        runAsGroup: 1000
+      serviceAccountName: erlmcp-sa
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values: [erlmcp]
+              topologyKey: "kubernetes.io/hostname"
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: [erlmcp]
+                topologyKey: "topology.kubernetes.io/zone"
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - matchExpressions:
+                - key: kubernetes.io/arch
+                  operator: In
+                  values: ["amd64", "arm64"]
+                - key: node.kubernetes.io/memory-pressure
+                  operator: NotIn
+                  values: ["true"]
+      initContainers:
+        # Wait for cluster service
+        - name: wait-for-cluster
+          image: busybox:1.35
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Waiting for cluster service to be ready..."
+              while ! nc -z erlmcp-cluster 9000; do
+                echo "Waiting for cluster service..."
+                sleep 2
+              done
+              echo "Cluster service is ready"
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+      containers:
+        # Main erlmcp container
+        - name: erlmcp
+          image: banyanplatform/erlmcp:3.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: tcp
+              containerPort: 3000
+              protocol: TCP
+            - name: cluster
+              containerPort: 9000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+            - name: otel
+              containerPort: 4317
+              protocol: TCP
+          env:
+            - name: ERLMCP_CLUSTER_ENABLED
+              value: "true"
+            - name: ERLMCP_CLUSTER_COOKIE
+              value: "erlmcp-cluster-3-0-0"
+            - name: ERLMCP_OTP_VERSION
+              value: "28.3.1"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: ERLMCP_LOG_LEVEL
+              value: "info"
+            - name: ERLMCP_LOG_FORMAT
+              value: "json"
+            - name: ERLMCP_HTTP_PORT
+              value: "3000"
+            - name: ERLMCP_TCP_PORT
+              value: "3000"
+            - name: ERLMCP_CLUSTER_PORT
+              value: "9000"
+            - name: ERLMCP_MAX_CONNECTIONS
+              value: "5000"
+            - name: ERLMCP_MAX_SESSIONS
+              value: "10000"
+            - name: ERLMCP_MAX_REGISTRY_SIZE
+              value: "1000000"
+            - name: ERLMCP_SESSION_BACKEND
+              value: "ets"
+            - name: ERLMCP_REGISTRY_BACKEND
+              value: "ets"
+            - name: ERLMCP_METRICS_ENABLED
+              value: "true"
+            - name: ERLMCP_OTEL_ENABLED
+              value: "true"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "otel-collector.observability.svc.cluster.local:4317"
+          args:
+            - start
+            - --name=$(POD_NAME)
+            - --cookie=erlmcp-cluster-3-0-0
+            - --http-port=3000
+            - --tcp-port=3000
+            - --cluster-port=9000
+            - --log-level=info
+            - --log-format=json
+            - --nodes=erlmcp-cluster
+            - --cluster-enabled=true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+            successThreshold: 1
+          startupProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 30
+            successThreshold: 1
+          resources:
+            requests:
+              cpu: "2"
+              memory: "4Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+          volumeMounts:
+            - name: sessions-data
+              mountPath: /data/sessions
+              subPath: sessions
+            - name: registry-data
+              mountPath: /data/registry
+              subPath: registry
+            - name: config-data
+              mountPath: /data/config
+              subPath: config
+            - name: erlmcp-secrets
+              mountPath: /etc/erlmcp/secrets
+              readOnly: true
+            - name: erlmcp-config
+              mountPath: /etc/erlmcp
+              readOnly: true
+        # Prometheus exporter sidecar
+        - name: node-exporter
+          image: prom/node-exporter:v1.5.0
+          ports:
+            - name: metrics
+              containerPort: 9100
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+      volumes:
+        - name: erlmcp-secrets
+          secret:
+            secretName: erlmcp-secrets
+        - name: erlmcp-config
+          configMap:
+            name: erlmcp-config
+  volumeClaimTemplates:
+    # Sessions PVC
+    - metadata:
+        name: sessions-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 10Gi
+        storageClassName: fast-ssd
+    # Registry PVC
+    - metadata:
+        name: registry-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 5Gi
+        storageClassName: fast-ssd
+    # Config PVC
+    - metadata:
+        name: config-data
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+        storageClassName: fast-ssd

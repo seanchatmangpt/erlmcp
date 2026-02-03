@@ -1,0 +1,294 @@
+## ============================================================================
+## Production VM Arguments for erlmcp v3
+## ============================================================================
+## Purpose: Hardened, optimized settings for production deployment
+## Security: Maximum security, all secrets externalized
+##
+## Usage: Referenced from docker-compose.override.prod.yml
+## WARNING: Review and understand each setting before modifying
+## ============================================================================
+
+## ============================================================================
+## Node Naming
+## ============================================================================
+## Dynamic naming based on hostname for production cluster
+## ${HOSTNAME} resolves to the container ID in Docker Swarm
+-name erlmcp@${HOSTNAME}
+
+## ============================================================================
+## Cookie for Distributed Node Communication
+## ============================================================================
+## CRITICAL: Cookie MUST come from Docker secret
+## NEVER hardcode cookies - this is a critical security vulnerability
+## The cookie is loaded from /run/secrets/erlang.cookie by the release script
+# Cookie set via -setcookie flag passed from environment
+
+## ============================================================================
+## Heartbeat Management
+## ============================================================================
+## Enabled for automatic restart on hangs
+-heart
+-env HEART_BEAT_TIMEOUT 30
+-env HEART_COMMAND "/opt/erlmcp/bin/erlmcp start"
+
+## ============================================================================
+## Kernel Poll
+## ============================================================================
+## Essential for high-performance I/O
++K true
+
+## ============================================================================
+## VM Port Limit
+## ============================================================================
+## Maximum ports for high-concurrency production
++Q 65536
+-env ERL_MAX_PORTS 65536
+
+## ============================================================================
+## Process Limit
+## ============================================================================
+## Maximum processes for production workloads
++P 262144
+
+## ============================================================================
+## Atom Table Size
+## ============================================================================
+## Large atom table for production
++t 5000000
+
+## ============================================================================
+## Time Correction
+## ============================================================================
+## Essential for distributed systems
++c true
+
+## ============================================================================
+## Scheduler Bind Type
+## ============================================================================
+## Distribute scheduler threads across CPU cores
++sbt db
+
+## ============================================================================
+## Busy Waiting
+## ============================================================================
+## Optimized for low latency in production
++sbwt very_short
++sbwtdcpu very_short
++swct very_short
+
+## ============================================================================
+## Async Thread Pool
+## ============================================================================
+## Production-sized async thread pool
++A 64
+
+## ============================================================================
+## Max ETS Tables
+## ============================================================================
+## Maximum ETS tables for production caching
+-env ERL_MAX_ETS_TABLES 50000
+
+## ============================================================================
+## Microstate Accounting
+## ============================================================================
+## Disabled in production for minimal overhead
+# +Muacul true
+
+## ============================================================================
+## Scheduler Utilization Balancing
+## ============================================================================
+## Enabled for production load balancing
++sub true
++sup true
++suc 0.01
+
+## ============================================================================
+## Distribution Buffer Busy Limit
+## ============================================================================
+## Large buffer for production cluster communication
++zdbbl 8192
+
+## ============================================================================
+## Distribution Buffer Size
+## ============================================================================
+## Increased buffer size for inter-node communication
++zdbbl 8192
+
+## ============================================================================
+## Logger Configuration
+## ============================================================================
+## High burst limit to handle production traffic spikes
+-kernel logger_burst_limit 5000
+-kernel logger_sync_mode_qlen 500
+-kernel logger_drop_mode_qlen 5000
+
+## ============================================================================
+## Crash Dump Configuration
+## ============================================================================
+## Production crash dump settings
+-env ERL_CRASH_DUMP_SECONDS 10
+-env ERL_CRASH_DUMP /var/log/erlmcp/erl_crash.dump
+-env ERL_CRASH_DUMP_BYTES 104857600
+
+## ============================================================================
+## System Monitor
+## ============================================================================
+## Enabled with production thresholds
+-env ERLMCP_SYSTEM_MONITOR true
+-env ERLMCP_SYSTEM_MONITOR_INTERVAL 60000
+-env ERLMCP_SYSTEM_MONITOR_LONG_SCHEDULE 200
+-env ERLMCP_SYSTEM_MONITOR_LARGE_HEAP 10485760
+
+## ============================================================================
+## Memory Allocator Settings
+## ============================================================================
+## Optimized for production workloads
++MBas aobf
++MBlmbcs 512
++MBsmbcs 1024
++MBsbct 2048
+
+## ============================================================================
+## Cgroups Settings
+## ============================================================================
+## Full cgroups v2 awareness for container environments
++MBacul 0
++Msbagf 512
++MBacgs 0
++MBacgsf true
+
+## ============================================================================
+## Garbage Collection Settings
+## ============================================================================
+## Optimized for production throughput
++hms 46422
++hmbs 46422
++mbgsfr 256
++mbgsal 256
++Muc  256
++Mus  256
++Msf  512
++Msb  1024
+
+## ============================================================================
+## Distribution Settings
+## ============================================================================
+## TLS distribution REQUIRED for production security
+-proto_dist inet_tls
+
+## SSL/TLS Configuration for distribution
+-ssl_dist_opt client_verify verify_peer
+-ssl_dist_opt server_verify verify_peer
+-ssl_dist_opt fail_if_no_peer_cert true
+-ssl_dist_opt client_secure_renegotiate true
+-ssl_dist_opt server_secure_renegotiate true
+-ssl_dist_opt depth 99
+
+## SSL Certificate paths (from Docker secrets)
+-ssl_dist_opt certfile /run/secrets/tls.crt
+-ssl_dist_opt keyfile /run/secrets/tls.key
+-ssl_dist_opt cacertfile /run/secrets/tls-ca.crt
+
+## ============================================================================
+## SMP Settings
+## ============================================================================
+## Enable SMP with auto-detected processors
++smp auto
++smd true
+
+## ============================================================================
+## Kernel Settings for Production
+## ============================================================================
+## Minimal error reporting in production
+-kernel error_logger silent
+-kernel logger_level warn
+
+## Prevent out-of-memory crashes
+-kernel prevent_heap溢出 true
+
+## ============================================================================
+## SASL Settings
+## ============================================================================
+## Minimal SASL logging for production
+-sasl sasl_error_logger false
+-sasl errlog_type error
+-sasl error_logger_format_depth 20
+-sasl sasl_log_utilization false
+
+## ============================================================================
+## OS Variables
+## ============================================================================
+## Set timezone for consistent logs
+-env TZ UTC
+-env ERLANG_FLAGS "-detached"
+
+## ============================================================================
+## File Descriptor Limits
+## ============================================================================
+## Ensure high file descriptor limits
+-env ERL_MAX_PORTS 65536
+-env ERL_MAX_ETS_TABLES 50000
+
+## ============================================================================
+## Code Loading
+## ============================================================================
+## Production uses embedded sys.config
+-env RELEASE_MODE embedded
+
+## ============================================================================
+## Instrumentation
+## ============================================================================
+## Disabled in production for minimal overhead
+# +MSA true
+# +instrument on
+
+## ============================================================================
+## Trace Settings
+## ============================================================================
+## All tracing disabled in production
+-setcookie _from_file_
+
+## ============================================================================
+## Shutdown Settings
+## ============================================================================
+## Graceful shutdown timeout
+-kernel shutdown_timeout 30000
+
+## ============================================================================
+## Net Kernel Settings
+## ============================================================================
+## Optimized net_ticktime for production
+-kernel net_ticktime 60
+
+## ============================================================================
+## Error Handler Settings
+## ============================================================================
+## Use optimized error handler
+-kernel error_handler format_length 2048
+-kernel error_handler format_depth 20
+
+## ============================================================================
+## Disk Log Settings
+## ============================================================================
+## Optimized disk log settings
+-kernel disk_log_format external
+
+## ============================================================================
+## Connection Settings
+## ============================================================================
+## TCP connection settings
+-kernel inet_default_connect_options [{nodelay,true},{keepalive,true}]
+-kernel inet_default_listen_options [{nodelay,true},{keepalive,true},{reuseaddr,true}]
+
+## ============================================================================
+## Process Message Queue
+## ============================================================================
+## High limit for production message queues
++P 262144
+-env ERL_MAX_ETS_TABLES 50000
+
+## ============================================================================
+## VM Monitoring
+## ============================================================================
+## Enable VM monitoring for health checks
+-env ERL_VM_MONITOR true

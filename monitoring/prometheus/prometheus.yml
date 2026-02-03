@@ -1,0 +1,162 @@
+# Enterprise Prometheus Configuration for erlmcp v3
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'erlmcp-prod'
+    environment: 'production'
+    region: 'us-east-1'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Rule files
+rule_files:
+  - "rules/*.yml"
+  - "recording_rules/*.yml"
+
+# Scrape configurations
+scrape_configs:
+  # erlmcp core metrics
+  - job_name: 'erlmcp_core'
+    honor_labels: true
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets:
+        - 'erlmcp_core:8080'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+
+  # erlmcp transport metrics
+  - job_name: 'erlmcp_transports'
+    honor_labels: true
+    metrics_path: '/metrics/transports'
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+        - 'erlmcp_tcp:8081'
+        - 'erlmcp_http:8082'
+        - 'erlmcp_ws:8083'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: transport_type
+
+  # erlmcp session metrics
+  - job_name: 'erlmcp_sessions'
+    honor_labels: true
+    metrics_path: '/metrics/sessions'
+    scrape_interval: 10s
+    static_configs:
+      - targets:
+        - 'erlmcp_sessions:8084'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: component
+
+  # erlmcp registry metrics
+  - job_name: 'erlmcp_registry'
+    honor_labels: true
+    metrics_path: '/metrics/registry'
+    scrape_interval: 5s
+    static_configs:
+      - targets:
+        - 'erlmcp_registry:8085'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: registry_node
+
+  # Node exporter for infrastructure metrics
+  - job_name: 'node'
+    static_configs:
+      - targets:
+        - 'node-exporter:9100'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: node
+
+  # Process exporter for application metrics
+  - job_name: 'process'
+    static_configs:
+      - targets:
+        - 'process-exporter:9256'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: process
+
+  # Blackbox exporter for health checks
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://erlmcp_core:8080/health
+        - http://erlmcp_transports:8081/health
+        - http://erlmcp_sessions:8084/health
+        - http://erlmcp_registry:8085/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__meta_blackbox_module]
+        target_label: module
+
+  # Custom erlmcp metrics
+  - job_name: 'erlmcp_custom'
+    honor_labels: true
+    metrics_path: '/metrics/custom'
+    static_configs:
+      - targets:
+        - 'erlmcp_custom:8086'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: component
+
+# Remote write configuration for long-term storage
+remote_write:
+  - url: "http://thanos-receive:19291/api/v1/write"
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 10
+    headers:
+      X-Scope-OrgID: "erlmcp-prod"
+
+# Remote read configuration
+remote_read:
+  - url: "http://thanos-query:9090/api/v1/query"
+    required_matchers:
+      cluster: "erlmcp-prod"
+  - url: "http://prometheus-remote-read:9090/api/v1/read"
+    required_matchers:
+      __name__ =~ "erlmcp_.*"
+
+# Storage configuration
+storage:
+  tsdb:
+    retention.time: 15d
+    retention.size: 100GB
+    out_of_order_block_buffer: 3  # blocks
+
+# Experimental features
+experimental:
+  distributed_gossip:
+    enabled: true
+    listen_address: 127.0.0.1:9094
+    peers: []
+    node_id: "prometheus-1"
+  storage:
+    engine: tsdb
+    tsdb:
+      no-lockfile: true
+      out_of_order_block_buffer: 3
+
+# Query configuration
+query:
+  timeout: 2m
+  max_samples: 50000000
+  timeout: 2m

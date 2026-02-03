@@ -1,0 +1,195 @@
+# Security Policy Configuration for erlmcp Docker Swarm
+
+# CIS Docker Benchmark Compliance
+version: 1.0
+
+policies:
+  # Container Security
+  containers:
+    - name: "erlmcp-*"
+      security:
+        # Read-only filesystem where possible
+        readonly: false
+        # Drop capabilities
+        capabilities:
+          - "NET_BIND_SERVICE"
+          - "CHOWN"
+          - "DAC_OVERRIDE"
+          - "FSETID"
+          - "KILL"
+          - "SETGID"
+          - "SETUID"
+          - "SETPCAP"
+          - "NET_RAW"
+          - "SYS_CHROOT"
+          - "MKNOD"
+        # Add capabilities only when necessary
+        add_capabilities: []
+        # Security options
+        security_opt:
+          - "no-new-privileges"
+          - "label=user:USER"
+        # AppArmor profile
+        apparmor_profile: "docker-default"
+        # Seccomp profile
+        seccomp_profile: "default"
+        # user in container
+        user: "1000"
+        # no CVE vulnerabilities
+        cve_scan: true
+
+  # Network Security
+  networks:
+    - name: erlmcp-overlay
+      encryption: true
+      internal: false
+      ipam:
+        driver: overlay
+        config:
+          - subnet: 172.20.0.0/16
+          - gateway: 172.20.0.1
+      access_control:
+        - service: erlmcp-core
+          allowed: true
+        - service: erlmcp-transports
+          allowed: true
+        - service: erlmcp-observability
+          allowed: true
+
+    - name: erlmcp-management
+      internal: true
+      encryption: true
+      ipam:
+        driver: overlay
+        config:
+          - subnet: 172.21.0.0/24
+          - gateway: 172.21.0.1
+
+    - name: erlmcp-public
+      ingress: true
+      encryption: true
+      access_control:
+        - source: 0.0.0.0/0
+          ports:
+            - "80"
+            - "443"
+
+  # Volume Security
+  volumes:
+    - name: erlmcp_*_data
+      driver: local
+      driver_opts:
+        type: none
+        o: bind
+        device: /var/lib/docker/volumes/erlmcp-swarm_data
+        # Encryption options
+        encrypt: true
+        key: "volume_encryption_key"
+
+  # Secret Security
+  secrets:
+    - name: "erlmcp-config"
+      environment: "ERLMCP_CONFIG_JSON"
+      file: "./secrets/erlmcp-config.json"
+      permissions: "0600"
+
+    - name: "erlmcp-jwt-secret"
+      environment: "JWT_SECRET"
+      file: "./secrets/jwt-secret"
+      permissions: "0600"
+
+    - name: "erlmcp-api-keys"
+      environment: "ERLMCP_API_KEYS"
+      file: "./secrets/api-keys.json"
+      permissions: "0600"
+
+  # Service Security
+  services:
+    erlmcp-core:
+      security:
+        healthcheck:
+          enabled: true
+          interval: "30s"
+          timeout: "10s"
+          retries: 3
+        resource_limits:
+          cpus: "2.0"
+          memory: "4G"
+        log_level: "info"
+
+    erlmcp-transports:
+      security:
+        network_mode: "erlmcp-overlay"
+        resource_limits:
+          cpus: "2.0"
+          memory: "3G"
+        log_level: "info"
+
+    erlmcp-observability:
+      security:
+        resource_limits:
+          cpus: "1.0"
+          memory: "2G"
+        log_level: "info"
+
+  # Monitoring and Auditing
+  monitoring:
+    - name: "container-security"
+      enabled: true
+      metrics:
+        - "container_security_violations"
+        - "image_vulnerabilities"
+        - "runtime_security_events"
+      alerts:
+        - severity: "critical"
+          condition: "container_violation"
+          action: "alert"
+        - severity: "high"
+          condition: "vulnerability_found"
+          action: "quarantine"
+
+  # Compliance
+  compliance:
+    - standard: "cis-docker-benchmark"
+      version: "1.12"
+      checks:
+        - "2.1"
+        - "2.2"
+        - "2.3"
+        - "2.4"
+        - "2.5"
+        - "2.6"
+        - "2.7"
+        - "2.8"
+        - "2.9"
+        - "2.10"
+        - "2.11"
+        - "2.12"
+        - "2.13"
+        - "5.2"
+        - "5.3"
+        - "5.4"
+        - "5.5"
+        - "5.6"
+        - "5.7"
+        - "5.8"
+        - "5.9"
+        - "5.10"
+        - "5.11"
+        - "5.12"
+        - "5.13"
+        - "5.14"
+        - "5.15"
+        - "5.16"
+        - "5.17"
+        - "5.18"
+        - "5.19"
+        - "5.20"
+        - "5.21"
+        - "5.22"
+        - "5.23"
+        - "5.24"
+        - "5.25"
+        - "5.26"
+        - "5.27"
+        - "5.28"

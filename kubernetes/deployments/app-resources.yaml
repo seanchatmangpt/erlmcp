@@ -1,0 +1,886 @@
+---
+# Kubernetes Application Resources for erlmcp v3
+# Includes complete application definition for GitOps and CI/CD pipelines
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    istio-injection: enabled
+  annotations:
+    openshift.io/display-name: "erlmcp v3"
+    argocd.argoproj.io/sync-options: ServerSideApply=true
+    argocd.argoproj.io/compare-options: ServerSideApply=true
+
+---
+# Application definition for GitOps workflows
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: erlmcp-application
+  namespace: argocd
+  annotations:
+    argoproj.io/sync-wave: "1"
+    argoproj.io/hook: Sync
+    argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
+    argoproj.io/sync-options: ServerSideApply=true
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/your-org/erlmcp-kubernetes
+    targetRevision: main
+    path: kubernetes/deployments
+    helm:
+      valueFiles:
+        - values.yaml
+        - overlays/values/production.yaml
+    kustomize:
+      # Alternative to Helm values
+      # namePrefix: erlmcp-
+      # imageTag: v3.0.0
+      # commonLabels:
+      #   app.kubernetes.io/part-of: erlmcp
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: erlmcp
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: true
+      allowEmpty: false
+    syncOptions:
+      - ServerSideApply=true
+      - CreateNamespace=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 2m
+
+---
+# GitOps Application Resource
+apiVersion: fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: erlmcp-production
+  namespace: flux-system
+spec:
+  interval: 1m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: erlmcp-repo
+    namespace: flux-system
+  path: ./kubernetes/overlays/production
+  prune: true
+  wait: true
+  # Health checks and promotion
+  healthChecks:
+    - name: web-ready
+      kind: Service
+      name: erlmcp-http
+      namespace: erlmcp
+    - name: cluster-healthy
+      kind: StatefulSet
+      name: erlmcp
+      namespace: erlmcp
+  # Promotion policy for staged deployments
+  promotionPolicy:
+    order: sequential
+    match:
+      kind: Deployment
+      name: erlmcp-canary
+
+---
+# Deployment Strategy Resources
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erlmcp-blue-deploy
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: blue
+    deployment.kubernetes.io/revision: "1"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: erlmcp
+      app.kubernetes.io/instance: erlmcp
+      color: blue
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        # Service mesh injection
+        sidecar.istio.io/inject: "true"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+      labels:
+        app.kubernetes.io/name: erlmcp
+        app.kubernetes.io/instance: erlmcp
+        app.kubernetes.io/component: erlmcp
+        color: blue
+    spec:
+      serviceAccountName: erlmcp-service-account
+      containers:
+        - name: erlmcp
+          image: erlmcp/erlmcp:v3.0.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: tcp
+              containerPort: 3001
+              protocol: TCP
+            - name: cluster
+              containerPort: 9000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: erlmcp-config
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/erlmcp
+            - name: logs
+              mountPath: /var/log/erlmcp
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: erlmcp-data-blue
+        - name: logs
+          persistentVolumeClaim:
+            claimName: erlmcp-logs-blue
+
+---
+# Canary Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: erlmcp-canary-deploy
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+    deployment.kubernetes.io/revision: "1"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: erlmcp
+      app.kubernetes.io/instance: erlmcp
+      color: canary
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      annotations:
+        canary: "true"
+        # Istio traffic splitting
+        istio.io/rev: canary
+        sidecar.istio.io/inject: "true"
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+      labels:
+        app.kubernetes.io/name: erlmcp
+        app.kubernetes.io/instance: erlmcp
+        app.kubernetes.io/component: erlmcp
+        color: canary
+    spec:
+      serviceAccountName: erlmcp-service-account
+      containers:
+        - name: erlmcp
+          image: erlmcp/erlmcp:v3.0.1  # New version for canary
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: tcp
+              containerPort: 3001
+              protocol: TCP
+            - name: cluster
+              containerPort: 9000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: erlmcp-config-canary
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/erlmcp
+            - name: logs
+              mountPath: /var/log/erlmcp
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+            successThreshold: 1
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+            successThreshold: 1
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: erlmcp-data-canary
+        - name: logs
+          persistentVolumeClaim:
+            claimName: erlmcp-logs-canary
+
+---
+# Service for Blue Deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-blue-service
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: blue
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: erlmcp-tls
+spec:
+  selector:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    color: blue
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: https
+      port: 443
+      targetPort: http
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+
+---
+# Service for Canary Deployment
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-canary-service
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+spec:
+  selector:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    color: canary
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+
+---
+# VirtualService for Traffic Splitting (Istio)
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: erlmcp-vs
+  namespace: erlmcp
+spec:
+  hosts:
+    - erlmcp.example.com
+  gateways:
+    - erlmcp-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /
+      route:
+        - destination:
+            host: erlmcp-blue-service
+            port:
+              number: 80
+          weight: 90  # 90% to blue
+        - destination:
+            host: erlmcp-canary-service
+            port:
+              number: 80
+          weight: 10  # 10% to canary
+
+---
+# DestinationRule for Canary
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: erlmcp-canary-dr
+  namespace: erlmcp
+spec:
+  host: erlmcp-canary-service
+  subsets:
+    - name: canary
+      labels:
+        color: canary
+
+---
+# Gateway for erlmcp
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: erlmcp-gateway
+  namespace: erlmcp
+spec:
+  selector:
+    istio: ingressgateway
+  servers:
+    - port:
+        number: 443
+        name: https
+        protocol: HTTPS
+      hosts:
+        - erlmcp.example.com
+      tls:
+        mode: SIMPLE
+        credentialName: erlmcp-tls
+    - port:
+        number: 80
+        name: http
+        protocol: HTTP
+      hosts:
+        - erlmcp.example.com
+      tls:
+        mode: DISABLED
+
+---
+# Horizontal Pod Autoscaler for Production Deployment
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: erlmcp-production-hpa
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: blue
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: erlmcp-blue-deploy
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    # CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # Memory utilization
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+    # Custom metrics
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests
+        target:
+          type: AverageValue
+          averageValue: "1000"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+      selectPolicy: Min
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+      selectPolicy: Max
+
+---
+# Canary Deployment HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: erlmcp-canary-hpa
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: erlmcp-canary-deploy
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    # CPU utilization
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 50
+    # Memory utilization
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 60
+
+---
+# Pod Disruption Budget for Blue
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-blue-pdb
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: blue
+spec:
+  minAvailable: 2
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: erlmcp
+      app.kubernetes.io/instance: erlmcp
+      color: blue
+
+---
+# Pod Disruption Budget for Canary
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-canary-pdb
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+spec:
+  minAvailable: 1
+  maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: erlmcp
+      app.kubernetes.io/instance: erlmcp
+      color: canary
+
+---
+# ConfigMap for Canary Environment
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: erlmcp-config-canary
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+data:
+  # Main configuration
+  config.json: |
+    {
+      "cluster": {
+        "enabled": true,
+        "cookie": "erlmcp-cluster-3-0-0",
+        "heartbeat_interval": "10s",
+        "node_check_interval": "5s",
+        "split_brain": {
+          "strategy": "winner_takes_all",
+          "check_interval": "30s"
+        }
+      },
+      "server": {
+        "max_subscriptions_per_resource": 1000,
+        "max_progress_tokens": 10000
+      },
+      "transports": {
+        "tcp": {
+          "connect_timeout": 5000,
+          "keepalive": true,
+          "nodelay": true,
+          "port": 3000
+        },
+        "http": {
+          "connect_timeout": 5000,
+          "request_timeout": 30000,
+          "max_connections": 100,
+          "port": 3001
+        }
+      },
+      "logging": {
+        "level": "info",
+        "format": "json",
+        "canary": true
+      },
+      "registry": {
+        "sharding_strategy": "none",
+        "health_check_interval": 30000
+      },
+      "session": {
+        "backend": "ets",
+        "backend_config": {}
+      },
+      "secrets": {
+        "provider": "kubernetes",
+        "config": {}
+      },
+      "environment": "canary"
+    }
+  # Environment variables for canary
+  env.sh: |
+    #!/bin/sh
+    # Canary environment variables
+    export ERLMCP_CLUSTER_ENABLED="true"
+    export ERLMCP_CLUSTER_COOKIE="erlmcp-cluster-3-0-0"
+    export ERLMCP_OTP_VERSION="28.3.1"
+    export POD_IP="$(POD_IP)"
+    export POD_NAME="$(POD_NAME)"
+    export POD_NAMESPACE="erlmcp"
+    export ERLMCP_LOG_LEVEL="info"
+    export ERLMCP_LOG_FORMAT="json"
+    export ERLMCP_ENVIRONMENT="canary"
+    export ERLMCP_HTTP_PORT="3000"
+    export ERLMCP_TCP_PORT="3000"
+    export ERLMCP_CLUSTER_PORT="9000"
+    export ERLMCP_MAX_CONNECTIONS="5000"
+    export ERLMCP_MAX_SESSIONS="10000"
+    export ERLMCP_MAX_REGISTRY_SIZE="1000000"
+    export ERLMCP_SESSION_BACKEND="ets"
+    export ERLMCP_REGISTRY_BACKEND="ets"
+    export ERLMCP_METRICS_ENABLED="true"
+    export ERLMCP_OTEL_ENABLED="true"
+    export OTEL_EXPORTER_OTLP_ENDPOINT="otel-collector.observability.svc.cluster.local:4317"
+    export ERLMCP_HEALTH_ENDPOINT="/health"
+    export ERLMCP_READY_ENDPOINT="/ready"
+    export ERLMCP_METRICS_ENDPOINT="/metrics"
+
+---
+# Secret for Canary Deployment
+apiVersion: v1
+kind: Secret
+metadata:
+  name: erlmcp-secrets-canary
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+type: Opaque
+data:
+  # Database credentials
+  database-password: cGFzc3dvcmRfbG9naW4=  # password_login
+  admin-password: YWRtaW5fcGFzc3dvcmQ=      # admin_password
+  # API keys
+  api-key: MWFiN2E5YjktZmQzMC00MDg4LTg3ZTUtYjQzYjA1NTY5MmY1  # Unique canary key
+  session-secret: MWFiN2E5YjktZmQzMC00MDg4LTg3ZTUtYjQzYjA1NTY5MmY1  # Unique canary secret
+  # External service credentials
+  prometheus-alertmanager-url: aHR0cDovL2FsdGVybWFuZXJhbmRvbS5tb25pdG9yaW5nOjkwOTM=  # http://alertmanager.monitoring:9093
+  # Database credentials
+  postgresql-host: cG9zdGdyZXNxbDpwcml2YXRlLWRhdGEucG9zdGdyZXNxbDo1NDMy  # postgresql-data.postgres:5432
+  postgresql-port: NTQzMg==  # 5432
+  postgresql-database: ZWxsbWNw  # erlmcp
+  postgresql-username: cG9zdGdyZXNxbDpwcml2YXRl  # postgresql:postgresql
+  postgresql-password: cGFzc3dvcmRfbG9naW4=  # password_login
+
+---
+# Persistent Volume Claims for Canary
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: erlmcp-data-canary
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-ssd
+  selector:
+    matchLabels:
+      tier: database
+      environment: canary
+
+---
+# Persistent Volume Claim for Logs - Canary
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: erlmcp-logs-canary
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: fast-ssd
+  selector:
+    matchLabels:
+      tier: logs
+      environment: canary
+
+---
+# Network Policy for Canary Traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-canary-policy
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: erlmcp
+      app.kubernetes.io/instance: erlmcp
+      color: canary
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: istio-system
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: erlmcp
+              app.kubernetes.io/instance: erlmcp
+              color: blue
+      ports:
+        - protocol: TCP
+          port: 3000
+          name: http
+        - protocol: TCP
+          port: 3001
+          name: tcp
+        - protocol: TCP
+          port: 9000
+          name: cluster
+        - protocol: TCP
+          port: 9090
+          name: metrics
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: istio-system
+        - namespaceSelector:
+            matchLabels:
+              name: observability
+        - namespaceSelector:
+            matchLabels:
+              name: default
+      ports:
+        - protocol: TCP
+          port: 53    # DNS
+        - protocol: TCP
+          port: 5432  # PostgreSQL
+        - protocol: TCP
+          port: 80    # HTTP
+        - protocol: TCP
+          port: 443   # HTTPS
+        - protocol: TCP
+          port: 9093  # AlertManager
+
+---
+# ServiceMonitor for Prometheus
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: erlmcp-canary
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+    prometheus: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: erlmcp
+      app.kubernetes.io/instance: erlmcp
+      color: canary
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+      scheme: http
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          targetLabel: job
+          replacement: erlmcp-canary
+      relabelings:
+        - sourceLabels: [__meta_kubernetes_pod_node_name]
+          targetLabel: node
+        - sourceLabels: [__meta_kubernetes_pod_name]
+          targetLabel: pod
+        - sourceLabels: [__meta_kubernetes_namespace]
+          targetLabel: namespace
+    - port: http
+      path: /metrics
+      interval: 30s
+      scheme: http
+
+---
+# Final Health Check Job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: erlmcp-canary-health-check
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/component: erlmcp
+    color: canary
+  annotations:
+    argoproj.io/hook: PostSync
+    argoproj.io/hook-delete-policy: HookSucceeded,HookFailed
+spec:
+  template:
+    spec:
+      containers:
+        - name: health-check
+          image: curlimages/curl:latest
+          command:
+            - /bin/sh
+            - -c
+            - |
+              # Wait for canary deployment to be ready
+              kubectl wait --for=condition=available deployment/erlmcp-canary-deploy --timeout=600s
+              # Verify HTTP health endpoint
+              curl -f http://erlmcp-canary-service/health || exit 1
+              # Verify metrics endpoint
+              curl -f http://erlmcp-canary-service/metrics || exit 1
+              # Verify canary label in response
+              curl -s http://erlmcp-canary-service/ | grep canary || exit 1
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+      restartPolicy: OnFailure
+      serviceAccountName: erlmcp-service-account
+      # Complete only after 10 minutes
+      activeDeadlineSeconds: 600
+      backoffLimit: 3
+
+---
+# Final message
+status: "Complete - erlmcp v3 Production Deployment Suite with Blue/Green and Canary Deployments"

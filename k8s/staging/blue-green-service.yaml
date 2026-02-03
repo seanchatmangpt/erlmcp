@@ -1,0 +1,114 @@
+---
+# Active Service for Blue-Green Deployment
+# This service points to the currently active color (blue or green)
+# Switch this service's selector to change traffic between environments
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-active
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    role: active
+  annotations:
+    description: "Active service - points to current live deployment"
+    blue-green.status: "active"
+spec:
+  selector:
+    app: erlmcp
+    environment: staging
+    component: erlmcp-blue  # Change to erlmcp-green to switch traffic
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 8443
+    targetPort: 8443
+    protocol: TCP
+  type: ClusterIP
+  sessionAffinity: None
+---
+# Preview Service for Blue-Green Deployment
+# This service points to the inactive color for testing
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-preview
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    role: preview
+  annotations:
+    description: "Preview service - points to staging deployment for validation"
+spec:
+  selector:
+    app: erlmcp
+    environment: staging
+    component: erlmcp-green  # Change to erlmcp-blue when blue is staging
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 8443
+    targetPort: 8443
+    protocol: TCP
+  type: ClusterIP
+  sessionAffinity: None
+---
+# Split Service for Traffic Testing
+# Allows routing to both blue and green via different ports
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-split
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    role: split
+  annotations:
+    description: "Split service - exposes both colors on different ports"
+spec:
+  ports:
+  - name: blue-http
+    port: 8081
+    targetPort: 8080
+    protocol: TCP
+  - name: green-http
+    port: 8082
+    targetPort: 8080
+    protocol: TCP
+  type: ClusterIP
+  sessionAffinity: None
+---
+# Headless Service for Stateful Operations
+# Allows direct pod-to-pod communication
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-headless
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+spec:
+  clusterIP: None
+  selector:
+    app: erlmcp
+    environment: staging
+  ports:
+  - name: epmd
+    port: 4369
+    targetPort: 4369
+    protocol: TCP
+  - name: dist
+    port: 9100
+    targetPort: 9100
+    protocol: TCP
+  publishNotReadyAddresses: true

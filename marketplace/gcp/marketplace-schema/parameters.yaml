@@ -1,0 +1,206 @@
+# ============================================================================
+# Deployment Parameters for Marketplace
+# Mapping of schema inputs to Terraform variables
+# ============================================================================
+
+# Schema Input -> Terraform Variable Mappings
+
+# ========================================================================
+# Deployment Type
+# ========================================================================
+deployment_type:
+  terraform_variable: deployment_type
+  module_mapping:
+    gke: terraform/examples/gke-deployment
+    cloud-run: terraform/examples/cloud-run-deployment
+    compute-engine: terraform/examples/gce-deployment
+
+# ========================================================================
+# Region and Zone
+# ========================================================================
+region:
+  terraform_variable: region
+  module: all
+
+zone:
+  terraform_variable: zone
+  default_from_region:
+    us-central1: us-central1-a
+    us-east1: us-east1-b
+    us-west1: us-west1-a
+    europe-west1: europe-west1-b
+    asia-southeast1: asia-southeast1-a
+
+# ========================================================================
+# Instance Tier Mappings
+# ========================================================================
+instance_tier:
+  mapping:
+    small:
+      machine_type: e2-small
+      cpu: "0.5"
+      memory: "512Mi"
+      min_replicas: 1
+      max_replicas: 3
+    medium:
+      machine_type: e2-standard-2
+      cpu: "1"
+      memory: "1Gi"
+      min_replicas: 3
+      max_replicas: 10
+    large:
+      machine_type: e2-standard-4
+      cpu: "2"
+      memory: "2Gi"
+      min_replicas: 3
+      max_replicas: 20
+    xlarge:
+      machine_type: e2-standard-8
+      cpu: "4"
+      memory: "4Gi"
+      min_replicas: 5
+      max_replicas: 50
+
+# ========================================================================
+# HA Mode Mappings
+# ========================================================================
+ha_mode:
+  mapping:
+    single-zone:
+      gke_locations: 1
+      enable_regional_cluster: false
+      create_spot_node_pool: false
+    multi-zone:
+      gke_locations: 3
+      enable_regional_cluster: true
+      create_spot_node_pool: true
+    multi-region:
+      gke_locations: 6
+      enable_regional_cluster: true
+      create_spot_node_pool: true
+      enable_cross_region_replication: true
+
+# ========================================================================
+# Security Parameters
+# ========================================================================
+enable_tls:
+  terraform_variable: enable_tls
+  module: all
+
+enable_mtls:
+  terraform_variable: enable_mtls
+  terraform_values:
+    tls.mtls.enabled: true
+
+enable_private_cluster:
+  gke_module:
+    enable_private_endpoint: true
+    enable_private_nodes: true
+    master_ipv4_cidr_block: "172.16.0.0/28"
+    master_global_access: false
+
+# ========================================================================
+# Observability Parameters
+# ========================================================================
+enable_monitoring:
+  terraform_variable: enable_managed_prometheus
+  module: observability
+
+enable_logging:
+  terraform_variable: log_export_storage_enabled
+  module: observability
+
+enable_tracing:
+  module: observability
+  terraform_values:
+    enable_cloud_trace: true
+
+# ========================================================================
+# Notification Parameters
+# ========================================================================
+notification_email:
+  module: observability
+  terraform_variable: notification_channels.email
+  terraform_values:
+    enabled: true
+    address: "${notification_email}"
+
+enable_pagerduty:
+  module: observability
+  terraform_variable: notification_channels.pagerduty.enabled
+
+pagerduty_api_key:
+  module: observability
+  terraform_variable: notification_channels.pagerduty.service_key
+
+# ========================================================================
+# Network Parameters
+# ========================================================================
+network_name:
+  terraform_variable: network_name
+  module: vpc
+
+subnet_cidr:
+  terraform_variable: subnet_cidr
+  module: vpc
+
+# ========================================================================
+# Advanced Parameters
+# ========================================================================
+image_tag:
+  terraform_variable: image_tag
+  module: all
+
+custom_domain:
+  terraform_variable: custom_domain
+  module: all
+
+enable_spot_instances:
+  gke_module:
+    create_spot_node_pool: true
+  compute_engine_module:
+    preemptible: true
+
+enable_backup:
+  module: observability
+  terraform_values:
+    enable_backup: true
+
+backup_retention_days:
+  terraform_variable: backup_retention_days
+  module: observability
+
+# ========================================================================
+# Computed Outputs
+# ========================================================================
+outputs:
+  service_url:
+    description: "URL to access the deployed service"
+    value_from:
+      gke: module.gke.service_url
+      cloud-run: module.cloud_run.service_url
+      compute-engine: module.compute_engine.external_ips[0]
+
+  cluster_name:
+    description: "GKE cluster name"
+    condition: ${deployment_type == 'gke'}
+    value_from: module.gke.cluster_name
+
+  health_check_url:
+    description: "Health check endpoint URL"
+    value_from:
+      gke: "${module.gke.service_url}/health"
+      cloud-run: "${module.cloud_run.service_url}/health"
+      compute-engine: "http://${module.compute_engine.external_ips[0]}/health"
+
+  kubectl_command:
+    description: "Command to configure kubectl access"
+    condition: ${deployment_type == 'gke'}
+    value_from: module.gke.kubectl_config_command
+
+  dashboard_urls:
+    description: "Cloud Monitoring dashboard URLs"
+    value_from:
+      main: "https://console.cloud.google.com/monitoring/dashboards?project=${project_id}"
+      performance: "https://console.cloud.google.com/monitoring/dashboards?project=${project_id}&page=PERFORMANCE"
+      erlang: "https://console.cloud.google.com/monitoring/dashboards?project=${project_id}&page=ERLANG_VM"

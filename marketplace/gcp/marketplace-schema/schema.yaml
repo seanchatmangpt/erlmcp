@@ -1,0 +1,298 @@
+# erlmcp Marketplace Deployment Schema
+# Input schema for Google Cloud Marketplace deployment UI
+
+$schema: http://json-schema.org/draft-07/schema#
+title: "erlmcp Deployment Configuration"
+description: "Configure erlmcp deployment on Google Cloud"
+
+properties:
+  deployment_type:
+    type: string
+    enum: [gke, cloudrun, gce]
+    description: "Type of deployment to create"
+    title: "Deployment Type"
+    default: "gke"
+    x-google-marketplace:
+      type: ENUM
+      title: "Deployment Type"
+      description: "Choose the deployment type that best fits your needs"
+      enum:
+        - gke
+        - cloudrun
+        - gce
+
+  instance_name:
+    type: string
+    pattern: "^[a-z][a-z0-9-]*$"
+    minLength: 1
+    maxLength: 40
+    description: "Name for the deployment instance"
+    title: "Instance Name"
+    default: "erlmcp"
+    x-google-marketplace:
+      type: STRING
+      title: "Instance Name"
+      description: "A unique name for your erlmcp deployment"
+      required: true
+
+  machine_type:
+    type: string
+    enum: [e2-standard-2, e2-standard-4, n2-standard-2, n2-standard-4]
+    description: "Machine type for erlmcp instances"
+    title: "Machine Type"
+    default: "e2-standard-4"
+    x-google-marketplace:
+      type: ENUM
+      title: "Machine Size"
+      description: "Size of the machine to deploy"
+      enum:
+        - e2-standard-2
+        - e2-standard-4
+        - n2-standard-2
+        - n2-standard-4
+
+  # ========================================================================
+  # Instance Tier Configuration
+  # ========================================================================
+  instance_tier:
+    type: string
+    title: Instance Tier
+    description: Select the resource allocation tier
+    enum:
+      - small
+      - medium
+      - large
+      - xlarge
+    default: medium
+    x-google-property:
+      type: RADIO_GROUP
+      displayName: Instance Tier
+      tooltip: |
+        Small: 1 vCPU, 2GB RAM (dev/test)
+        Medium: 2 vCPU, 4GB RAM (production)
+        Large: 4 vCPU, 8GB RAM (high-traffic)
+        XLarge: 8 vCPU, 16GB RAM (enterprise)
+    oneOf:
+      - const: small
+        title: Small
+        description: 1 vCPU, 2GB RAM - suitable for development and testing
+      - const: medium
+        title: Medium
+        description: 2 vCPU, 4GB RAM - suitable for production workloads
+      - const: large
+        title: Large
+        description: 4 vCPU, 8GB RAM - suitable for high-traffic applications
+      - const: xlarge
+        title: XLarge
+        description: 8 vCPU, 16GB RAM - suitable for enterprise scale
+
+  # ========================================================================
+  # High Availability Configuration
+  # ========================================================================
+  ha_mode:
+    type: string
+    title: High Availability Mode
+    description: Select the high availability configuration
+    enum:
+      - single-zone
+      - multi-zone
+      - multi-region
+    default: multi-zone
+    x-google-property:
+      type: SINGLE_SELECT
+      displayName: High Availability
+      tooltip: |
+        Single Zone: Cost-optimized with no SLA guarantee
+        Multi-Zone: 99.95% monthly uptime SLA
+        Multi-Region: 99.99% monthly uptime SLA
+    oneOf:
+      - const: single-zone
+        title: Single Zone
+        description: Cost-optimized deployment in a single zone
+      - const: multi-zone
+        title: Multi-Zone
+        description: Deployed across multiple zones in one region (99.95% SLA)
+      - const: multi-region
+        title: Multi-Region
+        description: Deployed across multiple regions (99.99% SLA)
+
+  # ========================================================================
+  # Scaling Configuration
+  # ========================================================================
+  min_replicas:
+    type: integer
+    title: Minimum Replicas
+    description: Minimum number of replicas to maintain
+    default: 3
+    minimum: 1
+    maximum: 100
+    x-google-property:
+      displayName: Min Replicas
+      tooltip: Minimum number of instances that will always be running
+
+  max_replicas:
+    type: integer
+    title: Maximum Replicas
+    description: Maximum number of replicas for auto-scaling
+    default: 10
+    minimum: 1
+    maximum: 1000
+    x-google-property:
+      displayName: Max Replicas
+      tooltip: Maximum number of instances for auto-scaling
+
+  autoscaling_enabled:
+    type: boolean
+    title: Enable Auto-scaling
+    description: Automatically scale based on CPU/memory
+    default: true
+
+  # ========================================================================
+  # Security Configuration
+  # ========================================================================
+  enable_tls:
+    type: boolean
+    title: Enable TLS
+    description: Enable TLS for secure communication
+    default: true
+
+  enable_mtls:
+    type: boolean
+    title: Enable mTLS
+    description: Enable mutual TLS for service-to-service authentication
+    default: false
+
+  enable_private_cluster:
+    type: boolean
+    title: Private Cluster
+    description: Deploy a private cluster (no public endpoints)
+    default: true
+
+  # ========================================================================
+  # Observability Configuration
+  # ========================================================================
+  enable_monitoring:
+    type: boolean
+    title: Enable Cloud Monitoring
+    description: Enable integration with Google Cloud Monitoring
+    default: true
+
+  enable_logging:
+    type: boolean
+    title: Enable Cloud Logging
+    description: Enable integration with Google Cloud Logging
+    default: true
+
+  enable_tracing:
+    type: boolean
+    title: Enable Cloud Trace
+    description: Enable distributed tracing
+    default: true
+
+  # ========================================================================
+  # Notification Configuration
+  # ========================================================================
+  notification_email:
+    type: string
+    title: Notification Email
+    description: Email address for alerts and notifications
+    format: email
+    default: ""
+    x-google-property:
+      displayName: Alert Email
+      tooltip: Receive deployment and alert notifications
+
+  enable_pagerduty:
+    type: boolean
+    title: Enable PagerDuty
+    description: Send alerts to PagerDuty
+    default: false
+
+  pagerduty_api_key:
+    type: string
+    title: PagerDuty API Key
+    description: PagerDuty integration key
+    default: ""
+    x-google-property:
+      type: PASSWORD
+      displayName: PagerDuty API Key
+      tooltip: Your PagerDuty integration key for alert routing
+      condition: ${enable_pagerduty == true}
+
+  # ========================================================================
+  # Network Configuration
+  # ========================================================================
+  network_name:
+    type: string
+    title: Network Name
+    description: Existing VPC network name (leave empty for new network)
+    default: ""
+    pattern: ^[a-z][-a-z0-9]{0,61}[a-z0-9]$
+    x-google-property:
+      displayName: VPC Network
+      tooltip: Leave empty to create a new VPC network
+
+  subnet_cidr:
+    type: string
+    title: Subnet CIDR
+    description: CIDR range for new subnet (if creating new network)
+    default: "10.0.0.0/24"
+    pattern: ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}/[0-9]{1,2}$
+
+  # ========================================================================
+  # Advanced Configuration
+  # ========================================================================
+  image_tag:
+    type: string
+    title: Image Tag
+    description: Container image tag (default: latest stable)
+    default: "3.0.0"
+    pattern: ^[a-zA-Z0-9._-]+$
+
+  custom_domain:
+    type: string
+    title: Custom Domain
+    description: Optional custom domain (e.g., erlmcp.example.com)
+    default: ""
+    format: hostname
+
+  enable_spot_instances:
+    type: boolean
+    title: Enable Spot Instances
+    description: Use spot/preemptible instances for cost savings (GKE/GCE only)
+    default: false
+
+  enable_backup:
+    type: boolean
+    title: Enable Automated Backup
+    description: Enable automated backup configuration
+    default: true
+
+  backup_retention_days:
+    type: integer
+    title: Backup Retention (Days)
+    description: Number of days to retain backups
+    default: 30
+    minimum: 1
+    maximum: 365
+    x-google-property:
+      displayName: Backup Retention
+      condition: ${enable_backup == true}
+
+# Conditional visibility rules
+x-google-visibility:
+  rules:
+    - condition: ${deployment_type == 'gke'}
+      visible:
+        - enable_spot_instances
+        - network_name
+        - subnet_cidr
+    - condition: ${deployment_type == 'cloud-run'}
+      visible:
+        - min_replicas
+        - max_replicas
+        - autoscaling_enabled
+    - condition: ${ha_mode == 'multi-region'}
+      visible:
+        - enable_backup
+        - backup_retention_days

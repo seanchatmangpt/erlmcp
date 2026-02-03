@@ -1,0 +1,274 @@
+# ============================================================================
+# Google Cloud Marketplace Application Definition for erlmcp
+# ============================================================================
+
+apiVersion: marketplace.cloud.google.com/v1
+kind: Application
+metadata:
+  name: erlmcp
+  displayName: erlmcp - Erlang/OTP Model Context Protocol Server
+  description: |
+    erlmcp is a production-grade implementation of the Model Context Protocol (MCP)
+    in Erlang/OTP. Built for high availability, massive concurrency, and low latency,
+    erlmcp provides enterprise-grade features including:
+
+    * **Massive Concurrency**: Handle millions of concurrent connections with Erlang/OTP's lightweight processes
+    * **High Availability**: Built-in clustering, automatic failover, and 99.95%+ SLA support
+    * **Transport Agnostic**: Support for stdio, TCP, HTTP, WebSocket, and SSE transports
+    * **Production Ready**: Comprehensive observability, security, and compliance features
+
+    **Supported Deployments:**
+    - Google Kubernetes Engine (GKE) with regional clusters
+    - Cloud Run for serverless auto-scaling
+    - Compute Engine with custom VM images
+
+    **Enterprise Features:**
+    - Workload Identity for Secret Manager integration
+    - Google Cloud Operations Suite integration
+    - TLS/mTLS support for secure communication
+    - Horizontal Pod Autoscaler for automatic scaling
+    - Network policies for zero-trust security
+    - Comprehensive health checks and readiness probes
+  version: 3.0.0
+  tagline: Production-grade MCP Server for AI Applications
+  publisher: banyan-platform
+  icon: >-
+    https://storage.googleapis.com/erlmcp-marketplace/icon.png
+  documentationURL: https://docs.erlmcp.dev
+  supportURL: https://github.com/banyan-platform/erlmcp/issues
+  logo:
+    image: https://storage.googleapis.com/erlmcp-marketplace/logo.png
+    text: "erlmcp"
+
+# Runtime policy
+spec:
+  runtimePolicy:
+    minDeploymentDuration: 15m
+    estimatedDeploymentDuration: 10m
+
+  # Input schema for deployment configuration
+  inputSchema:
+    $schema: http://json-schema.org/draft-07/schema#
+    title: erlmcp Deployment Configuration
+    type: object
+    required:
+      - deployment_type
+      - region
+    properties:
+      # Deployment Type
+      deployment_type:
+        type: string
+        title: Deployment Type
+        description: Choose the deployment platform
+        enum:
+          - gke
+          - cloud-run
+          - compute-engine
+        default: gke
+        enumLabels:
+          gke: Google Kubernetes Engine (GKE)
+          cloud-run: Cloud Run (Serverless)
+          compute-engine: Compute Engine (VM)
+
+      # Region Selection
+      region:
+        type: string
+        title: Region
+        description: Google Cloud region for deployment
+        enum:
+          - us-central1
+          - us-east1
+          - us-west1
+          - us-west2
+          - europe-west1
+          - europe-west2
+          - asia-southeast1
+          - asia-northeast1
+        default: us-central1
+        enumLabels:
+          us-central1: Iowa
+          us-east1: South Carolina
+          us-west1: Oregon
+          us-west2: Los Angeles
+          europe-west1: Belgium
+          europe-west2: London
+          asia-southeast1: Singapore
+          asia-northeast1: Tokyo
+
+      # Instance Size Tier
+      instance_tier:
+        type: string
+        title: Instance Tier
+        description: Resource allocation tier
+        enum:
+          - small
+          - medium
+          - large
+        default: medium
+        enumLabels:
+          small: Small (dev/test)
+          medium: Medium (production)
+          large: Large (high-traffic)
+
+      # High Availability Options
+      ha_mode:
+        type: string
+        title: High Availability Mode
+        description: High availability configuration
+        enum:
+          - single-zone
+          - multi-zone
+          - multi-region
+        default: multi-zone
+        enumLabels:
+          single-zone: Single Zone (cost-optimized)
+          multi-zone: Multi-Zone (99.95% SLA)
+          multi-region: Multi-Region (99.99% SLA)
+
+      # Replica Count
+      replicas:
+        type: integer
+        title: Number of Replicas
+        description: Initial number of replicas
+        default: 3
+        minimum: 1
+        maximum: 100
+
+      # Enable TLS
+      enable_tls:
+        type: boolean
+        title: Enable TLS
+        description: Enable TLS for secure communication
+        default: true
+
+      # Enable Monitoring
+      enable_monitoring:
+        type: boolean
+        title: Enable Cloud Monitoring
+        description: Enable Google Cloud Monitoring integration
+        default: true
+
+      # Enable Logging
+      enable_logging:
+        type: boolean
+        title: Enable Cloud Logging
+        description: Enable Google Cloud Logging integration
+        default: true
+
+      # Email for Notifications
+      notification_email:
+        type: string
+        title: Notification Email
+        description: Email address for alerts and notifications
+        format: email
+        default: ""
+
+      # Custom Domain (optional)
+      custom_domain:
+        type: string
+        title: Custom Domain
+        description: Optional custom domain (leave empty for default)
+        default: ""
+
+      # Image Tag
+      image_tag:
+        type: string
+        title: Container Image Tag
+        description: Specific version to deploy (default: latest 3.0.0)
+        default: "3.0.0"
+
+  # Deployment configuration
+  deployment:
+    manifests:
+      # GKE manifests
+      - name: gke-manifest
+        selector:
+          matchLabels:
+            deployment_type: gke
+        template: terraform/examples/gke-deployment
+
+      # Cloud Run manifests
+      - name: cloud-run-manifest
+        selector:
+          matchLabels:
+            deployment_type: cloud-run
+        template: terraform/examples/cloud-run-deployment
+
+      # Compute Engine manifests
+      - name: gce-manifest
+        selector:
+          matchLabels:
+            deployment_type: compute-engine
+        template: terraform/examples/gce-deployment
+
+  # Application properties
+  properties:
+    deployment_type:
+      type: string
+      description: Deployment platform type
+
+    region:
+      type: string
+      description: GCP region
+
+    instance_tier:
+      type: string
+      description: Resource tier (small/medium/large)
+
+    ha_mode:
+      type: string
+      description: High availability mode
+
+    replicas:
+      type: integer
+      description: Number of replicas
+
+    enable_tls:
+      type: boolean
+      description: TLS enabled
+
+    enable_monitoring:
+      type: boolean
+      description: Cloud Monitoring enabled
+
+    enable_logging:
+      type: boolean
+      description: Cloud Logging enabled
+
+  # Output configuration
+  outputSchema:
+    type: object
+    properties:
+      service_url:
+        type: string
+        title: Service URL
+        description: URL to access the deployed service
+
+      cluster_name:
+        type: string
+        title: Cluster Name
+        description: GKE cluster name (if applicable)
+
+      instance_names:
+        type: array
+        title: Instance Names
+        description: VM instance names (if GCE)
+        items:
+          type: string
+
+      health_check_url:
+        type: string
+        title: Health Check URL
+        description: URL for health check endpoint
+
+      dashboard_urls:
+        type: object
+        title: Dashboard URLs
+        description: Links to Cloud Monitoring dashboards
+        properties:
+          main:
+            type: string
+          performance:
+            type: string
+          erlang:
+            type: string

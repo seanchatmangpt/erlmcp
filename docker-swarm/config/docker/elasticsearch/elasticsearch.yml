@@ -1,0 +1,150 @@
+# Elasticsearch Configuration for erlmcp v3
+
+# Cluster Configuration
+cluster.name: erlmcp-v3-cluster
+node.name: elasticsearch-1
+network.host: 0.0.0.0
+http.port: 9200
+transport.port: 9300
+
+# Discovery
+discovery.seed_hosts: ["elasticsearch-1", "elasticsearch-2", "elasticsearch-3"]
+cluster.initial_master_nodes: ["elasticsearch-1", "elasticsearch-2", "elasticsearch-3"]
+discovery.type: single-host
+
+# Security
+xpack.security.enabled: true
+xpack.security.transport.ssl.enabled: true
+xpack.security.transport.ssl.verification_mode: certificate
+xpack.security.transport.ssl.certificate: /usr/share/elasticsearch/config/certs/elasticsearch.crt
+xpack.security.transport.ssl.key: /usr/share/elasticsearch/config/certs/elasticsearch.key
+xpack.security.transport.ssl.certificate_authorities: ["/usr/share/elasticsearch/config/certs/ca.crt"]
+xpack.security.http.ssl.enabled: true
+xpack.security.http.ssl.certificate: /usr/share/elasticsearch/config/certs/elasticsearch.crt
+xpack.security.http.ssl.key: /usr/share/elasticsearch/config/certs/elasticsearch.key
+xpack.security.http.ssl.certificate_authorities: ["/usr/share/elasticsearch/config/certs/ca.crt"]
+
+# Authentication
+xpack.security.authc.anonymous.enabled: false
+
+# Performance
+thread_pool.write.queue_size: 1000
+thread_pool.search.queue_size: 1000
+thread_pool.index.queue_size: 2000
+thread_pool.bulk.queue_size: 2000
+
+# Index Settings
+index.number_of_shards: 3
+index.number_of_replicas: 2
+index.refresh_interval: 30s
+index.max_result_window: 100000
+index.max_inner_result_window: 100000
+index.max_rescore_window: 100000
+index.max_docvalue_fields_search: 100
+index.max_script_fields: 100
+index.max_terms_count: 65536
+index.max_regex_length: 1000
+index.highlight.max_analyzed_offset: 1000000
+index.max_terms_per_aggregation: 65536
+index.max_script_length: 65536
+index.max_ngram_diff: 1
+index.max_shingle_diff: 3
+index.max_refresh_listeners: 100
+index.query.default_field: *
+
+# Memory Settings
+bootstrap.memory_lock: true
+path.data: /data/elasticsearch/data
+path.logs: /data/elasticsearch/logs
+node.attr.box_type: hot
+
+# Path Configuration
+path.repo: /data/elasticsearch/snapshots
+path.shared_filesystem: true
+
+# JVM Settings
+-XX:+UseG1GC
+-XX:G1HeapRegionSize=16m
+-XX:InitiatingHeapOccupancyPercent=30
+-XX:+ExplicitGCInvokesConcurrent
+-XX:+ParallelRefProcEnabled
+-XX:+AlwaysPreTouch
+-XX:MaxDirectMemorySize=1g
+-XX:+UseTLAB
+-XX:+ResizeTLAB
+-XX:+UseNUMA
+-Djava.security.policy=/usr/share/elasticsearch/config/elasticsearch.policy
+-Djava.security.manager
+-Djava.awt.headless=true
+
+# Cluster Settings
+cluster.routing.allocation.awareness.attributes: rack_id
+cluster.routing.allocation.awareness.force awareness.attributes: rack_id
+cluster.max_shards_per_node: 1000
+
+# Monitoring
+xpack.monitoring.collection.enabled: true
+xpack.monitoring.collection.interval: 30s
+xpack.monitoring.enabled: true
+xpack.monitoring.collection.enabled: true
+xpack.monitoring.elasticsearch.collection.enabled: false
+
+# Performance
+indices.memory.index_buffer_size: 30%
+indices.memory.min_index_buffer_size: 48mb
+indices.memory.max_index_buffer_size: unbounded
+indices.memory.shard_indexing_buffer_size: 12%
+indices.memory.min_shard_indexing_buffer_size: 4mb
+indices.memory.max_shard_indexing_buffer_size: unbounded
+
+# Search Settings
+search.slowlog.threshold.query.warn: 10s
+search.slowlog.threshold.query.info: 5s
+search.slowlog.threshold.query.trace: 2s
+search.slowlog.threshold.query.debug: 500ms
+search.slowlog.threshold.fetch.warn: 1s
+search.slowlog.threshold.fetch.info: 800ms
+search.slowlog.threshold.fetch.trace: 400ms
+search.slowlog.threshold.fetch.debug: 200ms
+
+# Indexing Settings
+indexing.slowlog.threshold.index.warn: 10s
+indexing.slowlog.threshold.index.info: 5s
+indexing.slowlog.threshold.index.trace: 2s
+indexing.slowlog.threshold.index.debug: 500ms
+indexing.slowlog.source: 1000
+
+# HTTP Settings
+http.max_initial_line_length: 8192
+http.max_header_size: 8192
+http.max_chunk_size: 8192
+http.compression: true
+http.compression_level: 6
+
+# Recovery Settings
+indices.recovery.max_bytes_per_sec: 40mb
+indices.recovery.max_concurrent_file_chunks: 2
+
+# Snapshot Settings
+cluster.routing.allocation.enable: all
+cluster.routing.allocation.total_shards_per_node: 1000
+cluster.routing.allocation.disk.threshold_enabled: true
+cluster.routing.allocation.disk.watermark.low: 85%
+cluster.routing.allocation.disk.watermark.high: 90%
+cluster.routing.allocation.disk.watermark.flood_stage: 95%
+
+# Gateway Settings
+gateway.recover_after_time: 5m
+gateway.recover_after_nodes: 2
+gateway.expected_nodes: 3
+
+# Node Settings
+node.attr.rack: rack1
+node.attr.zone: zone1
+node.max_local_storage_nodes: 3
+
+# Filesystem Settings
+path.data: /data/elasticsearch/data
+path.logs: /data/elasticsearch/logs
+path.repo: /data/elasticsearch/snapshots
+path.shared_filesystem: true

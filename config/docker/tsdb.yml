@@ -1,0 +1,35 @@
+# TSDB configuration for Prometheus
+
+storage:
+  tsdb:
+    retention.time: 30d
+    retention.size: 20GB
+    no-lockfile: true
+    wal:
+      enabled: true
+      segment_size: 128MB
+      max_seg_size: 2GB
+    index:
+      enabled: true
+      max_blocks: 10
+      chunk_size: 512KB
+    data_dir: /data
+    metadata_dir: /data/metadata
+
+# Storage backend
+remote_write:
+  - url: "http://victoria-metrics:8428/api/v1/write"
+    queue:
+      max_shards: 10
+      max_samples_per_send: 1000
+      max_queue_size: 1000000
+    retry_on_failure:
+      max_retry: 5
+      backoff_delay: 1s
+
+remote_read:
+  - url: "http://victoria-metrics:8428/api/v1/read"
+    read_recent: true
+    max_samples: 5000000
+    max_points_per_series: 1000000
+    timeout: 30s

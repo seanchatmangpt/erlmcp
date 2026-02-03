@@ -1,0 +1,185 @@
+version: '3.8'
+
+services:
+  # Prometheus Configuration
+  prometheus:
+    image: prom/prometheus:v2.45.0
+    container_name: erlmcp-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.route-prefix=/prometheus'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - ./prometheus/recording_rules:/etc/prometheus/recording_rules:ro
+    environment:
+      - PROMetheus_STORAGE_RETENTION=15d
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+
+  # Alertmanager Configuration
+  alertmanager:
+    image: prom/alertmanager:v0.25.0
+    container_name: erlmcp-alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--external-url=http://localhost:9093'
+      - '--web.route-prefix=/alertmanager'
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ./alertmanager/templates:/etc/alertmanager/templates:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # Grafana Configuration
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: erlmcp-grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_DATASOURCES_ENABLED=false
+      - GF_PANELS_DISABLE_SANITIZE_HTML=true
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+
+  # Loki Configuration
+  loki:
+    image: grafana/loki:2.8.0
+    container_name: erlmcp-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./logging/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+
+  # Promtail Configuration
+  promtail:
+    image: grafana/promtail:2.8.0
+    container_name: erlmcp-promtail
+    volumes:
+      - ./logging/promtail-config.yml:/etc/promtail/promtail-config.yml:ro
+      - /var/log/erlmcp:/var/log/erlmcp:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+    command: -config.file=/etc/promtail/promtail-config.yml
+
+  # OpenTelemetry Collector
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.87.0
+    container_name: erlmcp-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    volumes:
+      - ./otel/collector-config.yaml:/etc/otel-collector-config.yaml:ro
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+      - "55679:55679" # Prometheus metrics
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+
+  # Grafana Loki Loki
+  grafana-loki:
+    image: grafana/loki:2.8.0
+    container_name: erlmcp-grafana-loki
+    ports:
+      - "3101:3100"
+    volumes:
+      - loki_data:/loki
+      - ./logging/loki-config.yml:/etc/loki/loki-config.yml:ro
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+
+  # Node Exporter for system metrics
+  node-exporter:
+    image: prom/node-exporter:v1.6.1
+    container_name: erlmcp-node-exporter
+    ports:
+      - "9100:9100"
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+
+  # Process Exporter for process metrics
+  process-exporter:
+    image: ncabatoff/process-exporter:latest
+    container_name: erlmcp-process-exporter
+    ports:
+      - "9256:9256"
+    volumes:
+      - ./process-exporter/config.yml:/config.yml:ro
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+
+  # Blackbox Exporter for health checks
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.23.0
+    container_name: erlmcp-blackbox-exporter
+    ports:
+      - "9115:9115"
+    volumes:
+      - ./blackbox/config.yml:/etc/blackbox_exporter/config.yml:ro
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+
+  # Prometheus Push Gateway
+  pushgateway:
+    image: prom/pushgateway:v1.5.1
+    container_name: erlmcp-pushgateway
+    ports:
+      - "9091:9091"
+    networks:
+      - erlmcp-monitoring
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  alertmanager_data:
+
+networks:
+  erlmcp-monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

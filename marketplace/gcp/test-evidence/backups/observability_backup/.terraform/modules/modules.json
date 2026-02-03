@@ -1,0 +1,1 @@
+{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"alert_policies","Source":"./alert-policies.tf","Dir":"alert-policies.tf"},{"Key":"dashboards","Source":"./dashboards.tf","Dir":"dashboards.tf"}]}

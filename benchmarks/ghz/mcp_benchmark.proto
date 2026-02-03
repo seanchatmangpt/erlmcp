@@ -1,0 +1,145 @@
+//===----------------------------------------------------------------------===
+//
+//  erlmcp v3 - gRPC Benchmarking with ghz
+//
+//  Target: High-throughput gRPC transport testing
+//
+//  Usage:
+//    ghz --insecure \
+//        --proto mcp_benchmark.proto \
+//        --call mcp.MCPService.InvokeTool \
+//        --call mcp.MCPService.StreamMessages \
+//        -d '{"tool": "fs_read", "path": "/tmp/test"}' \
+//        -n 100000 \
+//        -c 100 \
+//        localhost:8080
+//
+//  Scaling Targets:
+//    | Connections | Calls/sec | Latency p99 |
+//    |-------------|-----------|-------------|
+//    | 100         | 100K      | <10ms       |
+//    | 1000        | 1M        | <20ms       |
+//    | 10000       | 5M        | <50ms       |
+//
+//===----------------------------------------------------------------------===
+
+syntax = "proto3";
+
+package mcp;
+
+// Import for JSON-RPC message structure
+import "google/protobuf/struct.proto";
+
+//===----------------------------------------------------------------------===
+// MCP Service Definition
+//===----------------------------------------------------------------------===
+service MCPService {
+    // Invoke a tool (high-throughput operation)
+    rpc InvokeTool(ToolInvocationRequest) returns (ToolInvocationResponse);
+
+    // Stream messages with flash attention
+    rpc StreamMessages(StreamRequest) returns (stream StreamChunk);
+
+    // Subscribe to resource changes
+    rpc SubscribeResource(SubscriptionRequest) returns (stream ResourceEvent);
+
+    // Batch operations for token optimization
+    rpc BatchInvoke(BatchRequest) returns (BatchResponse);
+
+    // Health check (for load balancer probing)
+    rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+//===----------------------------------------------------------------------===
+// Tool Invocation Messages
+//===----------------------------------------------------------------------===
+message ToolInvocationRequest {
+    string session_id = 1;
+    string tool_name = 2;
+    google::Struct arguments = 3;
+    int32 timeout_ms = 4;
+    bool enable_trace = 5;
+}
+
+message ToolInvocationResponse {
+    bool success = 1;
+    google::Struct result = 2;
+    string error_message = 3;
+    int64 duration_us = 4;
+    map<string, string> metadata = 5;
+}
+
+//===----------------------------------------------------------------------===
+// Streaming Messages
+//===----------------------------------------------------------------------===
+message StreamRequest {
+    string session_id = 1;
+    int32 token_count = 2;
+    bool enable_flash_attention = 3;
+    int32 chunk_size = 4;
+}
+
+message StreamChunk {
+    string content = 1;
+    int32 tokens_processed = 2;
+    float speedup_factor = 3;
+    bool is_final = 4;
+}
+
+//===----------------------------------------------------------------------===
+// Resource Subscription Messages
+//===----------------------------------------------------------------------===
+message SubscriptionRequest {
+    string session_id = 1;
+    string resource_uri = 2;
+    bool include_updates = 3;
+}
+
+message ResourceEvent {
+    string resource_uri = 1;
+    string event_type = 2;  // "created", "updated", "deleted"
+    google::Struct contents = 3;
+    int64 timestamp = 4;
+}
+
+//===----------------------------------------------------------------------===
+// Batch Operation Messages
+//===----------------------------------------------------------------------===
+message BatchRequest {
+    string session_id = 1;
+    repeated ToolInvocationRequest operations = 2;
+    int32 batch_timeout_ms = 3;
+    bool enable_compression = 4;
+}
+
+message BatchResponse {
+    repeated ToolInvocationResponse results = 1;
+    int32 successful_count = 2;
+    int32 failed_count = 3;
+    float token_savings_ratio = 4;
+    int64 total_duration_us = 5;
+}
+
+//===----------------------------------------------------------------------===
+// Health Check Messages
+//===----------------------------------------------------------------------===
+message HealthCheckRequest {
+    bool detailed = 1;
+}
+
+message HealthCheckResponse {
+    enum ServingStatus {
+        SERVING = 0;
+        NOT_SERVING = 1;
+        UNKNOWN = 2;
+    }
+    ServingStatus status = 1;
+    string message = 2;
+
+    // Detailed metrics
+    int32 active_connections = 3;
+    int64 messages_processed = 4;
+    float cpu_usage = 5;
+    float memory_usage = 6;
+    int64 uptime_seconds = 7;
+}

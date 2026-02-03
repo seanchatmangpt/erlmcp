@@ -1,0 +1,456 @@
+name: GitOps Release Automation - erlmcp v3
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 3.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        type: boolean
+        default: false
+
+env:
+  OTP_VERSION: '28'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+
+jobs:
+  # ============================================================================
+  # Version Validation
+  # ============================================================================
+  validate-version:
+    name: Validate Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/v}"
+          fi
+
+          # Validate semver format
+          if ! echo "$VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Invalid semver format: $VERSION"
+            exit 1
+          fi
+
+          # Check if pre-release
+          if echo "$VERSION" | grep -qE 'alpha|beta|rc|pre'; then
+            IS_PRERELEASE="true"
+          else
+            IS_PRERELEASE="false"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+
+          echo "Version: $VERSION"
+          echo "Pre-release: $IS_PRERELEASE"
+
+  # ============================================================================
+  # Changelog Generation
+  # ============================================================================
+  generate-changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+    needs: validate-version
+    outputs:
+      changelog: ${{ steps.changelog.outputs.changelog }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+
+          # Get the previous tag
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          # Generate changelog
+          cat > /tmp/changelog.md << EOF
+          ## Release $VERSION
+
+          ### Changes since $PREV_TAG
+
+          $(git log --pretty=format:"- %s" ${PREV_TAG}..HEAD | head -100)
+
+          ### Commits
+
+          $(git log --oneline ${PREV_TAG}..HEAD)
+
+          ### Contributors
+
+          $(git shortlog -sn ${PREV_TAG}..HEAD)
+
+          ### Build Info
+
+          - **Commit**: ${{ github.sha }}
+          - **Build Date**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
+          - **OTP Version**: ${{ env.OTP_VERSION }}
+          EOF
+
+          # Set output (truncated for GitHub Actions)
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/changelog.md | head -n 50 >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Upload changelog
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: /tmp/changelog.md
+
+  # ============================================================================
+  # Release Build
+  # ============================================================================
+  build-release:
+    name: Build Release
+    runs-on: ubuntu-latest
+    needs: [validate-version, generate-changelog]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Erlang/OTP
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ env.OTP_VERSION }}
+          rebar3-version: '3.25.0'
+
+      - name: Build production release
+        run: |
+          ERLMCP_PROFILE=prod rebar3 as prod release
+
+      - name: Package release
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+
+          # Create release package
+          cd _build/prod/rel/erlmcp
+          tar -czf /tmp/erlmcp-${VERSION}.tar.gz .
+
+      - name: Upload release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: /tmp/erlmcp-${VERSION}.tar.gz
+
+  # ============================================================================
+  # Docker Release Images
+  # ============================================================================
+  build-docker-release:
+    name: Build Docker Release
+    runs-on: ubuntu-latest
+    needs: [validate-version]
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.validate-version.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=erlmcp
+            org.opencontainers.image.description=Erlang/OTP MCP SDK
+            org.opencontainers.image.version=${{ needs.validate-version.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Build and push images
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ needs.validate-version.outputs.version }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: Image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate-version.outputs.version }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # ============================================================================
+  # SBOM and Vulnerability Report
+  # ============================================================================
+  security-artifacts:
+    name: Generate Security Artifacts
+    runs-on: ubuntu-latest
+    needs: [validate-version, build-docker-release]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate-version.outputs.version }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Generate vulnerability report
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.validate-version.outputs.version }}
+          format: 'json'
+          output: 'vulnerability-report.json'
+
+      - name: Upload security artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-artifacts
+          path: |
+            sbom.spdx.json
+            vulnerability-report.json
+
+  # ============================================================================
+  # Create GitHub Release
+  # ============================================================================
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate-version, generate-changelog, build-release, build-docker-release, security-artifacts]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.validate-version.outputs.version }}
+          name: erlmcp v${{ needs.validate-version.outputs.version }}
+          body: ${{ needs.generate-changelog.outputs.changelog }}
+          draft: false
+          prerelease: ${{ needs.validate-version.outputs.is_prerelease }}
+          files: |
+            /tmp/artifacts/release-package/*
+            /tmp/artifacts/security-artifacts/*
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================================
+  # Update GitOps Manifests for Release
+  # ============================================================================
+  update-gitops:
+    name: Update GitOps Manifests
+    runs-on: ubuntu-latest
+    needs: [validate-version, create-release]
+    if: ${{ !needs.validate-version.outputs.is_prerelease }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Update version in overlays
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+
+          # Update production overlay
+          cd gitops/overlays/production
+          kustomize edit set image \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION
+
+          # Update staging overlay
+          cd ../../staging
+          kustomize edit set image \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION
+
+      - name: Commit version update
+        run: |
+          git config user.name "erlmcp-ci"
+          git config user.email "ci@erlmcp.io"
+          git add gitops/overlays/
+          git commit -m "chore: release v${{ needs.validate-version.outputs.version }}"
+          git push
+
+  # ============================================================================
+  # Trigger Deployment Pipeline
+  # ============================================================================
+  trigger-deployment:
+    name: Trigger Deployment
+    runs-on: ubuntu-latest
+    needs: [validate-version, update-gitops]
+    if: ${{ !needs.validate-version.outputs.is_prerelease }}
+
+    steps:
+      - name: Trigger staging deployment
+        run: |
+          gh workflow run gitops-deploy.yml \
+            -f environment=staging \
+            -f auto_approve=true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================================
+  # Release Notification
+  # ============================================================================
+  notify-release:
+    name: Notify Release
+    runs-on: ubuntu-latest
+    needs: [validate-version, create-release]
+    if: always()
+
+    steps:
+      - name: Send Slack notification
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "Release ${{ needs.create-release.result }} - v${{ needs.validate-version.outputs.version }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "Release ${{ needs.create-release.result }}"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Version:*\nv${{ needs.validate-version.outputs.version }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Pre-release:*\n${{ needs.validate-version.outputs.is_prerelease }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Released by:*\n${{ github.actor }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:*\n${{ github.sha }}"
+                    }
+                  ]
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  # ============================================================================
+  # Post-release Tasks
+  # ============================================================================
+  post-release:
+    name: Post-Release Tasks
+    runs-on: ubuntu-latest
+    needs: [validate-version, create-release, update-gitops]
+    if: success()
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create release branch
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+
+          # Extract major.minor
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
+
+          # Create and push release branch
+          git checkout -b "release/$MAJOR_MINOR" || git checkout "release/$MAJOR_MINOR"
+          git push origin "release/$MAJOR_MINOR" || echo "Branch already exists"
+
+      - name: Backport to release branch
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+          MAJOR_MINOR=$(echo "$VERSION" | cut -d. -f1,2)
+
+          git checkout "release/$MAJOR_MINOR"
+          git merge main -m "Merge release v$VERSION into release/$MAJOR_MINOR"
+          git push origin "release/$MAJOR_MINOR"
+
+      - name: Update documentation
+        run: |
+          VERSION="${{ needs.validate-version.outputs.version }}"
+
+          # Update version in docs
+          sed -i "s/__VERSION__/$VERSION/g" docs/**/*.md || true
+
+          # Create release notes page
+          cat > "docs/releases/v$VERSION.md" << EOF
+          # Release v$VERSION
+
+          Release date: $(date -u +%Y-%m-%d)
+
+          ${{ needs.generate-changelog.outputs.changelog }}
+          EOF
+
+          git add docs/
+          git commit -m "docs: add release notes for v$VERSION" || true
+          git push || true

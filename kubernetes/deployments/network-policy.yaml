@@ -1,0 +1,155 @@
+{{/*
+  Network Policies for erlmcp deployment
+*/}}
+
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-netpol
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+spec:
+  podSelector:
+    matchLabels:
+      app: erlmcp
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow HTTP traffic from load balancer and ingress
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+        - namespaceSelector:
+            matchLabels:
+              name: traefik
+        - namespaceSelector:
+            matchLabels:
+              name: haproxy-ingress
+        - namespaceSelector:
+            matchLabels:
+              name: istio-system
+        - namespaceSelector:
+            matchLabels:
+              name: linkerd
+        - namespaceSelector:
+            matchLabels:
+              name: gateway-api
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 3001
+        - protocol: TCP
+          port: 9000
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 4317
+    # Allow metrics scraping from monitoring namespaces
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+        - namespaceSelector:
+            matchLabels:
+              name: prometheus
+        - namespaceSelector:
+            matchLabels:
+              name: kube-prometheus-stack
+        - namespaceSelector:
+            matchLabels:
+              name: observability
+      ports:
+        - protocol: TCP
+          port: 9090
+    # Allow cluster internal communication
+    - from:
+        - podSelector:
+            matchLabels:
+              app: erlmcp
+      ports:
+        - protocol: TCP
+          port: 3000
+        - protocol: TCP
+          port: 9000
+  egress:
+    # Allow DNS queries
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow HTTPS for external services
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 443
+    # Allow HTTP for external services
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 80
+    # Allow database connections
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 3306
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 27017
+    # Allow SMTP
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 587
+        - protocol: TCP
+          port: 465
+        - protocol: TCP
+          port: 25
+    # Allow SSH
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 22
+
+# Default deny all network policy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-deny-all
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    network-policy: deny-all
+spec:
+  podSelector:
+    matchLabels:
+      app: erlmcp
+  policyTypes:
+    - Ingress
+    - Egress

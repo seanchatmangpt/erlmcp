@@ -1,0 +1,110 @@
+{{/*
+  erlmcp Horizontal Pod Autoscaler (HPA)
+  Automatically scales erlmcp pods based on CPU and memory usage
+*/}}
+
+{{- if .Values.erlmcp.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "erlmcp.hpaName" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: hpa
+  annotations:
+    "autoscaling.alpha.kubernetes.io/metrics": "cpu,memory"
+    "autoscaling.alpha.kubernetes.io/target": "{{ .Values.erlmcp.hpa.targetCPUUtilizationPercentage }}%,{{ .Values.erlmcp.hpa.targetMemoryUtilizationPercentage }}%"
+    "autoscaling.alpha.kubernetes.io/min-replicas": "{{ .Values.erlmcp.hpa.minReplicas }}"
+    "autoscaling.alpha.kubernetes.io/max-replicas": "{{ .Values.erlmcp.hpa.maxReplicas }}"
+    "erlmcp.io/hpa": "enabled"
+    "erlmcp.io/scale": "cpu,memory"
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: {{ include "erlmcp.fullname" . }}
+  minReplicas: {{ .Values.erlmcp.hpa.minReplicas | int }}
+  maxReplicas: {{ .Values.erlmcp.hpa.maxReplicas | int }}
+  metrics:
+    {{- /* CPU utilization metric */}}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.erlmcp.hpa.targetCPUUtilizationPercentage }}
+    {{- /* Memory utilization metric */}}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.erlmcp.hpa.targetMemoryUtilizationPercentage }}
+    {{- /* Custom metrics - request rate */}}
+    {{- if .Values.erlmcp.hpa.customMetrics }}
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.erlmcp.hpa.customMetrics.requestRate.target | default "100" }}
+    {{- end }}
+    {{- /* Custom metrics - response time */}}
+    {{- if .Values.erlmcp.hpa.customMetrics }}
+    - type: Pods
+      pods:
+        metric:
+          name: http_response_time_seconds
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.erlmcp.hpa.customMetrics.responseTime.target | default "1" }}
+    {{- end }}
+    {{- /* Custom metrics - error rate */}}
+    {{- if .Values.erlmcp.hpa.customMetrics }}
+    - type: Pods
+      pods:
+        metric:
+          name: http_error_rate_percentage
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.erlmcp.hpa.customMetrics.errorRate.target | default "1" }}
+    {{- end }}
+    {{- /* External metrics - if using Prometheus */}}
+    {{- if .Values.monitoring.prometheus.enabled }}
+    - type: External
+      external:
+        metric:
+          name: erlmcp_requests_per_second
+          selector:
+            matchLabels:
+              app: erlmcp
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.erlmcp.hpa.externalMetrics.requestRate.target | default "100" }}
+    {{- end }}
+    {{- /* External metrics - if using Prometheus */}}
+    {{- if .Values.monitoring.prometheus.enabled }}
+    - type: External
+      external:
+        metric:
+          name: erlmcp_response_time_seconds
+          selector:
+            matchLabels:
+              app: erlmcp
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.erlmcp.hpa.externalMetrics.responseTime.target | default "1" }}
+    {{- end }}
+  behavior:
+    scaleUp:
+      policies:
+        {{- toYaml .Values.erlmcp.hpa.scaleUpPolicy.policies | nindent 8 }}
+      stabilizationWindowSeconds: {{ .Values.erlmcp.hpa.scaleUpPolicy.stabilizationWindowSeconds | default 0 }}
+    scaleDown:
+      policies:
+        {{- toYaml .Values.erlmcp.hpa.scaleDownPolicy.policies | nindent 8 }}
+      stabilizationWindowSeconds: {{ .Values.erlmcp.hpa.scaleDownPolicy.stabilizationWindowSeconds | default 300 }}
+      selectPolicy: Min
+{{- end }}

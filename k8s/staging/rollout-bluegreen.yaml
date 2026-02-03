@@ -1,0 +1,244 @@
+---
+# Argo Rollout for Blue-Green Deployment Strategy
+# Provides automated traffic switching with rollback capability
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: erlmcp-bluegreen
+  namespace: erlmcp-staging
+  labels:
+    app: erlmcp
+    environment: staging
+    deployment-strategy: blue-green
+  annotations:
+    description: "Blue-green rollout with automated analysis and rollback"
+spec:
+  replicas: 2
+  strategy:
+    blueGreen:
+      # Active service - receives production traffic
+      activeService: erlmcp-active
+      # Preview service - for testing the new version
+      previewService: erlmcp-preview
+      # Auto-promotion enabled after analysis passes
+      autoPromotionEnabled: true
+      # Scale down the inactive set after successful promotion
+      scaleDownDelaySeconds: 300
+      # Anti-affinity to prevent blue and green on same node
+      antiAffinity:
+        preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+              - key: rollouts-pod-template-hash
+                operator: Exists
+            topologyKey: kubernetes.io/hostname
+      # Pre-promotion analysis - validates before switching traffic
+      prePromotionAnalysis:
+        templates:
+        - templateName: erlmcp-success-rate
+        - templateName: erlmcp-latency
+        - templateName: erlmcp-error-rate
+        - templateName: erlmcp-web-check
+        args:
+        - name: service-name
+          value: erlmcp-preview
+        - name: namespace
+          value: erlmcp-staging
+        - name: url
+          value: http://erlmcp-preview.erlmcp-staging.svc.cluster.local:8080
+      # Post-promotion analysis - validates after switching traffic
+      postPromotionAnalysis:
+        templates:
+        - templateName: erlmcp-success-rate
+        - templateName: erlmcp-latency
+        - templateName: erlmcp-error-rate
+        - templateName: erlmcp-web-check
+        args:
+        - name: service-name
+          value: erlmcp-active
+        - name: namespace
+          value: erlmcp-staging
+        - name: url
+          value: http://erlmcp-active.erlmcp-staging.svc.cluster.local:8080
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: staging
+  template:
+    metadata:
+      labels:
+        app: erlmcp
+        environment: staging
+        deployment-type: blue-green
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - erlmcp
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: erlmcp
+        image: ghcr.io/your-org/erlmcp:staging-latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        - containerPort: 8443
+          name: https
+          protocol: TCP
+        env:
+        - name: ENVIRONMENT
+          value: "staging"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: METRICS_ENABLED
+          value: "true"
+        - name: HEALTH_CHECK_PATH
+          value: "/mcp/health"
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-staging-db-secret
+              key: url
+        - name: REDIS_URL
+          valueFrom:
+            secretKeyRef:
+              name: erlmcp-staging-redis-secret
+              key: url
+        - name: FEATURE_FLAGS
+          valueFrom:
+            configMapKeyRef:
+              name: feature-flags
+              key: flags
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "1Gi"
+        livenessProbe:
+          httpGet:
+            path: /mcp/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          httpGet:
+            path: /mcp/health?ready=1
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        startupProbe:
+          httpGet:
+            path: /mcp/health
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 30
+          successThreshold: 1
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+            add:
+            - NET_BIND_SERVICE
+        volumeMounts:
+        - name: config
+          mountPath: /etc/erlmcp
+          readOnly: true
+        - name: certs
+          mountPath: /etc/erlmcp/certs
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+        lifecycle:
+          preStop:
+            exec:
+              command: ["/bin/sh", "-c", "curl -X POST http://localhost:8080/mcp/shutdown || true; sleep 15"]
+      volumes:
+      - name: config
+        configMap:
+          name: erlmcp-config
+      - name: certs
+        secret:
+          secretName: erlmcp-staging-certs
+          defaultMode: 0400
+      - name: tmp
+        emptyDir: {}
+      terminationGracePeriodSeconds: 30
+      imagePullSecrets:
+      - name: erlmcp-regcred
+---
+# Experiment for A/B Testing
+apiVersion: argoproj.io/v1alpha1
+kind: Experiment
+metadata:
+  name: erlmcp-experiment
+  namespace: erlmcp-staging
+  annotations:
+    description: "A/B experiment template for testing new versions"
+spec:
+  analyses:
+  - name: erlmcp-experiment-analysis
+    templateName: erlmcp-success-rate
+    args:
+    - name: service-name
+      value: erlmcp-active
+  templates:
+  - name: baseline
+    selector:
+      matchLabels:
+        app: erlmcp
+        version: baseline
+    replicas: 1
+  - name: canary
+    selector:
+      matchLabels:
+        app: erlmcp
+        version: canary
+    replicas: 1
+  duration: 5m
+---
+# PodDisruptionBudget for Rollout
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-bluegreen-pdb
+  namespace: erlmcp-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: erlmcp
+      environment: staging
+  unhealthyPodEvictionPolicy: IfHealthyBudget

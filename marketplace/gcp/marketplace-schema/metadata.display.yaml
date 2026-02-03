@@ -1,0 +1,272 @@
+# Google Cloud Marketplace Display Metadata for erlmcp
+# This file defines how the product is displayed in the Google Cloud Marketplace
+
+title: "erlmcp: Enterprise Erlang/OTP MCP Server"
+shortDescription: "Production-grade Erlang/OTP implementation of the Model Context Protocol (MCP)"
+longDescription: |
+  erlmcp is a high-performance, fault-tolerant Erlang/OTP implementation of the Model Context Protocol (MCP). Built on the Erlang runtime system, it provides exceptional reliability, scalability, and distributed capabilities for demanding AI/ML workloads.
+
+  ## Key Features
+  - **High-Performance**: Leverages Erlang/OTP's lightweight processes and actor model for massive concurrency
+  - **Fault-Tolerant**: Designed with the "let it crash" philosophy for self-healing systems
+  - **Distributed**: Built-in clustering with automatic node discovery and load balancing
+  - **Secure**: Zero-trust architecture with role-based access control and encryption
+  - **Observable**: Comprehensive monitoring, logging, and tracing with OpenTelemetry
+  - **Enterprise-Ready**: Production-grade with comprehensive testing and documentation
+
+  ## Use Cases
+  - AI/ML model serving at scale
+  - Real-time inference with high throughput
+  - Distributed AI coordination and management
+  - Mission-critical MCP applications requiring 99.95%+ uptime
+  - Complex distributed systems with strong consistency requirements
+
+  ## Technical Details
+  - **Runtime**: Erlang/OTP 28.3.1 with native clustering
+  - **Protocol**: Model Context Protocol (MCP) JSON-RPC 2.0
+  - **Distribution**: EPMD-less clustering with TLS encryption
+  - **Monitoring**: Cloud Operations Suite integration
+  - **Security**: OAuth2/OIDC, SAML 2.0, RBAC/ABAC/PBAC
+
+  ## Deployment Options
+  - **Cloud Run**: Serverless deployment with auto-scaling (99.9% SLA)
+  - **GKE**: Managed Kubernetes with regional clusters (99.95% SLA)
+  - **Compute Engine**: Virtual machines with custom images (99.9% SLA)
+
+  Start your enterprise AI journey with erlmcp today!
+
+version: "3.0.0"
+minimumVersion: "2.5.0"
+
+# Required APIs that need to be enabled
+requiredApis:
+  - compute.googleapis.com
+  - container.googleapis.com
+  - run.googleapis.com
+  - secretmanager.googleapis.com
+  - logging.googleapis.com
+  - monitoring.googleapis.com
+  - iam.googleapis.com
+  - artifactregistry.googleapis.com
+
+# Pricing information
+pricing:
+  free:
+    tier: "FREE"
+    description: "Community edition for development and testing"
+  standard:
+    tier: "STANDARD"
+    currency: "USD"
+    price: 99.0
+    unit: "MONTH"
+    trial: true
+    trialPeriod: "30 DAYS"
+    description: "Production tier with full support"
+  enterprise:
+    tier: "ENTERPRISE"
+    currency: "USD"
+    price: 499.0
+    unit: "MONTH"
+    trial: true
+    trialPeriod: "30 DAYS"
+    description: "Enterprise tier with premium support and advanced features"
+
+# Support information
+support:
+  level: "Developer"
+  url: "https://github.com/banyan-platform/erlmcp"
+  policy: |
+    ## Support Policy
+
+    ### Community Support (Free)
+    - GitHub issues and discussions
+    - Community documentation
+    - Basic troubleshooting guides
+
+    ### Standard Support ($99/month)
+    - Everything in Community, plus:
+    - Email support with 24-hour response time
+    - Monthly performance reports
+    - Security vulnerability notifications
+
+    ### Enterprise Support ($499/month)
+    - Everything in Standard, plus:
+    - 24/7 phone support with 1-hour response time
+    - Dedicated account manager
+    - On-site deployment assistance
+    - Custom consulting services
+    - SLA with uptime guarantees
+
+# Documentation links
+documentation:
+  overview: "https://erlmcp.dev/docs/overview"
+  deployment: "https://erlmcp.dev/docs/deployment"
+  configuration: "https://erlmcp.dev/docs/configuration"
+  troubleshooting: "https://erlmcp.dev/docs/troubleshooting"
+  api: "https://erlmcp.dev/docs/api"
+
+# Regions where the product is available
+regions:
+  - us-central1
+  - us-east1
+  - us-west1
+  - us-west4
+  - europe-west1
+  - europe-west4
+  - asia-southeast1
+  - asia-northeast1
+
+# Architecture diagram
+architectureDiagram: "https://erlmcp.dev/images/architecture.svg"
+
+# Screenshots
+screenshots:
+  - name: "Dashboard Overview"
+    url: "https://erlmcp.dev/images/dashboard.png"
+    description: "Monitoring and metrics dashboard"
+  - name: "Configuration UI"
+    url: "https://erlmcp.dev/images/config.png"
+    description: "Easy-to-use configuration interface"
+  - name: "Health Checks"
+    url: "https://erlmcp.dev/images/health.png"
+    description: "Real-time health monitoring"
+  - name: "Distribution Cluster"
+    url: "https://erlmcp.dev/images/cluster.png"
+    description: "Distributed cluster management"
+
+# Features for filtering and discovery
+features:
+  - name: "High Availability"
+    description: "99.95% uptime guarantee"
+    icon: "high_availability"
+  - name: "Auto-scaling"
+    description: "Automatic scaling based on demand"
+    icon: "auto_scaling"
+  - name: "Multi-region"
+    description: "Deploy across multiple regions"
+    icon: "multi_region"
+  - name: "Security"
+    description: "Zero-trust security model"
+    icon: "security"
+  - name: "Observability"
+    description: "Comprehensive monitoring and logging"
+    icon: "observability"
+  - name: "Compatibility"
+    description: "Works with any MCP client"
+    icon: "compatibility"
+
+# Certifications and badges
+badges:
+  - type: "ssl"
+    text: "SSL/TLS Encryption"
+    url: "https://erlmcp.dev/security"
+  - type: "compliance"
+    text: "SOC 2 Type II"
+    url: "https://erlmcp.dev/compliance"
+  - type: "privacy"
+    text: "GDPR Compliant"
+    url: "https://erlmcp.dev/privacy"
+  - type: "open_source"
+    text: "Open Source"
+    url: "https://github.com/banyan-platform/erlmcp"
+  - type: "documentation"
+    text: "Comprehensive Docs"
+    url: "https://erlmcp.dev/docs"
+
+# Use cases and keywords
+keywords:
+  - "AI Server"
+  - "Model Context Protocol"
+  - "Erlang/OTP"
+  - "Distributed Systems"
+  - "High Performance"
+  - "Fault Tolerant"
+  - "Real-time AI"
+  - "Machine Learning"
+  - "Cloud Native"
+  - "Serverless"
+  - "Kubernetes"
+  - "Microservices"
+
+# Categories for marketplace filtering
+categories:
+  - "ai-ml"
+  - "serverless"
+  - "database"
+  - "messaging"
+  - "monitoring"
+  - "security"
+
+# Tags for additional filtering
+tags:
+  - "erlang"
+  - "otp"
+  - "mcp"
+  - "ai"
+  - "distributed"
+  - "high-performance"
+  - "enterprise"
+  - "production-ready"
+
+# Vendor information
+vendor:
+  name: "Banyan Platform"
+  url: "https://banyanplatform.com"
+  email: "contact@banyanplatform.com"
+  logo: "https://erlmcp.dev/logo.svg"
+
+# Update frequency
+updateFrequency: "monthly"
+releaseNotesUrl: "https://erlmcp.dev/releases"
+
+# Support contacts
+contacts:
+  - type: "email"
+    label: "Support"
+    value: "support@erlmcp.dev"
+  - type: "email"
+    label: "Sales"
+    value: "sales@banyanplatform.com"
+  - type: "url"
+    label: "Documentation"
+    value: "https://erlmcp.dev/docs"
+  - type: "url"
+    label: "GitHub"
+    value: "https://github.com/banyan-platform/erlmcp"
+
+# Deployment options display
+deploymentOptions:
+  - name: "Cloud Run"
+    description: "Serverless deployment with automatic scaling"
+    icon: "cloud_run"
+    bestFor: ["development", "testing", "production"]
+    sla: "99.9%"
+    features: ["auto-scaling", "serverless", "cost-effective"]
+  - name: "GKE"
+    description: "Managed Kubernetes with high availability"
+    icon: "gke"
+    bestFor: ["production", "enterprise", "high-availability"]
+    sla: "99.95%"
+    features: ["managed-k8s", "high-availability", "advanced-networking"]
+  - name: "Compute Engine"
+    description: "Virtual machines with full control"
+    icon: "compute"
+    bestFor: ["custom", "migration", "legacy"]
+    sla: "99.9%"
+    features: ["full-control", "custom-images", "flexible-scaling"]
+
+# Security posture
+security:
+  compliance:
+    - "SOC 2 Type II"
+    - "ISO 27001"
+    - "GDPR"
+    - "HIPAA (with additional configuration)"
+  dataProcessing:
+    locations: ["US", "EU", "Asia"]
+    encryption: "in-transit and at-rest"
+    retention: "configurable by user"
+  network:
+    ports: ["8080", "9090", "9100"]
+    protocols: ["HTTP", "HTTPS", "TLS"]
+    firewalls: "configurable via VPC"

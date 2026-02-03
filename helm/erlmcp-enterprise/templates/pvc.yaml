@@ -1,0 +1,87 @@
+{{/*
+  ERLMCP Enterprise PersistentVolumeClaim
+  Data persistence for application and logs
+*/}}
+{{- if .Values.storage.persistentVolumeClaim.enabled }}
+{{- /* Main data PVC */}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: storage
+  annotations:
+    {{- with .Values.storage.persistentVolumeClaim.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- /* Access Modes */}}
+  accessModes:
+    - {{ .Values.storage.persistentVolumeClaim.accessMode | default "ReadWriteOnce" }}
+
+  {{- /* Resources */}}
+  resources:
+    requests:
+      storage: {{ .Values.storage.persistentVolumeClaim.size | default "100Gi" }}
+
+  {{- /* Storage Class */}}
+  {{- if .Values.storage.persistentVolumeClaim.storageClass }}
+  storageClassName: {{ .Values.storage.persistentVolumeClaim.storageClass }}
+  {{- else if .Values.storage.persistentVolumeClaim.defaultStorageClass }}
+  storageClassName: {{ .Values.storage.persistentVolumeClaim.defaultStorageClass }}
+  {{- end }}
+
+  {{- /* Data source for cloning */}}
+  {{- with .Values.storage.persistentVolumeClaim.dataSource }}
+  dataSource:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
+---
+{{- /* Logs PVC */}}
+{{- if .Values.storage.logs.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-logs
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: logs
+  annotations:
+    "erlmcp.io/storage-type": "logs"
+spec:
+  accessModes:
+    - {{ .Values.storage.logs.accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ .Values.storage.logs.size | default "20Gi" }}
+  {{- if .Values.storage.logs.storageClass }}
+  storageClassName: {{ .Values.storage.logs.storageClass }}
+  {{- end }}
+{{- end }}
+---
+{{- /* Backup PVC */}}
+{{- if .Values.backup.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "erlmcp-enterprise.fullname" . }}-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp-enterprise.labels" . | nindent 4 }}
+    component: backup
+  annotations:
+    "erlmcp.io/storage-type": "backup"
+spec:
+  accessModes:
+    - {{ .Values.backup.storage.accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ .Values.backup.storage.size | default "50Gi" }}
+  {{- if .Values.backup.storage.storageClass }}
+  storageClassName: {{ .Values.backup.storage.storageClass }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,265 @@
+version: '3.8'
+
+# Docker Compose for Blue-Green Deployment
+# Supports zero-downtime deployments with load balancer switching
+
+services:
+  # Blue environment (current production)
+  erlmcp-blue:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.base
+    image: erlmcp:v3-blue
+    container_name: erlmcp-blue
+    hostname: erelmcp-blue
+    command: start
+    environment:
+      - ERLMCP_NODE_NAME=erlmcp-blue
+      - ERLMCP_COOKIE=${ERLMCP_COOKIE}
+      - ERLMCP_PROFILE=prod
+      - ERLMCP_JWT_SECRET=${ERLMCP_JWT_SECRET}
+      - ERLMCP_REDIS_PASSWORD=${ERLMCP_REDIS_PASSWORD}
+      - ERLMCP_CLUSTER_MODE=join
+      - ERLMCP_SEED_NODES=erlmcp-blue@erlmcp-blue:9000
+      - ERLMCP_ENV=production
+      - ERLMCP_COLOR=blue
+      - ERLMCP_METRICS_ENABLED=true
+    networks:
+      - erlmcp-overlay
+      - erlmcp-backend
+    volumes:
+      - erlmcp-data-blue:/data
+      - erlmcp-logs-blue:/var/log/erlmcp
+    deploy:
+      mode: replicated
+      replicas: 3
+      placement:
+        constraints: [node.labels.erlmcp.color == blue]
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+        max_failure_ratio: 0.1
+      rollback_config:
+        parallelism: 1
+        failure_action: pause
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.erlmcp-blue.rule=Host(`api.example.com`) && PathPrefix(`/blue`)
+        - traefik.http.routers.erlmcp-blue.entrypoints=https
+        - traefik.http.services.erlmcp-blue.loadbalancer.server.port=8080
+        - traefik.http.middlewares.erlmcp-blue.stripprefix.prefixes=/blue
+        - traefik.http.routers.erlmcp-blue.middlewares=erlmcp-blue
+
+  # Green environment (staging for new deployment)
+  erlmcp-green:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.base
+    image: erlmcp:v3-green
+    container_name: erlmcp-green
+    hostname: erlmcp-green
+    command: start
+    environment:
+      - ERLMCP_NODE_NAME=erlmcp-green
+      - ERLMCP_COOKIE=${ERLMCP_COOKIE}
+      - ERLMCP_PROFILE=prod
+      - ERLMCP_JWT_SECRET=${ERLMCP_JWT_SECRET}
+      - ERLMCP_REDIS_PASSWORD=${ERLMCP_REDIS_PASSWORD}
+      - ERLMCP_CLUSTER_MODE=join
+      - ERLMCP_SEED_NODES=erlmcp-green@erlmcp-green:9000
+      - ERLMCP_ENV=staging
+      - ERLMCP_COLOR=green
+      - ERLMCP_METRICS_ENABLED=true
+    networks:
+      - erlmcp-overlay
+      - erlmcp-backend
+    volumes:
+      - erlmcp-data-green:/data
+      - erlmcp-logs-green:/var/log/erlmcp
+    deploy:
+      mode: replicated
+      replicas: 3
+      placement:
+        constraints: [node.labels.erlmcp.color == green]
+      update_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: rollback
+        monitor: 30s
+        max_failure_ratio: 0.1
+      rollback_config:
+        parallelism: 1
+        failure_action: pause
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.erlmcp-green.rule=Host(`api.example.com`) && PathPrefix(`/green`)
+        - traefik.http.routers.erlmcp-green.entrypoints=https
+        - traefik.http.services.erlmcp-green.loadbalancer.server.port=8080
+        - traefik.http.middlewares.erlmcp-green.stripprefix.prefixes=/green
+        - traefik.http.routers.erlmcp-green.middlewares=erlmcp-green
+
+  # Traffic router (Traefik with blue-green routing)
+  traefik:
+    image: traefik:v2.10.5
+    container_name: traefik-bluegreen
+    hostname: traefik-bluegreen
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.http.address=:80"
+      - "--entrypoints.https.address=:443"
+      - "--entrypoints.http.http.redirections.entrypoint.to=https"
+      - "--entrypoints.http.http.redirections.entrypoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=${ACME_EMAIL:-admin@localhost}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--providers.docker.exposedbydefault=false"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8080:8080"  # Traefik dashboard
+    networks:
+      - erlmcp-overlay
+    volumes:
+      - traefik-bluegreen-data:/letsencrypt
+      - ./config/docker/traefik-bluegreen.yml:/traefik.yml
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Redis cluster (shared between environments)
+  redis-cluster:
+    image: redis:7.2.4-alpine
+    container_name: redis-bluegreen
+    hostname: redis-cluster
+    command: redis-server /etc/redis/cluster.conf
+    networks:
+      - erlmcp-overlay
+    volumes:
+      - redis-data-cluster:/data
+      - ./config/docker/redis-cluster.conf:/etc/redis/cluster.conf
+    deploy:
+      mode: replicated
+      replicas: 6
+      placement:
+        constraints: [node.role == worker]
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Health check service
+  health-check:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.health-check
+    image: erlmcp-health-check:v3-prod
+    container_name: health-check-bluegreen
+    hostname: health-check
+    command: ["--config=/etc/health-check/config.yml"]
+    networks:
+      - erlmcp-overlay
+    volumes:
+      - ./config/docker/health-check:/etc/health-check
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints: [node.role == manager]
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+# Networks
+networks:
+  erlmcp-overlay:
+    external: true
+    name: erlmcp-overlay
+
+  erlmcp-backend:
+    driver: overlay
+    attachable: true
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes
+volumes:
+  erlmcp-data-blue:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/blue
+
+  erlmcp-data-green:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/green
+
+  erlmcp-logs-blue:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/logs/blue
+
+  erlmcp-logs-green:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/logs/green
+
+  redis-data-cluster:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/redis-cluster
+
+  traefik-bluegreen-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/data/traefik-bluegreen

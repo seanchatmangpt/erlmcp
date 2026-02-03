@@ -1,0 +1,132 @@
+# ==============================================================================
+# erlmcp v3 Alertmanager Configuration
+# Alert routing and notification configuration
+# ==============================================================================
+
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@erlmcp.local'
+  smtp_auth_username: 'alerts@erlmcp.local'
+  smtp_auth_password: 'changeme'
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route tree for notifications
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'default'
+  routes:
+    # Critical alerts - immediate escalation
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 5s
+      repeat_interval: 5m
+
+    # Warning alerts - team notifications
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 15m
+
+    # Security alerts - dedicated team
+    - match_re:
+        category: 'security.*'
+      receiver: 'security-alerts'
+      group_wait: 10s
+      repeat_interval: 10m
+
+    # Infrastructure alerts - ops team
+    - match_re:
+        category: 'infrastructure.*'
+      receiver: 'ops-alerts'
+      group_wait: 30s
+      repeat_interval: 30m
+
+    # Performance alerts - dev team
+    - match_re:
+        category: 'performance.*'
+      receiver: 'performance-alerts'
+      group_wait: 30s
+      repeat_interval: 15m
+
+# Inhibition rules to prevent notification storms
+inhibit_rules:
+  # Critical suppresses warning for same alert
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+  # Critical suppresses info for same alert
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'info'
+    equal: ['alertname', 'instance']
+
+# Receiver definitions
+receivers:
+  # Default receiver
+  - name: 'default'
+    webhook_configs:
+      - url: 'http://localhost:5001/'
+        send_resolved: true
+
+  # Critical alerts - immediate notification
+  - name: 'critical-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/critical'
+        send_resolved: true
+    email_configs:
+      - to: 'on-call@erlmcp.local'
+        headers:
+          Subject: 'CRITICAL: {{ .GroupLabels.alertname }}'
+        html: |
+          {{ range .Alerts }}
+          <h2>{{ .Annotations.summary }}</h2>
+          <p><strong>Description:</strong> {{ .Annotations.description }}</p>
+          <p><strong>Severity:</strong> {{ .Labels.severity }}</p>
+          <p><strong>Time:</strong> {{ .StartsAt }}</p>
+          {{ end }}
+
+  # Warning alerts
+  - name: 'warning-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/warning'
+        send_resolved: true
+    email_configs:
+      - to: 'dev-team@erlmcp.local'
+        headers:
+          Subject: 'WARNING: {{ .GroupLabels.alertname }}'
+
+  # Security alerts
+  - name: 'security-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/security'
+        send_resolved: true
+    email_configs:
+      - to: 'security@erlmcp.local'
+        headers:
+          Subject: 'SECURITY: {{ .GroupLabels.alertname }}'
+          Priority: 'high'
+
+  # Operations alerts
+  - name: 'ops-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/ops'
+        send_resolved: true
+
+  # Performance alerts
+  - name: 'performance-alerts'
+    webhook_configs:
+      - url: 'http://localhost:5001/performance'
+        send_resolved: true

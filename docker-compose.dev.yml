@@ -1,0 +1,19 @@
+# Minimal docker-compose for erlmcp development
+# AGI Joe Armstrong: "Make it work"
+
+version: '3.8'
+
+services:
+  erlmcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.minimal
+    ports:
+      - "8080:8080"
+    environment:
+      - ERLMCP_ENV=development
+      - ERLMCP_NODE_NAME=erlmcp@erlmcp
+    volumes:
+      - ./apps:/app/apps:ro
+      - ./config:/app/config:ro
+    working_dir: /erlmcp

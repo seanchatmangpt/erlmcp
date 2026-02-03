@@ -1,0 +1,58 @@
+{{/*
+  Pod Disruption Budgets for erlmcp deployment
+*/}}
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-pdb
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+spec:
+  minAvailable: 2
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: erlmcp
+
+# Cluster PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-cluster-pdb
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    disruption: cluster
+spec:
+  minAvailable: 1
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: erlmcp
+
+# Metrics PDB
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: erlmcp-metrics-pdb
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp
+    app.kubernetes.io/managed-by: manual
+    app.kubernetes.io/component: erlmcp
+    service: metrics
+spec:
+  minAvailable: 1
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: erlmcp

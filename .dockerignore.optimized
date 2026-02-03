@@ -1,0 +1,206 @@
+# ==============================================================================
+# erlmcp v3 - Optimized Docker Build Context Exclusions
+# ==============================================================================
+# This file minimizes the Docker build context for faster builds and smaller
+# images. Only essential files for compilation are included.
+
+# ==============================================================================
+# Git metadata (never needed in container)
+# ==============================================================================
+.git/
+.gitignore
+.gitattributes
+.gitkeep
+
+# ==============================================================================
+# Build artifacts (rebuild in container)
+# ==============================================================================
+_build/
+*.beam
+*.erl.ast
+*.erl.asn1db
+ebin/
+rebar3.crashdump
+erl_crash.dump
+
+# ==============================================================================
+# Dependencies (downloaded fresh in container)
+# ==============================================================================
+deps/
+.checkouts/
+_rebar/
+_ash_demo/
+
+# ==============================================================================
+# Test files and artifacts (exclude from production builds)
+# ==============================================================================
+test/
+tests/
+_test/
+*.test.erl
+*.SUITE.erl
+*.SUITE_data
+.cover/
+.coverdata
+*.cover
+log/
+ct.log/
+test-results/
+
+# ==============================================================================
+# Documentation (exclude from build context)
+# ==============================================================================
+docs/
+examples/
+*.md
+!README.md
+doc/
+
+# ==============================================================================
+# CI/CD files (not needed in container)
+# ==============================================================================
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+azure-pipelines.yml
+
+# ==============================================================================
+# IDE and editor files
+# ==============================================================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+.project
+.classpath
+.c9/
+*.sublime-project
+*.sublime-workspace
+.DS_Store
+Thumbs.db
+
+# ==============================================================================
+# Docker files (exclude from build context)
+# ==============================================================================
+docker-compose*.yml
+docker-compose*.yaml
+Dockerfile*
+.dockerignore
+docker/
+
+# ==============================================================================
+# Kubernetes and infrastructure (exclude from build context)
+# ==============================================================================
+k8s/
+kubernetes/
+helm/
+charts/
+terraform/
+infrastructure/
+scripts/deploy/
+scripts/k8s/
+
+# ==============================================================================
+# Secrets and environment (NEVER include in images)
+# ==============================================================================
+.env
+.env.*
+secrets/
+*.pem
+*.key
+*.cert
+*.crt
+.secrets/
+credentials/
+
+# ==============================================================================
+# Development tools and dependencies
+# ==============================================================================
+.venv/
+venv/
+node_modules/
+vendor/bundle/
+*.egg-info/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.hg/
+
+# ==============================================================================
+# Temporary and cache files
+# ==============================================================================
+tmp/
+temp/
+*.tmp
+*.bak
+*.log
+*.pid
+.cache/
+*.cache
+
+# ==============================================================================
+# Hive-mind and swarm data (exclude)
+# ==============================================================================
+.hive-mind/
+.swarm/
+.claude-flow/
+
+# ==============================================================================
+# Claude Code artifacts
+# ==============================================================================
+.claude/
+.claude-code/
+
+# ==============================================================================
+# Monitoring and observability (exclude from build context)
+# ==============================================================================
+monitoring/
+prometheus/
+grafana/
+alertmanager/
+loki/
+
+# ==============================================================================
+# Load testing and benchmarks (exclude)
+# ==============================================================================
+bench/
+benchmarks/
+load-testing/
+*.prof
+
+# ==============================================================================
+# Release and packaging (exclude from build context)
+# ==============================================================================
+releases/
+artifacts/
+packages/
+dist/
+
+# ==============================================================================
+# Docker layer caching exclusions
+# ==============================================================================
+# These files change frequently but don't affect compilation
+# Exclude them to maximize layer cache hits
+
+# Lock files that only change on dependency updates
+# (Keep rebar.lock - it's essential for reproducible builds)
+
+# Configuration that changes per environment
+# (Keep config/ and vm.args - they're needed for compilation)
+
+# ==============================================================================
+# INCLUDE whitelist (what we DO want in build context)
+# ==============================================================================
+# rebar.config          - Essential for dependency resolution
+# rebar.lock            - Essential for reproducible builds
+# include/              - Header files for compilation
+# config/               - Configuration files
+# vm.args               - VM arguments
+# apps/*/rebar.config   - Application configs
+# apps/*/src/*.erl      - Source files
+# apps/*/include/*.hrl  - Header files
+# apps/*.app.src        - Application resource files

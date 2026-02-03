@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: erlmcp-prod
+  labels:
+    app.kubernetes.io/name: erlmcp
+    app.kubernetes.io/instance: erlmcp-prod
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/component: erlmcp
+    environment: production
+    istio-injection: enabled

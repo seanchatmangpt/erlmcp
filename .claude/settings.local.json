@@ -5,7 +5,9 @@
       "Bash(TERM=dumb rebar3 compile:*)",
       "Bash(TERM=dumb rebar3 eunit:*)",
       "Bash(cat:*)",
-      "Bash(rebar3 eunit:*)"
+      "Bash(rebar3 eunit:*)",
+      "Bash(docker build:*)",
+      "Bash(rebar3 compile:*)"
     ]
   }
 }

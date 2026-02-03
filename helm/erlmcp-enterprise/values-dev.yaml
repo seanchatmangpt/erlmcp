@@ -1,0 +1,150 @@
+# Development environment values for erlmcp-enterprise
+# Usage: helm install erlmcp-dev ./helm/erlmcp-enterprise -f helm/erlmcp-enterprise/values-dev.yaml
+
+global:
+  cluster:
+    name: "erlmcp-dev"
+    environment: "development"
+    region: "us-east-1"
+
+deployment:
+  replicas: 1
+
+statefulset:
+  enabled: false
+  replicas: 1
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+autoscaling:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+ingress:
+  enabled: false
+
+service:
+  type: "ClusterIP"
+
+app:
+  erlang:
+    env:
+      ERLMCP_LOG_LEVEL: "debug"
+      ERLMCP_METRICS_ENABLED: "false"
+
+  sessions:
+    enabled: true
+    backend: "ets"
+    sharding:
+      enabled: false
+    replication:
+      enabled: false
+
+  cache:
+    enabled: false
+
+  database:
+    enabled: false
+
+  queue:
+    enabled: false
+
+monitoring:
+  prometheus:
+    enabled: false
+    serviceMonitor:
+      enabled: false
+  grafana:
+    enabled: false
+
+logging:
+  level: "debug"
+  format: "text"
+
+security:
+  networkPolicy:
+    enabled: false
+
+storage:
+  persistentVolumeClaim:
+    enabled: false
+  logs:
+    enabled: false
+
+# ==============================================================================
+# Development ResourceQuota Overrides
+# ==============================================================================
+resourceQuota:
+  enabled: true
+
+  types:
+    compute:
+      enabled: true
+      hard:
+        requests.cpu: "4"
+        requests.memory: 8Gi
+        limits.cpu: "8"
+        limits.memory: 16Gi
+
+    storage:
+      enabled: true
+      hard:
+        persistentvolumeclaims: "5"
+        requests.storage: "50Gi"
+
+    objects:
+      enabled: true
+      hard:
+        pods: "20"
+        services: "10"
+        services.loadbalancers: "0"
+        services.nodeports: "3"
+        secrets: "10"
+        configmaps: "10"
+
+    long-running:
+      enabled: true
+      hard:
+        pods: "10"
+        requests.cpu: "3"
+        requests.memory: 6Gi
+        limits.cpu: "6"
+        limits.memory: 12Gi
+
+    batch:
+      enabled: false
+
+    terminating:
+      enabled: false
+
+limitRange:
+  enabled: true
+  container:
+    default:
+      cpu: "250m"
+      memory: "512Mi"
+    defaultRequest:
+      cpu: "50m"
+      memory: "128Mi"
+    max:
+      cpu: "2000m"
+      memory: "4Gi"
+    min:
+      cpu: "10m"
+      memory: "64Mi"
+
+  persistentVolumeClaim:
+    default:
+      storage: "2Gi"
+    max:
+      storage: "20Gi"
+    min:
+      storage: "1Gi"

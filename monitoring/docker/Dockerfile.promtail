@@ -1,0 +1,20 @@
+# Dockerfile for Promtail with erlmcp configuration
+# This Dockerfile builds Promtail with custom log parsing and shipping
+
+FROM grafana/promtail:2.8.0
+
+# Create directories for configuration
+RUN mkdir -p /etc/promtail /var/log/erlmcp /var/log/containers
+
+# Copy configuration
+COPY logging/promtail-config.yml /etc/promtail/promtail-config.yml
+
+# Set working directory
+WORKDIR /etc/promtail
+
+# Health check
+HEALTHCHECK --interval=30s --timeout:10s --start-period:5s --retries=3 \
+    CMD promtail --config.file=/etc/promtail/promtail-config.yml --dry-run || exit 1
+
+# Command to run Promtail
+CMD ["-config.file=/etc/promtail/promtail-config.yml"]

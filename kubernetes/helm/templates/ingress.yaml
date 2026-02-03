@@ -1,0 +1,178 @@
+{{/*
+  Ingress configuration for erlmcp
+  Supports multiple ingress controllers and TLS termination
+*/}}
+
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+  annotations:
+    {{- if .Values.ingress.className }}
+    kubernetes.io/ingress.class: {{ .Values.ingress.className }}
+    {{- end }}
+    {{- if .Values.ingress.annotations }}
+    {{- toYaml .Values.ingress.annotations | nindent 4 }}
+    {{- end }}
+    # Cert-Manager annotations
+    {{- if .Values.ingress.tls }}
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.annotations.cert-manager.io/cluster-issuer | default "letsencrypt-prod" }}
+    {{- end }}
+    # NGINX annotations
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+    nginx.ingress.kubernetes.io/send-timeout: "600"
+    nginx.ingress.kubernetes.io/upstream-keepalive-connections: "100"
+    nginx.ingress.kubernetes.io/upstream-keepalive-requests: "1000"
+    nginx.ingress.kubernetes.io/upstream-keepalive-timeout: "60"
+    # Traefik annotations
+    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.middlewares: "compress@kubernetescrd"
+    # HAProxy annotations
+    haproxy.org/check: "true"
+    haproxy.org/timeout-connect: "5s"
+    haproxy.org/timeout-client: "30s"
+    haproxy.org/timeout-server: "30s"
+    haproxy.org/timeout-http-request: "30s"
+    haproxy.org/timeout-queue: "5s"
+    haproxy.org/timeout-server-fin: "2s"
+    haproxy.org/timeout-client-fin: "2s"
+    haproxy.org/load-balance: "roundrobin"
+    haproxy.org/load-balance-uri: "persistent"
+    haproxy.org/persistent: "1h"
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- range .Values.ingress.tls }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . }}
+        {{- end }}
+      secretName: {{ .secretName }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ include "erlmcp.fullname" . }}-http
+                port:
+                  number: {{ .servicePort | default 3000 }}
+          {{- end }}
+    {{- end }}
+    # Default catch-all rule
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "erlmcp.fullname" . }}-http
+                port:
+                  number: 3000
+{{- end }}
+
+{{/*
+  Ingress for metrics
+*/}}
+{{- if and .Values.ingress.enabled .Values.services.metrics.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-metrics
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    service: metrics
+  annotations:
+    {{- if .Values.ingress.className }}
+    kubernetes.io/ingress.class: {{ .Values.ingress.className }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/rewrite-target: /metrics
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "Authorization"
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.hosts[0].host }}.metrics
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "erlmcp.fullname" . }}-metrics
+                port:
+                  number: {{ .Values.services.metrics.port }}
+    # Default catch-all rule
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "erlmcp.fullname" . }}-metrics
+                port:
+                  number: {{ .Values.services.metrics.port }}
+{{- end }}
+
+{{/*
+  Ingress for cluster communication
+*/}}
+{{- if and .Values.ingress.enabled .Values.services.cluster.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-cluster
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    service: cluster
+  annotations:
+    {{- if .Values.ingress.className }}
+    kubernetes.io/ingress.class: {{ .Values.ingress.className }}
+    {{- end }}
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    # Internal ingress annotations
+    kubernetes.io/ingress.class: "internal"
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  rules:
+    - host: {{ .Values.ingress.hosts[0].host }}.cluster
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "erlmcp.clusterServiceName" . }}
+                port:
+                  number: {{ .Values.services.cluster.port }}
+{{- end }}

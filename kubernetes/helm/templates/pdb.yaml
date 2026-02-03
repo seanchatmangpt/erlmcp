@@ -1,0 +1,65 @@
+{{/*
+  Pod Disruption Budgets for erlmcp deployment
+  Ensures availability during voluntary disruptions
+*/}}
+
+{{/*
+  Main PDB for erlmcp pods
+*/}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erlmcp.fullname" . }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: erlmcp-node
+
+{{/*
+  Cluster PDB for cluster-wide operations
+*/}}
+{{- if .Values.pdb.cluster.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-cluster
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    disruption: cluster
+spec:
+  minAvailable: {{ .Values.pdb.cluster.minAvailable }}
+  maxUnavailable: {{ .Values.pdb.cluster.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: erlmcp-node
+{{- end }}
+
+{{/*
+  Additional PDBs for specific components
+*/}}
+{{- range .Values.pdb.additional }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-{{ .name }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    {{- if .labels }}
+    {{- toYaml .labels | nindent 4 }}
+    {{- end }}
+spec:
+  minAvailable: {{ .minAvailable }}
+  maxUnavailable: {{ .maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+      {{- if .selector }}
+      {{- toYaml .selector | nindent 6 }}
+      {{- end }}
+{{- end }}

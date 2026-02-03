@@ -1,0 +1,45 @@
+# Dockerfile for Grafana with erlmcp dashboards
+# This Dockerfile builds Grafana with pre-configured erlmcp dashboards and data sources
+
+FROM grafana/grafana:10.2.0
+
+# Install additional plugins if needed
+RUN grafana-cli plugins install grafana-piechart-panel \
+    && grafana-cli plugins install grafana-worldmap-panel
+
+# Create directories for provisioning
+RUN mkdir -p /etc/grafana/provisioning/datasources \
+             /etc/grafana/provisioning/dashboards \
+             /var/lib/grafana/dashboards
+
+# Copy data sources configuration
+COPY grafana/datasources/prometheus.yml /etc/grafana/provisioning/datasources/prometheus.yml
+
+# Copy dashboard provisioning
+COPY grafana/dashboards /etc/grafana/provisioning/dashboards
+
+# Copy dashboard JSON files
+COPY dashboards /var/lib/grafana/dashboards
+
+# Set environment variables
+ENV GF_AUTH_ANONYMOUS_ENABLED=false
+ENV GF_SECURITY_ADMIN_PASSWORD=prom-operator
+ENV GF_USERS_ALLOW_SIGN_UP=false
+
+# Create provisioning script
+RUN echo '#!/bin/bash' > /opt/grafana/provision.sh && \
+    echo 'for f in /var/lib/grafana/dashboards/*.json; do' >> /opt/grafana/provision.sh && \
+    echo '  echo "Importing dashboard: $(basename $f)"' >> /opt/grafana/provision.sh && \
+    echo '  curl -X POST -H "Content-Type: application/json" -d "{\"dashboard\": $(cat $f), \"overwrite\": true}" http://admin:prom-operator@localhost:3000/api/dashboards/import' >> /opt/grafana/provision.sh && \
+    echo 'done' >> /opt/grafana/provision.sh && \
+    chmod +x /opt/grafana/provision.sh
+
+# Expose port
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000/api/health || exit 1
+
+# Start script
+CMD ["/opt/grafana/provision.sh && /run.sh"]

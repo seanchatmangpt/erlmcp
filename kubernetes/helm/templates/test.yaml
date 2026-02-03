@@ -1,0 +1,454 @@
+{{/*
+  Test jobs for erlmcp deployment
+*/}}
+
+{{/*
+  Quick test job
+*/}}
+{{- if .Values.tests.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-test-quick
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+    test: quick
+  annotations:
+    "batch.kubernetes.io/job-template": "test-quick"
+    "argocd.argoproj.io/hook": "PostSync"
+    "argocd.argoproj.io/hook-delete-policy": "HookSucceeded"
+spec:
+  backoffLimit: {{ .Values.tests.backoffLimit | default 3 }}
+  activeDeadlineSeconds: {{ .Values.tests.activeDeadlineSeconds | default 300 }}
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: test
+        test: quick
+    spec:
+      {{- if .Values.global.serviceAccount.create }}
+      serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+        - name: test
+          image: {{ .Values.tests.image.repository }}:{{ .Values.tests.image.tag }}
+          imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+          command: {{ .Values.tests.command | default ["/bin/sh", "-c"] }}
+          args: {{ .Values.tests.args | default ["echo 'erlmcp test successful'"] }}
+          resources:
+            limits:
+              cpu: {{ .Values.tests.resources.limits.cpu }}
+              memory: {{ .Values.tests.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.tests.resources.requests.cpu }}
+              memory: {{ .Values.tests.resources.requests.memory }}
+          livenessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "echo 'test is running'"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["/bin/sh", "-c", "echo 'test is ready'"]
+            initialDelaySeconds: 1
+            periodSeconds: 5
+            timeoutSeconds: 3
+      initContainers:
+        - name: wait-for-services
+          image: busybox:1.35
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Waiting for services to be ready..."
+              until nc -z {{ include "erlmcp.fullname" . }}-http 3000; do
+                echo "Waiting for HTTP service..."
+                sleep 2
+              done
+              until nc -z {{ include "erlmcp.fullname" . }}-cluster 9000; do
+                echo "Waiting for cluster service..."
+                sleep 2
+              done
+              echo "Services are ready"
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+{{- end }}
+
+{{/*
+  Health test job
+*/}}
+{{- if .Values.tests.health.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-test-health
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+    test: health
+  annotations:
+    "batch.kubernetes.io/job-template": "test-health"
+    "argocd.argoproj.io/hook": "PostSync"
+    "argocd.argoproj.io/hook-delete-policy": "HookSucceeded"
+spec:
+  backoffLimit: {{ .Values.tests.health.backoffLimit | default 3 }}
+  activeDeadlineSeconds: {{ .Values.tests.health.activeDeadlineSeconds | default 600 }}
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: test
+        test: health
+    spec:
+      {{- if .Values.global.serviceAccount.create }}
+      serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+        - name: test
+          image: curlimages/curl:7.83.0
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Running health tests..."
+
+              # Test HTTP endpoint
+              if ! curl -f http://{{ include "erlmcp.fullname" . }}-http:3000/health; then
+                echo "HTTP health check failed"
+                exit 1
+              fi
+
+              # Test ready endpoint
+              if ! curl -f http://{{ include "erlmcp.fullname" . }}-http:3000/ready; then
+                echo "Ready endpoint failed"
+                exit 1
+              fi
+
+              # Test cluster endpoint
+              if ! curl -f http://{{ include "erlmcp.fullname" . }}-cluster:9000/health; then
+                echo "Cluster health check failed"
+                exit 1
+              fi
+
+              # Test metrics endpoint
+              if ! curl -f http://{{ include "erlmcp.fullname" . }}-metrics:9090/metrics; then
+                echo "Metrics endpoint failed"
+                exit 1
+              fi
+
+              echo "All health tests passed"
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+      initContainers:
+        - name: wait-for-services
+          image: busybox:1.35
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Waiting for services to be ready..."
+              timeout 120 sh -c 'while ! nc -z {{ include "erlmcp.fullname" . }}-http 3000; do echo "waiting..."; sleep 2; done'
+              timeout 120 sh -c 'while ! nc -z {{ include "erlmcp.fullname" . }}-cluster 9000; do echo "waiting..."; sleep 2; done'
+              timeout 120 sh -c 'while ! nc -z {{ include "erlmcp.fullname" . }}-metrics 9090; do echo "waiting..."; sleep 2; done'
+              echo "Services are ready"
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+{{- end }}
+
+{{/*
+  Load test job
+*/}}
+{{- if .Values.tests.load.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-test-load
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+    test: load
+  annotations:
+    "batch.kubernetes.io/job-template": "test-load"
+    "argocd.argoproj.io/hook": "PostSync"
+    "argocd.argoproj.io/hook-delete-policy": "HookSucceeded"
+spec:
+  backoffLimit: {{ .Values.tests.load.backoffLimit | default 3 }}
+  activeDeadlineSeconds: {{ .Values.tests.load.activeDeadlineSeconds | default 1800 }}
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: test
+        test: load
+    spec:
+      {{- if .Values.global.serviceAccount.create }}
+      serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+        - name: load-test
+          image: {{ .Values.tests.load.image.repository | default "ghcr.io/loadimpact/k6" }}:{{ .Values.tests.load.image.tag | default "latest" }}
+          command: ["k6", "run"]
+          args:
+            - "--vus={{ .Values.tests.load.vus | default 100 }}"
+            - "--duration={{ .Values.tests.load.duration | default "30s" }}"
+            - "--out={{ .Values.tests.load.outputFormat | default "json" }}"
+            - "--out={{ .Values.tests.load.outputFormat | default "json" }}=/tmp/results.json"
+            - "/scripts/load-test.js"
+          resources:
+            limits:
+              cpu: {{ .Values.tests.load.resources.limits.cpu }}
+              memory: {{ .Values.tests.load.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.tests.load.resources.requests.cpu }}
+              memory: {{ .Values.tests.load.resources.requests.memory }}
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      initContainers:
+        - name: wait-for-services
+          image: busybox:1.35
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Waiting for services to be ready..."
+              until nc -z {{ include "erlmcp.fullname" . }}-http 3000; do
+                echo "Waiting for HTTP service..."
+                sleep 2
+              done
+              until nc -z {{ include "erlmcp.fullname" . }}-cluster 9000; do
+                echo "Waiting for cluster service..."
+                sleep 2
+              done
+              echo "Services are ready"
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ include "erlmcp.fullname" . }}-load-test-scripts
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-load-test-scripts
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+data:
+  load-test.js: |
+    import http from 'k6/http';
+    import { check, sleep } from 'k6';
+
+    export const options = {
+      vus: {{ .Values.tests.load.vus | default 100 }},
+      duration: {{ .Values.tests.load.duration | default "30s" }},
+      thresholds: {
+        http_req_duration: ['p(95)<500'], // 95% of requests should be below 500ms
+        http_req_failed: ['rate<0.01'], // Less than 1% of requests should fail
+      },
+    };
+
+    export default function () {
+      // Make HTTP request
+      const res = http.get('http://{{ include "erlmcp.fullname" . }}-http:3000/health');
+
+      // Check response
+      check(res, {
+        'status was 200': (r) => r.status == 200,
+        'response time < 500ms': (r) => r.timings.duration < 500,
+        'response size < 1KB': (r) => r.body.length < 1000,
+      });
+
+      // Sleep between requests
+      sleep(1);
+    }
+{{- end }}
+
+{{/*
+  Integration test job
+*/}}
+{{- if .Values.tests.integration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-test-integration
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+    test: integration
+  annotations:
+    "batch.kubernetes.io/job-template": "test-integration"
+    "argocd.argoproj.io/hook": "PostSync"
+    "argocd.argoproj.io/hook-delete-policy": "HookSucceeded"
+spec:
+  backoffLimit: {{ .Values.tests.integration.backoffLimit | default 3 }}
+  activeDeadlineSeconds: {{ .Values.tests.integration.activeDeadlineSeconds | default 1800 }}
+  template:
+    metadata:
+      labels:
+        {{- include "erlmcp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: test
+        test: integration
+    spec:
+      {{- if .Values.global.serviceAccount.create }}
+      serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+      {{- end }}
+      restartPolicy: Never
+      containers:
+        - name: integration-test
+          image: {{ .Values.tests.integration.image.repository }}:{{ .Values.tests.integration.image.tag }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Running integration tests..."
+
+              # Test 1: Basic functionality
+              echo "Test 1: Basic functionality"
+              ./test-basic.sh
+
+              # Test 2: Cluster functionality
+              echo "Test 2: Cluster functionality"
+              ./test-cluster.sh
+
+              # Test 3: Performance
+              echo "Test 3: Performance"
+              ./test-performance.sh
+
+              # Test 4: Error handling
+              echo "Test 4: Error handling"
+              ./test-errors.sh
+
+              echo "All integration tests passed"
+          resources:
+            limits:
+              cpu: {{ .Values.tests.integration.resources.limits.cpu }}
+              memory: {{ .Values.tests.integration.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.tests.integration.resources.requests.cpu }}
+              memory: {{ .Values.tests.integration.resources.requests.memory }}
+          volumeMounts:
+            - name: test-scripts
+              mountPath: /scripts
+      initContainers:
+        - name: wait-for-services
+          image: busybox:1.35
+          command: ["sh", "-c"]
+          args:
+            - |
+              echo "Waiting for services to be ready..."
+              timeout 300 sh -c 'while ! nc -z {{ include "erlmcp.fullname" . }}-http 3000; do echo "waiting..."; sleep 2; done'
+              timeout 300 sh -c 'while ! nc -z {{ include "erlmcp.fullname" . }}-cluster 9000; do echo "waiting..."; sleep 2; done'
+              timeout 300 sh -c 'while ! nc -z {{ include "erlmcp.fullname" . }}-metrics 9090; do echo "waiting..."; sleep 2; done'
+              echo "Services are ready"
+          resources:
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+      volumes:
+        - name: test-scripts
+          configMap:
+            name: {{ include "erlmcp.fullname" . }}-integration-test-scripts
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-integration-test-scripts
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: test
+data:
+  test-basic.sh: |
+    #!/bin/bash
+    echo "Running basic tests..."
+
+    # Test health endpoint
+    curl -f http://{{ include "erlmcp.fullname" . }}-http:3000/health || exit 1
+    echo "Health endpoint OK"
+
+    # Test ready endpoint
+    curl -f http://{{ include "erlmcp.fullname" . }}-http:3000/ready || exit 1
+    echo "Ready endpoint OK"
+
+    # Test basic RPC
+    curl -X POST -H "Content-Type: application/json" \
+         -d '{"jsonrpc":"2.0","method":"ping","id":1}' \
+         http://{{ include "erlmcp.fullname" . }}-http:3000/ || exit 1
+    echo "Basic RPC OK"
+  test-cluster.sh: |
+    #!/bin/bash
+    echo "Running cluster tests..."
+
+    # Test cluster endpoint
+    curl -f http://{{ include "erlmcp.fullname" . }}-cluster:9000/health || exit 1
+    echo "Cluster endpoint OK"
+
+    # Test node discovery
+    curl -f http://{{ include "erlmcp.fullname" . }}-cluster:9000/nodes || exit 1
+    echo "Node discovery OK"
+  test-performance.sh: |
+    #!/bin/bash
+    echo "Running performance tests..."
+
+    # Test 100 concurrent requests
+    for i in {1..100}; do
+      curl -f http://{{ include "erlmcp.fullname" . }}-http:3000/health &
+    done
+    wait
+
+    # Check average response time
+    avg_time=$(curl -s -o /dev/null -w '%{time_total}' http://{{ include "erlmcp.fullname" . }}-http:3000/health)
+    if (( $(echo "$avg_time > 1.0" | bc -l) )); then
+      echo "Performance test failed: average response time too high ($avg_time)"
+      exit 1
+    fi
+    echo "Performance test OK"
+  test-errors.sh: |
+    #!/bin/bash
+    echo "Running error handling tests..."
+
+    # Test invalid JSON
+    response=$(curl -X POST -H "Content-Type: application/json" \
+                   -d '{"invalid": json}' \
+                   http://{{ include "erlmcp.fullname" . }}-http:3000/ 2>/dev/null)
+    if [[ $response != *"parse error"* ]]; then
+      echo "Error handling test failed: invalid JSON not handled"
+      exit 1
+    fi
+
+    # Test method not found
+    response=$(curl -X POST -H "Content-Type: application/json" \
+                   -d '{"jsonrpc":"2.0","method":"unknown","id":1}' \
+                   http://{{ include "erlmcp.fullname" . }}-http:3000/ 2>/dev/null)
+    if [[ $response != *"method not found"* ]]; then
+      echo "Error handling test failed: unknown method not handled"
+      exit 1
+    fi
+
+    echo "Error handling test OK"
+{{- end }}

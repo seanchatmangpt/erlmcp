@@ -1,0 +1,318 @@
+pipeline {
+    agent any
+
+    // Environment variables
+    environment {
+        REGISTRY_URL = "ghcr.io/${env.GIT_REPO}"
+        KUBECONFIG = credentials('kubeconfig-prod')
+        OTP_VERSION = "28.3.1"
+        SLACK_CHANNEL = "#ci-cd"
+        QUALITY_GATE_THRESHOLD = 80
+    }
+
+    // Triggers
+    triggers {
+        // Daily build
+        cron('H 2 * * *')
+        // On push to main branches
+        pollSCM('H/5 * * * *')
+    }
+
+    // Options
+    options {
+        timeout(time: 1, unit: 'HOURS')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+        retry(3)
+    }
+
+    stages {
+        // ===================================================================
+        // STAGE 1: PRE-BUILD VALIDATION
+        // ===================================================================
+        stage('Pre-Build') {
+            steps {
+                script {
+                    // Skip if only docs changed
+                    if (isPR() && isDocsOnly()) {
+                        currentBuild.result = 'SUCCESS'
+                        echo "Skipping - only docs changed"
+                        return
+                    }
+                }
+
+                // Check OTP version
+                sh '''
+                    otp_version=$(otp -v | head -1)
+                    echo "OTP Version: $otp_version"
+                    if [[ "$otp_version" != *"28.3.1"* ]]; then
+                        echo "Error: OTP 28.3.1 required"
+                        exit 1
+                    fi
+                '''
+
+                // Cache dependencies
+                sh '''
+                    mkdir -p ~/.cache/rebar3
+                    cache_id="rebar3-${env.BUILD_ID}"
+                '''
+            }
+        }
+
+        // ===================================================================
+        // STAGE 2: COMPILATION
+        // ===================================================================
+        stage('Compile') {
+            steps {
+                sh '''
+                    export PATH="/opt/erlmcp/otp-28.3.1/bin:$PATH"
+                    rebar3 compile
+                '''
+
+                // Xref analysis
+                sh '''
+                    rebar3 xref
+                '''
+
+                // Archive artifacts
+                archiveArtifacts artifacts: '_build/**', fingerprint: true
+            }
+        }
+
+        // ===================================================================
+        // STAGE 3: UNIT TESTING
+        // ===================================================================
+        stage('Unit Tests') {
+            parallel {
+                stage('EUnit') {
+                    steps {
+                        sh '''
+                            rebar3 eunit --verbose
+                        '''
+
+                        // Generate report
+                        junit allowEmptyResults: true, testResultsPattern: '**/eunit*.xml'
+                    }
+                }
+
+                stage('Coverage') {
+                    steps {
+                        sh '''
+                            rebar3 cover
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // STAGE 4: INTEGRATION TESTING
+        // ===================================================================
+        stage('Integration Tests') {
+            steps {
+                // Run CT tests in parallel
+                parallel {
+                    stage('Core Tests') {
+                        steps {
+                            sh '''
+                                rebar3 ct --suite=erlmcp_core --verbose
+                            '''
+                            junit allowEmptyResults: true, testResultsPattern: '**/ct-core*.xml'
+                        }
+                    }
+
+                    stage('Transport Tests') {
+                        steps {
+                            sh '''
+                                rebar3 ct --suite=erlmcp_transports --verbose
+                            '''
+                            junit allowEmptyResults: true, testResultsPattern: '**/ct-transports*.xml'
+                        }
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // STAGE 5: QUALITY GATES
+        // ===================================================================
+        stage('Quality Gates') {
+            parallel {
+                stage('Dialyzer') {
+                    steps {
+                        sh '''
+                            rebar3 dialyzer
+                        '''
+                    }
+                }
+
+                stage('Security Scan') {
+                    steps {
+                        // Run security scans
+                        sh '''
+                            mix deps.audit --all
+                            rebar3 hex audit
+                        '''
+                    }
+                }
+
+                stage('Code Quality') {
+                    steps {
+                        // Custom quality checks
+                        sh '''
+                            ./scripts/quality/check-all.sh
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // STAGE 6: PERFORMANCE TESTING
+        // ===================================================================
+        stage('Performance Tests') {
+            steps {
+                script {
+                    if (env.BRANCH_NAME == 'main') {
+                        // Run performance benchmarks
+                        sh '''
+                            make benchmark-quick
+                        '''
+
+                        // Compare with baseline
+                        sh '''
+                            python scripts/performance/compare.py \
+                                --baseline registry \
+                                --current ${env.GIT_COMMIT}
+                        '''
+                    }
+                }
+            }
+        }
+
+        // ===================================================================
+        // STAGE 7: DEPLOYMENT
+        // ===================================================================
+        stage('Deploy') {
+            parallel {
+                stage('Deploy Staging') {
+                    when {
+                        branch 'develop'
+                    }
+                    steps {
+                        script {
+                            def envName = 'staging'
+                            deployToEnvironment(envName)
+
+                            // Run smoke tests
+                            sh '''
+                                ./scripts/test/smoke.sh \
+                                    --namespace erlmcp-${envName} \
+                                    --timeout 300
+                            '''
+                        }
+                    }
+                }
+
+                stage('Deploy Production') {
+                    when {
+                        branch 'main'
+                    }
+                    steps {
+                        // Production requires manual approval
+                        input 'Deploy to Production?'
+
+                        script {
+                            def envName = 'production'
+                            deployToEnvironment(envName)
+
+                            // Post-deployment validation
+                            sh '''
+                                ./scripts/health/validate.sh \
+                                    --namespace erlmcp-${envName} \
+                                    --timeout 600
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Post-build actions
+    post {
+        always {
+            // Cleanup
+            sh '''
+                docker system prune -f
+            '''
+
+            // Notify
+            script {
+                if (currentBuild.result == null || currentBuild.result == 'SUCCESS') {
+                    slackSend channel: env.SLACK_CHANNEL, color: 'good',
+                        message: "SUCCESS: ${env.JOB_NAME} - ${env.BUILD_NUMBER} (${env.BUILD_URL})"
+                } else {
+                    slackSend channel: env.SLACK_CHANNEL, color: 'danger',
+                        message: "FAILED: ${env.JOB_NAME} - ${env.BUILD_NUMBER} (${env.BUILD_URL})"
+                }
+            }
+        }
+
+        unstable {
+            script {
+                // Handle unstable builds
+                archiveArtifacts artifacts: 'quality-report.json', fingerprint: true
+            }
+        }
+
+        failure {
+            script {
+                // Auto-rollback for failed deployments
+                if (env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'develop') {
+                    sh '''
+                        ./scripts/deploy/rollback.sh \
+                            --namespace erlmcp-${env.BRANCH_NAME}
+                    '''
+                }
+            }
+        }
+    }
+}
+
+// Helper functions
+def isPR() {
+    return env.CHANGE_ID != null
+}
+
+def isDocsOnly() {
+    return env.CHANGES?.contains('docs/') || env.CHANGES?.contains('README.md')
+}
+
+def deployToEnvironment(String envName) {
+    script {
+        // Build and push image
+        sh '''
+            docker build \
+                -t ${REGISTRY_URL}:${env.BUILD_ID} \
+                --build-arg OTP_VERSION=${env.OTP_VERSION} \
+                .
+        '''
+
+        // Push to registry
+        withCredentials([string(credentialsId: 'github-token', variable: 'TOKEN')]) {
+            sh '''
+                echo "${TOKEN}" | docker login ghcr.io -u ${GIT_USERNAME} --password-stdin
+                docker push ${REGISTRY_URL}:${env.BUILD_ID}
+            '''
+        }
+
+        // Deploy using Helm
+        sh """
+            helm upgrade --install erlmcp-${envName} ./charts/erlmcp \
+                --set image.tag=${env.BUILD_ID} \
+                --set environment=${envName} \
+                --namespace erlmcp-${envName}
+        """
+    }
+}

@@ -1,0 +1,732 @@
+# Docker Stack Configuration for erlmcp v3 Production Deployment
+# Fortune 500 Scale Configuration with High Availability & Fault Tolerance
+#
+# Deployment:
+#   docker stack deploy -c docker-stack.yml erlmcp
+#
+# Prerequisites:
+#   1. Create overlay network: docker network create --driver overlay --attachable --opt encrypted erlmcp-overlay
+#   2. Create secrets (see .env.prod template)
+#   3. Label nodes for placement constraints
+#
+# Documentation: /docs/deployment/SWARM_DEPLOYMENT.md
+
+version: '3.8'
+
+# ============================================================================
+# SECRETS MANAGEMENT
+# ============================================================================
+secrets:
+  erlang_cookie:
+    external: true
+  tls_cert:
+    external: true
+  tls_key:
+    external: true
+  db_password:
+    external: true
+  redis_password:
+    external: true
+
+# ============================================================================
+# CONFIGS MANAGEMENT
+# ============================================================================
+configs:
+  sys_config:
+    file: ./config/docker/sys.config.swarm
+  vm_args:
+    file: ./config/docker/vm.args.swarm
+
+# ============================================================================
+# SERVICES
+# ============================================================================
+services:
+  # ==========================================================================
+  # ERLMCP CORE SERVICE - Multi-instance with rolling updates
+  # ==========================================================================
+  erlmcp:
+    image: ${ERLMCP_IMAGE:-ghcr.io/banyan-platform/erlmcp:3.0.0}
+    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
+    restart: unless-stopped
+
+    # Secrets - mounted as files in /run/secrets
+    secrets:
+      - source: erlang_cookie
+        target: erlang.cookie
+      - source: tls_cert
+        target: tls.crt
+      - source: tls_key
+        target: tls.key
+      - source: db_password
+        target: db.password
+      - source: redis_password
+        target: redis.password
+
+    # Configuration files
+    configs:
+      - source: sys_config
+        target: /opt/erlmcp/releases/3.0.0/sys.config
+      - source: vm_args
+        target: /opt/erlmcp/releases/3.0.0/vm.args
+
+    # Environment variables
+    environment:
+      - ERLMCP_ENV=production
+      - ERLMCP_NODE_NAME=erlmcp@${HOSTNAME}
+      - ERLMCP_COOKIE_FILE=/run/secrets/erlang.cookie
+      - ERLMCP_DISTRIBUTION_MODE=cluster
+      - ERLMCP_HEALTH_CHECK_ENABLED=true
+      - ERLMCP_METRICS_ENABLED=true
+      - ERLMCP_OTEL_ENDPOINT=http://otel-collector:4317
+      - OTEL_SERVICE_NAME=erlmcp
+      - OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production,service.version=3.0.0
+      - ERL_MAX_PORTS=65536
+      - ERL_MAX_ETS_TABLES=50000
+      - ERL_AFLAGS=-proto_dist inet_tls
+
+    # Port exposure for distributed Erlang and HTTP API
+    ports:
+      - target: 8080
+        published: 8080
+        protocol: tcp
+        mode: host
+      - target: 4369
+        published: 4369
+        protocol: tcp
+        mode: host
+      - target: 9100
+        published: 9100
+        protocol: tcp
+        mode: host
+      - target: 9090
+        published: 9090
+        protocol: tcp
+        mode: host
+
+    # Overlay networks
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+
+    # Volume mounts
+    volumes:
+      - erlmcp-data:/var/lib/erlmcp
+      - erlmcp-logs:/var/log/erlmcp
+
+    # Health check - critical for rolling updates
+    healthcheck:
+      test: ["CMD", "/opt/erlmcp/bin/healthcheck.sh"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+    # Deployment constraints and placement
+    deploy:
+      mode: replicated
+      replicas: ${ERLMCP_REPLICAS:-5}
+
+      # Update configuration for rolling updates
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+        max_failure_ratio: 0.2
+        order: start-first
+
+      # Rollback configuration
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+        failure_action: continue
+        monitor: 30s
+        order: stop-first
+
+      # Resource limits
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+          pids: 32768
+        reservations:
+          cpus: '2.0'
+          memory: 2G
+
+      # Restart policy
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
+
+      # Placement constraints - spread across nodes
+      placement:
+        constraints:
+          - node.labels.erlmcp.enabled == true
+          - node.arch == x86_64
+        preferences:
+          - spread: node.labels.zone
+          - spread: node.labels.rack
+
+      # Endpoint mode
+      endpoint_mode: dnsrr
+
+    # Labels for service discovery and monitoring
+    labels:
+      - "com.erlmcp.version=3.0.0"
+      - "com.erlmcp.environment=production"
+      - "prometheus.io/scrape=true"
+      - "prometheus.io/path=/metrics"
+      - "prometheus.io/port=9100"
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+      - apparmor=erlmcp-profile
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=100m
+      - /var/tmp:noexec,nosuid,size=100m
+
+    # Logging driver for ELK/Loki
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+        labels: "com.erlmcp.environment,com.erlmcp.version"
+        tag: "{{.Name}}/{{.ID}}"
+
+  # ==========================================================================
+  # REDIS CLUSTER - Distributed caching with Sentinel
+  # ==========================================================================
+  redis:
+    image: redis:8.0-alpine
+    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
+    restart: unless-stopped
+
+    secrets:
+      - source: redis_password
+        target: redis.password
+
+    command: >
+      sh -c '
+        redis-server
+        --requirepass $$(cat /run/secrets/redis.password)
+        --cluster-enabled yes
+        --cluster-config-file nodes.conf
+        --cluster-node-timeout 5000
+        --appendonly yes
+        --appendfilename appendonly.aof
+        --dbfilename dump.rdb
+        --logfile /var/log/redis/redis-server.log
+        --maxmemory 2gb
+        --maxmemory-policy allkeys-lru
+        --save 900 1
+        --save 300 10
+        --save 60 10000
+      '
+
+    ports:
+      - target: 6379
+        published: 6379
+        protocol: tcp
+        mode: host
+
+    networks:
+      - erlmcp-overlay
+
+    volumes:
+      - redis-data:/data
+
+    healthcheck:
+      test: ["CMD", "sh", "-c", "redis-cli -a $$(cat /run/secrets/redis.password) ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      mode: replicated
+      replicas: 3
+
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+      placement:
+        constraints:
+          - node.labels.erlmcp.enabled == true
+        preferences:
+          - spread: node.labels.zone
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==========================================================================
+  # POSTGRESQL - Primary database with streaming replication
+  # ==========================================================================
+  postgres:
+    image: postgres:16-alpine
+    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
+    restart: unless-stopped
+
+    secrets:
+      - source: db_password
+        target: db.password
+
+    environment:
+      - POSTGRES_DB=erlmcp
+      - POSTGRES_USER=erlmcp
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db.password
+      - POSTGRES_REPLICA_MODE=true
+      - POSTGRES_REPLICA_USER=replicator
+      - POSTGRES_REPLICA_PASSWORD_FILE=/run/secrets/db.password
+      - PGDATA=/var/lib/postgresql/data/pgdata
+      - POSTGRES_HOST_AUTH_METHOD=scram-sha-256
+
+    ports:
+      - target: 5432
+        published: 5432
+        protocol: tcp
+        mode: host
+
+    networks:
+      - erlmcp-overlay
+
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erlmcp -d erlmcp"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+    deploy:
+      mode: replicated
+      replicas: 1
+
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: pause
+        monitor: 60s
+
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 4G
+        reservations:
+          cpus: '2.0'
+          memory: 2G
+
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+
+      placement:
+        constraints:
+          - node.labels.erlmcp.database == true
+        preferences:
+          - spread: node.labels.zone
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==========================================================================
+  # OPENTELEMETRY COLLECTOR - Observability data collection
+  # ==========================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    hostname: otel-collector
+    restart: unless-stopped
+
+    command: ["--config=/etc/otel-collector-config.yaml"]
+
+    ports:
+      - target: 4317
+        published: 4317
+        protocol: tcp
+      - target: 4318
+        published: 4318
+        protocol: tcp
+      - target: 8888
+        published: 8888
+        protocol: tcp
+
+    networks:
+      - erlmcp-overlay
+      - monitoring-overlay
+
+    volumes:
+      - ./config/docker/otel-collector.yaml:/etc/otel-collector-config.yaml:ro
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      mode: replicated
+      replicas: 1
+
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+      placement:
+        constraints:
+          - node.labels.erlmcp.monitoring == true
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==========================================================================
+  # PROMETHEUS - Metrics collection and storage
+  # ==========================================================================
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    hostname: prometheus
+    restart: unless-stopped
+
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--storage.tsdb.no-lockfile=true'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+
+    ports:
+      - target: 9090
+        published: 9090
+        protocol: tcp
+
+    networks:
+      - monitoring-overlay
+
+    volumes:
+      - prometheus-data:/prometheus
+      - ./config/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    deploy:
+      mode: replicated
+      replicas: 1
+
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+      placement:
+        constraints:
+          - node.labels.erlmcp.monitoring == true
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==========================================================================
+  # GRAFANA - Metrics visualization and dashboards
+  # ==========================================================================
+  grafana:
+    image: grafana/grafana:11.3.1
+    hostname: grafana
+    restart: unless-stopped
+
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel,grafana-worldmap-panel
+      - GF_SERVER_ROOT_URL=https://grafana.erlmcp.example.com
+      - GF_DATABASE_TYPE=postgres
+      - GF_DATABASE_HOST=postgres:5432
+      - GF_DATABASE_NAME=grafana
+      - GF_DATABASE_USER=grafana
+      - GF_DATABASE_PASSWORD_FILE=/run/secrets/db.password
+      - GF_ANALYTICS_REPORTING_ENABLED=false
+      - GF_ANALYTICS_CHECK_FOR_UPDATES=false
+      - GF_USERS_ALLOW_SIGN_UP=false
+
+    secrets:
+      - source: db_password
+        target: db.password
+
+    ports:
+      - target: 3000
+        published: 3000
+        protocol: tcp
+
+    networks:
+      - monitoring-overlay
+
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./config/docker/grafana/dashboards:/etc/grafana/dashboards:ro
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+    deploy:
+      mode: replicated
+      replicas: 1
+
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+      placement:
+        constraints:
+          - node.labels.erlmcp.monitoring == true
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==========================================================================
+  # LOKI - Log aggregation
+  # ==========================================================================
+  loki:
+    image: grafana/loki:2.9.10
+    hostname: loki
+    restart: unless-stopped
+
+    command: -config.file=/etc/loki/local-config.yaml
+
+    ports:
+      - target: 3100
+        published: 3100
+        protocol: tcp
+
+    networks:
+      - monitoring-overlay
+
+    volumes:
+      - loki-data:/loki
+      - ./config/docker/loki.yaml:/etc/loki/local-config.yaml:ro
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+    deploy:
+      mode: replicated
+      replicas: 1
+
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+      placement:
+        constraints:
+          - node.labels.erlmcp.monitoring == true
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==========================================================================
+  # PROMTAIL - Log agent for collecting container logs
+  # ==========================================================================
+  promtail:
+    image: grafana/promtail:2.9.10
+    hostname: "{{.Service.Name}}.{{.Task.Slot}}"
+    restart: unless-stopped
+
+    command: -config.file=/etc/promtail/config.yml
+
+    networks:
+      - monitoring-overlay
+
+    volumes:
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log:ro
+      - ./config/docker/promtail.yml:/etc/promtail/config.yml:ro
+
+    deploy:
+      mode: global
+
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ==========================================================================
+  # AUTO-SCALER - Docker Swarm auto-scaling based on metrics
+  # ==========================================================================
+  autoscaler:
+    image: ghcr.io/banyan-platform/swarm-autoscaler:1.0.0
+    hostname: autoscaler
+    restart: unless-stopped
+
+    environment:
+      - SWARM_AUTOSCALER_TARGET_SERVICE=erlmcp_erlmcp
+      - SWARM_AUTOSCALER_MIN_REPLICAS=3
+      - SWARM_AUTOSCALER_MAX_REPLICAS=10
+      - SWARM_AUTOSCALER_SCALE_UP_THRESHOLD=80
+      - SWARM_AUTOSCALER_SCALE_DOWN_THRESHOLD=30
+      - SWARM_AUTOSCALER_COOLDOWN_SECONDS=300
+      - SWARM_AUTOSCALER_METRICS_ENDPOINT=http://prometheus:9090
+      - SWARM_AUTOSCALER_PROMETHEUS_QUERY=rate(http_requests_total[5m])
+
+    networks:
+      - monitoring-overlay
+
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+    deploy:
+      mode: replicated
+      replicas: 1
+
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
+
+      placement:
+        constraints:
+          - node.role == manager
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ============================================================================
+# NETWORKS - Overlay networks with encryption
+# ============================================================================
+networks:
+  erlmcp-overlay:
+    external: true
+    driver: overlay
+    attachable: true
+    driver_opts:
+      encrypted: "true"
+
+  monitoring-overlay:
+    external: true
+    driver: overlay
+    attachable: true
+    driver_opts:
+      encrypted: "true"
+
+# ============================================================================
+# VOLUMES - Persistent data storage
+# ============================================================================
+volumes:
+  erlmcp-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/lib/erlmcp/data
+
+  erlmcp-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/erlmcp
+
+  redis-data:
+    driver: local
+
+  postgres-data:
+    driver: local
+
+  prometheus-data:
+    driver: local
+
+  grafana-data:
+    driver: local
+
+  loki-data:
+    driver: local

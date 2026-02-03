@@ -1,0 +1,219 @@
+groups:
+  - name: erlmcp.rules
+    interval: 15s
+    rules:
+      # High request rate alerts
+      - alert: HighRequestRate
+        expr: rate(erlmcp_requests_total[5m]) > 10000
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High request rate detected on erlmcp instance"
+          description: "Request rate is {{ $value }} requests/second for more than 5 minutes"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/high-request-rate"
+
+      # High error rate alerts
+      - alert: HighErrorRate
+        expr: rate(erlmcp_errors_total[5m]) / rate(erlmcp_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: errors
+        annotations:
+          summary: "High error rate detected on erlmcp instance"
+          description: "Error rate is {{ $value }} (5%) for more than 5 minutes"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/high-error-rate"
+
+      # High latency alerts
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(erlmcp_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "High request latency detected"
+          description: "95th percentile latency is {{ $value }} seconds for more than 5 minutes"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/high-latency"
+
+      # Low availability alerts
+      - alert: LowAvailability
+        expr: (1 - rate(erlmcp_requests_total[5m]) / rate(erlmcp_requests_total[5m])) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "Low availability detected"
+          description: "Availability dropped to {{ $value }}% for more than 2 minutes"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/low-availability"
+
+      # Memory usage alerts
+      - alert: HighMemoryUsage
+        expr: (erlmcp_memory_total_bytes / 1073741824) > 8
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is {{ $value }} GB for more than 5 minutes"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/high-memory-usage"
+
+      # Connection limit alerts
+      - alert: ConnectionLimitReached
+        expr: erlmcp_connections_total > 50000
+        for: 5m
+        labels:
+          severity: warning
+          category: capacity
+        annotations:
+          summary: "Connection limit reached"
+          description: "Connections reached {{ $value }} (limit: 50000)"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/connection-limit"
+
+      # Security alerts
+      - alert: HighSecurityEvents
+        expr: rate(erlmcp_security_events_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High number of security events detected"
+          description: "Security events rate is {{ $value }} events/minute"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/security-events"
+
+      # Authentication failures
+      - alert: AuthenticationFailures
+        expr: rate(erlmcp_auth_failures_total[5m]) > 5
+        for: 5m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "High authentication failure rate detected"
+          description: "Authentication failure rate is {{ $value }} failures/minute"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/auth-failures"
+
+      # Rate limit exceeded
+      - alert: RateLimitExceeded
+        expr: rate(erlmcp_rate_limit_exceeded_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Rate limit exceeded"
+          description: "Rate limit has been exceeded {{ $value }} times in the last minute"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/rate-limit"
+
+      # Health check failures
+      - alert: HealthCheckFailure
+        expr: erlmcp_healthy == 0
+        for: 30s
+        labels:
+          severity: critical
+          category: health
+        annotations:
+          summary: "erlmcp health check failed"
+          description: "erlmcp instance is unhealthy for more than 30 seconds"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/health-check"
+
+      # Session management issues
+      - alert: SessionManagementIssues
+        expr: rate(erlmcp_session_errors_total[5m]) > 1
+        for: 5m
+        labels:
+          severity: critical
+          category: sessions
+        annotations:
+          summary: "Session management issues detected"
+          description: "Session errors rate is {{ $value }} errors/minute"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/session-issues"
+
+      # Transport issues
+      - alert: TransportIssues
+        expr: rate(erlmcp_transport_errors_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          category: transports
+        annotations:
+          summary: "Transport layer issues detected"
+          description: "Transport errors rate is {{ $value }} errors/minute"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/transport-issues"
+
+      # Database connection issues
+      - alert: DatabaseConnectionIssues
+        expr: rate(erlmcp_db_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Database connection issues detected"
+          description: "Database errors rate is {{ $value }} errors/minute"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/db-issues"
+
+      # Resource exhaustion
+      - alert: ResourceExhaustion
+        expr: (erlmcp_cpu_usage > 90) or (erlmcp_memory_usage > 90) or (erlmcp_disk_usage > 90)
+        for: 5m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Resource exhaustion detected"
+          description: "CPU: {{ $value }}%, Memory: {{ $value }}%, Disk: {{ $value }}%"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/resource-exhaustion"
+
+      # Queue backlog
+      - alert: QueueBacklog
+        expr: erlmcp_queue_size > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Queue backlog detected"
+          description: "Queue size is {{ $value }} items"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/queue-backlog"
+
+      # Slow queries
+      - alert: SlowQueries
+        expr: histogram_quantile(0.95, rate(erlmcp_query_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "Slow queries detected"
+          description: "95th percentile query duration is {{ $value }} seconds"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/slow-queries"
+
+      # SSL certificate expiration
+      - alert: SSLCertificateExpiring
+        expr: time() - erlmcp_ssl_cert_expiry_seconds < 604800
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "SSL certificate expiring soon"
+          description: "SSL certificate expires in {{ $value }} days"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/ssl-cert-expiry"
+
+      # JWT token issues
+      - alert: JWTTokenIssues
+        expr: rate(erlmcp_jwt_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "JWT token issues detected"
+          description: "JWT errors rate is {{ $value }} errors/minute"
+          runbook_url: "https://wiki.erlmcp.com/docs/runbooks/jwt-issues"

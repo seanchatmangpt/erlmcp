@@ -1,0 +1,85 @@
+# ============================================================================
+# GKE Deployment Example - Terraform Variables
+# ============================================================================
+
+# Project Configuration
+project_id = "your-project-id"
+region     = "us-central1"
+
+# Cluster Configuration
+cluster_name = "erlmcp-cluster"
+network_name = "erlmcp-vpc"
+
+# Kubernetes Configuration
+kubernetes_version = ""
+release_channel    = "REGULAR"
+
+# Private Cluster
+enable_private_endpoint = true
+enable_private_nodes    = true
+master_ipv4_cidr_block  = "172.16.0.0/28"
+master_global_access    = false
+
+# Node Pool Configuration
+machine_type = "e2-standard-2"
+disk_size_gb = 100
+disk_type    = "pd-balanced"
+min_nodes    = 3
+max_nodes    = 10
+
+# Spot Nodes
+enable_spot_nodes     = false
+spot_machine_type     = "e2-standard-2"
+spot_disk_size_gb     = 100
+spot_min_nodes        = 0
+spot_max_nodes        = 5
+
+# Helm Configuration
+deploy_helm_chart  = true
+helm_release_name  = "erlmcp"
+helm_namespace     = "erlmcp"
+image_repository   = "us-central1-docker.pkg.dev"
+image_name         = "erlmcp/erlmcp"
+image_tag          = "3.0.0"
+
+# Security
+enable_secure_boot          = true
+enable_integrity_monitoring = true
+enable_managed_prometheus   = true
+
+# Observability
+create_uptime_check = true
+uptime_check_host   = ""
+create_slos         = true
+
+# Alerts
+enable_error_rate_alert     = true
+enable_latency_alert        = true
+enable_memory_alert         = true
+enable_cpu_alert            = true
+enable_health_check_alert   = true
+enable_process_count_alert  = true
+
+# Log Export
+log_export_storage_enabled     = false
+log_export_storage_destination = ""
+
+# Labels
+labels = {
+  app        = "erlmcp"
+  managed-by = "terraform"
+  environment = "production"
+}
+
+# Notification Channels (optional)
+# notification_channels = {
+#   email = {
+#     enabled = true
+#     address = "admin@example.com"
+#   }
+#   slack = {
+#     enabled     = true
+#     channel_name = "#alerts"
+#     auth_token   = "xoxb-your-token"
+#   }
+# }

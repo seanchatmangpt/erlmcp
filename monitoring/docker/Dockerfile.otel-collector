@@ -1,0 +1,23 @@
+# Dockerfile for OpenTelemetry Collector
+# This Dockerfile builds the OpenTelemetry Collector with custom erlmcp configuration
+
+FROM otel/opentelemetry-collector-contrib:0.87.0
+
+# Create directories for configuration
+RUN mkdir -p /etc/otel-collector
+
+# Copy custom configuration
+COPY otel/collector-config.yaml /etc/otel-collector/collector-config.yaml
+
+# Set working directory
+WORKDIR /etc/otel-collector
+
+# Expose ports for OTLP and metrics
+EXPOSE 4317 4318 55679 8889
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8889/ready || exit 1
+
+# Command to run the collector
+CMD ["--config=/etc/otel-collector/collector-config.yaml"]

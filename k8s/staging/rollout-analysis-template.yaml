@@ -1,0 +1,172 @@
+---
+# AnalysisTemplate for Argo Rollouts
+# Defines automated analysis steps for deployment validation
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: erlmcp-success-rate
+  namespace: erlmcp-staging
+  annotations:
+    description: "Analysis template for success rate validation"
+spec:
+  args:
+  - name: service-name
+    value: erlmcp-active
+  - name: namespace
+    value: erlmcp-staging
+  metrics:
+  - name: success-rate
+    interval: 30s
+    count: 5
+    successCondition: result[0] >= 0.95
+    failureLimit: 3
+    provider:
+      prometheus:
+        address: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        query: |
+          sum(rate(http_requests_total{namespace="{{args.namespace}}",service="{{args.service-name}}",status!~"5.."}[1m]))
+          /
+          sum(rate(http_requests_total{namespace="{{args.namespace}}",service="{{args.service-name}}"}[1m]))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: erlmcp-latency
+  namespace: erlmcp-staging
+  annotations:
+    description: "Analysis template for latency validation"
+spec:
+  args:
+  - name: service-name
+    value: erlmcp-active
+  - name: namespace
+    value: erlmcp-staging
+  metrics:
+  - name: p95-latency
+    interval: 30s
+    count: 5
+    successCondition: result[0] < 500
+    failureLimit: 3
+    provider:
+      prometheus:
+        address: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        query: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{namespace="{{args.namespace}}",service="{{args.service-name}}"}[2m])) by (le)
+          ) * 1000
+  - name: p99-latency
+    interval: 30s
+    count: 5
+    successCondition: result[0] < 1000
+    failureLimit: 3
+    provider:
+      prometheus:
+        address: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        query: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket{namespace="{{args.namespace}}",service="{{args.service-name}}"}[2m])) by (le)
+          ) * 1000
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: erlmcp-error-rate
+  namespace: erlmcp-staging
+  annotations:
+    description: "Analysis template for error rate validation"
+spec:
+  args:
+  - name: service-name
+    value: erlmcp-active
+  - name: namespace
+    value: erlmcp-staging
+  - name: max-error-rate
+    value: "0.01"
+  metrics:
+  - name: error-rate
+    interval: 30s
+    count: 5
+    successCondition: result[0] <= {{args.max-error-rate}}
+    failureLimit: 3
+    provider:
+      prometheus:
+        address: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        query: |
+          sum(rate(http_requests_total{namespace="{{args.namespace}}",service="{{args.service-name}}",status=~"5.."}[1m]))
+          /
+          sum(rate(http_requests_total{namespace="{{args.namespace}}",service="{{args.service-name}}"}[1m]))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: erlmcp-resource-usage
+  namespace: erlmcp-staging
+  annotations:
+    description: "Analysis template for resource usage validation"
+spec:
+  args:
+  - name: namespace
+    value: erlmcp-staging
+  metrics:
+  - name: cpu-usage
+    interval: 30s
+    count: 3
+    successCondition: result[0] < 80
+    failureLimit: 2
+    provider:
+      prometheus:
+        address: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        query: |
+          avg(rate(container_cpu_usage_seconds_total{namespace="{{args.namespace}}",container="erlmcp"}[2m])) * 100
+  - name: memory-usage
+    interval: 30s
+    count: 3
+    successCondition: result[0] < 80
+    failureLimit: 2
+    provider:
+      prometheus:
+        address: http://prometheus-operated.monitoring.svc.cluster.local:9090
+        query: |
+          avg(container_memory_working_set_bytes{namespace="{{args.namespace}}",container="erlmcp"})
+          /
+          sum(container_spec_memory_limit_bytes{namespace="{{args.namespace}}",container="erlmcp"}) * 100
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: erlmcp-web-check
+  namespace: erlmcp-staging
+  annotations:
+    description: "Analysis template for web endpoint validation"
+spec:
+  args:
+  - name: url
+    value: http://erlmcp-active.erlmcp-staging.svc.cluster.local:8080
+  metrics:
+  - name: web-health
+    interval: 30s
+    count: 5
+    successCondition: result[0] == 200
+    failureLimit: 2
+    provider:
+      web:
+        url: "{{args.url}}/health"
+        jsonKeys: {}
+  - name: web-ready
+    interval: 30s
+    count: 5
+    successCondition: result[0] == 200
+    failureLimit: 2
+    provider:
+      web:
+        url: "{{args.url}}/mcp/health?ready=1"
+        jsonKeys: {}
+  - name: web-metrics
+    interval: 30s
+    count: 5
+    successCondition: result[0] == 200
+    failureLimit: 2
+    provider:
+      web:
+        url: "{{args.url}}/metrics"
+        jsonKeys: {}

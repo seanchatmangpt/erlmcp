@@ -1,0 +1,727 @@
+# Default values for erlmcp-enterprise
+# This is a generic values file that supports dev, staging, and production environments
+
+## Global settings
+global:
+  cluster:
+    name: "erlmcp-enterprise"
+    region: "us-east-1"
+    environment: "production"  # Override with --set global.cluster.environment=staging
+    dnsSuffix: "cluster.local"
+    fullnameOverride: ""
+
+  monitoring:
+    enabled: true
+    prometheus:
+      enabled: true
+    grafana:
+      enabled: true
+
+  # Service mesh integration
+  serviceMesh:
+    enabled: false
+    provider: "istio"  # istio, linkerd
+
+## Image configuration
+image:
+  registry: "docker.io"
+  repository: "erlang-mcp/erlmcp"
+  tag: "3.0.0"
+  pullPolicy: "IfNotPresent"
+  imagePullSecrets: []
+
+## Deployment configuration
+deployment:
+  enabled: true
+  replicas: 3
+  maxUnavailable: 0
+  maxSurge: 1
+
+  annotations: {}
+  podAnnotations: {}
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  nodeSelector: {}
+  priorityClassName: ""
+
+  terminationGracePeriodSeconds: 60
+
+  # Probes
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 30
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+  startupProbe:
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 30
+
+  initContainers: []
+  sidecars: []
+
+## StatefulSet configuration (for clustered nodes)
+statefulset:
+  enabled: true
+  replicas: 3
+  podManagementPolicy: "OrderedReady"
+  partition: 0
+  terminationGracePeriodSeconds: 120
+
+## Service configuration
+service:
+  enabled: true
+  type: "ClusterIP"  # ClusterIP, NodePort, LoadBalancer
+  ports:
+    http:
+      port: 80
+      targetPort: 8080
+      nodePort: null
+    https:
+      port: 443
+      targetPort: 8443
+      nodePort: null
+  annotations: {}
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  externalTrafficPolicy: "Cluster"
+  sessionAffinity: "None"
+  sessionAffinityConfig: {}
+
+## Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+  certManager:
+    enabled: false
+    issuer: "letsencrypt-prod"
+  hosts:
+    - host: "erlmcp.local"
+      paths:
+        - path: /
+          pathType: Prefix
+          serviceName: ""
+          servicePort: 80
+  tls:
+    - secretName: erlmcp-tls
+      hosts:
+        - erlmcp.local
+      cert: ""
+      key: ""
+      ca: ""
+      existingSecret: ""
+
+## Autoscaling configuration
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  clusterEnabled: false
+  annotations: {}
+  customMetrics: []
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Pods
+          value: 5
+          periodSeconds: 60
+
+## Pod Disruption Budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  maxUnavailable: ""
+  clusterEnabled: true
+  clusterMinAvailable: 2
+  clusterMaxUnavailable: ""
+
+## Application configuration
+app:
+  erlang:
+    cookie: ""
+    env:
+      ERLMCP_CLUSTER_NAME: "production"
+      ERLMCP_LOG_LEVEL: "info"
+      ERLMCP_METRICS_ENABLED: "true"
+      ERLMCP_CONFIG_PATH: "/etc/erlmcp"
+
+  scaling:
+    minReplicas: 3
+    maxReplicas: 100
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    behavior:
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        policies:
+          - type: Pods
+            value: 1
+            timeWindowSeconds: 60
+      scaleUp:
+        stabilizationWindowSeconds: 0
+        policies:
+          - type: Pods
+            value: 5
+            timeWindowSeconds: 60
+
+  sessions:
+    enabled: true
+    backend: "mnesia"  # ets, dets, mnesia, redis
+    sharding:
+      enabled: true
+      count: 16
+      strategy: "consistent_hash"
+    replication:
+      enabled: true
+      nodes: 3
+    timeout: 3600
+    maxPerNode: 5000
+
+  cache:
+    enabled: true
+    type: "redis"
+    redis:
+      enabled: true
+      host: ""
+      port: 6379
+      password: ""
+      database: 0
+
+  database:
+    enabled: true
+    type: "postgresql"
+    host: ""
+    port: 5432
+    user: "erlmcp"
+    password: ""
+    name: "erlmcp"
+    sslMode: "require"
+    existingSecret: ""
+
+  queue:
+    enabled: true
+    type: "rabbitmq"
+
+## Resources
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2000m"
+    memory: "4Gi"
+
+## Storage configuration
+storage:
+  persistentVolumeClaim:
+    enabled: true
+    name: "erlmcp-data"
+    size: "100Gi"
+    accessMode: "ReadWriteOnce"
+    storageClass: ""
+    defaultStorageClass: ""
+    allowedClasses: []
+    annotations: {}
+    dataSource: {}
+
+  configMap:
+    enabled: true
+    name: "erlmcp-config"
+
+  logs:
+    enabled: true
+    name: "erlmcp-logs"
+    size: "20Gi"
+    accessMode: "ReadWriteOnce"
+    storageClass: ""
+
+## Security configuration
+security:
+  rbac:
+    create: true
+    serviceAccountName: ""
+    automountServiceAccountToken: true
+    createClusterRoleBinding: false
+    serviceAccountAnnotations: {}
+    gcpServiceAccount: ""
+    awsRole: ""
+    azureIdentity:
+      clientId: ""
+
+  networkPolicy:
+    enabled: true
+    egressOnly: false
+    ingressNamespaceLabels: {}
+    monitoringNamespaceLabels: {}
+    databaseNamespaceLabels: {}
+    redisNamespaceLabels: {}
+    queueNamespaceLabels: {}
+    otelNamespaceLabels: {}
+    externalExcept: []
+    customIngress: []
+    customEgress: []
+
+  secrets:
+    enabled: true
+    name: "erlmcp-secrets"
+    erlangCookie: ""
+    jwtSecret: ""
+    sessionSecret: ""
+    encryptionKey: ""
+    apiKeys: {}
+    dbPassword: ""
+    dbUrl: ""
+    redis:
+      existingPassword: ""
+      create: true
+      password: ""
+      url: ""
+    db:
+      existingPassword: ""
+      create: true
+      password: ""
+    jwt:
+      existingSecret: ""
+      create: true
+      secret: ""
+    oauth:
+      enabled: false
+      clientId: ""
+      clientSecret: ""
+      issuerUrl: ""
+
+## Feature flags
+featureFlags:
+  multiTenancy:
+    enabled: false
+  sharding:
+    enabled: true
+  caching:
+    enabled: true
+  monitoring:
+    enabled: true
+  distributedTracing:
+    enabled: true
+
+## Monitoring configuration
+monitoring:
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: "30s"
+      scrapeTimeout: "10s"
+      path: "/metrics"
+      scheme: "http"
+      honorLabels: false
+      namespaceSelector: {}
+      additionalLabels: {}
+      relabelings: []
+      metricRelabelings: []
+    prometheusRule:
+      enabled: true
+      prometheus: "kube-prometheus"
+    alertmanager:
+      enabled: true
+      webhookUrl: ""
+
+  grafana:
+    enabled: true
+    adminUser: "admin"
+    adminPassword: ""
+
+  opentelemetry:
+    enabled: true
+    endpoint: "http://otel-collector:4317"
+
+## Backup configuration
+backup:
+  enabled: true
+  schedule: "0 2 * * *"
+  retention: "30d"
+  storage:
+    size: "50Gi"
+    accessMode: "ReadWriteOnce"
+    storageClass: ""
+
+## Disaster recovery
+disasterRecovery:
+  enabled: true
+  activeCluster: "primary"
+  passiveCluster: "secondary"
+
+## Logging configuration
+logging:
+  enabled: true
+  level: "info"
+  format: "json"
+  retention: 7
+
+## Affinity rules
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - erlmcp-enterprise
+          topologyKey: kubernetes.io/hostname
+
+## Tolerations
+tolerations: []
+
+## Node selector
+nodeSelector: {}
+
+# Environment-specific overrides (use with --set-file or helmfile)
+# These can be referenced in additional value files
+environments:
+  # Development environment overrides
+  development:
+    global:
+      cluster:
+        environment: "development"
+    deployment:
+      replicas: 1
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "256Mi"
+      limits:
+        cpu: "500m"
+        memory: "512Mi"
+    autoscaling:
+      enabled: false
+    app:
+      erlang:
+        env:
+          ERLMCP_LOG_LEVEL: "debug"
+    monitoring:
+      prometheus:
+        enabled: false
+
+  # Staging environment overrides
+  staging:
+    global:
+      cluster:
+        environment: "staging"
+    deployment:
+      replicas: 2
+    resources:
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+      limits:
+        cpu: "1000m"
+        memory: "2Gi"
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 10
+    app:
+      erlang:
+        env:
+          ERLMCP_LOG_LEVEL: "info"
+
+  # Production environment overrides
+  production:
+    global:
+      cluster:
+        environment: "production"
+    deployment:
+      replicas: 3
+    resources:
+      requests:
+        cpu: "1000m"
+        memory: "2Gi"
+      limits:
+        cpu: "4000m"
+        memory: "8Gi"
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 100
+    podDisruptionBudget:
+      minAvailable: 2
+
+## ==============================================================================
+## ResourceQuota Configuration
+## ==============================================================================
+## Prevent tenant resource exhaustion and ensure fair allocation
+resourceQuota:
+  enabled: true
+
+  types:
+    # Compute resource quota - Primary quota for all workloads
+    compute:
+      enabled: true
+      description: "Aggregate compute resource limits for all erlmcp workloads"
+      annotations:
+        contact: "platform-team@erlmcp.com"
+      hard:
+        requests.cpu: "32"
+        requests.memory: 64Gi
+        limits.cpu: "64"
+        limits.memory: 128Gi
+
+    # Storage resource quota - Persistent volume limits
+    storage:
+      enabled: true
+      description: "Storage limits for persistent volumes and claims"
+      hard:
+        persistentvolumeclaims: "20"
+        requests.storage: "500Gi"
+
+    # Object count quota - Kubernetes object limits
+    objects:
+      enabled: true
+      description: "Object count limits to prevent resource exhaustion"
+      hard:
+        pods: "100"
+        services: "30"
+        services.loadbalancers: "2"
+        services.nodeports: "5"
+        secrets: "30"
+        configmaps: "20"
+        replicationcontrollers: "0"
+        resourcequotas: "5"
+        limitranges: "5"
+        priorityclasses: "4"
+
+    # Long-running workload quota - High/Medium priority pods only
+    long-running:
+      enabled: true
+      description: "Quota for long-running production workloads with priority class"
+      scopes:
+        - PriorityClass
+      hard:
+        pods: "50"
+        requests.cpu: "24"
+        requests.memory: 48Gi
+        limits.cpu: "48"
+        limits.memory: 96Gi
+
+    # Batch workload quota - Low priority jobs only
+    batch:
+      enabled: true
+      description: "Quota for batch jobs and background tasks with low priority"
+      scopes:
+        - PriorityClass
+      hard:
+        pods: "20"
+        requests.cpu: "4"
+        requests.memory: 8Gi
+        limits.cpu: "8"
+        limits.memory: 16Gi
+
+    # Terminating workload quota - Pods with active deadline
+    terminating:
+      enabled: true
+      description: "Quota for terminating workloads with active deadline"
+      scopes:
+        - Terminating
+      hard:
+        pods: "10"
+        requests.cpu: "2"
+        requests.memory: 4Gi
+
+    # Best effort quota - Pods without resource requests
+    best-effort:
+      enabled: true
+      description: "Quota for best-effort workloads without resource requests"
+      scopes:
+        - BestEffort
+      hard:
+        pods: "5"
+
+    # Guaranteed quota - Pods with resource requests
+    guaranteed:
+      enabled: true
+      description: "Quota for guaranteed workloads with resource requests"
+      scopes:
+        - NotBestEffort
+      hard:
+        pods: "90"
+        requests.cpu: "30"
+        requests.memory: 60Gi
+        limits.cpu: "60"
+        limits.memory: 120Gi
+
+    # Network quota - Network resource limits
+    network:
+      enabled: true
+      description: "Network resource limits for cost control"
+      hard:
+        services.loadbalancers: "2"
+        services.nodeports: "4"
+        services: "30"
+
+  # Tenant-specific quotas for multi-tenant isolation
+  tenants:
+    production:
+      enabled: true
+      namespace: "erlmcp-production"
+      tier: "platinum"
+      description: "Production tenant with highest resource allocation"
+      resources:
+        requests.cpu: "16"
+        requests.memory: 32Gi
+        limits.cpu: "32"
+        limits.memory: 64Gi
+        pods: "50"
+        persistentvolumeclaims: "10"
+        requests.storage: "200Gi"
+        services: "15"
+        secrets: "15"
+        configmaps: "10"
+
+    staging:
+      enabled: true
+      namespace: "erlmcp-staging"
+      tier: "gold"
+      description: "Staging tenant with medium resource allocation"
+      resources:
+        requests.cpu: "8"
+        requests.memory: 16Gi
+        limits.cpu: "16"
+        limits.memory: 32Gi
+        pods: "30"
+        persistentvolumeclaims: "5"
+        requests.storage: "100Gi"
+        services: "10"
+        secrets: "10"
+        configmaps: "8"
+
+## ==============================================================================
+## LimitRange Configuration
+## ==============================================================================
+## Enforce container-level resource constraints
+limitRange:
+  enabled: true
+  annotations:
+    last-updated: "2025-02-02"
+
+  container:
+    default:
+      cpu: "1000m"
+      memory: "2Gi"
+    defaultRequest:
+      cpu: "250m"
+      memory: "512Mi"
+    max:
+      cpu: "8000m"
+      memory: "16Gi"
+    min:
+      cpu: "50m"
+      memory: "128Mi"
+    maxLimitRequestRatio:
+      cpu: 4
+      memory: 2
+
+  persistentVolumeClaim:
+    default:
+      storage: "10Gi"
+    max:
+      storage: "500Gi"
+    min:
+      storage: "1Gi"
+
+  pod:
+    max:
+      cpu: "16000m"
+      memory: "32Gi"
+
+  node:
+    max:
+      cpu: "16000m"
+    min:
+      cpu: "10m"
+
+  validationConfigMap:
+    enabled: true
+    componentResources: |
+      components:
+        erlmcp-server:
+          replicas: 3
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+          total_requests:
+            cpu: "1500m"
+            memory: "1536Mi"
+          total_limits:
+            cpu: "6000m"
+            memory: "6Gi"
+    quotaCompliance: |
+      compliance:
+        quota: erlmcp-compute-quota
+        hard:
+          requests.cpu: "32"
+          requests.memory: 64Gi
+          limits.cpu: "64"
+          limits.memory: 128Gi
+        usage:
+          expected:
+            requests.cpu: "3.5"
+            requests.memory: "7Gi"
+            limits.cpu: "11.5"
+            limits.memory: "17Gi"
+          utilization:
+            requests.cpu: "11%"
+            requests.memory: "11%"
+            limits.cpu: "18%"
+            limits.memory: "13%"
+    alertThresholds: |
+      alerts:
+        - name: QuotaNearLimit
+          threshold: 80
+          message: "Resource quota usage above 80%"
+        - name: QuotaCritical
+          threshold: 90
+          message: "Resource quota usage above 90% - immediate action required"
+        - name: PodCountHigh
+          threshold: 80
+          metric: pods
+          message: "Pod count approaching quota limit"

@@ -1,0 +1,303 @@
+# ============================================================================
+# GCP-Specific Values for erlmcp Helm Chart
+# Overrides for Google Cloud Platform deployment
+# ============================================================================
+
+global:
+  cloud:
+    provider: "gcp"
+    region: "us-central1"
+    gcpServiceAccount: "erlmcp@project.iam.gserviceaccount.com"
+
+  # GCP-specific environment variables
+  gcp:
+    project: "your-project-id"
+    region: "us-central1"
+    workloadIdentity:
+      enabled: true
+      gsaEmail: "erlmcp@project.iam.gserviceaccount.com"
+
+# Service Account with Workload Identity
+serviceAccount:
+  create: true
+  name: "erlmcp"
+  annotations:
+    iam.gke.io/gcp-service-account: "erlmcp@project.iam.gserviceaccount.com"
+  automountServiceAccountToken: true
+
+# Pod configuration
+pod:
+  annotations:
+    iam.gke.io/gcp-service-account: "erlmcp@project.iam.gserviceaccount.com"
+
+# Container image configuration
+image:
+  repository: "us-central1-docker.pkg.dev/your-project-id/erlmcp/erlmcp"
+  tag: "3.0.0"
+  pullPolicy: "IfNotPresent"
+
+# Replica configuration
+replicaCount: 3
+
+# Resource configuration (GCP machine types mapped to requests/limits)
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "2000m"
+    memory: "2Gi"
+
+# Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+# Service configuration
+service:
+  type: "ClusterIP"
+  annotations:
+    cloud.google.com/neg: '{"ingress": true}'
+    cloud.google.com/backend-config: '{"ports": {"8080":"erlmcp-backend-config"}}'
+
+# Ingress configuration (GKE Ingress)
+ingress:
+  enabled: true
+  className: "gce"
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    kubernetes.io/ingress.global-static-ip-name: "erlmcp-ip"
+    networking.gke.io/managed-certificates: "erlmcp-cert"
+    networking.gke.io/v1beta1.FrontendConfig: "erlmcp-frontend-config"
+  hosts:
+    - host: erlmcp.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          backend:
+            service:
+              name: erlmcp
+              port:
+                number: 8080
+  tls:
+    - secretName: erlmcp-tls
+      hosts:
+        - erlmcp.example.com
+
+# GKE-specific configuration
+gke:
+  # Regional cluster configuration
+  regionalCluster: true
+  zones:
+    - "us-central1-a"
+    - "us-central1-b"
+    - "us-central1-c"
+
+  # Private cluster configuration
+  privateCluster:
+    enabled: true
+    masterIpv4CidrBlock: "172.16.0.0/28"
+    masterGlobalAccess: false
+
+  # Workload Identity
+  workloadIdentity:
+    enabled: true
+    pool: "${project_id}.svc.id.goog"
+
+  # Shielded GKE nodes
+  shieldedNodes:
+    enabled: true
+    secureBoot: true
+    integrityMonitoring: true
+
+# Secret Manager integration
+secretManager:
+  enabled: true
+  project: "your-project-id"
+  secrets:
+    erlangCookie:
+      name: "erlmcp-erlang-cookie"
+      version: "latest"
+    dbPassword:
+      name: "erlmcp-db-password"
+      version: "latest"
+    redisPassword:
+      name: "erlmcp-redis-password"
+      version: "latest"
+    tlsCert:
+      name: "erlmcp-tls-cert"
+      version: "latest"
+    tlsKey:
+      name: "erlmcp-tls-key"
+      version: "latest"
+
+# OpenTelemetry configuration for GCP Cloud Monitoring
+otel:
+  enabled: true
+  endpoint: "monitoring.googleapis.com:443"
+  headers:
+    - "X-Google-Project-Number: ${project_number}"
+  exporters:
+    - googlecloud
+  metrics:
+    exporters:
+      - googlecloud
+    period: 60000
+  traces:
+    exporters:
+      - googlecloud
+    sampleRate: 0.1
+
+# Cloud Logging configuration
+cloudLogging:
+  enabled: true
+  logName: "projects/${project_id}/logs/erlmcp"
+  resource:
+    type: "k8s_container"
+    labels:
+      project_id: "${project_id}"
+      location: "${region}"
+      cluster_name: "${cluster_name}"
+      namespace_name: "${namespace}"
+
+# Cloud Monitoring configuration
+cloudMonitoring:
+  enabled: true
+  metrics:
+    - name: "erlmcp/http/request_count"
+      type: "custom.googleapis.com/erlmcp/http/requests"
+    - name: "erlmcp/http/latency"
+      type: "custom.googleapis.com/erlmcp/http/latency"
+    - name: "erlmcp/connections/active"
+      type: "custom.googleapis.com/erlmcp/connections/active"
+    - name: "erlmcp/erlang/processes"
+      type: "custom.googleapis.com/erlmcp/erlang/processes"
+
+# Network Policy (Calico on GKE)
+networkPolicy:
+  enabled: true
+  provider: "CALICO"
+  policies:
+    - name: erlmcp-ingress
+      policyTypes:
+        - Ingress
+      podSelector:
+        matchLabels:
+          app: erlmcp
+      ingress:
+        - from:
+            - namespaceSelector:
+                matchLabels:
+                  name: ingress-nginx
+          ports:
+            - protocol: TCP
+              port: 8080
+    - name: erlmcp-egress
+      policyTypes:
+        - Egress
+      podSelector:
+        matchLabels:
+          app: erlmcp
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  name: kube-system
+          ports:
+            - protocol: TCP
+              port: 53
+        - to:
+            - namespaceSelector: {}
+              podSelector:
+                matchLabels:
+                  app: postgres
+          ports:
+            - protocol: TCP
+              port: 5432
+
+# GKE Node Selector and Affinity
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - erlmcp
+          topologyKey: kubernetes.io/hostname
+
+# Storage configuration (GKE Persistent Disks)
+persistence:
+  enabled: true
+  storageClass: "premium-rwo"
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+# Health Check configuration (GKE Probes)
+livenessProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /ready
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /health
+    port: 8080
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 18
+
+# Pod Disruption Budget for GKE rolling updates
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# HPA configuration for GKE
+horizontalPodAutoscaler:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+# VPA configuration (experimental)
+verticalPodAutoscaler:
+  enabled: false
+  updatePolicy:
+    updateMode: "Auto"
+
+# PriorityClass for GKE scheduling
+priorityClassName: "high-priority"

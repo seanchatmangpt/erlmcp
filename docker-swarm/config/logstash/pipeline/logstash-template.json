@@ -1,0 +1,63 @@
+{
+  "index_patterns": ["erlmcp-logs-*"],
+  "template": {
+    "settings": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "log_level": {
+          "type": "keyword"
+        },
+        "log_message": {
+          "type": "text"
+        },
+        "cluster": {
+          "type": "keyword"
+        },
+        "environment": {
+          "type": "keyword"
+        },
+        "service": {
+          "type": "keyword"
+        },
+        "node": {
+          "type": "keyword"
+        },
+        "parsed_message": {
+          "properties": {
+            "timestamp": {
+              "type": "date"
+            },
+            "level": {
+              "type": "keyword"
+            },
+            "service": {
+              "type": "keyword"
+            },
+            "message": {
+              "type": "text"
+            },
+            "metadata": {
+              "properties": {
+                "request_id": {
+                  "type": "keyword"
+                },
+                "user_id": {
+                  "type": "keyword"
+                }
+              }
+            }
+          }
+        },
+        "tags": {
+          "type": "keyword"
+        }
+      }
+    }
+  }
+}

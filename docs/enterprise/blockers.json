@@ -1,0 +1,689 @@
+{
+  "metadata": {
+    "version": "3.0.0",
+    "analysis_date": "2026-02-02",
+    "total_issues": 78,
+    "summary": {
+      "P0": 15,
+      "P1": 28,
+      "P2": 24,
+      "P3": 11
+    },
+    "categories": {
+      "security": {"P0": 3, "P1": 4, "P2": 3, "P3": 2, "total": 12},
+      "performance": {"P0": 1, "P1": 3, "P2": 3, "P3": 1, "total": 8},
+      "scalability": {"P0": 2, "P1": 4, "P2": 3, "P3": 1, "total": 10},
+      "reliability": {"P0": 2, "P1": 2, "P2": 2, "P3": 1, "total": 7},
+      "compliance": {"P0": 2, "P1": 3, "P2": 3, "P3": 1, "total": 9},
+      "observability": {"P0": 1, "P1": 2, "P2": 2, "P3": 1, "total": 6},
+      "documentation": {"P0": 0, "P1": 2, "P2": 4, "P3": 2, "total": 8},
+      "testing": {"P0": 2, "P1": 5, "P2": 3, "P3": 1, "total": 11},
+      "operations": {"P0": 2, "P1": 3, "P2": 1, "P3": 1, "total": 7}
+    }
+  },
+  "issues": {
+    "P0": [
+      {
+        "id": "P0-001",
+        "title": "Insecure Cookie Management in Cluster Configuration",
+        "category": "security",
+        "module": "vm.args, rebar.config",
+        "description": "Hardcoded cookie erlmcp_secret_cookie and erlmcp_cluster in version control",
+        "risk": "Cluster takeover via cookie disclosure",
+        "evidence": "vm.args line 8: -setcookie erlmcp_secret_cookie",
+        "remediation": [
+          "Remove hardcoded cookies from all configs",
+          "Implement environment variable injection",
+          "Add cookie validation (minimum entropy 256 bits)",
+          "Add cookie rotation mechanism"
+        ],
+        "effort_hours": 4,
+        "assignee": "security-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P0-002",
+        "title": "Missing Transport Layer Security (TLS) Configuration",
+        "category": "security",
+        "module": "erlmcp_transports",
+        "description": "No mandatory TLS for distributed Erlang communication",
+        "risk": "Cleartext cluster communication, potential MITM attacks",
+        "remediation": [
+          "Implement proto_dist inet_tls as default",
+          "Add certificate validation",
+          "Implement certificate rotation",
+          "Add TLS version enforcement (1.3+)"
+        ],
+        "effort_hours": 16,
+        "assignee": "security-engineer",
+        "dependencies": ["P0-001"],
+        "milestone": "M1"
+      },
+      {
+        "id": "P0-003",
+        "title": "Insufficient Secrets Management for Production",
+        "category": "security",
+        "module": "erlmcp_secrets.erl",
+        "description": "No integration with enterprise secret stores (Vault, AWS Secrets Manager)",
+        "risk": "Hardcoded secrets in config files",
+        "remediation": [
+          "Implement Vault integration",
+          "Implement AWS Secrets Manager integration",
+          "Add secrets caching with TTL",
+          "Implement secret rotation hooks"
+        ],
+        "effort_hours": 24,
+        "assignee": "security-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P0-004",
+        "title": "Memory Leak in Long-Running Connections",
+        "category": "performance",
+        "module": "erlmcp_cache.erl, erlmcp_registry.erl",
+        "description": "No bounded memory growth for connection state",
+        "risk": "OOM kills in production after ~48h",
+        "remediation": [
+          "Add per-connection memory limits",
+          "Implement hibernation for idle connections (OTP 28 feature)",
+          "Add memory watchdog with auto-drain",
+          "Implement ETS table size limits"
+        ],
+        "effort_hours": 12,
+        "assignee": "performance-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P0-005",
+        "title": "Single Point of Failure in Registry",
+        "category": "scalability",
+        "module": "erlmcp_ets_registry.erl",
+        "description": "ETS registry is single-node, no replication",
+        "risk": "Node failure causes complete service disruption",
+        "remediation": [
+          "Implement distributed registry (Mnesia/gproc)",
+          "Add registry replication",
+          "Implement registry failover",
+          "Add registry sharding for horizontal scaling"
+        ],
+        "effort_hours": 32,
+        "assignee": "backend-dev",
+        "dependencies": [],
+        "milestone": "M2"
+      },
+      {
+        "id": "P0-006",
+        "title": "No Horizontal Scaling Support",
+        "category": "scalability",
+        "module": "erlmcp_cluster.erl",
+        "description": "No support for adding/removing nodes dynamically",
+        "risk": "Cannot scale beyond single node capacity",
+        "remediation": [
+          "Implement node auto-discovery",
+          "Add consistent hashing for request distribution",
+          "Implement connection migration",
+          "Add cluster rebalancing hooks"
+        ],
+        "effort_hours": 40,
+        "assignee": "backend-dev",
+        "dependencies": ["P0-005"],
+        "milestone": "M2"
+      },
+      {
+        "id": "P0-007",
+        "title": "No Graceful Shutdown Handling",
+        "category": "reliability",
+        "module": "erlmcp_app.erl",
+        "description": "Termination signals not handled properly",
+        "risk": "Data loss, connection drops on deployment",
+        "remediation": [
+          "Implement prep_stop/1 in all supervisors",
+          "Add connection drain on shutdown",
+          "Implement in-flight request completion",
+          "Add shutdown timeout hierarchy"
+        ],
+        "effort_hours": 8,
+        "assignee": "backend-dev",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P0-008",
+        "title": "Missing Split-Brain Resolution",
+        "category": "reliability",
+        "module": "erlmcp_cluster.erl",
+        "description": "Network partition causes split-brain with no resolution",
+        "risk": "Data corruption, inconsistent state",
+        "remediation": [
+          "Implement Raft consensus for leader election",
+          "Add partition detection",
+          "Implement automatic merge resolution",
+          "Add conflict resolution hooks"
+        ],
+        "effort_hours": 40,
+        "assignee": "backend-dev",
+        "dependencies": ["P0-006"],
+        "milestone": "M2"
+      },
+      {
+        "id": "P0-009",
+        "title": "No SOC2 Type II Compliance Controls",
+        "category": "compliance",
+        "module": "Audit logging",
+        "description": "No audit trail for administrative actions",
+        "risk": "Cannot pass SOC2 audit",
+        "remediation": [
+          "Implement immutable audit log",
+          "Add admin action logging",
+          "Implement log retention policies",
+          "Add audit export functionality"
+        ],
+        "effort_hours": 24,
+        "assignee": "compliance-auditor",
+        "dependencies": ["P0-001", "P0-003"],
+        "milestone": "M3"
+      },
+      {
+        "id": "P0-010",
+        "title": "Missing GDPR Data Subject Rights",
+        "category": "compliance",
+        "module": "Data retention",
+        "description": "No right to be forgotten implementation",
+        "risk": "GDPR non-compliance, potential fines",
+        "remediation": [
+          "Implement data export API",
+          "Implement data deletion API",
+          "Add consent management",
+          "Implement data retention policies"
+        ],
+        "effort_hours": 20,
+        "assignee": "compliance-auditor",
+        "dependencies": ["P0-003"],
+        "milestone": "M3"
+      },
+      {
+        "id": "P0-011",
+        "title": "No Distributed Tracing",
+        "category": "observability",
+        "module": "OpenTelemetry integration",
+        "description": "Cannot trace requests across cluster boundaries",
+        "risk": "Cannot debug production issues",
+        "remediation": [
+          "Implement OpenTelemetry trace context propagation",
+          "Add span creation for all operations",
+          "Implement trace sampling",
+          "Add trace export to Jaeger/Tempo"
+        ],
+        "effort_hours": 16,
+        "assignee": "operations-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P0-012",
+        "title": "No Load Testing for 100K Concurrent Connections",
+        "category": "testing",
+        "module": "Load testing infrastructure",
+        "description": "Cannot validate 100K connection requirement",
+        "risk": "Production failure at scale",
+        "remediation": [
+          "Implement 100K connection load test",
+          "Add sustained load test (24h)",
+          "Implement spike test (0->100K->0)",
+          "Add failure scenario testing"
+        ],
+        "effort_hours": 16,
+        "assignee": "testing-specialist",
+        "dependencies": ["P0-004", "P0-006"],
+        "milestone": "M2"
+      },
+      {
+        "id": "P0-013",
+        "title": "Missing Chaos Engineering Tests",
+        "category": "testing",
+        "module": "Chaos injection",
+        "description": "No validation of failure scenarios",
+        "risk": "Unknown failure modes",
+        "remediation": [
+          "Implement chaos monkey tests",
+          "Add network partition testing",
+          "Implement process kill testing",
+          "Add resource exhaustion testing"
+        ],
+        "effort_hours": 20,
+        "assignee": "testing-specialist",
+        "dependencies": ["P0-008"],
+        "milestone": "M2"
+      },
+      {
+        "id": "P0-014",
+        "title": "No Automated Backup/Restore",
+        "category": "operations",
+        "module": "Data persistence",
+        "description": "No automated backups of cluster state",
+        "risk": "Data loss, RTO/RPO not met",
+        "remediation": [
+          "Implement automated Mnesia backup",
+          "Add backup verification",
+          "Implement restore procedures",
+          "Add backup retention policies"
+        ],
+        "effort_hours": 12,
+        "assignee": "operations-engineer",
+        "dependencies": ["P0-005"],
+        "milestone": "M1"
+      },
+      {
+        "id": "P0-015",
+        "title": "Missing Production Deployment Automation",
+        "category": "operations",
+        "module": "CI/CD",
+        "description": "No production deployment pipeline",
+        "risk": "Manual deployment errors",
+        "remediation": [
+          "Implement production deployment pipeline",
+          "Add blue-green deployment",
+          "Implement automated rollback",
+          "Add deployment health checks"
+        ],
+        "effort_hours": 16,
+        "assignee": "operations-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      }
+    ],
+    "P1": [
+      {
+        "id": "P1-001",
+        "title": "Insufficient Authentication Mechanisms",
+        "category": "security",
+        "module": "erlmcp_auth.erl",
+        "description": "No support for SAML, LDAP integration",
+        "effort_hours": 24,
+        "assignee": "security-engineer",
+        "dependencies": ["P0-003"],
+        "milestone": "M3"
+      },
+      {
+        "id": "P1-002",
+        "title": "Missing Authorization Framework",
+        "category": "security",
+        "module": "erlmcp_authorization.erl",
+        "description": "Basic auth but no RBAC/ABAC implementation",
+        "effort_hours": 32,
+        "assignee": "security-engineer",
+        "dependencies": ["P1-001"],
+        "milestone": "M3"
+      },
+      {
+        "id": "P1-003",
+        "title": "No API Rate Limiting",
+        "category": "security",
+        "module": "erlmcp_auth_rate_limiter.erl",
+        "description": "Rate limiter exists but not enforced at API gateway",
+        "effort_hours": 8,
+        "assignee": "security-engineer",
+        "dependencies": [],
+        "milestone": "M2"
+      },
+      {
+        "id": "P1-004",
+        "title": "Missing Input Validation on All Endpoints",
+        "category": "security",
+        "module": "All transport handlers",
+        "description": "Inconsistent input validation",
+        "effort_hours": 16,
+        "assignee": "security-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-005",
+        "title": "No Connection Pooling",
+        "category": "performance",
+        "module": "erlmcp_transport_pool.erl",
+        "description": "Pool exists but not used for outbound connections",
+        "effort_hours": 12,
+        "assignee": "performance-engineer",
+        "dependencies": [],
+        "milestone": "M2"
+      },
+      {
+        "id": "P1-006",
+        "title": "Suboptimal JSON Encoding Performance",
+        "category": "performance",
+        "module": "erlmcp_json.erl",
+        "description": "Native JSON not consistently used",
+        "effort_hours": 4,
+        "assignee": "performance-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-007",
+        "title": "No Request Batching",
+        "category": "performance",
+        "module": "erlmcp_batch.erl",
+        "description": "Batching implemented but not exposed via API",
+        "effort_hours": 8,
+        "assignee": "performance-engineer",
+        "dependencies": [],
+        "milestone": "M2"
+      },
+      {
+        "id": "P1-008",
+        "title": "No Database Connection Pooling",
+        "category": "scalability",
+        "module": "Database layer",
+        "description": "No pooling for DB connections",
+        "effort_hours": 8,
+        "assignee": "backend-dev",
+        "dependencies": [],
+        "milestone": "M2"
+      },
+      {
+        "id": "P1-009",
+        "title": "Missing Request Queueing",
+        "category": "scalability",
+        "module": "Request handling",
+        "description": "No backpressure mechanism",
+        "effort_hours": 12,
+        "assignee": "backend-dev",
+        "dependencies": ["P1-007"],
+        "milestone": "M2"
+      },
+      {
+        "id": "P1-010",
+        "title": "No Shard Rebalancing",
+        "category": "scalability",
+        "module": "Sharded registry",
+        "description": "Shards cannot be rebalanced",
+        "effort_hours": 16,
+        "assignee": "backend-dev",
+        "dependencies": ["P0-006"],
+        "milestone": "M3"
+      },
+      {
+        "id": "P1-011",
+        "title": "Missing Cache Coherency Protocol",
+        "category": "scalability",
+        "module": "erlmcp_cache.erl",
+        "description": "Multi-node cache invalidation not implemented",
+        "effort_hours": 16,
+        "assignee": "backend-dev",
+        "dependencies": ["P0-005"],
+        "milestone": "M3"
+      },
+      {
+        "id": "P1-012",
+        "title": "Insufficient Circuit Breaker Coverage",
+        "category": "reliability",
+        "module": "erlmcp_circuit_breaker.erl",
+        "description": "Circuit breaker not applied to all external calls",
+        "effort_hours": 8,
+        "assignee": "backend-dev",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-013",
+        "title": "No Retry with Exponential Backoff",
+        "category": "reliability",
+        "module": "Client implementations",
+        "description": "Retry exists but not with proper backoff",
+        "effort_hours": 4,
+        "assignee": "backend-dev",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-014",
+        "title": "No ISO 27001 Controls",
+        "category": "compliance",
+        "module": "Security management",
+        "description": "Missing security controls for ISO certification",
+        "effort_hours": 32,
+        "assignee": "compliance-auditor",
+        "dependencies": ["P0-009", "P1-002"],
+        "milestone": "M3"
+      },
+      {
+        "id": "P1-015",
+        "title": "Missing PCI DSS Controls",
+        "category": "compliance",
+        "module": "Payment data handling",
+        "description": "No PCI compliance for payment scenarios",
+        "effort_hours": 24,
+        "assignee": "compliance-auditor",
+        "dependencies": ["P0-002", "P1-002"],
+        "milestone": "M4"
+      },
+      {
+        "id": "P1-016",
+        "title": "No HIPAA Compliance",
+        "category": "compliance",
+        "module": "Healthcare data handling",
+        "description": "No HIPAA controls for healthcare scenarios",
+        "effort_hours": 24,
+        "assignee": "compliance-auditor",
+        "dependencies": ["P0-009", "P0-010"],
+        "milestone": "M4"
+      },
+      {
+        "id": "P1-017",
+        "title": "No Metrics Export Format",
+        "category": "observability",
+        "module": "erlmcp_metrics.erl",
+        "description": "Metrics not exported in Prometheus format",
+        "effort_hours": 8,
+        "assignee": "operations-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-018",
+        "title": "Missing Alerting Integration",
+        "category": "observability",
+        "module": "erlmcp_alert_manager.erl",
+        "description": "No integration with AlertManager/PagerDuty",
+        "effort_hours": 8,
+        "assignee": "operations-engineer",
+        "dependencies": ["P1-017"],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-019",
+        "title": "Missing Production Runbook",
+        "category": "documentation",
+        "module": "Documentation",
+        "description": "No runbook for production operations",
+        "effort_hours": 16,
+        "assignee": "documentation-specialist",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-020",
+        "title": "Incomplete API Documentation",
+        "category": "documentation",
+        "module": "API reference",
+        "description": "API docs missing error codes, examples",
+        "effort_hours": 12,
+        "assignee": "documentation-specialist",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-021",
+        "title": "Insufficient Integration Test Coverage",
+        "category": "testing",
+        "module": "Test suites",
+        "description": "Integration tests cover <60% of scenarios",
+        "effort_hours": 24,
+        "assignee": "testing-specialist",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-022",
+        "title": "No Contract Testing",
+        "category": "testing",
+        "module": "API contracts",
+        "description": "No contract validation between services",
+        "effort_hours": 12,
+        "assignee": "testing-specialist",
+        "dependencies": ["P1-020"],
+        "milestone": "M2"
+      },
+      {
+        "id": "P1-023",
+        "title": "Missing Security Testing",
+        "category": "testing",
+        "module": "Security test suite",
+        "description": "No automated security scanning",
+        "effort_hours": 16,
+        "assignee": "testing-specialist",
+        "dependencies": ["P0-001", "P0-002"],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-024",
+        "title": "No Performance Regression Testing",
+        "category": "testing",
+        "module": "Performance tests",
+        "description": "No automated performance regression detection",
+        "effort_hours": 12,
+        "assignee": "testing-specialist",
+        "dependencies": ["P0-012"],
+        "milestone": "M2"
+      },
+      {
+        "id": "P1-025",
+        "title": "Insufficient Error Injection Testing",
+        "category": "testing",
+        "module": "Fault injection",
+        "description": "Limited error scenario coverage",
+        "effort_hours": 16,
+        "assignee": "testing-specialist",
+        "dependencies": ["P0-013"],
+        "milestone": "M2"
+      },
+      {
+        "id": "P1-026",
+        "title": "No Health Check Endpoints",
+        "category": "operations",
+        "module": "erlmcp_health.erl",
+        "description": "Health checks not exposed via HTTP",
+        "effort_hours": 4,
+        "assignee": "operations-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-027",
+        "title": "Missing Configuration Validation",
+        "category": "operations",
+        "module": "Config validation",
+        "description": "No validation at startup",
+        "effort_hours": 8,
+        "assignee": "operations-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      },
+      {
+        "id": "P1-028",
+        "title": "No Log Aggregation",
+        "category": "operations",
+        "module": "Logging",
+        "description": "Logs not centralized",
+        "effort_hours": 8,
+        "assignee": "operations-engineer",
+        "dependencies": [],
+        "milestone": "M1"
+      }
+    ]
+  },
+  "milestones": {
+    "M1": {
+      "name": "Foundation",
+      "duration_weeks": "2-3",
+      "description": "Basic production readiness",
+      "deliverables": [
+        "All P0 security issues resolved",
+        "Basic observability (metrics, logs, traces)",
+        "Production deployment pipeline",
+        "Health checks and monitoring",
+        "Runbooks and documentation"
+      ]
+    },
+    "M2": {
+      "name": "High Availability",
+      "duration_weeks": "3-4",
+      "description": "Multi-node production deployment",
+      "deliverables": [
+        "Distributed registry with replication",
+        "Horizontal scaling support",
+        "Split-brain resolution",
+        "Load and chaos testing",
+        "Performance regression detection"
+      ]
+    },
+    "M3": {
+      "name": "Compliance",
+      "duration_weeks": "2-3",
+      "description": "Enterprise compliance certification",
+      "deliverables": [
+        "SOC2 Type II controls",
+        "GDPR data subject rights",
+        "ISO 27001 controls",
+        "Enterprise authentication (SAML, LDAP)",
+        "Authorization framework (RBAC)"
+      ]
+    },
+    "M4": {
+      "name": "Scale & Specialized Compliance",
+      "duration_weeks": "2-3",
+      "description": "Fortune 500 scale deployment",
+      "deliverables": [
+        "Geographic distribution",
+        "Read replicas",
+        "PCI DSS compliance",
+        "HIPAA compliance",
+        "FedRAMP compliance"
+      ]
+    }
+  },
+  "assignments": {
+    "security-engineer": {
+      "issues": ["P0-001", "P0-002", "P0-003", "P1-001", "P1-002", "P1-003", "P1-004"],
+      "total_effort_hours": 120
+    },
+    "backend-dev": {
+      "issues": ["P0-005", "P0-006", "P0-007", "P0-008", "P1-008", "P1-009", "P1-010", "P1-011", "P1-012", "P1-013"],
+      "total_effort_hours": 152
+    },
+    "performance-engineer": {
+      "issues": ["P0-004", "P1-005", "P1-006", "P1-007"],
+      "total_effort_hours": 36
+    },
+    "operations-engineer": {
+      "issues": ["P0-011", "P0-014", "P0-015", "P1-017", "P1-018", "P1-026", "P1-027", "P1-028"],
+      "total_effort_hours": 84
+    },
+    "compliance-auditor": {
+      "issues": ["P0-009", "P0-010", "P1-014", "P1-015", "P1-016"],
+      "total_effort_hours": 124
+    },
+    "testing-specialist": {
+      "issues": ["P0-012", "P0-013", "P1-021", "P1-022", "P1-023", "P1-024", "P1-025"],
+      "total_effort_hours": 116
+    },
+    "documentation-specialist": {
+      "issues": ["P1-019", "P1-020"],
+      "total_effort_hours": 28
+    }
+  }
+}

@@ -1,0 +1,253 @@
+# Backup and Disaster Recovery Configuration for erlmcp Docker Swarm
+
+version: 1.0
+
+# Backup Policies
+backup_policies:
+  # Database Backup
+  - name: "database-backup"
+    service: "erlmcp-session-db"
+    schedule: "0 2 * * *"  # Daily at 2 AM
+    retention: "30 days"
+    encryption: true
+    compression: true
+    destinations:
+      - type: "s3"
+        bucket: "erlmcp-backups/database"
+        prefix: "mariadb"
+      - type: "local"
+        path: "/backups/database"
+    files:
+      - "/var/lib/mysql"
+      - "/etc/mysql/conf.d"
+    pre_backup_commands:
+      - "echo 'Starting backup' > /var/log/mysql-backup.log"
+      - "mysqladmin -u root -p${DB_ROOT_PASSWORD} flush-logs"
+    post_backup_commands:
+      - "echo 'Backup completed successfully' >> /var/log/mysql-backup.log"
+    validation:
+      enabled: true
+      command: "mysqlcheck -u root -p${DB_ROOT_PASSWORD} --all-databases --check-upgrade"
+    notifications:
+      success: true
+      failure: true
+
+  # Application Data Backup
+  - name: "application-data-backup"
+    service: "erlmcp-core"
+    schedule: "0 3 * * *"  # Daily at 3 AM
+    retention: "7 days"
+    encryption: true
+    compression: true
+    destinations:
+      - type: "s3"
+        bucket: "erlmcp-backups/app-data"
+        prefix: "core-data"
+      - type: "local"
+        path: "/backups/app-data"
+    files:
+      - "/app/data"
+      - "/app/logs"
+      - "/app/config"
+    pre_backup_commands:
+      - "echo 'Stopping erlmcp core temporarily...' > /var/log/app-backup.log"
+      - "kill -TERM \$(pgrep erlmcp_core)"
+      - "sleep 30"
+    post_backup_commands:
+      - "echo 'Starting erlmcp core...' >> /var/log/app-backup.log"
+      - "/app/bin/erlmcp_core start"
+      - "echo 'Backup completed' >> /var/log/app-backup.log"
+    validation:
+      enabled: true
+      command: "md5sum /app/data/config/* | sort > /tmp/backup-check.md5"
+    notifications:
+      success: true
+      failure: true
+
+  # Configuration Backup
+  - name: "config-backup"
+    service: "erlmcp-*"
+    schedule: "0 4 * * *"  # Daily at 4 AM
+    retention: "90 days"
+    encryption: true
+    destinations:
+      - type: "s3"
+        bucket: "erlmcp-backups/config"
+        prefix: "docker-compose"
+      - type: "local"
+        path: "/backups/config"
+    files:
+      - "/docker-compose.yml"
+      - "/config/"
+      - "/secrets/"
+    pre_backup_commands:
+      - "echo 'Starting config backup' > /var/log/config-backup.log"
+    post_backup_commands:
+      - "echo 'Config backup completed' >> /var/log/config-backup.log"
+    notifications:
+      success: true
+      failure: true
+
+# Backup Verification
+backup_verification:
+  policies:
+    - name: "database-verification"
+      command: "mariadb-backup --check --target-dir=/backup/check"
+      frequency: "daily"
+      alert_on_failure: true
+
+    - name: "application-verification"
+      command: "diff -r /app/data /backup/app-data/data"
+      frequency: "weekly"
+      alert_on_failure: true
+
+    - name: "integrity-check"
+      command: "md5sum -c /backup/backup-check.md5"
+      frequency: "daily"
+      alert_on_failure: true
+
+# Disaster Recovery
+disaster_recovery:
+  # Recovery Time Objective (RTO) and Recovery Point Objective (RPO)
+  rto: "4 hours"    # Maximum acceptable downtime
+  rpo: "15 minutes" # Maximum acceptable data loss
+
+  recovery_scenarios:
+    # Complete System Failure
+    - name: "complete-failure"
+      steps:
+        1. "Verify cluster failure"
+        2. "Order replacement hardware"
+        3. "Install Docker Swarm on new nodes"
+        4. "Restore from backup"
+        5. "Restore data"
+        6. "Reconfigure networking"
+        7. "Start services"
+        8. "Verify health"
+        9. "Update DNS"
+      estimated_time: "6-8 hours"
+
+    # Service Failure
+    - name: "service-failure"
+      steps:
+        1. "Identify failed service"
+        2. "Restart service"
+        3. "If failed, restore from backup"
+        4. "Verify service health"
+      estimated_time: "30-60 minutes"
+
+    # Data Corruption
+    - name: "data-corruption"
+      steps:
+        1. "Stop affected services"
+        2. "Restore from backup"
+        3. "Verify data integrity"
+        4. "Start services"
+      estimated_time: "2-4 hours"
+
+  # Auto-Recovery Scripts
+  auto_recovery_scripts:
+    - name: "database-failover"
+      script: "/scripts/failover-database.sh"
+      conditions:
+        - "primary_database_down == true"
+        - "replication_lag > 60s"
+
+    - name: "service-failover"
+      script: "/scripts/failover-service.sh"
+      conditions:
+        - "service_down == true"
+        - "health_check_failed == true"
+
+    - name: "network-failover"
+      script: "/scripts/failover-network.sh"
+      conditions:
+        - "network_partition == true"
+        - "communication_failure == true"
+
+# Encryption
+encryption:
+  # Backup Encryption
+  backup_encryption:
+    algorithm: "AES-256"
+    key_management:
+      - type: "aws-kms"
+        key_id: "alias/erlmcp-backup-key"
+      - type: "local"
+        key_file: "/backup/encryption.key"
+
+  # Data-at-rest encryption
+  data_encryption:
+    algorithm: "AES-256"
+    key_rotation: "90 days"
+    data_in_transit:
+      enabled: true
+      algorithm: "TLS-1.2"
+
+# Monitoring
+monitoring:
+  backup_monitoring:
+    - metric: "backup_success_rate"
+      alert_threshold: "95%"
+      frequency: "daily"
+
+    - metric: "backup_size"
+      alert_threshold: "> 100GB/day"
+      frequency: "daily"
+
+    - metric: "backup_duration"
+      alert_threshold: "> 4 hours"
+      frequency: "daily"
+
+  disaster_recovery_monitoring:
+    - metric: "recovery_time"
+      alert_threshold: "> 4 hours"
+      frequency: "recovery_attempt"
+
+    - metric: "data_loss"
+      alert_threshold: "> 15 minutes"
+      frequency: "recovery_attempt"
+
+# Testing
+testing:
+  backup_testing:
+    - scenario: "restore_database"
+      schedule: "monthly"
+      expected_time: "2 hours"
+
+    - scenario: "restore_application"
+      schedule: "quarterly"
+      expected_time: "4 hours"
+
+    - scenario: "complete_recovery"
+      schedule: "biannually"
+      expected_time: "8 hours"
+
+  disaster_recovery_testing:
+    - scenario: "regional_failure"
+      schedule: "quarterly"
+      expected_time: "6 hours"
+
+    - scenario: "datacenter_failure"
+      schedule: "annually"
+      expected_time: "12 hours"
+
+# Documentation
+documentation:
+  backup_procedures:
+    - "Database Backup and Restore"
+    - "Application Data Backup and Restore"
+    - "Configuration Backup and Restore"
+    - "Encryption Management"
+
+  disaster_recovery:
+    - "Complete System Failure Recovery"
+    - "Service Failover Procedures"
+    - "Data Recovery Procedures"
+    - "Network Failover Procedures"
+
+  contact_information:
+    - "Backup Administrator: admin@company.com"
+    - "DBA: dba@company.com"
+    - "DevOps: devops@company.com"
+    - "Security: security@company.com"

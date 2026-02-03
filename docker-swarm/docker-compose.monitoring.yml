@@ -1,0 +1,347 @@
+version: '3.8'
+
+# Docker Compose for monitoring stack only
+# This can be deployed separately for scaling
+
+services:
+  # Enhanced Prometheus with alerting
+  prometheus:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.prometheus
+    image: erlmcp-prometheus:v3-prod
+    container_name: prometheus
+    hostname: prometheus
+    environment:
+      - PROMETHEUS_CONFIG_FILE=/etc/prometheus/prometheus.yml
+      - ERLMCP_ENV=${ERLMCP_ENV:-production}
+      - PROMETHEUS_REMOTE_WRITE_URLS=http://victoria-metrics:8428/api/v1/write
+    networks:
+      - erlmcp-monitoring
+      - erlmcp-overlay
+    ports:
+      - "9090:9090"
+      - "9091:9091"
+    volumes:
+      - prometheus-data:/data
+      - ./config/docker/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./config/docker/alert_rules.yml:/etc/prometheus/alert_rules.yml
+      - ./config/docker/tsdb.yml:/etc/prometheus/tsdb.yml
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # VictoriaMetrics for long-term storage
+  victoria-metrics:
+    image: victoriametrics/victoriametrics:v1.95.0
+    container_name: victoria-metrics
+    hostname: victoria-metrics
+    command:
+      - "--storageDataPath=/data"
+      - "--retentionPeriod=672h"  # 4 weeks
+      - "--httpListenAddr=:8428"
+      - "--prometheus.url=http://prometheus:9090"
+    networks:
+      - erlmcp-monitoring
+    volumes:
+      - victoria-metrics-data:/data
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Enhanced Grafana with provisioning
+  grafana:
+    build:
+      context: .
+      dockerfile: docker-swarm/services/Dockerfile.grafana
+    image: erlmcp-grafana:v3-prod
+    container_name: grafana
+    hostname: grafana
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-changeme}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_AUTH_PROXY_ENABLED=true
+      - GF_AUTH_PROXY_HEADER_NAME=X-Forwarded-User
+      - GF_AUTH_PROXY_HEADER_PROPERTY=header
+      - GF_AUTH_PROXY_AUTO_SIGN_UP=true
+      - ERLMCP_ENV=${ERLMCP_ENV:-production}
+    networks:
+      - erlmcp-monitoring
+      - erlmcp-overlay
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/docker/provisioning:/etc/grafana/provisioning
+      - ./config/docker/dashboards:/etc/grafana/dashboards
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Alertmanager with multiple receivers
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    hostname: alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/data'
+      - '--cluster.listen-address=0.0.0.0:9094'
+      - '--cluster.peer=alertmanager-1:9094'
+      - '--web.external-url=http://alertmanager:9093'
+    networks:
+      - erlmcp-monitoring
+      - erlmcp-overlay
+    volumes:
+      - alertmanager-data:/data
+      - ./config/docker/provisioning/alerting/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./config/docker/alertmanager/alert_rules.yml:/etc/alertmanager/alert_rules.yml
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Thanos Querier for cross-cluster querying
+  thanos-querier:
+    image: thanosio/thanos:v0.32.0
+    container_name: thanos-querier
+    hostname: thanos-querier
+    command:
+      - query
+      - '--query.replica-label=replica'
+      - '--query.timeout=2m'
+      - '--query.max-concurrent=20'
+      - '--grpc-address=0.0.0.0:10901'
+      - '--http-address=0.0.0.0:9091'
+      - '--store=dnssrv+_http._tcp,erlmcp-prometheus.service.consul'
+    networks:
+      - erlmcp-monitoring
+    ports:
+      - "10901:10901"
+      - "9091:9091"
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Mimir for high-cardinality metrics
+  mimir:
+    image: grafana/mimir:2.10.0
+    container_name: mimir
+    hostname: mimir
+    command:
+      - '--config.file=/etc/mimir/mimir.yml'
+    networks:
+      - erlmcp-monitoring
+    volumes:
+      - mimir-data:/data
+      - ./config/docker/mimir:/etc/mimir
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Loki for logs
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: loki
+    hostname: loki
+    command:
+      - '-config.file=/etc/loki/loki.yml'
+    networks:
+      - erlmcp-monitoring
+    volumes:
+      - loki-data:/data
+      - ./config/docker/loki:/etc/loki
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # Prometheus Operator (for auto-discovery)
+  prometheus-operator:
+    image: quay.io/prometheus-operator/prometheus-operator:v0.72.0
+    container_name: prometheus-operator
+    hostname: prometheus-operator
+    command:
+      - '--prometheus-config-reloader=quay.io/prometheus-operator/prometheus-config-reloader:v0.72.0'
+      - '--prometheus-default-exporter-port=9100'
+    networks:
+      - erlmcp-monitoring
+    ports:
+      - "8080:8080"
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.labels.erlmcp.role == monitoring]
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+# Networks
+networks:
+  erlmcp-overlay:
+    external: true
+    name: erlmcp-overlay
+
+  erlmcp-monitoring:
+    driver: overlay
+    attachable: true
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+
+# Volumes
+volumes:
+  prometheus-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/monitoring/prometheus
+
+  victoria-metrics-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/monitoring/victoria-metrics
+
+  grafana-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/monitoring/grafana
+
+  alertmanager-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/monitoring/alertmanager
+
+  mimir-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/monitoring/mimir
+
+  loki-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/erlmcp/monitoring/loki

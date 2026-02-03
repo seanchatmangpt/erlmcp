@@ -1,0 +1,98 @@
+# Docker BuildKit Configuration for erlmcp v3
+# Enables advanced caching, security scanning, and SBOM generation
+
+# ==============================================================================
+# Frontend Configuration
+# ==============================================================================
+[frontend]
+# Enable BuildKit frontend syntax features
+syntaxfeatures = ["syntax-version-2"]
+
+# ==============================================================================
+# Cache Configuration
+# ==============================================================================
+[cache]
+# Use local cache mount for faster builds
+# Mounts a persistent cache directory for rebar3 dependencies
+[[cache.mounts]]
+    type = "cache"
+    target = "/root/.cache/rebar3"
+    source = "rebar3-cache"
+    readonly = false
+
+# Mount cache for hex packages
+[[cache.mounts]]
+    type = "cache"
+    target = "/build/.cache"
+    source = "hex-cache"
+    readonly = false
+
+# ==============================================================================
+# Registry Mirrors (for faster pulls)
+# ==============================================================================
+[registry."docker.io"]
+    mirrors = ["https://mirror.gcr.io"]
+
+[registry."ghcr.io"]
+    mirrors = ["https://ghcr.io"]
+
+# ==============================================================================
+# Security Configuration
+# ==============================================================================
+[security]
+# BuildKit security policies
+# Only allow images from trusted registries
+allow-pull = ["docker.io", "ghcr.io", "gcr.io"]
+
+# Enforce non-root execution
+enforce-nonroot = true
+
+# Scan layers during build
+scan-layers = true
+
+# ==============================================================================
+# Entitlements for advanced features
+# ==============================================================================
+[entitlements]
+# Allow network access during build
+network = true
+
+# Allow security scanning
+security-insecure = false
+
+# Allow SBOM generation
+sbom = true
+
+# ==============================================================================
+# Output Configuration
+# ==============================================================================
+[output]
+# Default output format
+format = "docker"
+
+# Image attributes
+[[output.attrs]]
+    key = "org.opencontainers.image.created"
+    value = "${BUILD_DATE}"
+
+[[output.attrs]]
+    key = "org.opencontainers.image.revision"
+    value = "${VCS_REF}"
+
+[[output.attrs]]
+    key = "org.opencontainers.image.version"
+    value = "${VERSION}"
+
+# ==============================================================================
+# Secrets Configuration
+# ==============================================================================
+[[secrets]]
+    id = "github-token"
+    source = "env://GITHUB_TOKEN"
+
+# ==============================================================================
+# SSH Configuration
+# ==============================================================================
+[[ssh]]
+    id = "github"
+    agent = true

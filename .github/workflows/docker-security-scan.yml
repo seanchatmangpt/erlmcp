@@ -1,0 +1,320 @@
+name: Docker Security Scan
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'Dockerfile*'
+      - 'rebar.config'
+      - 'apps/**/src/*.erl'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'Dockerfile*'
+      - 'rebar.config'
+      - 'apps/**/src/*.erl'
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Image tag to scan'
+        required: false
+        default: 'latest'
+
+env:
+  IMAGE_NAME: erlmcp
+  REGISTRY: ghcr.io
+  VERSION: 3.0.0
+
+jobs:
+  build-image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    outputs:
+      image_digest: ${{ steps.build.outputs.digest }}
+      image_tag: ${{ steps.build.outputs.tag }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+
+      - name: Build image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.optimized
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+
+      - name: Extract image digest
+        id: digest
+        run: |
+          echo "digest=$(docker images --format '{{.ID}}' ${{ env.IMAGE_NAME }}:${{ github.sha }})" >> $GITHUB_OUTPUT
+          echo "tag=${{ env.IMAGE_NAME }}:${{ github.sha }}" >> $GITHUB_OUTPUT
+
+  trivy-scan:
+    name: Trivy Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: build-image
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build-image.outputs.image_tag }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '0'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Generate Trivy report
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ needs.build-image.outputs.image_tag }}
+          format: 'table'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-scan-results
+          path: trivy-results.sarif
+          retention-days: 30
+
+  grype-scan:
+    name: Grype Vulnerability Scan
+    runs-on: ubuntu-latest
+    needs: build-image
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Grype vulnerability scanner
+        uses: anchore/scan-action@v3
+        with:
+          image: ${{ needs.build-image.outputs.image_tag }}
+          format: 'sarif'
+          output: 'grype-results.sarif'
+          severity: 'critical,high'
+          fail-build: false
+
+      - name: Upload Grype results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'grype-results.sarif'
+
+      - name: Generate Grype report
+        uses: anchore/scan-action@v3
+        with:
+          image: ${{ needs/build-image.outputs.image_tag }}
+          format: 'table'
+          severity: 'critical,high'
+
+      - name: Upload Grype results as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: grype-scan-results
+          path: grype-results.sarif
+          retention-days: 30
+
+  sbom-generation:
+    name: Generate SBOM
+    runs-on: ubuntu-latest
+    needs: build-image
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Generate SBOM with Syft
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ needs.build-image.outputs.image_tag }}
+          format: 'spdx-json'
+          output-file: 'sbom-spdx.json'
+          dependency-snapshot: true
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ needs.build-image.outputs.image_tag }}
+          format: 'cyclonedx-json'
+          output-file: 'sbom-cyclonedx.json'
+
+      - name: Upload SBOM as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: |
+            sbom-spdx.json
+            sbom-cyclonedx.json
+          retention-days: 90
+
+      - name: Upload SBOM to release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            sbom-spdx.json
+            sbom-cyclonedx.json
+
+  docker-scout:
+    name: Docker Scout Analysis
+    runs-on: ubuntu-latest
+    needs: build-image
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Docker Scout
+        uses: docker/scout-action@v1
+        with:
+          image: ${{ needs.build-image.outputs.image_tag }}
+          severity: 'critical'
+          only-fixed: true
+          format: 'sarif'
+          output: 'scout-results.sarif'
+
+      - name: Upload Scout results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'scout-results.sarif'
+
+  image-size-check:
+    name: Image Size Analysis
+    runs-on: ubuntu-latest
+    needs: build-image
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Analyze image size
+        run: |
+          docker inspect ${{ needs.build-image.outputs.image_tag }} --format='{{.Size}}' > image-size-bytes.txt
+          SIZE=$(cat image-size-bytes.txt)
+          SIZE_MB=$((SIZE / 1024 / 1024))
+          echo "Image size: ${SIZE_MB} MB"
+          echo "SIZE_MB=${SIZE_MB}" >> $GITHUB_ENV
+
+      - name: Check size threshold
+        run: |
+          MAX_SIZE_MB=100
+          if [ "${{ env.SIZE_MB }}" -gt "$MAX_SIZE_MB" ]; then
+            echo "Image size (${{ env.SIZE_MB }} MB) exceeds threshold ($MAX_SIZE_MB MB)"
+            exit 1
+          fi
+          echo "Image size within acceptable limits"
+
+      - name: Comment size on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '### Docker Image Size\n\nImage `${{ needs.build-image.outputs.image_tag }}` size: **${{ env.SIZE_MB }} MB**\n\nThreshold: 100 MB'
+            })
+
+  security-summary:
+    name: Security Summary Report
+    runs-on: ubuntu-latest
+    needs: [trivy-scan, grype-scan, sbom-generation, docker-scout, image-size-check]
+    if: always()
+
+    steps:
+      - name: Download all scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: scan-results
+
+      - name: Generate security summary
+        run: |
+          cat > security-summary.md <<'EOF'
+          # Docker Security Scan Summary
+
+          **Image:** ${{ needs.build-image.outputs.image_tag }}
+          **Scanned:** $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          ## Scan Results
+
+          | Scanner | Status | Findings |
+          |---------|--------|----------|
+          | Trivy | ${{ needs.trivy-scan.result }} | [View](./trivy-scan-results/) |
+          | Grype | ${{ needs.grype-scan.result }} | [View](./grype-scan-results/) |
+          | Docker Scout | ${{ needs.docker-scout.result }} | [View](./scout-results.sarif) |
+          | SBOM | ${{ needs.sbom-generation.result }} | [Download](./sbom/) |
+          | Image Size | ${{ needs.image-size-check.result }} | ${{ env.SIZE_MB }} MB |
+
+          ## Artifacts
+
+          - Trivy SARIF: `trivy-results.sarif`
+          - Grype SARIF: `grype-results.sarif`
+          - Scout SARIF: `scout-results.sarif`
+          - SBOM (SPDX): `sbom-spdx.json`
+          - SBOM (CycloneDX): `sbom-cyclonedx.json`
+          EOF
+
+      - name: Upload security summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-summary
+          path: security-summary.md
+          retention-days: 90
+
+      - name: Add summary to job
+        run: cat security-summary.md >> $GITHUB_STEP_SUMMARY

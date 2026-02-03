@@ -1,0 +1,35 @@
+# Minimal Dockerfile for erlmcp - AGI Joe Armstrong style
+# "Make it work, then make it right"
+
+FROM erlang:28.3.1-alpine
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache git make gcc g++ musl-dev openssl-dev ncurses-dev bash
+
+# Copy only what's needed
+COPY rebar.config rebar.lock ./
+COPY apps ./apps/
+COPY include ./include/
+COPY config ./config/
+COPY vm.args ./
+
+# Compile the apps that actually work
+RUN rebar3 compile
+
+# Create the release - use default profile (dev_mode=true)
+RUN cd apps/erlmcp_core && rebar3 release
+
+# Runtime
+FROM alpine:3.20
+
+RUN apk add --no-cache openssl ncurses-libs bash
+
+COPY --from=0 /app/apps/erlmcp_core/_build/default/rel/erlmcp /erlmcp
+
+WORKDIR /erlmcp
+
+EXPOSE 8080
+
+CMD ["/erlmcp/bin/erlmcp", "foreground"]

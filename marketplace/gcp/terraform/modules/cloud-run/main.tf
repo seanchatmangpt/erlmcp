@@ -1,0 +1,342 @@
+# erlmcp Cloud Run Module
+# This module deploys erlmcp on Google Cloud Run with auto-scaling
+
+terraform {
+  required_version = ">= 1.5.0"
+
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 5.0"
+    }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.5"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.9"
+    }
+  }
+}
+
+variable "project_id" {
+  type        = string
+  description = "The GCP project ID"
+}
+
+variable "region" {
+  type        = string
+  default     = "us-central1"
+  description = "The region to deploy Cloud Run service in"
+}
+
+variable "service_name" {
+  type        = string
+  default     = "erlmcp"
+  description = "Name of the Cloud Run service"
+}
+
+variable "container_image" {
+  type        = string
+  description = "Container image to deploy (must be in Artifact Registry)"
+}
+
+variable "secrets" {
+  type        = map(string)
+  default     = {}
+  description = "Map of secret names to Cloud Run secret environment variables"
+}
+
+variable "environment_variables" {
+  type        = map(string)
+  default     = {}
+  description = "Environment variables to set on the Cloud Run service"
+}
+
+variable "cpu" {
+  type        = number
+  default     = 1
+  description = "CPU allocation for the Cloud Run service"
+}
+
+variable "memory" {
+  type        = number
+  default     = 512
+  description = "Memory allocation in MiB for the Cloud Run service"
+}
+
+variable "max_instances" {
+  type        = number
+  default     = 100
+  description = "Maximum number of instances"
+}
+
+variable "min_instances" {
+  type        = number
+  default     = 0
+  description = "Minimum number of instances"
+}
+
+variable "concurrency" {
+  type        = number
+  default     = 80
+  description = "Concurrency level per instance"
+}
+
+variable "timeout" {
+  type        = number
+  default     = 300
+  description = "Request timeout in seconds"
+}
+
+variable "enable_traffic_splitting" {
+  type        = bool
+  default     = false
+  description = "Enable traffic splitting for blue-green deployments"
+}
+
+variable "traffic_split_percent" {
+  type        = number
+  default     = 100
+  description = "Traffic percentage for current revision (when splitting enabled)"
+}
+
+variable "ingress_settings" {
+  type        = string
+  default     = "ALL"
+  description = "Ingress settings: 'ALL', 'INTERNAL', 'INTERNAL_AND Cloud_LB'"
+}
+
+variable "service_account_email" {
+  type        = string
+  default     = ""
+  description = "Service account for Cloud Run service"
+}
+
+variable "labels" {
+  type        = map(string)
+  default     = {
+    app = "erlmcp"
+    type = "marketplace"
+  }
+  description = "Labels to apply to the service"
+}
+
+variable "annotations" {
+  type        = map(string)
+  default     = {}
+  description = "Additional annotations for the Cloud Run service"
+}
+
+variable "domain_mapping" {
+  type        = string
+  default     = ""
+  description = "Custom domain mapping (e.g., 'erlmcp.example.com')"
+}
+
+# Generate random suffix for resource names
+resource "random_string" "suffix" {
+  length  = 8
+  special = false
+  upper   = false
+}
+
+# Enable Required APIs
+resource "google_project_service" "cloud_run" {
+  project            = var.project_id
+  service            = "run.googleapis.com"
+  disable_on_destroy = false
+}
+
+resource "google_project_service" "secret_manager" {
+  project            = var.project_id
+  service            = "secretmanager.googleapis.com"
+  disable_on_destroy = false
+}
+
+# Service account (if not provided)
+resource "google_service_account" "erlmcp_sa" {
+  count      = var.service_account_email == "" ? 1 : 0
+  account_id = "erlmcp-sa-${random_string.suffix.result}"
+  project     = var.project_id
+  description = "Service account for erlmcp Cloud Run service"
+}
+
+# IAM bindings for service account
+resource "google_project_iam_member" "erlmcp_sa_roles" {
+  for_each = toset([
+    "roles/secretmanager.secretAccessor",
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter"
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${var.service_account_email != "" ? var.service_account_email : google_service_account.erlmcp_sa[0].email}"
+}
+
+# Cloud Run service
+resource "google_cloud_run_service" "erlmcp" {
+  name     = "${var.service_name}-${random_string.suffix.result}"
+  location = var.region
+
+  spec {
+    template {
+      spec {
+        container {
+          image  = var.container_image
+          cpu    = var.cpu
+          memory = var.memory
+
+          env {
+            name  = "GOOGLE_CLOUD_PROJECT"
+            value = var.project_id
+          }
+
+          # Add custom environment variables
+          dynamic "env" {
+            for_each = var.environment_variables
+            content {
+              name  = env.key
+              value = env.value
+            }
+          }
+
+          # Add secret environment variables
+          dynamic "env" {
+            for_each = var.secrets
+            content {
+              name = env.key
+              value_from {
+                secret_key_ref {
+                  name = google_secret_manager_secret.erlmcp_secrets[env.value].secret_id
+                  key  = "latest"
+                }
+              }
+            }
+          }
+
+          # Health check probes
+          liveness_probe {
+            http_get {
+              path = "/health"
+              port = 9090
+            }
+            initial_delay_seconds = 30
+            period_seconds        = 10
+            timeout_seconds       = 5
+            failure_threshold     = 3
+          }
+
+          readiness_probe {
+            http_get {
+              path = "/health"
+              port = 9090
+            }
+            initial_delay_seconds = 5
+            period_seconds        = 10
+            timeout_seconds       = 5
+            failure_threshold     = 3
+          }
+        }
+      }
+    }
+  }
+
+  autogenerate_revision_name = true
+  project                   = var.project_id
+
+  # Scaling configuration
+  traffic {
+    percent         = 100
+    latest_revision = true
+  }
+
+  # Traffic splitting (if enabled)
+  dynamic "traffic" {
+    for_each = var.enable_traffic_splitting ? [1] : []
+    content {
+      percent         = var.traffic_split_percent
+      latest_revision = true
+      newest_revision = true
+    }
+  }
+
+  # Labels
+  labels = var.labels
+
+  # Annotations
+  annotations = merge(var.annotations, {
+    "autoscaling.knative.dev/maxScale"              = var.max_instances
+    "autoscaling.knative.dev/minScale"              = var.min_instances
+    "autoscaling.knative.dev/target"                = var.concurrency
+    "run.googleapis.com/enable-execution-environment" = true
+    "marketplace.cloud.google.com/deployment-id" = "erlmcp-${random_string.suffix.result}"
+  })
+}
+
+# IAM configuration (allow public access by default)
+resource "google_cloud_run_service_iam_member" "public_invoker" {
+  location = google_cloud_run_service.erlmcp.location
+  project  = google_cloud_run_service.erlmcp.project
+  service  = google_cloud_run_service.erlmcp.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
+# Secret manager resources
+resource "google_secret_manager_secret" "erlmcp_secrets" {
+  for_each = { for secret in var.secrets : secret.key => secret }
+  secret_id = for_each.value.key
+  project   = var.project_id
+
+    replication {
+    automatic {}
+  }
+}
+
+# Cloud Run Domain Mapping (if custom domain provided)
+resource "google_cloud_run_domain_mapping" "erlmcp_domain" {
+  count = var.domain_mapping != "" ? 1 : 0
+
+  location = var.region
+  project  = var.project_id
+  name     = var.domain_mapping
+
+  metadata {
+    namespace = google_cloud_run_service.erlmcp.project
+  }
+
+  spec {
+    route_name = google_cloud_run_service.erlmcp.name
+  }
+}
+
+# Outputs
+
+
+
+output "service_account" {
+  value = var.service_account_email != "" ? var.service_account_email : google_service_account.erlmcp_sa[0].email
+}
+
+output "domain_url" {
+  value = var.domain_mapping != "" ? "https://${var.domain_mapping}" : null
+}
+
+output "secrets" {
+  value = { for k, v in google_secret_manager_secret.erlmcp_secrets : k => v.secret_id }
+}
+
+output "revision" {
+  value = google_cloud_run_service.erlmcp.status[0].latest_created_revision_name
+}
+
+output "ingress" {
+  value = google_cloud_run_service.erlmcp.status[0].traffic[0].percent
+}

@@ -1,0 +1,207 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-service
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+    service.beta.kubernetes.io/aws-load-balancer-backend-protocol: tcp
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-path: /health
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-port: 8080
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-interval: "30"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-timeout: "5"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-healthy-threshold: "3"
+    service.beta.kubernetes.io/aws-load-balancer-healthcheck-unhealthy-threshold: "3"
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  selector:
+    app: erlmcp
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 443
+    targetPort: 8443
+    protocol: TCP
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  - name: ws
+    port: 8443
+    targetPort: 8443
+    protocol: TCP
+  sessionAffinity: None
+  sessionAffinityConfig: {}
+  loadBalancerSourceRanges:
+  - 0.0.0.0/0
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-headless
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+spec:
+  selector:
+    app: erlmcp
+  clusterIP: None
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 8443
+    targetPort: 8443
+    protocol: TCP
+---
+# Internal Service for Database
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-internal
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: internal
+spec:
+  selector:
+    app: erlmcp
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+    protocol: TCP
+  - name: https
+    port: 8443
+    targetPort: 8443
+    protocol: TCP
+  clusterIP: None
+---
+# External Service for Monitoring
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-metrics
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: metrics
+spec:
+  selector:
+    app: erlmcp
+  type: ClusterIP
+  ports:
+  - name: metrics
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+---
+# WebSocket Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: erlmcp-websocket
+  namespace: erlmcp
+  labels:
+    app: erlmcp
+    component: websocket
+spec:
+  selector:
+    app: erlmcp
+  type: ClusterIP
+  ports:
+  - name: ws
+    port: 8443
+    targetPort: 8443
+    protocol: TCP
+---
+# Database Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgresql-service
+  namespace: erlmcp
+  labels:
+    app: postgresql
+    component: database
+spec:
+  selector:
+    app: postgresql
+  type: ClusterIP
+  ports:
+  - name: postgres
+    port: 5432
+    targetPort: 5432
+    protocol: TCP
+---
+# Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: erlmcp
+  labels:
+    app: redis
+    component: cache
+spec:
+  selector:
+    app: redis
+  type: ClusterIP
+  ports:
+  - name: redis
+    port: 6379
+    targetPort: 6379
+    protocol: TCP
+---
+# Monitoring Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-operator
+  namespace: monitoring
+  labels:
+    app: prometheus
+spec:
+  type: ClusterIP
+  ports:
+  - name: http
+    port: 9090
+    targetPort: 9090
+    protocol: TCP
+  - name: grafana
+    port: 3000
+    targetPort: 3000
+    protocol: TCP
+  selector:
+    app: prometheus
+---
+# Logging Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: fluentd
+  namespace: logging
+  labels:
+    app: fluentd
+spec:
+  type: ClusterIP
+  ports:
+  - name: fluentd
+    port: 24224
+    targetPort: 24224
+    protocol: TCP
+  selector:
+    app: fluentd

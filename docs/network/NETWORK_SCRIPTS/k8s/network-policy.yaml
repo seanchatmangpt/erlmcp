@@ -1,0 +1,131 @@
+# Network policies for erlmcp v3
+
+# Allow access from monitoring namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-monitoring-access
+  namespace: erlmcp
+spec:
+  podSelector:
+    matchLabels:
+      app: erlmcp
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+
+---
+# Allow access from logging namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-logging-access
+  namespace: erlmcp
+spec:
+  podSelector:
+    matchLabels:
+      app: erlmcp
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: logging
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: logging
+
+---
+# Default deny all traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-default-deny
+  namespace: erlmcp
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+
+---
+# Allow ingress from external
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-external-ingress
+  namespace: erlmcp
+spec:
+  podSelector:
+    matchLabels:
+      app: erlmcp
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - namespaceSelector: {}
+      podSelector: {}
+    ports:
+    - protocol: TCP
+      port: 80
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 8443
+
+---
+# Allow egress to specific services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: erlmcp-egress-rules
+  namespace: erlmcp
+spec:
+  podSelector:
+    matchLabels:
+      app: erlmcp
+  policyTypes:
+  - Egress
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: monitoring
+    - namespaceSelector:
+        matchLabels:
+          name: logging
+    - namespaceSelector:
+        matchLabels:
+          name: security
+  - to:
+    - ipBlock:
+        cidr: 10.0.0.0/8
+        except:
+        - 10.0.0.0/16
+    ports:
+    - protocol: TCP
+      port: 53
+    - protocol: UDP
+      port: 53
+  - to:
+    - ipBlock:
+        cidr: 0.0.0.0/0
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 80

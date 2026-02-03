@@ -1,0 +1,385 @@
+# Production values for erlmcp
+
+# Override global values for production
+global:
+  nameOverride: erlmcp-prod
+  fullnameOverride: erlmcp-prod
+  additionalLabels:
+    environment: production
+  serviceAccount:
+    annotations:
+      # Production-specific annotations
+      eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/erlmcp-prod-role"
+      iam.amazonaws.com/roleArn: "arn:aws:iam::123456789012:role/erlmcp-prod-role"
+
+# Cluster configuration for production
+cluster:
+  enabled: true
+  cookie: "erlmcp-cluster-prod-3-0-0"
+  heartbeatInterval: "5s"
+  nodeCheckInterval: "2s"
+  splitBrain:
+    strategy: "priority"
+    checkInterval: "15s"
+  discovery:
+    provider: "kubernetes"
+    kubernetes:
+      serviceName: "erlmcp-prod-cluster"
+      servicePort: 9000
+      namespace: "erlmcp-prod"
+
+# Node configuration for production
+node:
+  replicaCount: 5
+  podTemplate:
+    annotations:
+      # Production monitoring
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9090"
+      prometheus.io/path: "/metrics"
+      # Istio annotations
+      sidecar.istio.io/inject: "true"
+      sidecar.istio.io/rewriteAppHTTPProxies: "true"
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [erlmcp]
+          topologyKey: "kubernetes.io/hostname"
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                values: [erlmcp]
+            topologyKey: "topology.kubernetes.io/zone"
+        - weight: 50
+          podAffinityTerm:
+            labelSelector:
+              matchExpressions:
+                - key: app.kubernetes.io/name
+                  operator: In
+                values: [erlmcp]
+            topologyKey: "kubernetes.io/hostname"
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - matchExpressions:
+            - key: kubernetes.io/arch
+              operator: In
+              values: ["amd64"]
+        - matchExpressions:
+            - key: node.kubernetes.io/memory-pressure
+              operator: NotIn
+              values: ["true"]
+        - matchExpressions:
+            - key: node.kubernetes.io/disk-pressure
+              operator: NotIn
+              values: ["true"]
+  priorityClassName: "system-cluster-critical"
+
+# Resource management for production
+resources:
+  core:
+    requests:
+      cpu: "4"
+      memory: "8Gi"
+    limits:
+      cpu: "8"
+      memory: "16Gi"
+    extra: {}
+  overhead:
+    cpu: "1"
+    memory: "2Gi"
+  limits:
+    maxPods: 20
+    maxConnectionsPerNode: 10000
+    maxSessions: 50000
+    maxRegistrySize: 5000000
+
+# Ingress configuration for production
+ingress:
+  enabled: true
+  className: "nginx"
+  hosts:
+    - host: erlmcp-prod.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization"
+    external-dns.alpha.kubernetes.io/hostname: erlmcp-prod.example.com
+  tls:
+    - secretName: erlmcp-prod-tls
+      hosts:
+        - erlmcp-prod.example.com
+
+# Services configuration for production
+services:
+  http:
+    enabled: true
+    type: LoadBalancer
+    port: 3000
+    targetPort: 3000
+    nodePort: 30000
+    annotations:
+      service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+      service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+    externalTrafficPolicy: Local
+    healthCheckNodePort: 30001
+    sessionAffinity: ClientIP
+    sessionAffinityConfig:
+      clientIP:
+        timeoutSeconds: 3600
+  cluster:
+    enabled: true
+    type: ClusterIP
+    port: 9000
+    targetPort: 9000
+  metrics:
+    enabled: true
+    type: ClusterIP
+    port: 9090
+    targetPort: 9090
+    annotations:
+      prometheus.io/scrape: "true"
+      prometheus.io/port: "9090"
+      prometheus.io/path: "/metrics"
+  otel:
+    enabled: true
+    type: ClusterIP
+    port: 4317
+    targetPort: 4317
+
+# Auto Scaling for production
+autoscaling:
+  hpa:
+    enabled: true
+    minReplicas: 5
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+    customMetrics:
+      - type: Pods
+        pods:
+          metric:
+            name: active_connections
+          target:
+            type: AverageValue
+            averageValue: "1000"
+      - type: Pods
+        pods:
+          metric:
+            name: request_rate
+          target:
+            type: AverageValue
+            averageValue: "500"
+  clusterAutoscaler:
+    enabled: true
+    scaleDownDisabled: true  # Disable scale down in production
+    balanceSimilarNodeGroups: true
+    expander: "most-pods"
+    scaleDownDelayAfterAdd: "30m"
+    scaleDownDelayAfterDelete: "60s"
+    scaleDownUnneededTime: "60m"
+    scaleDownUtilizationThreshold: 0.5
+    estimators: ["binpacking", "resources"]
+    ignoreOperatingSystem: false
+  vpa:
+    enabled: true
+    updateMode: "Auto"
+    recommendations:
+      enabled: true
+      resourcesPreset: "Dynamic"
+      defaultContainerPolicy: "Auto"
+      constraints:
+        minAllowed:
+          cpu: "4"
+          memory: "8Gi"
+        maxAllowed:
+          cpu: "16"
+          memory: "32Gi"
+
+# Pod Disruption Budgets for production
+pdb:
+  enabled: true
+  minAvailable: "4"
+  maxUnavailable: "1"
+  cluster:
+    enabled: true
+    minAvailable: 2
+    maxUnavailable: 1
+
+# Persistence for production
+persistence:
+  sessions:
+    enabled: true
+    storageClass: "fast-ssd"
+    size: 100Gi
+    accessModes:
+      - ReadWriteOnce
+    mountPath: /data/sessions
+    subPath: sessions
+    annotations:
+      # Production persistence annotations
+      backup.velero.io/backup: "true"
+      backup.velero.io/snapshot-volumes: "true"
+  registry:
+    enabled: true
+    storageClass: "fast-ssd"
+    size: 50Gi
+    accessModes:
+      - ReadWriteOnce
+    mountPath: /data/registry
+    subPath: registry
+  config:
+    enabled: true
+    storageClass: "fast-ssd"
+    size: 5Gi
+    accessModes:
+      - ReadWriteOnce
+    mountPath: /data/config
+    subPath: config
+
+# Monitoring for production
+monitoring:
+  prometheus:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+      interval: "15s"
+      scrapeTimeout: "10s"
+      honorLabels: false
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: 'erlmcp_.*'
+          targetLabel: __tmp__
+        - sourceLabels: [__name__]
+          regex: '.*_sum|*_count|*_gauge'
+          action: drop
+  grafana:
+    enabled: true
+    dashboards:
+      erlmcp: {}
+      erlmcp-cluster: {}
+      erlmcp-performance: {}
+  otel:
+    enabled: true
+    enabledFor: ["core", "transports", "observability"]
+    sampling:
+      type: "fixed_rate"
+      rate: "0.5"
+    exporters:
+      otlp:
+        enabled: true
+        endpoint: "otel-collector.monitoring.svc.cluster.local:4317"
+        compression: "gzip"
+      jaeger:
+        enabled: true
+        endpoint: "jaeger-collector.monitoring.svc.cluster.local:14250"
+      prometheus:
+        enabled: true
+        endpoint: "prometheus.monitoring.svc.cluster.local:9090"
+  logging:
+    enabled: true
+    level: "info"
+    format: "json"
+    output: "stdout"
+    logrotate:
+      enabled: true
+      maxFiles: 30
+      maxSize: "100MB"
+    forwarders:
+      fluentd:
+        enabled: true
+        host: fluentd.monitoring.svc.cluster.local
+        port: 24224
+      loki:
+        enabled: true
+        url: "http://loki.monitoring.svc.cluster.local:3100"
+        labels:
+          app: "erlmcp-prod"
+          version: "3.0.0"
+
+# Security for production
+security:
+  rbac:
+    enabled: true
+    create: true
+    rules:
+      - apiGroups: [""]
+        resources: ["pods", "services", "configmaps", "secrets", "persistentvolumeclaims"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: [""]
+        resources: ["pods/log", "pods/exec"]
+        verbs: ["get", "list", "create"]
+      - apiGroups: ["networking.k8s.io"]
+        resources: ["networkpolicies"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["policy"]
+        resources: ["poddisruptionbudgets"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+      - apiGroups: ["autoscaling"]
+        resources: ["horizontalpodautoscalers"]
+        verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  podSecurityPolicy:
+    enabled: true
+    name: "erlmcp-prod-psp"
+    privileged: false
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+  secrets:
+    enabled: true
+    template:
+      type: Opaque
+      data:
+        database-password: ""
+        admin-password: ""
+        api-key: ""
+        session-secret: ""
+        cluster-cookie: "ZWJsbWNwLWRyYWdvLXByb2QtMy0wLTA="
+        prometheus-alertmanager-url: "aHR0cDovL2FsdGVybWFuZXJhbmRvbS5tb25pdG9yaW5nOjkwOTM="
+        external-api-keys: ""
+
+# Service mesh for production
+global:
+  serviceMesh:
+    enabled: true
+    istio:
+      enabled: true
+      gateway: "istio-system/ingressgateway"
+      caCert: "-----BEGIN CERTIFICATE-----\n-----END CERTIFICATE-----"
+      sidecarInject: "true"
+    linkerd:
+      enabled: false
+      identityTrustAnchor: ""
+      identityTlsCrt: ""
+      identityTlsKey: ""
+
+# TLS for production
+certificates:
+  enabled: true
+  tls:
+    crt: |
+      -----BEGIN CERTIFICATE-----
+      -----END CERTIFICATE-----
+    key: |
+      -----BEGIN PRIVATE KEY-----
+      -----END PRIVATE KEY-----
+  certManager:
+    enabled: true
+    issuer: "letsencrypt-prod"
+    dnsNames: ["erlmcp-prod.example.com"]

@@ -1,0 +1,404 @@
+{{/*
+  CronJobs for erlmcp deployment
+*/}}
+
+{{/*
+  Backup cronjob
+*/}}
+{{- if .Values.jobs.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-backup-cron
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: backup
+  annotations:
+    "batch.kubernetes.io/job-template": "backup"
+    "cronjob/name": "backup"
+    "argocd.argoproj.io/hook": "PreSync"
+    "argocd.argoproj.io/hook-delete-policy": "BeforeHookCreation"
+spec:
+  schedule: {{ .Values.jobs.backup.schedule | default "0 2 * * *" }}
+  timeZone: {{ .Values.jobs.backup.timeZone | default "UTC" }}
+  successfulJobsHistoryLimit: {{ .Values.jobs.backup.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .Values.jobs.backup.failedJobsHistoryLimit | default 1 }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.jobs.backup.backoffLimit | default 3 }}
+      activeDeadlineSeconds: {{ .Values.jobs.backup.activeDeadlineSeconds | default 3600 }}
+      template:
+        metadata:
+          labels:
+            {{- include "erlmcp.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: backup
+          annotations:
+            # Backup retention annotations
+            "backup/retention-days": "{{ .Values.jobs.backup.retentionDays | default 30 }}"
+            "backup/compression": "{{ .Values.jobs.backup.compression | default "gzip" }}"
+            "backup/schedule": "{{ .Values.jobs.backup.schedule }}"
+        spec:
+          {{- if .Values.global.serviceAccount.create }}
+          serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+          {{- end }}
+          restartPolicy: Never
+          containers:
+            - name: backup
+              image: "{{ .Values.global.image.repository }}-backup:{{ include "erlmcp.imageTag" . }}"
+              imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+              command: ["/bin/sh", "-c", "./backup.sh"]
+              args:
+                - "--destination=/backup"
+                - "--compression={{ .Values.jobs.backup.compression | default "gzip" }}"
+                - "--retention={{ .Values.jobs.backup.retentionDays | default 30 }}"
+                - "--verbose"
+              env:
+                # Environment variables
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: BACKUP_DATE
+                  value: {{ now | date "2006-01-02" | quote }}
+                - name: BACKUP_TIME
+                  value: {{ now | date "15:04:05" | quote }}
+                - name: BACKUP_SCHEDULE
+                  value: "{{ .Values.jobs.backup.schedule }}"
+              envFrom:
+                # Configuration from configmap
+                {{- if .Values.configMaps.main.enabled }}
+                - configMapRef:
+                    name: {{ include "erlmcp.configMapName" . }}
+                {{- end }}
+                # Environment variables from secret
+                {{- if .Values.secrets.enabled }}
+                - secretRef:
+                    name: {{ include "erlmcp.secretName" . }}
+                {{- end }}
+              {{- include "erlmcp.resources" . | nindent 16 }}
+              volumeMounts:
+                - name: sessions-data
+                  mountPath: /data/sessions
+                - name: registry-data
+                  mountPath: /data/registry
+                - name: config-data
+                  mountPath: /data/config
+                - name: backup-data
+                  mountPath: /backup
+          volumes:
+            - name: sessions-data
+              persistentVolumeClaim:
+                claimName: {{ include "erlmcp.fullname" . }}-sessions
+            - name: registry-data
+              persistentVolumeClaim:
+                claimName: {{ include "erlmcp.fullname" . }}-registry
+            - name: config-data
+              persistentVolumeClaim:
+                claimName: {{ include "erlmcp.fullname" . }}-config
+            - name: backup-data
+              emptyDir: {}
+{{- end }}
+
+{{/*
+  Health check cronjob
+*/}}
+{{- if .Values.jobs.healthcheck.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-healthcheck-cron
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: healthcheck
+  annotations:
+    "batch.kubernetes.io/job-template": "healthcheck"
+    "cronjob/name": "healthcheck"
+spec:
+  schedule: {{ .Values.jobs.healthcheck.schedule | default "*/30 * * * *" }}
+  timeZone: {{ .Values.jobs.healthcheck.timeZone | default "UTC" }}
+  successfulJobsHistoryLimit: {{ .Values.jobs.healthcheck.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .Values.jobs.healthcheck.failedJobsHistoryLimit | default 3 }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.jobs.healthcheck.backoffLimit | default 3 }}
+      activeDeadlineSeconds: {{ .Values.jobs.healthcheck.activeDeadlineSeconds | default 300 }}
+      template:
+        metadata:
+          labels:
+            {{- include "erlmcp.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: healthcheck
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: healthcheck
+              image: "{{ .Values.jobs.healthcheck.image.repository | default "curlimages/curl" }}:{{ .Values.jobs.healthcheck.image.tag | default "7.83.0" }}"
+              command: ["/bin/sh", "-c"]
+              args:
+                - |
+                  echo "Performing health checks..."
+
+                  # Check HTTP endpoint
+                  if ! curl -f http://{{ include "erlmcp.fullname" . }}-http:3000/health; then
+                    echo "HTTP health check failed"
+                    exit 1
+                  fi
+
+                  # Check cluster status
+                  if ! curl -f http://{{ include "erlmcp.fullname" . }}-cluster:9000/health; then
+                    echo "Cluster health check failed"
+                    exit 1
+                  fi
+
+                  # Check metrics endpoint
+                  if ! curl -f http://{{ include "erlmcp.fullname" . }}-metrics:9090/metrics; then
+                    echo "Metrics endpoint is not accessible"
+                    exit 1
+                  fi
+
+                  # Check OTEL endpoint
+                  if ! curl -f http://{{ include "erlmcp.fullname" . }}-otel:4317/health; then
+                    echo "OTEL endpoint is not accessible"
+                    exit 1
+                  fi
+
+                  echo "All health checks passed"
+              resources:
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+          initContainers:
+            - name: wait-for-services
+              image: busybox:1.35
+              command: ["sh", "-c"]
+              args:
+                - |
+                  echo "Waiting for services to be ready..."
+                  until nc -z {{ include "erlmcp.fullname" . }}-http 3000; do
+                    echo "Waiting for HTTP service..."
+                    sleep 2
+                  done
+                  until nc -z {{ include "erlmcp.fullname" . }}-cluster 9000; do
+                    echo "Waiting for cluster service..."
+                    sleep 2
+                  done
+                  until nc -z {{ include "erlmcp.fullname" . }}-metrics 9090; do
+                    echo "Waiting for metrics service..."
+                    sleep 2
+                  done
+                  echo "Services are ready"
+              resources:
+                limits:
+                  cpu: "100m"
+                  memory: "128Mi"
+                requests:
+                  cpu: "50m"
+                  memory: "64Mi"
+{{- end }}
+
+{{/*
+  Metrics cleanup cronjob
+*/}}
+{{- if .Values.jobs.metrics.cleanup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-metrics-cleanup-cron
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: metrics
+  annotations:
+    "batch.kubernetes.io/job-template": "metrics-cleanup"
+    "cronjob/name": "metrics-cleanup"
+spec:
+  schedule: {{ .Values.jobs.metrics.cleanup.schedule | default "0 0 * * *" }}
+  timeZone: {{ .Values.jobs.metrics.cleanup.timeZone | default "UTC" }}
+  successfulJobsHistoryLimit: {{ .Values.jobs.metrics.cleanup.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .Values.jobs.metrics.cleanup.failedJobsHistoryLimit | default 1 }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.jobs.metrics.cleanup.backoffLimit | default 3 }}
+      activeDeadlineSeconds: {{ .Values.jobs.metrics.cleanup.activeDeadlineSeconds | default 3600 }}
+      template:
+        metadata:
+          labels:
+            {{- include "erlmcp.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: metrics
+        spec:
+          {{- if .Values.global.serviceAccount.create }}
+          serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+          {{- end }}
+          restartPolicy: Never
+          containers:
+            - name: metrics-cleanup
+              image: "{{ .Values.global.image.repository }}-tools:{{ include "erlmcp.imageTag" . }}"
+              imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+              command: ["/bin/sh", "-c", "./cleanup-metrics.sh"]
+              args:
+                - "--retention={{ .Values.jobs.metrics.cleanup.retentionDays | default 30 }}"
+                - "--verbose"
+              env:
+                # Environment variables
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: CLEANUP_DATE
+                  value: {{ now | date "2006-01-02" | quote }}
+              envFrom:
+                # Configuration from configmap
+                {{- if .Values.configMaps.main.enabled }}
+                - configMapRef:
+                    name: {{ include "erlmcp.configMapName" . }}
+                {{- end }}
+              {{- include "erlmcp.resources" . | nindent 16 }}
+              volumeMounts:
+                - name: metrics-data
+                  mountPath: /var/log/erlmcp/metrics
+          volumes:
+            - name: metrics-data
+              emptyDir: {}
+{{- end }}
+
+{{/*
+  Log rotation cronjob
+*/}}
+{{- if .Values.jobs.logrotation.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-logrotation-cron
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: logrotation
+  annotations:
+    "batch.kubernetes.io/job-template": "logrotation"
+    "cronjob/name": "logrotation"
+spec:
+  schedule: {{ .Values.jobs.logrotation.schedule | default "0 1 * * *" }}
+  timeZone: {{ .Values.jobs.logrotation.timeZone | default "UTC" }}
+  successfulJobsHistoryLimit: {{ .Values.jobs.logrotation.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .Values.jobs.logrotation.failedJobsHistoryLimit | default 1 }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.jobs.logrotation.backoffLimit | default 3 }}
+      activeDeadlineSeconds: {{ .Values.jobs.logrotation.activeDeadlineSeconds | default 1800 }}
+      template:
+        metadata:
+          labels:
+            {{- include "erlmcp.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: logrotation
+        spec:
+          {{- if .Values.global.serviceAccount.create }}
+          serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+          {{- end }}
+          restartPolicy: Never
+          containers:
+            - name: logrotation
+              image: "{{ .Values.global.image.repository }}-tools:{{ include "erlmcp.imageTag" . }}"
+              imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+              command: ["/bin/sh", "-c", "./rotate-logs.sh"]
+              args:
+                - --max-files={{ .Values.jobs.logrotation.maxFiles | default 10 }}
+                - --max-size={{ .Values.jobs.logrotation.maxSize | default "100MB" }}
+                - --verbose
+              env:
+                # Environment variables
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: ROTATION_DATE
+                  value: {{ now | date "2006-01-02" | quote }}
+              envFrom:
+                # Configuration from configmap
+                {{- if .Values.configMaps.main.enabled }}
+                - configMapRef:
+                    name: {{ include "erlmcp.configMapName" . }}
+                {{- end }}
+              {{- include "erlmcp.resources" . | nindent 16 }}
+              volumeMounts:
+                - name: logs
+                  mountPath: /var/log/erlmcp
+          volumes:
+            - name: logs
+              emptyDir: {}
+{{- end }}
+
+{{/*
+  Database backup cronjob
+*/}}
+{{- if .Values.jobs.database.backup.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-database-backup-cron
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: database
+  annotations:
+    "batch.kubernetes.io/job-template": "database-backup"
+    "cronjob/name": "database-backup"
+spec:
+  schedule: {{ .Values.jobs.database.backup.schedule | default "0 3 * * 0" }}
+  timeZone: {{ .Values.jobs.database.backup.timeZone | default "UTC" }}
+  successfulJobsHistoryLimit: {{ .Values.jobs.database.backup.successfulJobsHistoryLimit | default 3 }}
+  failedJobsHistoryLimit: {{ .Values.jobs.database.backup.failedJobsHistoryLimit | default 1 }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.jobs.database.backup.backoffLimit | default 3 }}
+      activeDeadlineSeconds: {{ .Values.jobs.database.backup.activeDeadlineSeconds | default 7200 }}
+      template:
+        metadata:
+          labels:
+            {{- include "erlmcp.selectorLabels" . | nindent 12 }}
+            app.kubernetes.io/component: database
+        spec:
+          {{- if .Values.global.serviceAccount.create }}
+          serviceAccountName: {{ include "erlmcp.serviceAccountName" . }}
+          {{- end }}
+          restartPolicy: Never
+          containers:
+            - name: database-backup
+              image: "{{ .Values.global.image.repository }}-database-tools:{{ include "erlmcp.imageTag" . }}"
+              imagePullPolicy: {{ .Values.global.image.pullPolicy }}
+              command: ["/bin/sh", "-c", "./backup-database.sh"]
+              args:
+                - "--host={{ .Values.secrets.database.postgresql.host }}"
+                - "--port={{ .Values.secrets.database.postgresql.port }}"
+                - "--database={{ .Values.secrets.database.postgresql.database }}"
+                - "--user={{ .Values.secrets.database.postgresql.username }}"
+                - "--destination=/backup"
+                - --retention={{ .Values.jobs.database.backup.retentionDays | default 30 }}
+                - --verbose
+              env:
+                # Environment variables
+                - name: POD_NAMESPACE
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.namespace
+                - name: BACKUP_DATE
+                  value: {{ now | date "2006-01-02" | quote }}
+                - name: DATABASE_TYPE
+                  value: "{{ .Values.secrets.database.postgresql.type | default "postgresql" }}"
+              envFrom:
+                # Environment variables from secret
+                {{- if .Values.secrets.enabled }}
+                - secretRef:
+                    name: {{ include "erlmcp.secretName" . }}
+                {{- end }}
+              {{- include "erlmcp.resources" . | nindent 16 }}
+              volumeMounts:
+                - name: database-data
+                  mountPath: /data/database
+                - name: backup-data
+                  mountPath: /backup
+          volumes:
+            - name: database-data
+              emptyDir: {}
+            - name: backup-data
+              persistentVolumeClaim:
+                claimName: {{ include "erlmcp.fullname" . }}-database-backup
+{{- end }}

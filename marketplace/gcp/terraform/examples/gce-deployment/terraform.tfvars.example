@@ -1,0 +1,70 @@
+# ============================================================================
+# Compute Engine Deployment Example - Terraform Variables
+# ============================================================================
+
+# Project Configuration
+project_id = "your-project-id"
+region     = "us-central1"
+zone       = "us-central1-a"
+
+# Instance Configuration
+instance_name  = "erlmcp-server"
+instance_count = 1
+machine_type   = "e2-medium"
+
+# Disk Configuration
+disk_type   = "pd-balanced"
+disk_size_gb = 20
+
+# Source Image
+# Use custom Packer-built image: projects/your-project/global/images/erlmcp-3-0-0-YYYYMMDD
+# Or stock Ubuntu:
+source_image = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+
+# Network Configuration
+network_name = "erlmcp-vpc"
+subnet_cidr  = "10.0.0.0/24"
+public_ip    = true
+create_firewall_rules = true
+http_source_ranges    = ["0.0.0.0/0"]
+create_load_balancer  = false
+
+# Security
+enable_secure_boot          = true
+enable_integrity_monitoring = true
+
+# Health Check
+health_check_path = "/health"
+
+# Environment
+environment = "production"
+
+# Labels
+labels = {
+  app        = "erlmcp"
+  managed-by = "terraform"
+  environment = "production"
+}
+
+# Observability
+create_uptime_check        = true
+uptime_check_host          = ""
+create_slos                = true
+enable_error_rate_alert    = true
+enable_latency_alert       = true
+enable_memory_alert        = true
+enable_cpu_alert           = true
+enable_health_check_alert  = true
+
+# Notification Channels (optional)
+# notification_channels = {
+#   email = {
+#     enabled = true
+#     address = "admin@example.com"
+#   }
+#   slack = {
+#     enabled     = true
+#     channel_name = "#alerts"
+#     auth_token   = "xoxb-your-token"
+#   }
+# }

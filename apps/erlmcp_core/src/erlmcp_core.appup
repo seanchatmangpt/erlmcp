@@ -1,0 +1,174 @@
+%% -*- erlang -*-
+%% vim: set ft=erlang ts=4 sw=4 et:
+%%%
+%%% erlmcp_core.appup - Hot Code Upgrade Instructions
+%%%
+%%% Purpose: Zero-downtime upgrade/downgrade for erlmcp_core application
+%%% Version: 2.1.0 -> 3.0.0
+%%%
+%%% Upgrade Strategy:
+%%%   1. Supervisor suspend (one_for_one strategy)
+%%%   2. Code reload for all gen_servers
+%%%   3. State transformation via code_change/3
+%%%   4. Resume operations
+%%%
+%%% Supported Versions:
+%%%   - From: 2.1.0
+%%%   - To: 3.0.0
+%%%   - Downgrade: 3.0.0 -> 2.1.0
+%%%
+%%% State Changes:
+%%%   - Added: priority_alias field to #state{} (OTP 28 priority messages)
+%%%   - Added: protocol_version field negotiation
+%%%   - Modified: registry state with version tracking
+%%%
+%%% Dependencies:
+%%%   - Requires gproc 0.9.0+
+%%%   - Requires OTP 28+
+%%%
+%%% See: docs/HOT_CODE_UPGRADE.md
+
+{"3.0.0",
+ [
+  %% Upgrade from 2.1.0 to 3.0.0
+  {"2.1.0",
+   [
+    %% Step 1: Suspend supervisors (one_for_one - safe for individual restart)
+    {apply, {supervisor, suspend, [erlmcp_sup]}},
+    {apply, {supervisor, suspend, [erlmcp_core_sup]}},
+    {apply, {supervisor, suspend, [erlmcp_server_sup]}},
+
+    %% Step 2: Suspend gen_servers (prevent new requests)
+    {apply, {erlmcp_registry, suspend, []}},
+    {apply, {gen_server, call, [erlmcp_registry, {prepare_upgrade, 3.0.0}]}},
+
+    %% Step 3: Load new code modules (sorted by dependency)
+    {load_module, erlmcp_app, brutal_purge, purge},
+    {load_module, erlmcp_sup, brutal_purge, purge},
+    {load_module, erlmcp_core_sup, brutal_purge, purge},
+    {load_module, erlmcp_server_sup, brutal_purge, purge},
+    {load_module, erlmcp_registry, brutal_purge, purge},
+    {load_module, erlmcp_registry_utils, brutal_purge, purge},
+    {load_module, erlmcp_registry_dist, brutal_purge, purge},
+    {load_module, erlmcp_server, brutal_purge, purge},
+    {load_module, erlmcp_client, brutal_purge, purge},
+    {load_module, erlmcp_json_rpc, brutal_purge, purge},
+    {load_module, erlmcp_capabilities, brutal_purge, purge},
+    {load_module, erlmcp_resources, brutal_purge, purge},
+    {load_module, erlmcp_tools, brutal_purge, purge},
+    {load_module, erlmcp_prompts, brutal_purge, purge},
+    {load_module, erlmcp_session, brutal_purge, purge},
+    {load_module, erlmcp_session_manager, brutal_purge, purge},
+    {load_module, erlmcp_session_backend, brutal_purge, purge},
+    {load_module, erlmcp_cache, brutal_purge, purge},
+    {load_module, erlmcp_rate_limiter, brutal_purge, purge},
+    {load_module, erlmcp_circuit_breaker, brutal_purge, purge},
+    {load_module, erlmcp_secrets, brutal_purge, purge},
+    {load_module, erlmcp_auth, brutal_purge, purge},
+    {load_module, erlmcp_protocol_versioning, brutal_purge, purge},
+    {load_module, erlmcp_upgrade_coordinator, brutal_purge, purge},
+    {load_module, erlmcp_state_migration, brutal_purge, purge},
+
+    %% Step 4: Apply code_change to transform state (v2.1.0 -> v3.0.0)
+    {apply, {erlmcp_registry, code_change, [3.0.0]}},
+    {apply, {erlmcp_server, code_change, [3.0.0]}},
+    {apply, {erlmcp_client, code_change, [3.0.0]}},
+    {apply, {erlmcp_session, code_change, [3.0.0]}},
+    {apply, {erlmcp_cache, code_change, [3.0.0]}},
+    {apply, {erlmcp_rate_limiter, code_change, [3.0.0]}},
+    {apply, {erlmcp_circuit_breaker, code_change, [3.0.0]}},
+    {apply, {erlmcp_secrets, code_change, [3.0.0]}},
+    {apply, {erlmcp_auth, code_change, [3.0.0]}},
+
+    %% Step 5: Migrate ETS tables
+    {apply, {erlmcp_state_migration, migrate_ets_tables, [2.1.0, 3.0.0]}},
+
+    %% Step 6: Migrate Mnesia schemas (if used)
+    {apply, {erlmcp_state_migration, migrate_mnesia_schemas, [2.1.0, 3.0.0]}},
+
+    %% Step 7: Resume gen_servers
+    {apply, {erlmcp_registry, resume, []}},
+    {apply, {gen_server, call, [erlmcp_registry, {post_upgrade, 3.0.0}]}},
+
+    %% Step 8: Resume supervisors
+    {apply, {supervisor, resume, [erlmcp_sup]}},
+    {apply, {supervisor, resume, [erlmcp_core_sup]}},
+    {apply, {supervisor, resume, [erlmcp_server_sup]}},
+
+    %% Step 9: Verify upgrade health
+    {apply, {erlmcp_upgrade_coordinator, verify_upgrade, [3.0.0]}},
+
+    %% Step 10: Log successful upgrade
+    {apply, {logger, info, ["erlmcp_core upgraded from 2.1.0 to 3.0.0", []]}}
+   ],
+   [
+    %% Downgrade from 3.0.0 to 2.1.0
+    {"3.0.0",
+     [
+      %% Step 1: Suspend supervisors
+      {apply, {supervisor, suspend, [erlmcp_sup]}},
+      {apply, {supervisor, suspend, [erlmcp_core_sup]}},
+      {apply, {supervisor, suspend, [erlmcp_server_sup]}},
+
+      %% Step 2: Suspend gen_servers
+      {apply, {erlmcp_registry, suspend, []}},
+      {apply, {gen_server, call, [erlmcp_registry, {prepare_downgrade, 2.1.0}]}},
+
+      %% Step 3: Load old code modules
+      {load_module, erlmcp_app, brutal_purge, purge},
+      {load_module, erlmcp_sup, brutal_purge, purge},
+      {load_module, erlmcp_core_sup, brutal_purge, purge},
+      {load_module, erlmcp_server_sup, brutal_purge, purge},
+      {load_module, erlmcp_registry, brutal_purge, purge},
+      {load_module, erlmcp_registry_utils, brutal_purge, purge},
+      {load_module, erlmcp_registry_dist, brutal_purge, purge},
+      {load_module, erlmcp_server, brutal_purge, purge},
+      {load_module, erlmcp_client, brutal_purge, purge},
+      {load_module, erlmcp_json_rpc, brutal_purge, purge},
+      {load_module, erlmcp_capabilities, brutal_purge, purge},
+      {load_module, erlmcp_resources, brutal_purge, purge},
+      {load_module, erlmcp_tools, brutal_purge, purge},
+      {load_module, erlmcp_prompts, brutal_purge, purge},
+      {load_module, erlmcp_session, brutal_purge, purge},
+      {load_module, erlmcp_session_manager, brutal_purge, purge},
+      {load_module, erlmcp_session_backend, brutal_purge, purge},
+      {load_module, erlmcp_cache, brutal_purge, purge},
+      {load_module, erlmcp_rate_limiter, brutal_purge, purge},
+      {load_module, erlmcp_circuit_breaker, brutal_purge, purge},
+      {load_module, erlmcp_secrets, brutal_purge, purge},
+      {load_module, erlmcp_auth, brutal_purge, purge},
+
+      %% Step 4: Apply code_change to transform state (v3.0.0 -> v2.1.0)
+      {apply, {erlmcp_registry, code_change, [2.1.0]}},
+      {apply, {erlmcp_server, code_change, [2.1.0]}},
+      {apply, {erlmcp_client, code_change, [2.1.0]}},
+      {apply, {erlmcp_session, code_change, [2.1.0]}},
+      {apply, {erlmcp_cache, code_change, [2.1.0]}},
+      {apply, {erlmcp_rate_limiter, code_change, [2.1.0]}},
+      {apply, {erlmcp_circuit_breaker, code_change, [2.1.0]}},
+      {apply, {erlmcp_secrets, code_change, [2.1.0]}},
+      {apply, {erlmcp_auth, code_change, [2.1.0]}},
+
+      %% Step 5: Rollback ETS tables
+      {apply, {erlmcp_state_migration, rollback_ets_tables, [3.0.0, 2.1.0]}},
+
+      %% Step 6: Rollback Mnesia schemas
+      {apply, {erlmcp_state_migration, rollback_mnesia_schemas, [3.0.0, 2.1.0]}},
+
+      %% Step 7: Resume gen_servers
+      {apply, {erlmcp_registry, resume, []}},
+      {apply, {gen_server, call, [erlmcp_registry, {post_downgrade, 2.1.0}]}},
+
+      %% Step 8: Resume supervisors
+      {apply, {supervisor, resume, [erlmcp_sup]}},
+      {apply, {supervisor, resume, [erlmcp_core_sup]}},
+      {apply, {supervisor, resume, [erlmcp_server_sup]}},
+
+      %% Step 9: Verify downgrade health
+      {apply, {erlmcp_upgrade_coordinator, verify_downgrade, [2.1.0]}},
+
+      %% Step 10: Log successful downgrade
+      {apply, {logger, info, ["erlmcp_core downgraded from 3.0.0 to 2.1.0", []]}}
+     ]}
+   ]}
+ ]}.

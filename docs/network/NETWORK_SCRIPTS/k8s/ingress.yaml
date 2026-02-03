@@ -1,0 +1,219 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-ingress
+  namespace: erlmcp
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/ssl-passthrough: "false"
+    nginx.ingress.kubernetes.io/load-balance: "least_conn"
+    nginx.ingress.kubernetes.io/healthcheck-path: /health
+    nginx.ingress.kubernetes.io/healthcheck-interval: "10s"
+    nginx.ingress.kubernetes.io/healthcheck-timeout: "5s"
+    nginx.ingress.kubernetes.io/healthcheck-upstream: "on"
+    nginx.ingress.kubernetes.io/keep-alive: "75"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120s"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "120s"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    cert-manager.io/acme-challenge-type: "http01"
+    cert-manager.io/acme-http01-edit-in-place: "true"
+spec:
+  tls:
+  - hosts:
+    - erlmcp.example.com
+    secretName: erlmcp-tls-secret
+  rules:
+  - host: erlmcp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-service
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-service
+            port:
+              number: 8080
+      - path: /health
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-service
+            port:
+              number: 8080
+      - path: /metrics
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-service
+            port:
+              number: 9090
+      - path: /ws
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-websocket
+            port:
+              number: 8443
+
+---
+# Internal Ingress for Monitoring
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-monitoring-ingress
+  namespace: monitoring
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: monitoring.erlmcp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus-operator
+            port:
+              number: 9090
+      - path: /grafana
+        pathType: Prefix
+        backend:
+          service:
+            name: prometheus-operator
+            port:
+              number: 3000
+
+---
+# Logging Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-logging-ingress
+  namespace: logging
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: logging.erlmcp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: kibana
+            port:
+              number: 5601
+
+---
+# API Gateway Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-api-gateway
+  namespace: erlmcp
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "X-Requested-With, Content-Type, Accept, Origin, Authorization"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+    nginx.ingress.kubernetes.io/rate-limit-window-level: "ip"
+spec:
+  rules:
+  - host: api.erlmcp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-internal
+            port:
+              number: 8080
+      - path: /v1
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-internal
+            port:
+              number: 8080
+      - path: /v2
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-internal
+            port:
+              number: 8080
+
+---
+# WebSocket Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-websocket-ingress
+  namespace: erlmcp
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600s"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600s"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/keep-alive: "3600s"
+    nginx.ingress.kubernetes.io/websocket-service: erlmcp-websocket
+spec:
+  rules:
+  - host: ws.erlmcp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-websocket
+            port:
+              number: 8443
+
+---
+# Health Check Ingress
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: erlmcp-health-ingress
+  namespace: erlmcp
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/healthcheck-interval: "30s"
+    nginx.ingress.kubernetes.io/healthcheck-timeout: "5s"
+    nginx.ingress.kubernetes.io/healthcheck-upsream: "on"
+    nginx.ingress.kubernetes.io/healthcheck-path: /health
+spec:
+  rules:
+  - host: health.erlmcp.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: erlmcp-service
+            port:
+              number: 8080

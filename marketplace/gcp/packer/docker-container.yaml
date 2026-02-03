@@ -1,0 +1,25 @@
+#cloud-config
+version: 1.0.0
+containerd:
+  runc:
+    version: "1.1.7"
+  snapshotter: "overlayfs"
+registry:
+  mirrors:
+    "us-central1-docker.pkg.dev":
+      http:
+        addr: "us-central1-docker.pkg.dev:443"
+  config:
+    mirrors:
+      "us-central1-docker.pkg.dev":
+        http:
+          creds: []
+          tls:
+            insecure_skip_verify: true
+storage:
+  filesystem:
+    root:
+      path: "/var/lib/containerd"
+systemd:
+  cgroup:
+    enabled: true

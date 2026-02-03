@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: erlmcp-prod
+
+resources:
+  - ../../base
+  - canary/
+
+images:
+  - name: erlmcp
+    newName: ghcr.io/seanchatmangpt/erlmcp
+    newTag: latest
+
+replicas:
+  - name: erlmcp
+    count: 3
+
+configMapGenerator:
+  - name: erlmcp-config
+    behavior: merge
+    literals:
+      - ERLMCP_LOG_LEVEL=warn
+      - ERLMCP_SESSION_BACKEND=mnesia
+      - ERLMCP_REGISTRY_TYPE=distributed
+      - ERLMCP_OTEL_ENDPOINT=http://opentelemetry-collector.observability.svc.cluster.local:4317
+
+patchesStrategicMerge:
+  - patches/statefulset-prod.yaml
+  - patches/ingress-prod.yaml
+
+# Add production-specific resources
+resources:
+  - pdb-strict.yaml
+  - network-policy-strict.yaml

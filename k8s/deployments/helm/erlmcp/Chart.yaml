@@ -1,0 +1,65 @@
+apiVersion: v2
+name: erlmcp
+description: Production-grade Kubernetes deployment for erlmcp v3 - Erlang MCP SDK
+version: 3.0.0
+appVersion: 3.0.0
+home: https://github.com/seanchatmangpt/erlmcp
+sources:
+  - https://github.com/seanchatmangpt/erlmcp
+keywords:
+  - erlang
+  - otp
+  - mcp
+  - json-rpc
+  - distributed-systems
+  - erlmcp
+maintainers:
+  - name: erlmcp-team
+    email: dev@erlmcp.io
+annotations:
+  category: "erlang"
+  "helm.sh/chart-template-version": "1.0.0"
+  "helm.sh/app-version": "3.0.0"
+  "helm.sh/chart": "erlmcp"
+  "helm.sh/maintainers": "erlmcp-team"
+  "helm.sh/repository": "https://charts.erlmcp.io"
+  "helm.sh/url": "https://github.com/seanchatmangpt/erlmcp"
+  "helm.sh/version": "3.0.0"
+  "helm.sh/description": "Production-grade Erlang MCP SDK deployment"
+---
+# Kustomize specific annotations
+kustomizeConfig:
+  resources:
+    - ../../base
+  images:
+    - name: erlmcp/erlmcp
+      newName: erlmcp/erlmcp
+      newTag: "3.0.0"
+---
+# Metadata for enterprise deployment
+metadata:
+  labels:
+    app: erlmcp
+    component: core
+    tier: backend
+    heritage: "helm"
+    release: "erlmcp"
+    chart: "erlmcp-3.0.0"
+    version: "3.0.0"
+    git_commit: "{{ .Chart.AppVersion }}"
+    build_date: "{{ .Values.global.buildDate }}"
+    created_by: "helm"
+  annotations:
+    "helm.sh/chart": "erlmcp"
+    "helm.sh/app-version": "3.0.0"
+    "helm.sh/created-by": "helm"
+    "helm.sh/chart-template-version": "1.0.0"
+    "deployment.kubernetes.io/revision": "1"
+    "app.kubernetes.io/name": "erlmcp"
+    "app.kubernetes.io/instance": "erlmcp"
+    "app.kubernetes.io/version": "3.0.0"
+    "app.kubernetes.io/component": "core"
+    "app.kubernetes.io/part-of": "erlmcp-system"
+    "app.kubernetes.io/managed-by": "helm"
+    "app.kubernetes.io/tier": "backend"
+    "app.kubernetes.io/heritage": "helm"

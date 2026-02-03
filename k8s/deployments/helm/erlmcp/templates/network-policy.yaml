@@ -1,0 +1,614 @@
+{{/*
+  =============================================================================
+  Zero-Trust Network Policy for erlmcp
+  =============================================================================
+  Security Principle: Never trust, always verify
+  Default Deny: All traffic denied unless explicitly allowed
+  Least Privilege: Each service communicates only with what it needs
+  =============================================================================
+*/}}
+
+{{- if .Values.networking.policies.enabled }}
+
+{{- /* ========================================================================
+    BASE POLICY: Default Deny All (Zero-Trust Foundation)
+    ======================================================================== */}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-deny-all-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: security
+    policy-type: base-deny
+    network-policy: "zero-trust"
+  annotations:
+    description: "Default deny all ingress traffic - zero-trust foundation"
+    compliance: "CIS-controlled"
+    security-level: "critical"
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-deny-all-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: security
+    policy-type: base-deny
+    network-policy: "zero-trust"
+  annotations:
+    description: "Default deny all egress traffic - zero-trust foundation"
+    compliance: "CIS-controlled"
+    security-level: "critical"
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+
+{{- /* ========================================================================
+    POLICY 1: erlmcp Core Service Ingress
+    ======================================================================== */}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: security
+    policy-type: ingress
+    {{- if (include "erlmcp.mtls.enabled" .) }}
+    "erlmcp.io/mtls-enforced": "true"
+    {{- end }}
+  annotations:
+    description: "Allow ingress to erlmcp from approved sources only"
+    allowed-from: "ingress,service-mesh,monitoring"
+    "erlmcp.io/network-policy": "zero-trust"
+    "erlmcp.io/version": {{ .Chart.AppVersion | quote }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+
+  ingress:
+    {{- /* Allow from ingress controllers (external traffic) */}}
+    {{- range .Values.networking.policies.ingress.controllers }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.service.ports.http.port | default 8080 }}
+        {{- if (include "erlmcp.tls.enabled" $) }}
+        - protocol: TCP
+          port: {{ $.Values.service.ports.https.port | default 8443 }}
+        {{- end }}
+    {{- end }}
+
+    {{- /* Allow from Istio service mesh (mTLS) */}}
+    {{- if eq .Values.global.serviceMesh.provider "istio" }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istio-ingressgateway
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.ports.http.port | default 8080 }}
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: {{ .Values.service.ports.https.port | default 8443 }}
+        {{- end }}
+        - protocol: TCP
+          port: {{ .Values.config.transport.ws.port | default 8082 }}
+        - protocol: TCP
+          port: {{ .Values.config.transport.sse.port | default 8083 }}
+    {{- end }}
+
+    {{- /* Allow from Linkerd service mesh (mTLS) */}}
+    {{- if eq .Values.global.serviceMesh.provider "linkerd" }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: linkerd
+          podSelector:
+            matchLabels:
+              component: proxy
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.ports.http.port | default 8080 }}
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: {{ .Values.service.ports.https.port | default 8443 }}
+        {{- end }}
+    {{- end }}
+
+    {{- /* Allow from Prometheus for metrics scraping */}}
+    {{- if .Values.global.monitoring.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networking.policies.monitoringNamespace | default "monitoring" }}
+          podSelector:
+            matchLabels:
+              app: prometheus
+      ports:
+        - protocol: TCP
+          port: {{ .Values.monitoring.prometheus.port | default 9090 }}
+    {{- end }}
+
+    {{- /* Allow from Grafana for dashboard queries */}}
+    {{- if .Values.global.monitoring.grafana.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networking.policies.monitoringNamespace | default "monitoring" }}
+          podSelector:
+            matchLabels:
+              app: grafana
+      ports:
+        - protocol: TCP
+          port: {{ .Values.monitoring.prometheus.port | default 9090 }}
+    {{- end }}
+
+    {{- /* Allow from OpenTelemetry Collector */}}
+    {{- if .Values.global.monitoring.otel.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networking.policies.otelNamespace | default "observability" }}
+          podSelector:
+            matchLabels:
+              app: opentelemetry-collector
+      ports:
+        - protocol: TCP
+          port: {{ .Values.monitoring.prometheus.port | default 9090 }}
+    {{- end }}
+
+    {{- /* Allow inter-pod communication within erlmcp cluster */}}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "erlmcp.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.config.transport.tcp.port | default 8080 }}
+        - protocol: TCP
+          port: {{ .Values.config.transport.http.port | default 8081 }}
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: {{ .Values.service.ports.https.port | default 8443 }}
+        {{- end }}
+        - protocol: TCP
+          port: {{ .Values.config.transport.ws.port | default 8082 }}
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: {{ .Values.config.transport.ws.tlsPort | default 8086 }}
+        {{- end }}
+        - protocol: TCP
+          port: {{ .Values.config.transport.sse.port | default 8083 }}
+        - protocol: TCP
+          port: {{ .Values.monitoring.prometheus.port | default 9090 }}
+        - protocol: TCP
+          port: 4369  {{- /* EPMD for Erlang clustering */}}
+        - protocol: TCP
+          port: 9100  {{- /* Distributed Erlang */}}
+
+{{- /* ========================================================================
+    POLICY 2: erlmcp Core Service Egress
+    ======================================================================== */}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-egress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: security
+    policy-type: egress
+    {{- if (include "erlmcp.mtls.enabled" .) }}
+    "erlmcp.io/mtls-enforced": "true"
+    {{- end }}
+  annotations:
+    description: "Allow egress from erlmcp to required services only"
+    allowed-to: "dns,database,cache,otel,external"
+    "erlmcp.io/network-policy": "zero-trust"
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+
+  egress:
+    {{- /* Allow DNS resolution (kube-system/CoreDNS) */}}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    {{- /* Allow DNS resolution (coredns namespace) */}}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: coredns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+
+    {{- /* Allow to PostgreSQL database */}}
+    {{- if .Values.app.database.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.security.networkPolicy.databaseNamespaceLabels.kubernetes_io_metadata_name | default "database" }}
+          podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432  {{- /* PostgreSQL */}}
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: 5433  {{- /* PostgreSQL TLS */}}
+        {{- end }}
+    {{- end }}
+
+    {{- /* Allow to Redis cache */}}
+    {{- if .Values.app.cache.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.security.networkPolicy.redisNamespaceLabels.kubernetes_io_metadata_name | default "cache" }}
+          podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379  {{- /* Redis */}}
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: 6380  {{- /* Redis TLS */}}
+        {{- end }}
+    {{- end }}
+
+    {{- /* Allow to RabbitMQ message queue */}}
+    {{- if .Values.app.queue.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.security.networkPolicy.queueNamespaceLabels.kubernetes_io_metadata_name | default "messaging" }}
+          podSelector:
+            matchLabels:
+              app: rabbitmq
+      ports:
+        - protocol: TCP
+          port: 5672  {{- /* AMQP */}}
+        - protocol: TCP
+          port: 15672 {{- /* Management UI */}}
+    {{- end }}
+
+    {{- /* Allow to OpenTelemetry Collector */}}
+    {{- if .Values.global.monitoring.otel.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.security.networkPolicy.otelNamespaceLabels.kubernetes_io_metadata_name | default "observability" }}
+          podSelector:
+            matchLabels:
+              app: opentelemetry-collector
+      ports:
+        - protocol: TCP
+          port: 4317  {{- /* OTLP gRPC */}}
+        - protocol: TCP
+          port: 4318  {{- /* OTLP HTTP */}}
+        - protocol: TCP
+          port: 8888  {{- /* Jaeger compatible */}}
+    {{- end }}
+
+    {{- /* Allow to Jaeger for distributed tracing */}}
+    {{- if .Values.global.monitoring.otel.enabled }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.security.networkPolicy.otelNamespaceLabels.kubernetes_io_metadata_name | default "observability" }}
+          podSelector:
+            matchLabels:
+              app: jaeger
+      ports:
+        - protocol: TCP
+          port: 6831  {{- /* Jaeger compact UDP */}}
+        - protocol: UDP
+          port: 6831
+        - protocol: TCP
+          port: 14250 {{- /* Jaeger gRPC */}}
+        - protocol: TCP
+          port: 14268 {{- /* Jaeger HTTP */}}
+    {{- end }}
+
+    {{- /* Allow inter-pod clustering (EPMD + Distributed Erlang) */}}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "erlmcp.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 4369  {{- /* EPMD */}}
+        - protocol: TCP
+          port: 9100  {{- /* Distributed Erlang range start */}}
+        - protocol: TCP
+          port: 9101
+        - protocol: TCP
+          port: 9102
+        - protocol: TCP
+          port: 9103
+        - protocol: TCP
+          port: 9104
+        - protocol: TCP
+          port: 9105
+
+    {{- /* Allow to Istio sidecar/proxy */}}
+    {{- if eq .Values.global.serviceMesh.provider "istio" }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istio-proxy
+      ports:
+        - protocol: TCP
+          port: 15001  {{- /* Envoy passthrough */}}
+        - protocol: TCP
+          port: 15006  {{- /* Envoy passthrough */}}
+        - protocol: TCP
+          port: 15021  {{- /* Health check */}}
+    {{- end }}
+
+    {{- /* Allow to Linkerd proxy */}}
+    {{- if eq .Values.global.serviceMesh.provider "linkerd" }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: linkerd
+          podSelector:
+            matchLabels:
+              component: proxy
+      ports:
+        - protocol: TCP
+          port: 4143  {{- /* Linkerd proxy */}}
+        - protocol: TCP
+          port: 4191  {{- /* Linkerd admin */}}
+    {{- end }}
+
+    {{- /* Allow external HTTPS (scoped) */}}
+    {{- /* WARNING: This allows all HTTPS egress. Restrict further for production. */}}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8     {{- /* RFC1918 */}}
+              - 172.16.0.0/12  {{- /* RFC1918 */}}
+              - 192.168.0.0/16 {{- /* RFC1918 */}}
+              - 127.0.0.0/8    {{- /* Loopback */}}
+      ports:
+        - protocol: TCP
+          port: 443
+
+    {{- /* Custom egress rules from values */}}
+    {{- range .Values.networking.policies.customEgress }}
+    - to:
+        {{- if .to }}
+        {{- toYaml .to | nindent 8 }}
+        {{- else }}
+        - ipBlock:
+            cidr: 0.0.0.0/0
+        {{- end }}
+      ports:
+        {{- if .ports }}
+        {{- toYaml .ports | nindent 8 }}
+        {{- else }}
+        - protocol: TCP
+          port: 443
+        {{- end }}
+    {{- end }}
+
+{{- /* ========================================================================
+    POLICY 3: mTLS-Only Policy (Optional Strict Mode)
+    ======================================================================== */}}
+{{- if and (include "erlmcp.mtls.enabled" .) .Values.tls.mtls.enforceStrict }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-mtls-only
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: security
+    policy-type: mtls-policy
+  annotations:
+    description: "mTLS-only policy - deny all non-mTLS traffic"
+    "erlmcp.io/mtls-policy": "strict"
+    "erlmcp.io/tls-required": "true"
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "erlmcp.selectorLabels" . | nindent 6 }}
+      {{- /* Only apply to pods labeled for strict mTLS */}}
+      mtls: "strict"
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    {{- /* Only allow mTLS traffic */}}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+              "security.istio.io/tlsMode": "ISTIO_MUTUAL"
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: {{ .Values.config.transport.tcp.port | default 8080 }}
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: {{ .Values.service.ports.https.port | default 8443 }}
+        {{- end }}
+        - protocol: TCP
+          port: {{ .Values.config.transport.ws.port | default 8082 }}
+        - protocol: TCP
+          port: {{ .Values.config.transport.sse.port | default 8083 }}
+        - protocol: TCP
+          port: {{ .Values.monitoring.prometheus.port | default 9090 }}
+        - protocol: TCP
+          port: 4369
+        - protocol: TCP
+          port: 9100
+
+  egress:
+    {{- /* Only allow mTLS traffic */}}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+              "security.istio.io/tlsMode": "ISTIO_MUTUAL"
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+      ports:
+        - protocol: TCP
+          port: {{ .Values.config.transport.tcp.port | default 8080 }}
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: {{ .Values.service.ports.https.port | default 8443 }}
+        {{- end }}
+        - protocol: TCP
+          port: {{ .Values.monitoring.prometheus.port | default 9090 }}
+        - protocol: TCP
+          port: 443
+
+{{- end }}
+
+{{- /* ========================================================================
+    POLICY 4: Service-Specific Policies for Dependencies
+    ======================================================================== */}}
+
+{{- /* PostgreSQL Ingress Policy (if deploying PostgreSQL) */}}
+{{- if .Values.app.database.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-postgres-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: security
+    app: postgres
+    policy-type: ingress
+  annotations:
+    description: "Restrict PostgreSQL ingress to erlmcp pods only"
+    allowed-from: "erlmcp-only"
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- /* Allow from erlmcp pods only */}}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "erlmcp.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 5432
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: 5433
+        {{- end }}
+{{- end }}
+
+{{- /* Redis Ingress Policy (if deploying Redis) */}}
+{{- if .Values.app.cache.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "erlmcp.fullname" . }}-redis-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "erlmcp.labels" . | nindent 4 }}
+    component: security
+    app: redis
+    policy-type: ingress
+  annotations:
+    description: "Restrict Redis ingress to erlmcp pods only"
+    allowed-from: "erlmcp-only"
+spec:
+  podSelector:
+    matchLabels:
+      app: redis
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- /* Allow from erlmcp pods only */}}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "erlmcp.selectorLabels" . | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: 6379
+        {{- if (include "erlmcp.tls.enabled" .) }}
+        - protocol: TCP
+          port: 6380
+        {{- end }}
+{{- end }}
+
+{{- end }}

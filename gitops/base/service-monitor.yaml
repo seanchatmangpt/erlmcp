@@ -1,0 +1,107 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: erlmcp
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: erlmcp
+  endpoints:
+    - port: metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      path: /metrics
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: erlmcp-alerts
+  namespace: erlmcp
+  labels:
+    app.kubernetes.io/name: erlmcp
+    release: prometheus
+spec:
+  groups:
+    - name: erlmcp
+      interval: 30s
+      rules:
+        - alert: ErlMCPHighCPU
+          expr: |
+            rate(process_cpu_seconds_total{app="erlmcp"}[5m]) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "erlmcp high CPU usage"
+            description: "Pod {{ $labels.pod }} has CPU usage > 80% for 5 minutes"
+
+        - alert: ErlMCPHighMemory
+          expr: |
+            process_resident_memory_bytes{app="erlmcp"} / erlmcp_memory_limit_bytes > 0.9
+          for: 5m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "erlmcp high memory usage"
+            description: "Pod {{ $labels.pod }} has memory usage > 90% for 5 minutes"
+
+        - alert: ErlMCPPodDown
+          expr: |
+            up{job="erlmcp"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "erlmcp pod down"
+            description: "Pod {{ $labels.pod }} is down for 2 minutes"
+
+        - alert: ErlMCPHighErrorRate
+          expr: |
+            rate(erlmcp_errors_total[5m]) > 10
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "erlmcp high error rate"
+            description: "Pod {{ $labels.pod }} has >10 errors/sec for 5 minutes"
+
+        - alert: ErlMCPRequestBacklog
+          expr: |
+            erlmcp_request_queue_length > 1000
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "erlmcp request backlog"
+            description: "Pod {{ $labels.pod }} has >1000 pending requests"
+
+        - alert: ErlMCPConnectionPoolExhausted
+          expr: |
+            erlmcp_connection_pool_available < 10
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "erlmcp connection pool exhausted"
+            description: "Pod {{ $labels.pod }} has <10 available connections"
+
+        - alert: ErlMCPDistributionDown
+          expr: |
+            erlmcp_connected_nodes < 2
+          for: 5m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "erlmcp cluster degraded"
+            description: "Only {{ $value }} nodes connected, expected ≥2"

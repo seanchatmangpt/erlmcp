@@ -1,0 +1,34 @@
+{
+  "timestamp": "2024-01-01T00:00:00Z",
+  "git_sha": "0000000000000000000000000000000000000000",
+  "config": {
+    "requests": 10000,
+    "concurrency": 10,
+    "duration": 30
+  },
+  "results": {
+    "cold_start_ms": 2500,
+    "throughput_rps": 8500.50,
+    "memory_mb": 256.00,
+    "beam_memory_mb": 128.00,
+    "p50_ms": 2.5,
+    "p95_ms": 15.0,
+    "p99_ms": 45.0
+  },
+  "baseline": {
+    "current": {
+      "git_sha": "none",
+      "timestamp": "none"
+    },
+    "comparison": {
+      "cold_start_ms": null,
+      "throughput_rps": null,
+      "memory_mb": null,
+      "p50_ms": null,
+      "p95_ms": null,
+      "p99_ms": null
+    }
+  },
+  "image": "erlmcp:dev",
+  "container": "erlmcp-bench-12345"
+}

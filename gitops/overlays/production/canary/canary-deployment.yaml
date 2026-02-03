@@ -1,0 +1,49 @@
+apiVersion: flagger.app/v1beta1
+kind: Canary
+metadata:
+  name: erlmcp
+  namespace: erlmcp-prod
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: erlmcp
+  autoscalerRef:
+    apiVersion: autoscaling/v2
+    kind: HorizontalPodAutoscaler
+    name: erlmcp
+  service:
+    port: 8081
+  analysis:
+    interval: 1m
+    maxWeight: 50
+    stepWeight: 10
+    threshold: 5
+    metrics:
+      - name: request-success-rate
+        thresholdRange:
+          min: 99
+        interval: 1m
+      - name: request-duration
+        thresholdRange:
+          max: 500
+        interval: 1m
+      - name: erlmcp-error-rate
+        templateRef:
+          name: erlmcp-error-rate
+          namespace: erlmcp-prod
+        thresholdRange:
+          max: 1
+        interval: 30s
+    webhooks:
+      - name: load-test
+        url: http://flagger-loadtester.erlmcp-prod/
+        timeout: 5s
+        metadata:
+          cmd: "hey -z 1m -q 10 -c 2 http://erlmcp-canary.erlmcp-prod/health"
+      - name: rollback-on-failure
+        type: rollback
+        url: http://slack-webhook/
+        metadata:
+          message: "Canary deployment failed for erlmcp"
+  skipAnalysis: false

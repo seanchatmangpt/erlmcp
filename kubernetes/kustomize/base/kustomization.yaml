@@ -1,0 +1,38 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Add resources to base
+resources:
+  - ../../helm
+  - namespace.yaml
+  - network-policy.yaml
+  - service-account.yaml
+  - configmap.yaml
+  - secret.yaml
+
+# Add common labels
+commonLabels:
+  app.kubernetes.io/name: erlmcp
+  app.kubernetes.io/instance: erlmcp
+  app.kubernetes.io/managed-by: kustomize
+  app.kubernetes.io/component: erlmcp
+
+# Add name suffixes
+nameSuffix: -base
+
+# Add base patches
+patchesStrategicMerge:
+  - patches/values-base.yaml
+
+# Add secrets generator (optional)
+secretGenerator:
+  - name: erlmcp-secrets
+    commands:
+      - generate
+    type: Opaque
+    files:
+      - secret-config.json
+
+# Configurations
+configurations:
+  - kustomizeconfig.yaml
