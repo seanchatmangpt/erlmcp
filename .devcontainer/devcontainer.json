@@ -1,0 +1,132 @@
+{
+  "name": "erlmcp Development Container",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "erlmcp-dev",
+  "workspaceFolder": "/workspace",
+
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": true,
+      "configureZshAsDefaultShell": true,
+      "installOhMyZsh": true,
+      "upgradePackages": true,
+      "username": "vscode",
+      "userUid": "1000",
+      "userGid": "1000"
+    },
+    "ghcr.io/devcontainers/features/git:1": {
+      "version": "latest",
+      "ppa": false
+    },
+    "ghcr.io/devcontainers/features/github-cli:1": {
+      "version": "latest"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true,
+      "dockerDashComposeVersion": "v2"
+    }
+  },
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "zsh",
+        "editor.formatOnSave": true,
+        "editor.tabSize": 4,
+        "files.trimTrailingWhitespace": true,
+        "files.insertFinalNewline": true,
+        "files.associations": {
+          "*.erl": "erlang",
+          "*.hrl": "erlang",
+          "*.app.src": "erlang",
+          "*.config": "erlang",
+          "rebar.config": "erlang",
+          "rebar.lock": "erlang",
+          "sys.config": "erlang",
+          "vm.args": "properties"
+        },
+        "erlang.languageServerPath": "/opt/erlang_ls/_build/default/bin/erlang_ls",
+        "erlang.codeLensEnabled": true,
+        "erlang.inlayHintsEnabled": true
+      },
+      "extensions": [
+        "erlang-ls.erlang-ls",
+        "pgourlain.erlang",
+        "yuce.erlang-otp",
+        "eamodio.gitlens",
+        "ms-azuretools.vscode-docker",
+        "hashicorp.terraform",
+        "hashicorp.hcl",
+        "redhat.vscode-yaml",
+        "ms-vscode.makefile-tools",
+        "timonwong.shellcheck",
+        "foxundermoon.shell-format",
+        "EditorConfig.EditorConfig",
+        "streetsidesoftware.code-spell-checker",
+        "yzhang.markdown-all-in-one",
+        "bierner.markdown-mermaid",
+        "github.copilot",
+        "github.copilot-chat"
+      ]
+    }
+  },
+
+  "forwardPorts": [
+    8080,
+    9090,
+    9100,
+    4369
+  ],
+
+  "portsAttributes": {
+    "8080": {
+      "label": "HTTP API",
+      "onAutoForward": "notify"
+    },
+    "9090": {
+      "label": "Health Check",
+      "onAutoForward": "silent"
+    },
+    "9100": {
+      "label": "Metrics",
+      "onAutoForward": "silent"
+    },
+    "4369": {
+      "label": "EPMD",
+      "onAutoForward": "silent"
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "bash .devcontainer/post-start.sh",
+
+  "remoteUser": "vscode",
+
+  "containerEnv": {
+    "ERLMCP_ENV": "development",
+    "TERM": "xterm-256color",
+    "COLORTERM": "truecolor",
+    "LANG": "C.UTF-8",
+    "LC_ALL": "C.UTF-8"
+  },
+
+  "mounts": [
+    "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    "source=erlmcp-build-cache,target=/workspace/_build,type=volume",
+    "source=erlmcp-hex-cache,target=/root/.cache/rebar3,type=volume",
+    "source=erlmcp-dialyzer-plt,target=/workspace/_build/default,type=volume"
+  ],
+
+  "runArgs": [
+    "--cap-add=SYS_PTRACE",
+    "--security-opt", "seccomp=unconfined",
+    "--init"
+  ],
+
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "8gb",
+    "storage": "32gb"
+  }
+}

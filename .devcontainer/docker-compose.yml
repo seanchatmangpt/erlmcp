@@ -1,0 +1,139 @@
+# ============================================================================
+# Dev Container Docker Compose Configuration
+# ============================================================================
+# Provides a complete development environment for erlmcp
+#
+# Services:
+#   - erlmcp-dev: Main development container with OTP 28
+#   - postgres: PostgreSQL for integration testing
+#   - redis: Redis for caching tests
+# ============================================================================
+
+version: '3.8'
+
+services:
+  erlmcp-dev:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile
+      args:
+        OTP_VERSION: "28.3.1"
+        VARIANT: "alpine"
+    hostname: erlmcp-dev
+    container_name: erlmcp-devcontainer
+
+    volumes:
+      - ..:/workspace:cached
+      - erlmcp-build-cache:/workspace/_build
+      - erlmcp-hex-cache:/root/.cache/rebar3
+      - erlmcp-dialyzer-plt:/workspace/_build/default
+
+    environment:
+      ERLMCP_ENV: development
+      ERLMCP_PROFILE: dev
+      ERLANG_COOKIE: erlmcp_dev_cookie
+      ERLMCP_NODE_NAME: erlmcp-dev@erlmcp-dev
+      TERM: xterm-256color
+      COLORTERM: truecolor
+
+      # Database connection (for integration tests)
+      DATABASE_URL: postgres://erlmcp:erlmcp_dev@postgres:5432/erlmcp_dev
+      REDIS_URL: redis://redis:6379
+
+      # Compilation settings
+      ERL_COMPILER_OPTIONS: deterministic
+      REBAR_NO_USER_CONFIG: "true"
+
+      # Performance tuning
+      ERL_MAX_PORTS: 65536
+      ERL_MAX_ETS_TABLES: 50000
+
+    ports:
+      - "8080:8080"   # HTTP API
+      - "9090:9090"   # Health check
+      - "9100:9100"   # Metrics
+      - "4369:4369"   # EPMD
+
+    networks:
+      - erlmcp-dev-network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    # Keep container running
+    command: sleep infinity
+
+    # Security
+    cap_add:
+      - SYS_PTRACE
+    security_opt:
+      - seccomp:unconfined
+
+  # =========================================================================
+  # PostgreSQL for Integration Testing
+  # =========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: erlmcp-dev-postgres
+    hostname: postgres
+
+    environment:
+      POSTGRES_DB: erlmcp_dev
+      POSTGRES_USER: erlmcp
+      POSTGRES_PASSWORD: erlmcp_dev
+      PGDATA: /var/lib/postgresql/data/pgdata
+
+    volumes:
+      - postgres-dev-data:/var/lib/postgresql/data
+
+    ports:
+      - "5432:5432"
+
+    networks:
+      - erlmcp-dev-network
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erlmcp -d erlmcp_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # =========================================================================
+  # Redis for Caching Tests
+  # =========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: erlmcp-dev-redis
+    hostname: redis
+
+    command: redis-server --appendonly yes
+
+    volumes:
+      - redis-dev-data:/data
+
+    ports:
+      - "6379:6379"
+
+    networks:
+      - erlmcp-dev-network
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+networks:
+  erlmcp-dev-network:
+    driver: bridge
+
+volumes:
+  erlmcp-build-cache:
+  erlmcp-hex-cache:
+  erlmcp-dialyzer-plt:
+  postgres-dev-data:
+  redis-dev-data:
