@@ -17,9 +17,6 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
          terminate/2, code_change/3]).
 
-%% Application callbacks
--export([start/2, stop/1]).
-
 -define(SERVER, ?MODULE).
 -define(DEFAULT_SERVICE_NAME, <<"erlmcp_new_features">>).
 -define(DEFAULT_OTLP_ENDPOINT, <<"http://localhost:4317">>).
@@ -59,9 +56,9 @@
 
 -record(state, {
     otel_config :: #{
-        service_name := binary(),
-        endpoint := binary(),
-        resource_attributes := map()
+        service_name => binary(),
+        endpoint => binary(),
+        resource_attributes => map()
     },
     logger :: term(),
     metrics :: term(),
@@ -337,7 +334,7 @@ terminate(_Reason, State) ->
     end,
 
     case State#state.metrics_buffer of
-        #{ := _} -> flush_metrics(State);
+        #{_ => _} -> flush_metrics(State);
         _ -> ok
     end,
 
@@ -776,26 +773,3 @@ log_error(Module, Function, Error, Context) ->
         context => Context
     },
     log(error, <<"Error occurred">>, Metadata).
-
-%% HTTP endpoint for metrics (for Prometheus scraping)
-metrics_endpoint() ->
-    % Return metrics in Prometheus format
-    Summary = get_metrics_summary(),
-    PrometheusFormat = format_prometheus_metrics(Summary),
-    PrometheusFormat.
-
-format_prometheus_metrics(Summary) ->
-    % Convert JSON summary to Prometheus format
-    "erlmcp_new_features_upstream_requests_total 42\n" ++
-    "erlmcp_new_features_batch_processor_items_total 1234\n" ++
-    "erlmcp_new_features_memory_usage_bytes " ++ integer_to_list(maps:get(memory_usage, Summary#{}, 0)) ++ "\n".
-
-%% WebSocket endpoint for real-time metrics
-websocket_metrics(Socket) ->
-    % Push real-time metrics over WebSocket
-    Summary = get_metrics_summary(),
-    WebSocketMessage = jsone:encode(#{
-        type => metrics,
-        data => Summary
-    }),
-    gen_tcp:send(Socket, WebSocketMessage).
