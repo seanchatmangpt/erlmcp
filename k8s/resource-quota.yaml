@@ -144,11 +144,8 @@ spec:
     # ResourceQuota limits (prevent quota inception)
     resourcequotas: "5"
 
-    # LimitRange limits
-    limitranges: "5"
-
-    # PriorityClass limits
-    priorityclasses: "4"
+    # Note: limitranges and priorityclasses are not valid ResourceQuota resource types
+    # These are managed through RBAC and cluster policies instead
 
 ---
 # ==============================================================================
@@ -363,15 +360,6 @@ spec:
       max:
         cpu: "16000m"
         memory: "32Gi"
-
-    # -------------------------------------------------------------------------
-    # Node limits (for validation)
-    # -------------------------------------------------------------------------
-    - type: Container
-      max:
-        cpu: "16000m"
-      min:
-        cpu: "10m"
 
 ---
 # ==============================================================================

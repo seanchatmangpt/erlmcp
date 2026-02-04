@@ -1,0 +1,57 @@
+{# =============================================================================
+     Common Test Suite Template for erlmcp
+     ======================================================================== #}
+-module({{ module_name }}_SUITE).
+-compile(export_all).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
+%%%===================================================================
+%%% Suite Callbacks
+%%%===================================================================
+
+all() ->
+    [
+{%- for test in test_cases %}
+        {{ test }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+    ].
+
+init_per_suite(Config) ->
+    {ok, _} = application:ensure_all_started({{ app_name }}),
+    Config.
+
+end_per_suite(_Config) ->
+    application:stop({{ app_name }}),
+    ok.
+
+init_per_testcase(_TestCase, Config) ->
+    Config.
+
+end_per_testcase(_TestCase, _Config) ->
+    ok.
+
+%%%===================================================================
+%%% Test Cases
+%%%===================================================================
+
+{% for test in test_cases %}
+{{ test }}(_Config) ->
+    % Test implementation
+    {ok, Pid} = {{ module_name }}:start_link(),
+    ?assert(is_pid(Pid)),
+    {{ module_name }}:stop(),
+    ok.
+
+{% endfor %}
+
+%%%===================================================================
+%%% Helper Functions
+%%%===================================================================
+
+{% block helpers %}
+{%- if helpers %}
+{{ helpers }}
+{%- endif %}
+{% endblock %}

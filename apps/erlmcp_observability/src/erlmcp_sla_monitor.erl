@@ -28,9 +28,19 @@
 -define(SERVER, ?MODULE).
 -define(DEFAULT_METRICS_RETENTION, 2592000000).  % 30 days in milliseconds
 -define(DEFAULT_REPORT_INTERVAL, 86400000).     % 24 hours in milliseconds
--define(DEFAULT_ALERT_THRESHOLD, 0.99).         % 99% threshold
+-define(DEFAULT_ALERT_THRESHOLD, 0.8).          % 80% threshold
+-define(SLA_THRESHOLD_BREACHED, sla_threshold_breached).
 
 -include("erlmcp_observability.hrl").
+
+%%====================================================================
+%% Records
+%%====================================================================
+-record(uptime_data, {timestamp, value, metadata}).
+-record(response_time_data, {timestamp, value, metadata}).
+-record(error_rate_data, {timestamp, value, metadata}).
+-record(throughput_data, {timestamp, value, metadata}).
+-record(session_data, {timestamp, value, metadata}).
 
 %%====================================================================
 %% API Functions
@@ -177,7 +187,9 @@ handle_call({register_sla, SlaName, Target, Unit, Config}, _From, State) ->
             %% Initialize metrics storage
             init_sla_metrics(SlaName, ValidConfig),
 
-            {reply, ok, State#{slas => maps:put(SlaName, SlaDef, State#{slas => maps:put(SlaName, SlaDef, State#{slas => maps:new()})})})};
+            CurrentSlas = maps:get(slas, State, #{}),
+            UpdatedSlas = maps:put(SlaName, SlaDef, CurrentSlas),
+            {reply, ok, State#{slas => UpdatedSlas}};
         {error, Reason} ->
             {reply, {error, Reason}, State}
     end;
@@ -189,7 +201,9 @@ handle_call({unregister_sla, SlaName}, _From, State) ->
     ets:delete(erlmcp_sla_compliance, SlaName),
     ets:delete(erlmcp_sla_alerts, SlaName),
 
-    {reply, ok, State#{slas => maps:remove(SlaName, State#{slas => maps:new()})})};
+    CurrentSlas = maps:get(slas, State, #{}),
+    UpdatedSlas = maps:remove(SlaName, CurrentSlas),
+    {reply, ok, State#{slas => UpdatedSlas}};
 
 handle_call({check_sla_compliance, SlaName}, _From, State) ->
     Result = check_sla_compliance_internal(SlaName),
@@ -229,7 +243,7 @@ handle_call(_Request, _From, State) ->
 
 handle_cast({trigger_alert, SlaName, Value}, State) ->
     %% Check if alert threshold is breached
-    case check_alert_threshold(SlaName, Value, State#{alert_threshold => State#{alert_threshold}}) of
+    case check_alert_threshold(SlaName, Value, State) of
         true ->
             %% Store alert
             Alert = #{
@@ -257,7 +271,8 @@ handle_info(generate_report, State) ->
     store_report(Report),
 
     %% Schedule next report
-    ReportInterval = maps:get(report_interval, State#{config => maps:get(report_interval, State#{config => maps:new()})}, ?DEFAULT_REPORT_INTERVAL),
+    Config = maps:get(config, State, #{}),
+    ReportInterval = maps:get(report_interval, Config, ?DEFAULT_REPORT_INTERVAL),
     erlang:send_after(ReportInterval, self(), generate_report),
 
     {noreply, State#{last_report => erlang:system_time(millisecond)}};
@@ -391,7 +406,15 @@ calculate_compliance(Metrics) ->
         <<"session_success">> ->
             calculate_session_success_compliance(TimeSeries, Target);
         _ ->
-            calculate_generic_compliance(TimeSeries, Target)
+            %% Default compliance calculation
+            #{
+                measured => 0.0,
+                target => Target,
+                achieved => false,
+                gap => Target,
+                percentage => 0.0,
+                metric => unknown
+            }
     end.
 
 calculate_uptime_compliance(TimeSeries, Target) ->
@@ -472,7 +495,8 @@ calculate_compliance_status(Compliance) ->
 
 check_alert_threshold(SlaName, Value, State) ->
     %% Check if alert threshold is breached
-    Threshold = maps:get(alert_threshold, State#{alert_threshold => maps:get(alert_threshold, State#{alert_threshold => maps:new()})}, ?DEFAULT_ALERT_THRESHOLD),
+    Config = maps:get(config, State, #{}),
+    Threshold = maps:get(alert_threshold, Config, ?DEFAULT_ALERT_THRESHOLD),
 
     case ets:lookup(erlmcp_sla_registry, SlaName) of
         [{_, #{config := Config}}] ->
@@ -494,10 +518,14 @@ send_alert_notification(SlaName, Value) ->
     },
 
     %% Send to monitoring system
-    erlmcp_monitoring_metrics:record_security_event(
-        SLA_THRESHOLD_BREACHED,
-        AlertMessage
-    ).
+    try
+        erlmcp_monitoring_metrics:record_security_event(
+            sla_threshold_breached,
+            AlertMessage
+        )
+    catch
+        _:_ -> ok
+    end.
 
 generate_slareport_internal() ->
     generate_slareport_internal(all).
@@ -606,8 +634,11 @@ get_report_period() ->
 
 extract_uptime_data(TimeSeries) ->
     %% Extract uptime data from time series
-    lists:filter(fun(Timestamp) ->
-        is_record(Timestamp, uptime_data)
+    lists:filter(fun(Item) ->
+        case Item of
+            #uptime_data{} -> true;
+            _ -> false
+        end
     end, TimeSeries).
 
 extract_response_time_data(TimeSeries) ->

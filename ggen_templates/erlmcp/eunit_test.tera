@@ -1,0 +1,56 @@
+{# =============================================================================
+     EUnit Test Template for erlmcp GenServers
+     ======================================================================== #}
+-module({{ module_name }}_tests).
+-include_lib("eunit/include/eunit.hrl").
+
+%%%===================================================================
+%%% Test Generators
+%%%===================================================================
+
+{% block tests %}
+{%- for test in tests %}
+{{ test.name }}_test_() ->
+    fun() ->
+        ?assertEqual(
+            {{ test.expected }},
+            {{ test.actual }}
+        )
+    end.
+{%- endfor %}
+{% endblock %}
+
+%%%===================================================================
+%%% Setup and Teardown
+%%%===================================================================
+
+setup() ->
+    {ok, Pid} = {{ module_name }}:start_link(),
+    Pid.
+
+cleanup(Pid) ->
+    {{ module_name }}:stop().
+
+%%%===================================================================
+%%% Generators with Setup/Teardown
+%%%===================================================================
+
+{% if test_with_setup %}
+{{ test_with_setup }}_test_() ->
+    {setup, fun setup/0, fun cleanup/1, fun(_Pid) ->
+        ?assert(true)
+    end}.
+{% endif %}
+
+%%%===================================================================
+%%% Property-based Tests (when applicable)
+%%%===================================================================
+
+{% if property_tests %}
+{%- for prop in property_tests %}
+prop_{{ prop.name }}() ->
+    ?FORALL({{ prop.vars }}, {{ prop.generator }}),
+        {{ prop.condition }})
+    end.
+{%- endfor %}
+{% endif %}

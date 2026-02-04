@@ -78,9 +78,9 @@
 
 -record(state, {
     monitors :: #{binary() => #monitor_config{}},
-    alerts :: [alert()],
+    alerts :: [#alert{}],
     compliance_scores :: #{compliance_standard() => #compliance_score{}},
-    violations :: [violation()],
+    violations :: [#violation{}],
     alerts_config :: map(),
     metrics :: map()
 }).
@@ -250,94 +250,94 @@ code_change(_OldVsn, State, _Extra) ->
 
 init_default_monitors() ->
     #{
-        "soc2_realtime" => #monitor_config{
-            id => "soc2_realtime",
-            standard => soc2_type_ii,
-            type => real_time,
-            frequency => 30,
-            enabled => true,
-            rules [
+        <<"soc2_realtime">> => #monitor_config{
+            id = <<"soc2_realtime">>,
+            standard = soc2_type_ii,
+            type = real_time,
+            frequency = 30,
+            enabled = true,
+            rules = [
                 #{
-                    id => "access_control_violation",
-                    condition => "failed_access_attempts > 5",
-                    action => "alert"
+                    id => <<"access_control_violation">>,
+                    condition => <<"failed_access_attempts > 5">>,
+                    action => <<"alert">>
                 },
                 #{
-                    id => "audit_trail_gap",
-                    condition => "audit_events_missing > 10",
-                    action => "critical"
+                    id => <<"audit_trail_gap">>,
+                    condition => <<"audit_events_missing > 10">>,
+                    action => <<"critical">>
                 }
             ],
-            thresholds => #{
+            thresholds = #{
                 failed_access_attempts => 5,
                 audit_events_missing => 10
             }
         },
-        "hipaa_continuous" => #monitor_config{
-            id => "hipaa_continuous",
-            standard => hipaa,
-            type => continuous,
-            frequency => 300,  % 5 minutes
-            enabled => true,
-            rules => [
+        <<"hipaa_continuous">> => #monitor_config{
+            id = <<"hipaa_continuous">>,
+            standard = hipaa,
+            type = continuous,
+            frequency = 300,  % 5 minutes
+            enabled = true,
+            rules = [
                 #{
-                    id => "phi_access_without_auth",
-                    condition => "unauthorized_phi_access > 0",
-                    action => "critical"
+                    id => <<"phi_access_without_auth">>,
+                    condition => <<"unauthorized_phi_access > 0">>,
+                    action => <<"critical">>
                 },
                 #{
-                    id => "data_breach_detected",
-                    condition => "data_breach_indicator = true",
-                    action => "critical"
+                    id => <<"data_breach_detected">>,
+                    condition => <<"data_breach_indicator = true">>,
+                    action => <<"critical">>
                 }
             ],
-            thresholds => #{
+            thresholds = #{
                 unauthorized_phi_access => 0,
                 data_breach_indicator => true
             }
         },
-        "gdpr_daily" => #monitor_config{
-            id => "gdpr_daily",
-            type => scheduled,
-            standard => gdpr,
-            frequency => 86400,  % 24 hours
-            enabled => true,
-            rules => [
+        <<"gdpr_daily">> => #monitor_config{
+            id = <<"gdpr_daily">>,
+            type = scheduled,
+            standard = gdpr,
+            frequency = 86400,  % 24 hours
+            enabled = true,
+            rules = [
                 #{
-                    id => "consent_expiry_check",
-                    condition => "expired_consent > 0",
-                    action => "alert"
+                    id => <<"consent_expiry_check">>,
+                    condition => <<"expired_consent > 0">>,
+                    action => <<"alert">>
                 },
                 #{
-                    id => "data_subject_request",
-                    condition => "pending_requests > 5",
-                    action => "warning"
+                    id => <<"data_subject_request">>,
+                    condition => <<"pending_requests > 5">>,
+                    action => <<"warning">>
                 }
             ],
-            thresholds => #{
+            thresholds = #{
                 expired_consent => 0,
                 pending_requests => 5
             }
         },
-        "iso27001_weekly" => #monitor_config{
-            id => "iso27001_weekly",
-            type => scheduled,
-            standard => iso27001,
-            frequency => 604800,  % 7 days
-            enabled => true,
-            rules => [
+        <<"iso27001_weekly">> => #monitor_config{
+            id = <<"iso27001_weekly">>,
+            type = scheduled,
+            standard = iso27001,
+            frequency = 604800,  % 7 days
+            enabled = true,
+            rules = [
                 #{
-                    id => "control_failure",
-                    condition => "failed_controls > 2",
-                    action => "warning"
+                    id => <<"control_failure">>,
+                    condition => <<"failed_controls > 2">>,
+                    action => <<"warning">>
                 },
                 #{
-                    id => "audit_findings",
-                    condition => "unresolved_findings > 5",
-                    action => "alert"
+                    id => <<"audit_findings">>,
+                    condition => <<"unresolved_findings > 5">>,
+                    action => <<"alert">>
                 }
             ],
-            thresholds => #{
+            thresholds = #{
                 failed_controls => 2,
                 unresolved_findings => 5
             }
@@ -348,19 +348,19 @@ init_alerts_config() ->
     #{
         escalation_rules => [
             #{
-                condition => "level = critical",
-                action => "immediate_notification",
-                recipients => ["security_team", "executive_management"]
+                condition => <<"level = critical">>,
+                action => <<"immediate_notification">>,
+                recipients => [<<"security_team">>, <<"executive_management">>]
             },
             #{
-                condition => "level = high AND standard = hipaa",
-                action => "regulatory_notification",
-                recipients => ["compliance_officer", "legal"]
+                condition => <<"level = high AND standard = hipaa">>,
+                action => <<"regulatory_notification">>,
+                recipients => [<<"compliance_officer">>, <<"legal">>]
             },
             #{
-                condition => "type = violation AND consecutive_count > 3",
-                action => "escalation",
-                recipients => ["management"]
+                condition => <<"type = violation AND consecutive_count > 3">>,
+                action => <<"escalation">>,
+                recipients => [<<"management">>]
             }
         ],
         notification_channels => [
@@ -374,39 +374,39 @@ init_alerts_config() ->
 init_compliance_scores() ->
     #{
         soc2_type_i => #compliance_score{
-            standard => soc2_type_i,
-            score => 0.0,
-            trend => stable,
-            last_updated => erlang:timestamp(),
-            history => []
+            standard = soc2_type_i,
+            score = 0.0,
+            trend = stable,
+            last_updated = erlang:timestamp(),
+            history = []
         },
         soc2_type_ii => #compliance_score{
-            standard => soc2_type_ii,
-            score => 0.0,
-            trend => stable,
-            last_updated => erlang:timestamp(),
-            history => []
+            standard = soc2_type_ii,
+            score = 0.0,
+            trend = stable,
+            last_updated = erlang:timestamp(),
+            history = []
         },
         hipaa => #compliance_score{
-            standard => hipaa,
-            score => 0.0,
-            trend => stable,
-            last_updated => erlang:timestamp(),
-            history => []
+            standard = hipaa,
+            score = 0.0,
+            trend = stable,
+            last_updated = erlang:timestamp(),
+            history = []
         },
         gdpr => #compliance_score{
-            standard => gdpr,
-            score => 0.0,
-            trend => stable,
-            last_updated => erlang:timestamp(),
-            history => []
+            standard = gdpr,
+            score = 0.0,
+            trend = stable,
+            last_updated = erlang:timestamp(),
+            history = []
         },
         iso27001 => #compliance_score{
-            standard => iso27001,
-            score => 0.0,
-            trend => stable,
-            last_updated => erlang:timestamp(),
-            history => []
+            standard = iso27001,
+            score = 0.0,
+            trend = stable,
+            last_updated = erlang:timestamp(),
+            history = []
         }
     }.
 
@@ -667,7 +667,7 @@ update_score(Scores, Standard, NewScore) ->
                 standard = Standard,
                 score = NewScore,
                 trend = stable,
-                last_updated => erlang:timestamp(),
+                last_updated = erlang:timestamp(),
                 history = [NewScore]
             }
     end.
@@ -781,7 +781,7 @@ generate_monitoring_status(State) ->
         open_violations => length([V || V <- State#state.violations, V#violation.status =:= open]),
         resolved_violations => length([V || V <- State#state.violations, V#violation.status =:= resolved]),
         uptime => calculate_uptime(State#state.metrics),
-        last_check => State#state.metrics#last_check
+        last_check => maps:get(last_check, State#state.metrics, undefined)
     }.
 
 calculate_uptime(Metrics) ->

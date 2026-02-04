@@ -16,8 +16,19 @@
          terminate/2, code_change/3]).
 
 -include("erlmcp.hrl").
--include_lib("opentelemetry_api/include/otel_tracer.hrl").
--include_lib("opentelemetry_api/include/otel_meter.hrl").
+% -include_lib("opentelemetry_api/include/otel_tracer.hrl").
+% -include_lib("opentelemetry_api/include/otel_meter.hrl").
+
+%% Stub macros for when opentelemetry is not available
+-ifdef(OTEL_AVAILABLE).
+-define(start_span(Name, Attrs), otel_tracer:start_span(?TRACER_NAME, Name, Attrs)).
+-define(set_attribute(Key, Value), otel_span:set_attribute(otel_tracer:current_span(), Key, Value)).
+-define(add_event(Name, Attrs), otel_span:add_event(otel_tracer:current_span(), Name, Attrs)).
+-else.
+-define(start_span(Name, Attrs), ok).
+-define(set_attribute(Key, Value), ok).
+-define(add_event(Name, Attrs), ok).
+-endif.
 
 -define(SERVER, ?MODULE).
 -define(TRACER_NAME, "erlmcp_upgrade").
@@ -77,8 +88,14 @@ set_upgrade_status(Status) ->
 
 init([]) ->
     process_flag(trap_exit, true),
-    otel_tracer_provider:register_tracer(?TRACER_NAME),
-    otel_meter_provider:register_meter(?METER_NAME),
+    case code:is_loaded(otel_tracer_provider) of
+        false -> ok;
+        _ -> otel_tracer_provider:register_tracer(?TRACER_NAME)
+    end,
+    case code:is_loaded(otel_meter_provider) of
+        false -> ok;
+        _ -> otel_meter_provider:register_meter(?METER_NAME)
+    end,
     State = #state{upgrade_status = idle},
     logger:info("Upgrade monitor started"),
     {ok, State}.
@@ -89,8 +106,12 @@ handle_call({start_span, TargetVersion}, _From, State) ->
         start_time => erlang:system_time(millisecond)
     }),
     StartTime = erlang:timestamp(),
+    SpanCtx = case code:is_loaded(otel_tracer) of
+        false -> undefined;
+        _ -> otel_tracer:start_span(?TRACER_NAME, "erlmcp_upgrade")
+    end,
     {reply, ok, State#state{
-        current_span = otel_tracer:start_span(?TRACER_NAME, "erlmcp_upgrade"),
+        current_span = SpanCtx,
         upgrade_start_time = StartTime,
         upgrade_status = in_progress
     }};
@@ -117,7 +138,10 @@ handle_cast(end_span, State) ->
         undefined ->
             {noreply, State};
         SpanCtx ->
-            otel_tracer:end_span(SpanCtx),
+            case code:is_loaded(otel_tracer) of
+                false -> ok;
+                _ -> otel_tracer:end_span(SpanCtx)
+            end,
             TotalDuration = case State#state.upgrade_start_time of
                 undefined -> 0;
                 StartTime -> timer:now_diff(erlang:timestamp(), StartTime) div 1000
@@ -203,9 +227,13 @@ check_process_count() ->
     #{value => UsageRatio, status => case UsageRatio < 0.9 of true -> ok; false -> warning end}.
 
 check_ets_tables() ->
-    EtsCount = ets:info() =:= undefined orelse
-               (catch ets:info()) =:= {'EXIT', {badarg, _}}),
-    #{value => 0, status => ok}.
+    try
+        EtsCount = length(ets:all()),
+        #{value => EtsCount, status => ok}
+    catch
+        _:_ ->
+            #{value => 0, status => ok}
+    end.
 
 check_port_count() ->
     PortCount = erlang:system_info(port_count),

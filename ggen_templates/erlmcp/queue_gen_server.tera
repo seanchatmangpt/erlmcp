@@ -1,0 +1,182 @@
+{% extends "erlmcp_base_gen_server.tera" %}
+
+{% block module_name %}erlmcp_message_queue{% endblock %}
+{% block description %}Async message queue with priority and retry{% endblock %}
+
+{% block state_fields %}
+    queue_name :: binary(),
+    messages := ets:tid(),
+    dlq := ets:tid(),
+    workers := ets:tid(),
+    config := queue_config()
+{% endblock %}
+
+{% block types %}
+-type queue_config() :: #{
+    max_size := non_neg_integer(),
+    storage_backend := memory | ets | disk,
+    ack_timeout_ms := non_neg_integer(),
+    retry_backoff_ms := non_neg_integer(),
+    dead_letter_threshold := non_neg_integer()
+}.
+
+-type message() :: #{
+    id := binary(),
+    payload := map(),
+    priority := 0..9,
+    attempts := non_neg_integer(),
+    created_at := erlang:timestamp(),
+    status := pending | delivered | acknowledged | failed
+}.
+
+-type worker() :: #{
+    pid := pid(),
+    busy := boolean(),
+    current_message := binary() | undefined
+}.
+{% endblock %}
+
+{% block api_exports %}
+-export([
+    enqueue/2,
+    enqueue_with_priority/3,
+    dequeue/1,
+    acknowledge/1,
+    nack/1,
+    get_queue_stats/0
+]).
+{% endblock %}
+
+{% block api_functions %}
+%% @doc Enqueue a message
+-spec enqueue(binary(), map()) -> {ok, binary()} | {error, full}.
+enqueue(Payload, QueueName) ->
+    enqueue_with_priority(Payload, QueueName, 5).
+
+%% @doc Enqueue a message with priority (0-9, 9 highest)
+-spec enqueue_with_priority(map(), binary(), 0..9) -> {ok, binary()} | {error, term()}.
+enqueue_with_priority(Payload, QueueName, Priority) ->
+    gen_server:call(?MODULE, {enqueue, Payload, QueueName, Priority}).
+
+%% @doc Dequeue a message for processing
+-spec dequeue(binary()) -> {ok, message()} | {error, empty}.
+dequeue(QueueName) ->
+    gen_server:call(?MODULE, {dequeue, QueueName}).
+
+%% @doc Acknowledge successful message processing
+-spec acknowledge(binary()) -> ok.
+acknowledge(MessageId) ->
+    gen_server:cast(?MODULE, {acknowledge, MessageId}).
+
+%% @doc Negative acknowledge (message failed, will retry)
+-spec nack(binary()) -> ok.
+nack(MessageId) ->
+    gen_server:cast(?MODULE, {nack, MessageId}).
+
+%% @doc Get queue statistics
+-spec get_queue_stats() -> map().
+get_queue_stats() ->
+    gen_server:call(?MODULE, get_stats).
+{% endblock %}
+
+{% block handle_call %}
+handle_call({enqueue, Payload, QueueName, Priority}, _From, State) ->
+    QueueSize = ets:info(State#state.messages, size),
+    MaxSize = (State#state.config)#queue_config.max_size,
+
+    case QueueSize >= MaxSize of
+        true ->
+            {reply, {error, full}, State};
+        false ->
+            MessageId = make_message_id(),
+            Message = #{
+                id => MessageId,
+                payload => Payload,
+                priority => Priority,
+                attempts => 0,
+                created_at => erlang:timestamp(),
+                status => pending
+            },
+            ets:insert(State#state.messages, {MessageId, Message}),
+            {reply, {ok, MessageId}, State}
+    end;
+
+handle_call({dequeue, QueueName}, _From, State) ->
+    % Get highest priority pending message
+    Messages = ets:tab2list(State#state.messages),
+    Pending = [M || {_, M} <- Messages, maps:get(status, M) =:= pending],
+    case Pending of
+        [] ->
+            {reply, {error, empty}, State};
+        All ->
+            % Sort by priority (descending) then created_at
+            Sorted = lists:sort(fun(A, B) ->
+                PA = maps:get(priority, A),
+                PB = maps:get(priority, B),
+                if PA > PB -> true;
+                   PA < PB -> false;
+                   true -> maps:get(created_at, A) =< maps:get(created_at, B)
+                end
+            end, All),
+            [Message | _] = Sorted,
+            Updated = Message#{status => delivered, attempts => maps:get(attempts, Message) + 1},
+            ets:insert(State#state.messages, {maps:get(id, Message), Updated}),
+            {reply, {ok, Updated}, State}
+    end;
+
+handle_call(get_stats, _From, State) ->
+    Messages = ets:tab2list(State#state.messages),
+    Stats = #{
+        total => length(Messages),
+        pending => length([M || {_, M} <- Messages, maps:get(status, M) =:= pending]),
+        delivered => length([M || {_, M} <- Messages, maps:get(status, M) =:= delivered]),
+        failed => length([M || {_, M} <- Messages, maps:get(status, M) =:= failed])
+    },
+    {reply, Stats, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+{% endblock %}
+
+{% block handle_cast %}
+handle_cast({acknowledge, MessageId}, State) ->
+    case ets:lookup(State#state.messages, MessageId) of
+        [{_, Message}] ->
+            ets:delete(State#state.messages, MessageId),
+            {noreply, State};
+        [] ->
+            {noreply, State}
+    end;
+
+handle_cast({nack, MessageId}, State) ->
+    case ets:lookup(State#state.messages, MessageId) of
+        [{_, Message}] ->
+            Attempts = maps:get(attempts, Message),
+            Threshold = (State#state.config)#queue_config.dead_letter_threshold,
+
+            case Attempts >= Threshold of
+                true ->
+                    % Move to dead letter queue
+                    DLQMessage = Message#{status => failed},
+                    ets:insert(State#state.dlq, {MessageId, DLQMessage}),
+                    ets:delete(State#state.messages, MessageId);
+                false ->
+                    % Requeue with backoff
+                    Updated = Message#{status => pending},
+                    ets:insert(State#state.messages, {MessageId, Updated})
+            end,
+            {noreply, State};
+        [] ->
+            {noreply, State}
+    end;
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+{% endblock %}
+
+{% block additional_functions %}
+%% @doc Generate unique message ID
+make_message_id() ->
+    <<Integer:128>> = crypto:strong_rand_bytes(16),
+    list_to_binary(io_lib:format("~32.16.0b", [Integer])).
+{% endblock %}

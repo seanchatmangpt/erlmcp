@@ -135,19 +135,27 @@
     severity => ok | warning | critical
 }.
 
--record(state,
-        {baseline = undefined :: steady_state_snapshot() | undefined,
-         component_defs = #{} :: #{component_id() => component_steady_state()},
-         thresholds :: thresholds(),
-         history = [] :: [steady_state_snapshot()],
-         max_history = 100 :: pos_integer()}).
-
 -record(thresholds,
         {latency = #{warning => 0.2, critical => 0.5},
          throughput = #{warning => 0.15, critical => 0.3},
          error_rate = #{warning => 0.1, critical => 0.25},
          memory = #{warning => 0.3, critical => 0.5},
          process_count = #{warning => 0.2, critical => 0.4}}).
+
+-type thresholds() :: #thresholds{
+    latency :: #{warning => float(), critical => float()},
+    throughput :: #{warning => float(), critical => float()},
+    error_rate :: #{warning => float(), critical => float()},
+    memory :: #{warning => float(), critical => float()},
+    process_count :: #{warning => float(), critical => float()}
+}.
+
+-record(state,
+        {baseline = undefined :: steady_state_snapshot() | undefined,
+         component_defs = #{} :: #{component_id() => component_steady_state()},
+         thresholds :: thresholds(),
+         history = [] :: [steady_state_snapshot()],
+         max_history = 100 :: pos_integer()}).
 
 -define(SERVER, ?MODULE).
 -define(STEADY_STATE_WINDOW, 10000).  % 10 seconds measurement window

@@ -402,7 +402,7 @@ apply_full_attention(Token, State) ->
 extract_output(State) ->
     case maps:get(processed, State, false) of
         true -> <<"<output>">>; %% Simulated output
-        false => <<>>
+        false -> <<>>
     end.
 
 %% @doc Initialize attention state
@@ -438,7 +438,8 @@ process_buffer(State) ->
             {[], State};
         _ ->
             {Results, NewState} = process_tokens_with_flash_attention(Tokens, State),
-            NewStream = NewState#state.stream{input_buffer = []},
+            OldStream = NewState#state.stream,
+            NewStream = OldStream#stream_state{input_buffer = []},
             {Results, NewState#state{stream = NewStream}}
     end.
 

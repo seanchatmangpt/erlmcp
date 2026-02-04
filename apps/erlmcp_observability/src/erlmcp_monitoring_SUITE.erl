@@ -268,10 +268,12 @@ otel_metrics_collection(Config) ->
 
     %% Collect metrics
     Metrics = erlmcp_counters:get_prometheus(),
-    ct:assertMatch([_], Metrics, "Metrics should not be empty"),
+    ct:assert(is_list(Metrics), "Metrics should be a list"),
+    ct:assert(length(Metrics) > 0, "Metrics should not be empty"),
 
-    %% Verify metric format
-    ct:assertMatch(#{"# HELP erlmcp_", _}, Metrics, "Should have HELP and TYPE headers"),
+    %% Verify metric format - check for HELP header
+    HelpFound = lists:any(fun(M) -> is_binary(M) andalso binary:match(M, <<"# HELP erlmcp_">>) =/= nomatch end, Metrics),
+    ct:assert(HelpFound, "Should have HELP headers"),
 
     %% Cleanup
     erlmcp_otel:shutdown(),
@@ -292,7 +294,10 @@ otel_trace_propagation(Config) ->
     SpanCtx = erlmcp_otel:start_span(<<"test.span">>, #{<<"test.attr">> => true}),
 
     %% Verify span context
-    ct:assertMatch(#{trace_id := _, span_id := _}, SpanCtx, "Span context should be valid"),
+    case SpanCtx of
+        #{trace_id := _TraceId, span_id := _SpanId} -> ok;
+        _ -> ct:fail("Span context should be valid")
+    end,
 
     %% End span
     ok = erlmcp_otel:end_span(SpanCtx),
@@ -307,9 +312,9 @@ otel_exporter_configuration(Config) ->
     %% Test different exporter configurations
     ExporterConfigs = [
         #{exporters => [console]},
-        #{exporters => [jaeger, host => "localhost", port => 14250]},
-        #{exporters => [zipkin, endpoint => "http://localhost:9411/api/v2/spans"}},
-        #{exporters => [prometheus, port => 9464]}
+        #{exporters => [{jaeger, #{host => "localhost", port => 14250}}]},
+        #{exporters => [{zipkin, #{endpoint => "http://localhost:9411/api/v2/spans"}}]},
+        #{exporters => [{prometheus, #{port => 9464}}]}
     ],
 
     lists:foreach(fun(ConfigMap) ->
@@ -345,8 +350,10 @@ prometheus_metrics_export(Config) ->
     case httpc:request("http://localhost:9090/metrics") of
         {ok, {{_, 200, _}, _Headers, Body}} ->
             %% Verify response format
-            ct:assertMatch([_], Body, "Should return metrics"),
-            ct:assertMatch(#{"# HELP erlmcp_", _}, Body, "Should have HELP headers");
+            ct:assert(is_list(Body), "Body should be a list"),
+            ct:assert(length(Body) > 0, "Body should not be empty"),
+            HelpFound = lists:any(fun(M) -> is_binary(M) andalso binary:match(M, <<"# HELP erlmcp_">>) =/= nomatch end, Body),
+            ct:assert(HelpFound, "Should have HELP headers");
         {error, _} ->
             ct:fail("HTTP request failed")
     end,
@@ -361,7 +368,7 @@ prometheus_alert_rules(Config) ->
 
     %% Verify rule format
     ct:assert(is_list(AlertRules), "Alert rules should be a list"),
-    ct:assert(length(AlertGroups) > 0, "Should have alert groups"),
+    ct:assert(length(AlertRules) > 0, "Should have alert rules"),
 
     %% Test rule validation
     ValidRules = validate_alert_rules(AlertRules),
@@ -423,11 +430,17 @@ zipkin_tracing_integration(Config) ->
     TraceCtx = erlmcp_otel:inject_rpc_span(<<"test.method">>, <<"12345">>, #{}),
 
     %% Verify trace context format
-    ct:assertMatch(#{trace_id := _, span_id := _}, TraceCtx, "Should have trace context"),
+    case TraceCtx of
+        #{trace_id := _TraceId1, span_id := _SpanId1} -> ok;
+        _ -> ct:fail("Should have trace context")
+    end,
 
     %% Test context propagation
     Headers = erlmcp_otel:propagate_context(TraceCtx),
-    ct:assertMatch(#{<<"traceparent">> := _}, Headers, "Should propagate headers"),
+    case Headers of
+        #{<<"traceparent">> := _TraceParent} -> ok;
+        _ -> ct:fail("Should propagate headers")
+    end,
 
     %% Cleanup
     erlmcp_otel:shutdown(),
@@ -445,7 +458,10 @@ tracing_context_propagation(Config) ->
     lists:foreach(fun({Type, Attrs}) ->
         SpanCtx = erlmcp_otel:start_span(Type, Attrs),
         Propagated = erlmcp_otel:propagate_context(SpanCtx),
-        ct:assertMatch(#{<<"traceparent">> := _}, Propagated, "Should propagate ~p", [Type]),
+        case Propagated of
+            #{<<"traceparent">> := _TP} -> ok;
+            _ -> ct:fail("Should propagate ~p", [Type])
+        end,
         ok = erlmcp_otel:end_span(SpanCtx)
     end, TestScenarios),
 
@@ -568,7 +584,10 @@ log_integration_with_loki(Config) ->
     lists:foreach(fun(Log) ->
         Formatted = format_for_loki(Log),
         ct:assert(is_binary(Formatted), "Should format for Loki"),
-        ct:assertMatch(#{"timestamp" := _, "message" := _}, Formatted, "Should have required fields")
+        case Formatted of
+            #{<<"timestamp">> := _TS2, <<"message">> := _Msg} -> ok;
+            _ -> ct:fail("Should have required fields")
+        end
     end, TestLogs),
 
     ok.
@@ -588,8 +607,11 @@ log_format_standards(Config) ->
 
     Formatted = format_structured_log(StructuredLog),
     ct:assert(is_binary(Formatted), "Should format as JSON"),
-    ct:assertMatch(#{"timestamp" := _, "level" := _, "service" := _},
-                  jsx:is_json(Formatted), "Should be valid JSON"),
+    Decoded = jsx:is_json(Formatted),
+    case Decoded of
+        #{<<"timestamp">> := _TS, <<"level">> := _Level, <<"service">> := _Service} -> ok;
+        _ -> ct:fail("Should be valid JSON")
+    end,
 
     ok.
 
@@ -1093,7 +1115,7 @@ generate_business_alert(Alert) ->
         message => "Business metric alert",
         impact => "medium",
         timestamp => erlang:system_time(millisecond)
-    }.
+    }).
 
 generate_trace_id() ->
     <<Id:128>> = crypto:strong_rand_bytes(16),

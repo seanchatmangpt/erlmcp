@@ -311,11 +311,11 @@ handle_call({export_trace_compressed, SessionId, Options}, _From, State) ->
     {reply, Reply, State, hibernate};
 
 handle_call({monitor_process_tagged, Pid, Tag}, _From, State) ->
-    try
-        %% Use tagged monitor (OTP 26+) - correct syntax
-        Ref = erlang:monitor(process, Pid, [{tag, Tag}]),
-        NewMonitors = maps:put(Ref, {Pid, Tag}, State#state.tagged_monitors),
-        {reply, {ok, Ref}, State#state{tagged_monitors = NewMonitors}, hibernate}
+    %% Try tagged monitor (OTP 26+)
+    try erlang:monitor(process, Pid, [{tag, Tag}]) of
+        Ref when is_reference(Ref) ->
+            NewMonitors = maps:put(Ref, {Pid, Tag}, State#state.tagged_monitors),
+            {reply, {ok, Ref}, State#state{tagged_monitors = NewMonitors}, hibernate}
     catch
         error:badarg ->
             %% Fallback for older OTP versions
@@ -422,9 +422,9 @@ do_start_trace_session(Nodes, Options, State) ->
             },
 
             NewState =
-                State#state{active_sessions =>
+                State#state{active_sessions =
                                 maps:put(SessionId, SessionMap, State#state.active_sessions),
-                            default_tracer => TracerPid},
+                            default_tracer = TracerPid},
 
             %% Enable system monitoring if requested
             SystemMonitor = maps:get(system_monitor, TraceOpts, true),
@@ -488,7 +488,7 @@ normalize_trace_event({trace, Pid, send, Msg, To}) ->
 
 normalize_trace_event({trace, Pid, 'receive', Msg}) ->
     #{timestamp => erlang:system_time(microsecond),
-      event_type => receive,
+      event_type => 'receive',
       pid => Pid,
       message => Msg};
 
@@ -523,15 +523,19 @@ do_trace_tool_calls(Options, State) ->
             {error, no_default_tracer};
         _TracerPid ->
             %% Find active session or create new one
-            case maps:values(State#state.active_sessions) of
-                [Session | _] ->
-                    TraceSession = Session,
-                    NewState = State;
-                [] ->
-                    {ok, SessionId, _Tracer, NewState} =
-                        do_start_trace_session([node()], Options, State),
-                    TraceSession = maps:get(SessionId, NewState#state.active_sessions)
-            end,
+            {TraceSession, NewState} =
+                case maps:values(State#state.active_sessions) of
+                    [Session | _] ->
+                        {Session, State};
+                    [] ->
+                        {ok, _SessionId, _Tracer, State2} =
+                            do_start_trace_session([node()], Options, State),
+                        [FirstSession | _] = maps:values(State2#state.active_sessions),
+                        {FirstSession, State2}
+                end,
+
+            %% Extract SessionId from TraceSession
+            SessionId = maps:get(id, TraceSession),
 
             %% OTP 28: Trace tool call patterns in erlmcp_server
             TraceSess = maps:get(session, TraceSession),
@@ -548,7 +552,6 @@ do_trace_tool_calls(Options, State) ->
                           [{'_', [], [{return_trace}, {exception_trace}]}],
                           [local]),
 
-            SessionId = maps:get(id, TraceSession),
             {ok, SessionId, NewState}
     end.
 
@@ -563,15 +566,19 @@ do_trace_messages(Options, State) ->
             {error, no_default_tracer};
         _TracerPid ->
             %% Find active session or create new one
-            case maps:values(State#state.active_sessions) of
-                [Session | _] ->
-                    TraceSession = Session,
-                    NewState = State;
-                [] ->
-                    {ok, SessionId, _Tracer, NewState} =
-                        do_start_trace_session([node()], Options, State),
-                    TraceSession = maps:get(SessionId, NewState#state.active_sessions)
-            end,
+            {TraceSession, NewState} =
+                case maps:values(State#state.active_sessions) of
+                    [Session | _] ->
+                        {Session, State};
+                    [] ->
+                        {ok, _SessionId, _Tracer, State2} =
+                            do_start_trace_session([node()], Options, State),
+                        [FirstSession | _] = maps:values(State2#state.active_sessions),
+                        {FirstSession, State2}
+                end,
+
+            %% Extract SessionId from TraceSession
+            SessionId = maps:get(id, TraceSession),
 
             TraceSess = maps:get(session, TraceSession),
 
@@ -581,7 +588,6 @@ do_trace_messages(Options, State) ->
             %% Trace all message receives
             trace_recv(TraceSess, true, []),
 
-            SessionId = maps:get(id, TraceSession),
             {ok, SessionId, NewState}
     end.
 
@@ -650,7 +656,7 @@ do_stop_session(SessionId, State) ->
         Session ->
             TraceSess = maps:get(session, Session),
             trace_session_destroy(TraceSess),
-            {ok, State#state{active_sessions =>
+            {ok, State#state{active_sessions =
                                  maps:remove(SessionId, State#state.active_sessions)}}
     end.
 
@@ -663,15 +669,16 @@ do_enable_system_monitor(Options, State) ->
             {error, no_default_tracer};
         TracerPid when is_pid(TracerPid) ->
             %% Get or create trace session
-            case maps:values(State#state.active_sessions) of
-                [Session | _] ->
-                    TraceSession = maps:get(session, Session);
-                [] ->
-                    {ok, _SessionId, _Tracer, NewState} =
-                        do_start_trace_session([node()], Options, State),
-                    [FirstSession | _] = maps:values(NewState#state.active_sessions),
-                    TraceSession = maps:get(session, FirstSession)
-            end,
+            TraceSession =
+                case maps:values(State#state.active_sessions) of
+                    [Session | _] ->
+                        maps:get(session, Session);
+                    [] ->
+                        {ok, _SessionId, _Tracer, NewState} =
+                            do_start_trace_session([node()], Options, State),
+                        [FirstSession | _] = maps:values(NewState#state.active_sessions),
+                        maps:get(session, FirstSession)
+                end,
 
             %% Enable system monitoring via OTP 28 trace:system/3
             enable_system_events(TraceSession, Options),
@@ -749,7 +756,7 @@ cleanup_tracer(TracerPid, _Reason, State) ->
     NewSessions =
         maps:filter(fun(_K, V) -> maps:get(tracer_pid, V) =/= TracerPid end,
                     State#state.active_sessions),
-    State#state{active_sessions => NewSessions}.
+    State#state{active_sessions = NewSessions}.
 
 %% @private
 %% Generate unique trace session ID

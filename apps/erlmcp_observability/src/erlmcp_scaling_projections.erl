@@ -208,6 +208,9 @@ project_cost(Nodes, MemoryGB, Opts) ->
     MonthlyCost = InstanceCount * maps:get("cost_monthly", InstanceInfo),
     AnnualCost = MonthlyCost * 12,
 
+    %% Get target connections from opts or use default
+    TargetConnections = maps:get(target_connections, Opts, 10000),
+
     #{
         provider => CloudProvider,
         instance_type => maps:get("type", InstanceInfo),

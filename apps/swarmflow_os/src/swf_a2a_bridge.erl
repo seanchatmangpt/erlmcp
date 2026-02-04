@@ -31,7 +31,7 @@
 -behaviour(gen_server).
 
 -include("swarmflow.hrl").
--include_lib("erlmcp_core/include/erlmcp_a2a.hrl").
+-include("erlmcp_a2a.hrl").
 
 %% API exports
 -export([
@@ -306,7 +306,7 @@ handle_continue(initialize, State) ->
     {noreply, NewState};
 
 %% @private
--spec handle_continue(term(), #state{}) -> {noreply, #state{}}.
+%% Catch-all clause for continue messages not handled above
 handle_continue(_Continue, State) ->
     {noreply, State}.
 

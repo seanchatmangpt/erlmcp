@@ -78,6 +78,23 @@
 -type yawl_split_type() :: and_split | xor_split | or_split.
 -type yawl_join_type() :: and_join | xor_join | or_join.
 
+%% Timer specification (defined before swf_yawl_task for type references)
+-record(swf_timer, {
+    trigger :: on_enabled | on_start,
+    duration_ms :: pos_integer() | undefined,
+    datetime :: calendar:datetime() | undefined,
+    action :: skip | fail | escalate
+}).
+
+%% Resource allocation (defined before swf_yawl_task for type references)
+-record(swf_resourcing, {
+    offer_strategy :: direct | role_based | deferred,
+    allocate_strategy :: random | round_robin | shortest_queue | user_choice,
+    roles :: [binary()],
+    participants :: [binary()],
+    filters :: [fun((map()) -> boolean())]
+}).
+
 %% YAWL task (extends Petri net transition)
 -record(swf_yawl_task, {
     id :: binary(),
@@ -92,23 +109,6 @@
     decomposition :: binary() | undefined,  % Sub-workflow reference
     timer :: #swf_timer{} | undefined,
     resourcing :: #swf_resourcing{} | undefined
-}).
-
-%% Timer specification
--record(swf_timer, {
-    trigger :: on_enabled | on_start,
-    duration_ms :: pos_integer() | undefined,
-    datetime :: calendar:datetime() | undefined,
-    action :: skip | fail | escalate
-}).
-
-%% Resource allocation
--record(swf_resourcing, {
-    offer_strategy :: direct | role_based | deferred,
-    allocate_strategy :: random | round_robin | shortest_queue | user_choice,
-    roles :: [binary()],
-    participants :: [binary()],
-    filters :: [fun((map()) -> boolean())]
 }).
 
 %%% ==================================================================
@@ -200,6 +200,25 @@
 %%% Process Mining Records
 %%% ==================================================================
 
+%% Deviation from expected behavior (defined before swf_conformance_result for type references)
+-record(swf_deviation, {
+    type :: missing_token | remaining_token | wrong_transition | deadlock | livelock,
+    location :: binary(),                   % Place or transition ID
+    expected :: term(),
+    actual :: term(),
+    severity :: low | medium | high | critical,
+    message :: binary()
+}).
+
+%% Individual change in a patch (defined before swf_patch for type references)
+-record(swf_patch_change, {
+    operation :: add | remove | modify,
+    target_type :: place | transition | arc | guard | action,
+    target_id :: binary() | undefined,
+    old_value :: term() | undefined,
+    new_value :: term() | undefined
+}).
+
 %% Conformance result
 -record(swf_conformance_result, {
     case_id :: binary(),
@@ -210,16 +229,6 @@
     simplicity :: float(),                  % 0.0 to 1.0
     deviations :: [#swf_deviation{}],
     computed_at :: integer()
-}).
-
-%% Deviation from expected behavior
--record(swf_deviation, {
-    type :: missing_token | remaining_token | wrong_transition | deadlock | livelock,
-    location :: binary(),                   % Place or transition ID
-    expected :: term(),
-    actual :: term(),
-    severity :: low | medium | high | critical,
-    message :: binary()
 }).
 
 %% Patch proposal for workflow improvement
@@ -240,15 +249,6 @@
     status :: proposed | evaluating | promoted | rejected | rolled_back
 }).
 
-%% Individual change in a patch
--record(swf_patch_change, {
-    operation :: add | remove | modify,
-    target_type :: place | transition | arc | guard | action,
-    target_id :: binary() | undefined,
-    old_value :: term() | undefined,
-    new_value :: term() | undefined
-}).
-
 %%% ==================================================================
 %%% Swarm Worker Records
 %%% ==================================================================
@@ -264,6 +264,16 @@
     bottleneck_finder |     % Identifies bottlenecks
     prediction_engine.      % Predicts case outcomes
 
+%% Worker performance metrics (defined before swf_swarm_worker for type references)
+-record(swf_worker_metrics, {
+    tasks_completed :: non_neg_integer(),
+    tasks_failed :: non_neg_integer(),
+    avg_duration_ms :: float(),
+    proposals_accepted :: non_neg_integer(),
+    proposals_rejected :: non_neg_integer(),
+    last_active :: integer()
+}).
+
 %% Swarm worker state
 -record(swf_swarm_worker, {
     id :: binary(),
@@ -273,16 +283,6 @@
     metrics :: #swf_worker_metrics{},
     config :: map(),
     pid :: pid() | undefined
-}).
-
-%% Worker performance metrics
--record(swf_worker_metrics, {
-    tasks_completed :: non_neg_integer(),
-    tasks_failed :: non_neg_integer(),
-    avg_duration_ms :: float(),
-    proposals_accepted :: non_neg_integer(),
-    proposals_rejected :: non_neg_integer(),
-    last_active :: integer()
 }).
 
 %%% ==================================================================
@@ -320,6 +320,15 @@
 %%% A2A/MCP Integration Records
 %%% ==================================================================
 
+%% Retry policy (defined before swf_tool_binding for type references)
+-record(swf_retry_policy, {
+    max_attempts :: pos_integer(),
+    initial_delay_ms :: pos_integer(),
+    max_delay_ms :: pos_integer(),
+    backoff_multiplier :: float(),
+    retryable_errors :: [atom()] | all
+}).
+
 %% Mapping between workflow transitions and MCP tools
 -record(swf_tool_binding, {
     transition_id :: binary(),
@@ -347,15 +356,6 @@
     context_id :: binary(),                 % A2A context ID
     sync_mode :: bidirectional | case_to_task | task_to_case,
     status_mapping :: #{atom() => atom()}   % case_status -> a2a_task_state
-}).
-
-%% Retry policy
--record(swf_retry_policy, {
-    max_attempts :: pos_integer(),
-    initial_delay_ms :: pos_integer(),
-    max_delay_ms :: pos_integer(),
-    backoff_multiplier :: float(),
-    retryable_errors :: [atom()] | all
 }).
 
 %%% ==================================================================

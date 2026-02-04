@@ -1,0 +1,136 @@
+{# =============================================================================
+     Base GenServer Template for erlmcp
+     Extensible base template for all gen_server modules
+     ======================================================================== #}
+-module({{ self.module_name() | default(value="erlmcp_base") }}).
+-behaviour(gen_server).
+
+%% API
+-export([
+{%- for api in self.api_exports() | default(value=[]) %}
+    {{ api }}{% if not loop.last %},{% endif -%}
+{%- endfor %}
+    start_link/0,
+    stop/0
+]).
+
+%% gen_server callbacks
+-export([
+    init/1,
+    handle_call/3,
+    handle_cast/2,
+    handle_info/2,
+    terminate/2,
+    code_change/3
+]).
+
+-define(SERVER, ?MODULE).
+
+%% -----------------------------------------------------------------------------
+%% State Records & Types
+%% -----------------------------------------------------------------------------
+
+{% block state_fields -%}
+{%- if self.state_fields() -%}
+{{ self.state_fields() }}
+{%- else -%}
+{# Default state fields if none provided #}
+{% endif %}
+{% endblock %}
+
+-record(state, {
+{% if self.state_fields() -%}
+{{ self.state_fields() }}
+{%- else -%}
+    % Add your state fields here
+{%- endif -%}
+}).
+
+-type state() :: #state{}.
+
+%% -----------------------------------------------------------------------------
+%% Types
+%% -----------------------------------------------------------------------------
+
+{% block types -%}
+{%- if self.types() -%}
+{{ self.types() }}
+{%- endif -%}
+{% endblock %}
+
+%% -----------------------------------------------------------------------------
+%% API Functions
+%% -----------------------------------------------------------------------------
+
+%% @doc Start the server
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+%% @doc Stop the server
+-spec stop() -> ok.
+stop() ->
+    gen_server:stop(?SERVER).
+
+{% block api_functions -%}
+{%- if self.api_functions() -%}
+{{ self.api_functions() }}
+{%- endif -%}
+{% endblock %}
+
+%% -----------------------------------------------------------------------------
+%% gen_server callbacks
+%% -----------------------------------------------------------------------------
+
+%% @private
+-spec init(list()) -> {ok, state()}.
+init([]) ->
+    {ok, #state{
+{% if self.init_state() -%}
+{{ self.init_state() }}
+{%- else -%}
+        % Initialize state here
+{%- endif -%}
+    }}.
+
+%% @private
+-spec handle_call(term(), {pid(), term()}, state()) ->
+    {reply, term(), state()} | {noreply, state()}.
+handle_call(Request, From, State) ->
+{% block handle_call -%}
+{%- if self.handle_call() -%}
+{{ self.handle_call() }}
+{%- else -%}
+    {reply, {error, unknown_request}, State}.
+{%- endif -%}
+{% endblock %}
+
+%% @private
+-spec handle_cast(term(), state()) -> {noreply, state()}.
+handle_cast(Msg, State) ->
+    {noreply, State}.
+
+%% @private
+-spec handle_info(term(), state()) -> {noreply, state()}.
+handle_info(Info, State) ->
+    {noreply, State}.
+
+%% @private
+-spec terminate(term(), state()) -> ok.
+terminate(_Reason, _State) ->
+    ok.
+
+%% @private
+-spec code_change(term(), state(), term()) -> {ok, state()}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%% =============================================================================
+%% Internal Functions
+%% =============================================================================
+
+{% block additional_functions -%}
+{%- if self.additional_functions() -%}
+{{ self.additional_functions() }}
+{%- endif -%}
+{% endblock %}

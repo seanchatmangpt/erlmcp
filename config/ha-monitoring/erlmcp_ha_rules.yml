@@ -80,7 +80,7 @@ groups:
           runbook: "https://docs.company.com/ha/database-failover"
 
       - alert: PrimaryDatabaseDown
-        expr: {job="postgres-ha", db_role="primary"} == 0
+        expr: up{job="postgres-ha", db_role="primary"} == 0
         for: 30s
         labels:
           severity: critical

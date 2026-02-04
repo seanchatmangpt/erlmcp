@@ -163,12 +163,6 @@ spec:
               mountPath: /opt/erlmcp/etc
               readOnly: true
 
-      # Graceful shutdown period
-      terminationGracePeriodSeconds: 60
-
-      # Pod priority for production critical workloads
-      priorityClassName: high-priority
-
       # Topology spread constraints for high availability
       topologySpreadConstraints:
         - maxSkew: 1

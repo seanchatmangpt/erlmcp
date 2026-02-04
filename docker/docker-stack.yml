@@ -11,8 +11,6 @@
 #
 # Documentation: /docs/deployment/SWARM_DEPLOYMENT.md
 
-version: '3.8'
-
 # ============================================================================
 # SECRETS MANAGEMENT
 # ============================================================================
@@ -683,20 +681,17 @@ services:
 # ============================================================================
 # NETWORKS - Overlay networks with encryption
 # ============================================================================
+# Note: These networks must be created externally before stack deployment:
+#   docker network create --driver overlay --attachable --opt encrypted erlmcp-overlay
+#   docker network create --driver overlay --attachable --opt encrypted monitoring-overlay
 networks:
   erlmcp-overlay:
     external: true
-    driver: overlay
-    attachable: true
-    driver_opts:
-      encrypted: "true"
+    name: erlmcp-overlay
 
   monitoring-overlay:
     external: true
-    driver: overlay
-    attachable: true
-    driver_opts:
-      encrypted: "true"
+    name: monitoring-overlay
 
 # ============================================================================
 # VOLUMES - Persistent data storage

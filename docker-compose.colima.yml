@@ -1,5 +1,3 @@
-version: '3.8'
-
 # === Docker Compose Configuration: erlmcp 4-Node Cluster on Colima ===
 # Optimized for 100K concurrent connections on local Colima environment
 #

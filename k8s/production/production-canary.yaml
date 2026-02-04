@@ -51,7 +51,7 @@ spec:
         effect: "NoSchedule"
       containers:
       - name: erlmcp
-        image: ghcr.io/your-org/erlmcp:production-${{ github.sha }}-${{ github.run_number }}
+        image: ghcr.io/erlmcp/erlmcp:3.0.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -104,7 +104,7 @@ spec:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otlp-collector.REGION:4317"
         - name: OTEL_EXPORTER_OTLP_HEADERS
-          value: "x-honeycomb-team={{ .Values.secrets.honeycomb_api_key }}"
+          value: "x-honeycomb-team=${HONEYCOMB_API_KEY}"
         livenessProbe:
           httpGet:
             path: /mcp/health
@@ -263,7 +263,7 @@ spec:
     spec:
       containers:
       - name: erlmcp
-        image: ghcr.io/your-org/erlmcp:production-${{ github.sha }}
+        image: ghcr.io/erlmcp/erlmcp:3.0.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080

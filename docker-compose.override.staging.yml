@@ -12,8 +12,6 @@
 # - Debug endpoints available for troubleshooting
 # ============================================================================
 
-version: '3.8'
-
 services:
   # Override erlmcp service for staging
   erlmcp:
@@ -39,9 +37,6 @@ services:
       ERL_AFLAGS: "-proto_dist inet_tls"
       ERL_DIST_PORT: "${ERL_DIST_PORT:-9100}"
       ERLANG_DISTRIBUTION_PORT_RANGE: "${ERL_DIST_PORT_MIN:-9100}-${ERL_DIST_PORT_MAX:-9200}"
-
-      # Logging
-      ERLMCP_LOG_LEVEL: info
 
       # Database
       ERLMCP_DB_HOST: ${ERLMCP_DB_HOST:-postgres-staging}

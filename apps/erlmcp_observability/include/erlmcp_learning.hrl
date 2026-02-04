@@ -211,7 +211,8 @@
          min :: float(),
          max :: float(),
          sample_count :: non_neg_integer(),
-         last_updated :: integer()}).
+         last_updated :: integer(),
+         metadata = #{} :: map()}).  % Metadata for per-metric config
 
 %% Anomaly detection result
 -record(anomaly,

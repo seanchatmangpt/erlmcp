@@ -1,0 +1,218 @@
+{% extends "erlmcp_base_gen_server.tera" %}
+
+{% block module_name %}erlmcp_workflow_engine{% endblock %}
+{% block description %}Workflow orchestration for multi-step tool execution{% endblock %}
+
+{% block state_fields %}
+    workflows := #{binary() => workflow_state()},
+    executions := #{binary() => execution_state()}
+{% endblock %}
+
+{% block types %}
+-type workflow_state() :: #{
+    id := binary(),
+    steps := #{binary() => step_state()},
+    dag := digraph:graph()
+}.
+
+-type step_state() :: #{
+    id := binary(),
+    type := tool | parallel | sequence | conditional | loop | delay,
+    tool_name := binary() | undefined,
+    arguments := map() | undefined,
+    status := pending | running | completed | failed | skipped,
+    output := term() | undefined,
+    retry_count := non_neg_integer()
+}.
+
+-type execution_state() :: #{
+    workflow_id := binary(),
+    execution_id := binary(),
+    status := pending | running | completed | failed | cancelled,
+    started_at := erlang:timestamp(),
+    completed_at := erlang:timestamp() | undefined,
+    input := map(),
+    output := map() | undefined,
+    current_step := binary() | undefined,
+    error := term() | undefined
+}.
+
+-type workflow_status() :: pending | running | completed | failed | cancelled.
+{% endblock %}
+
+{% block api_exports %}
+-export([
+    define_workflow/2,
+    execute_workflow/2,
+    get_execution_status/1,
+    cancel_execution/1,
+    list_workflows/0
+]).
+{% endblock %}
+
+{% block api_functions %}
+%% @doc Define a new workflow
+-spec define_workflow(binary(), map()) -> {ok, binary()} | {error, term()}.
+define_workflow(WorkflowId, Definition) ->
+    gen_server:call(?MODULE, {define_workflow, WorkflowId, Definition}).
+
+%% @doc Execute a workflow
+-spec execute_workflow(binary(), map()) -> {ok, binary()} | {error, term()}.
+execute_workflow(WorkflowId, Input) ->
+    gen_server:call(?MODULE, {execute_workflow, WorkflowId, Input}).
+
+%% @doc Get execution status
+-spec get_execution_status(binary()) -> {ok, map()} | {error, not_found}.
+get_execution_status(ExecutionId) ->
+    gen_server:call(?MODULE, {get_execution_status, ExecutionId}).
+
+%% @doc Cancel a running workflow execution
+-spec cancel_execution(binary()) -> ok | {error, term()}.
+cancel_execution(ExecutionId) ->
+    gen_server:call(?MODULE, {cancel_execution, ExecutionId}).
+
+%% @doc List all defined workflows
+-spec list_workflows() -> [binary()].
+list_workflows() ->
+    gen_server:call(?MODULE, list_workflows).
+{% endblock %}
+
+{% block handle_call %}
+handle_call({define_workflow, WorkflowId, Definition}, _From, State) ->
+    {Reply, NewState} = do_define_workflow(WorkflowId, Definition, State),
+    {reply, Reply, NewState};
+
+handle_call({execute_workflow, WorkflowId, Input}, _From, State) ->
+    {Reply, NewState} = do_execute_workflow(WorkflowId, Input, State),
+    {reply, Reply, NewState};
+
+handle_call({get_execution_status, ExecutionId}, _From, State) ->
+    case maps:get(ExecutionId, State#state.executions, undefined) of
+        undefined -> {reply, {error, not_found}, State};
+        ExecState -> {reply, {ok, ExecState}, State}
+    end;
+
+handle_call({cancel_execution, ExecutionId}, _From, State) ->
+    {Reply, NewState} = do_cancel_execution(ExecutionId, State),
+    {reply, Reply, NewState};
+
+handle_call(list_workflows, _From, State) ->
+    Workflows = maps:keys(State#state.workflows),
+    {reply, Workflows, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+{% endblock %}
+
+{% block additional_functions %}
+%% =============================================================================
+%% Internal Functions
+%% =============================================================================
+
+%% @doc Define a workflow from definition
+do_define_workflow(WorkflowId, Definition, State) ->
+    case validate_workflow_definition(Definition) of
+        ok ->
+            Steps = parse_steps(Definition),
+            DAG = build_dag(Steps),
+            WorkflowState = #{
+                id => WorkflowId,
+                steps => Steps,
+                dag => DAG
+            },
+            {reply, ok, State#state{workflows = maps:put(WorkflowId, WorkflowState, State#state.workflows)}};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end.
+
+%% @doc Execute a workflow
+do_execute_workflow(WorkflowId, Input, State) ->
+    case maps:get(WorkflowId, State#state.workflows, undefined) of
+        undefined ->
+            {reply, {error, workflow_not_found}, State};
+        Workflow ->
+            ExecutionId = <<WorkflowId/binary, "-", (integer_to_binary(erlang:unique_integer([positive])))/binary>>,
+            ExecState = #{
+                workflow_id => WorkflowId,
+                execution_id => ExecutionId,
+                status => running,
+                started_at => erlang:timestamp(),
+                input => Input,
+                output => undefined,
+                current_step => undefined,
+                error => undefined
+            },
+
+            % Start async execution
+            spawn(fun() -> run_workflow(Workflow, ExecState, Input) end),
+
+            {reply, {ok, ExecutionId}, State#state{
+                executions = maps:put(ExecutionId, ExecState, State#state.executions)
+            }}
+    end.
+
+%% @doc Run workflow execution
+run_workflow(Workflow, ExecState, Input) ->
+    Steps = maps:get(steps, Workflow),
+    DAG = maps:get(dag, Workflow),
+
+    % Execute steps in topological order
+    case execute_steps_topological(Steps, DAG, Input, #{}) of
+        {ok, Output} ->
+            FinalState = ExecState#{
+                status => completed,
+                completed_at => erlang:timestamp(),
+                output => Output
+            },
+            gen_server:cast(?MODULE, {execution_complete, ExecState, FinalState});
+        {error, Reason} ->
+            FinalState = ExecState#{
+                status => failed,
+                completed_at => erlang:timestamp(),
+                error => Reason
+            },
+            gen_server:cast(?MODULE, {execution_failed, ExecState, FinalState})
+    end.
+
+%% @doc Execute steps in topological order
+execute_steps_topological(Steps, DAG, Input, Acc) ->
+    case digraph_utils:topsort(DAG) of
+        false ->
+            {error, cyclic_workflow};
+        SortedVertices ->
+            execute_steps_in_order(SortedVertices, Steps, Input, Acc)
+    end.
+
+execute_steps_in_order([], _Steps, _Input, Acc) ->
+    {ok, Acc};
+execute_steps_in_order([StepId | Rest], Steps, Input, Acc) ->
+    Step = maps:get(StepId, Steps),
+    case execute_step(Step, Input, Acc) of
+        {ok, StepOutput} ->
+            NewAcc = maps:merge(Acc, StepOutput),
+            execute_steps_in_order(Rest, Steps, Input, NewAcc);
+        {error, Reason} ->
+            {error, {step_failed, StepId, Reason}}
+    end.
+
+%% @doc Execute a single step
+execute_step(#{type := tool, tool_name := ToolName}, _Input, Acc) ->
+    % Call tool execution
+    case erlmcp_tool_registry:execute(ToolName, Acc) of
+        {ok, Result} -> {ok, Result};
+        {error, Reason} -> {error, Reason}
+    end;
+execute_step(#{type := parallel, child_steps := ChildSteps}, Input, Acc) ->
+    % Execute steps in parallel
+    Pids = [spawn_monitor(fun() -> execute_step(S, Input, Acc) end) || S <- ChildSteps],
+    wait_for_parallel_results(Pids, []);
+execute_step(#{type := sequence, child_steps := ChildSteps}, Input, Acc) ->
+    % Execute steps sequentially
+    execute_steps_sequential(ChildSteps, Input, Acc);
+execute_step(#{type := conditional, condition := Condition, then_step := ThenStep, else_step := ElseStep}, Input, Acc) ->
+    case evaluate_condition(Condition, Acc) of
+        true -> execute_step(ThenStep, Input, Acc);
+        false when ElseStep =/= undefined -> execute_step(ElseStep, Input, Acc);
+        false -> {ok, Acc}
+    end.
+{% endblock %}

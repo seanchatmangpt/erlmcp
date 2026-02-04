@@ -70,7 +70,7 @@
     erlmcp_cache,
     erlmcp_rate_limiter,
     erlmcp_circuit_breaker,
-    erlmcp_batch,
+    %% erlmcp_batch,  % OTP 28 only - uses && syntax
     erlmcp_connection_monitor,
     erlmcp_otel,
     erlmcp_metrics,
@@ -128,9 +128,10 @@
     erlmcp_tool,
     erlmcp_uri_validator,
     %% OTP 28 Binary Utilities
+    %% erlmcp_zip_utils,  % OTP 28 only - uses && syntax
     erlmcp_binary_utils,
     erlmcp_floats,
-    erlmcp_zip_utils,
+    %% erlmcp_zip_utils,  % Duplicate entry - removed
     erlmcp_unwrap_utils,
     erlmcp_socket_utils,
     erlmcp_map_utils,
@@ -158,7 +159,7 @@
     %% Tool Sandbox Execution (v3)
     erlmcp_tool_execute,
     %% Security and Audit (v3)
-    erlmcp_audit_log,
+    %% erlmcp_audit_log,  % Moved to erlmcp_observability
     erlmcp_authorization,
     erlmcp_session_audit,
     erlmcp_enterprise_security,

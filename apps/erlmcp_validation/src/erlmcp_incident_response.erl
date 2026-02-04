@@ -87,9 +87,9 @@
 }).
 
 -record(state, {
-    incidents :: [incident()],
-    incident_plans :: [incident_plan()],
-    communications :: [communication_log()],
+    incidents :: [#incident{}],
+    incident_plans :: [#incident_plan{}],
+    communications :: [#communication_log{}],
     active_incidents :: [binary()],
     metrics :: map(),
     escalation_rules :: [map()],
@@ -204,9 +204,11 @@ handle_call({create_incident, IncidentData, UserId}, _From, State) ->
 
     %% Check if incident requires immediate escalation
     case requires_immediate_escalation(Incident) of
-        true -> execute_escalation(Incident);
-        false -> ok
-    },
+        true ->
+            execute_escalation(Incident);
+        false ->
+            ok
+    end,
 
     %% Notify stakeholders
     notify_stakeholders(Incident),
@@ -355,8 +357,8 @@ handle_cast({log_incident_action, IncidentId, Action, Details, UserId}, State) -
         incident_id = IncidentId,
         sent_by = UserId,
         message = Action,
-        timestamp => erlang:timestamp(),
-        channel => "action_log"
+        timestamp = erlang:timestamp(),
+        channel = <<"action_log">>
     },
     UpdatedCommunications = [Communication | State#state.communications],
 
@@ -815,18 +817,22 @@ generate_incident_attachments(Incident) ->
     [].
 
 update_incident_metrics(Metrics, Incident) ->
+    TotalIncidents = maps:get(total_incidents, Metrics, 0),
+    ActiveIncidents = maps:get(active_incidents, Metrics, 0),
     Metrics#{
-        total_incidents => Metrics#total_incidents + 1,
-        active_incidents => Metrics#active_incidents + 1,
+        total_incidents => TotalIncidents + 1,
+        active_incidents => ActiveIncidents + 1,
         last_incident => erlang:timestamp()
     }.
 
 update_resolved_metrics(Metrics, Incident) ->
     ResolutionTime = calculate_resolution_time(Incident),
+    ActiveIncidents = maps:get(active_incidents, Metrics, 0),
+    ResolvedIncidents = maps:get(resolved_incidents, Metrics, 0),
 
     Metrics#{
-        active_incidents => Metrics#active_incidents - 1,
-        resolved_incidents => Metrics#resolved_incidents + 1,
+        active_incidents => ActiveIncidents - 1,
+        resolved_incidents => ResolvedIncidents + 1,
         average_resolution_time => calculate_average_resolution_time(Metrics, ResolutionTime)
     }.
 
@@ -837,7 +843,8 @@ calculate_resolution_time(#incident{detected_at = Detected, resolution = Resolut
     end.
 
 calculate_average_resolution_time(Metrics, NewTime) ->
-    case Metrics#average_resolution_time of
+    AverageResolutionTime = maps:get(average_resolution_time, Metrics, 0),
+    case AverageResolutionTime of
         0 -> NewTime;
         Current -> (Current + NewTime) div 2
     end.

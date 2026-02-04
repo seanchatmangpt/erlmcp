@@ -1,0 +1,32 @@
+{# =============================================================================
+     Application Resource File Template
+     ======================================================================== #}
+{application, {{ app_name | default(value="erlmcp_new_features") }},
+ [{description, "{{ description | default(value="Erlang/OTP new features for erlmcp") }}"},
+  {vsn, "{{ version | default(value="1.0.0") }}"},
+  {registered, [
+{%- for reg in registered %}
+    {{ reg }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+  ]},
+  {applications, [
+    kernel,
+    stdlib,
+    sasl
+{%- for app in applications %}
+    , {{ app }}
+{%- endfor %}
+  ]},
+  {mod, { {{ app_module | default(value="erlmcp_new_features_app") }}, []}},
+  {env,
+    [{% for key, value in env %}
+      { {{ key }}, {{ value }} }{% if not loop.last %},{% endif %}
+    {%- endfor %}
+    }]
+  },
+  {modules, [
+{%- for module in modules %}
+    {{ module }}{% if not loop.last %},{% endif %}
+{%- endfor %}
+  ]}
+]}.

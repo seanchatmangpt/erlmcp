@@ -1,0 +1,163 @@
+{# =============================================================================
+     Instance Data Template for Code Generation
+     Provides concrete values for template variables
+     ======================================================================== #}
+{
+    "app_name": "erlmcp_new_features",
+    "version": "1.0.0",
+    "description": "Erlang/OTP new features for erlmcp",
+    "app_module": "erlmcp_new_features_app",
+    "applications": ["crypto", "inets", "ssl", "public_key"],
+    "registered": [
+        "erlmcp_mcp_relay",
+        "erlmcp_tool_sandbox",
+        "erlmcp_workflow_engine",
+        "erlmcp_distributed_lock",
+        "erlmcp_message_queue",
+        "erlmcp_event_store",
+        "erlmcp_resource_watcher",
+        "erlmcp_multitenant"
+    ],
+    "modules": [
+        "erlmcp_mcp_relay",
+        "erlmcp_tool_sandbox",
+        "erlmcp_workflow_engine",
+        "erlmcp_distributed_lock",
+        "erlmcp_message_queue",
+        "erlmcp_event_store",
+        "erlmcp_resource_watcher",
+        "erlmcp_multitenant",
+        "erlmcp_new_features_sup",
+        "erlmcp_new_features_app"
+    ],
+    "supervisor": {
+        "module_name": "erlmcp_new_features_sup",
+        "strategy": "one_for_one",
+        "intensity": 5,
+        "period": 10,
+        "children": [
+            {
+                "id": "erlmcp_mcp_relay",
+                "module": "erlmcp_mcp_relay",
+                "function": "start_link",
+                "args": "[]",
+                "restart": "permanent",
+                "shutdown": 5000,
+                "type": "worker",
+                "modules": "erlmcp_mcp_relay"
+            },
+            {
+                "id": "erlmcp_tool_sandbox",
+                "module": "erlmcp_tool_sandbox",
+                "function": "start_link",
+                "args": "[]",
+                "restart": "permanent",
+                "shutdown": 5000,
+                "type": "worker",
+                "modules": "erlmcp_tool_sandbox"
+            },
+            {
+                "id": "erlmcp_workflow_engine",
+                "module": "erlmcp_workflow_engine",
+                "function": "start_link",
+                "args": "[]",
+                "restart": "permanent",
+                "shutdown": 5000,
+                "type": "worker",
+                "modules": "erlmcp_workflow_engine"
+            },
+            {
+                "id": "erlmcp_distributed_lock",
+                "module": "erlmcp_distributed_lock",
+                "function": "start_link",
+                "args": "[]",
+                "restart": "permanent",
+                "shutdown": 5000,
+                "type": "worker",
+                "modules": "erlmcp_distributed_lock"
+            },
+            {
+                "id": "erlmcp_message_queue",
+                "module": "erlmcp_message_queue",
+                "function": "start_link",
+                "args": "[]",
+                "restart": "permanent",
+                "shutdown": 5000,
+                "type": "worker",
+                "modules": "erlmcp_message_queue"
+            },
+            {
+                "id": "erlmcp_event_store",
+                "module": "erlmcp_event_store",
+                "function": "start_link",
+                "args": "[]",
+                "restart": "permanent",
+                "shutdown": 5000,
+                "type": "worker",
+                "modules": "erlmcp_event_store"
+            },
+            {
+                "id": "erlmcp_resource_watcher",
+                "module": "erlmcp_resource_watcher",
+                "function": "start_link",
+                "args": "[]",
+                "restart": "permanent",
+                "shutdown": 5000,
+                "type": "worker",
+                "modules": "erlmcp_resource_watcher"
+            },
+            {
+                "id": "erlmcp_multitenant",
+                "module": "erlmcp_multitenant",
+                "function": "start_link",
+                "args": "[]",
+                "restart": "permanent",
+                "shutdown": 5000,
+                "type": "worker",
+                "modules": "erlmcp_multitenant"
+            }
+        ]
+    },
+    "tests": {
+        "proxy": {
+            "name": "relay_request_routes",
+            "expected": "ok",
+            "actual": "erlmcp_mcp_relay:relay_request(#{})}"
+        },
+        "sandbox": {
+            "name": "sandbox_executes_tool",
+            "expected": "ok",
+            "actual": "erlmcp_tool_sandbox:execute_tool(<<\"test\">>, #{})"
+        },
+        "workflow": {
+            "name": "workflow_executes_steps",
+            "expected": "ok",
+            "actual": "erlmcp_workflow_engine:execute_workflow(<<\"test\">>, #{})"
+        },
+        "dlock": {
+            "name": "lock_acquisition",
+            "expected": "ok",
+            "actual": "erlmcp_distributed_lock:acquire(<<\"test\">>, {node(), self()})"
+        },
+        "queue": {
+            "name": "enqueue_dequeue",
+            "expected": "ok",
+            "actual": "erlmcp_message_queue:enqueue(#{}, <<\"test\">>)"
+        },
+        "events": {
+            "name": "event_append",
+            "expected": "ok",
+            "actual": "erlmcp_event_store:append_events(<<\"agg1\">>, [])"
+        },
+        "watcher": {
+            "name": "watch_path",
+            "expected": "ok",
+            "actual": "erlmcp_resource_watcher:watch(<<\"/tmp\">>, #{})"
+        },
+        "multitenant": {
+            "name": "tenant_creation",
+            "expected": "ok",
+            "actual": "erlmcp_multitenant:create_tenant(<<\"tenant1\">>, #{})"
+        }
+    }
+}

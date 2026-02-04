@@ -3,7 +3,7 @@
 # Implements TLS version and cipher suite requirements
 # Enforces FIPS 140-2 compliant configurations
 
-apiVersion: policy/v1
+apiVersion: policy/v1beta1
 kind: PodSecurityPolicy
 metadata:
   name: erlmcp-tls-psp
@@ -18,10 +18,10 @@ spec:
   requiredDropCapabilities:
     - ALL
   volumes:
-    - 'configMap'
-    - 'secret'
-    - 'emptyDir'
-    - 'persistentVolumeClaim'
+    - configMap
+    - secret
+    - emptyDir
+    - persistentVolumeClaim
   hostNetwork: false
   hostIPC: false
   hostPID: false
@@ -191,7 +191,7 @@ spec:
               - "cluster.local/ns/erlmcp/sa/erlmcp"
               - "cluster.local/ns/erlmcp-observability/sa/observability"
               - "cluster.local/ns/istio-system/sa/istio-ingressgateway"
-    to:
+      to:
         - operation:
             notHosts:
               - "*/health"

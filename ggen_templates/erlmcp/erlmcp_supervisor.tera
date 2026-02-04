@@ -1,0 +1,50 @@
+{# =============================================================================
+     Supervisor Template for erlmcp
+     Generates OTP supervisor with child specifications
+     ======================================================================== #}
+-module({{ module_name | default(value="erlmcp_supervisor") }}).
+-behaviour(supervisor).
+
+%% API
+-export([start_link/0]).
+
+%% Supervisor callbacks
+-export([init/1]).
+
+-define(SERVER, ?MODULE).
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+
+%% @doc Start the supervisor
+-spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    supervisor:start_link({local, ?SERVER}, ?MODULE, []).
+
+%%%===================================================================
+%%% Supervisor callbacks
+%%%===================================================================
+
+%% @private
+-spec init(list()) ->
+    {ok, {supervisor:sup_ref(), [supervisor:child_spec()]}}.
+init([]) ->
+    SupFlags = #{
+        strategy => {{ strategy | default(value="one_for_one") }},
+        intensity => {{ intensity | default(value=5) }},
+        period => {{ period | default(value=10) }}
+    },
+
+    ChildSpecs = [
+{%- for child in children %}
+        #{id => {{ child.id }},
+          start => { {{ child.module }}, {{ child.function | default(value="start_link") }}, {{ child.args | default(value="[]") }} },
+          restart => {{ child.restart | default(value="permanent") }},
+          shutdown => {{ child.shutdown | default(value=5000) }},
+          type => {{ child.type | default(value="worker") }},
+          modules => [ {{ child.modules | default(value=child.module) }} ]}{% if not loop.last %},{% endif %}
+{%- endfor %}
+    ],
+
+    {ok, {SupFlags, ChildSpecs}}.

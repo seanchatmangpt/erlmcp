@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ============================================================================
 # erlmcp Docker Compose Configuration - Quality Lane Services
 # ============================================================================
@@ -510,6 +508,39 @@ services:
     command: ["exec /opt/erlmcp/scripts/test_graceful_shutdown_load.sh"]
     profiles:
       - shutdown
+
+  # =========================================================================
+  # QUALITY LANE: ggen - Ontology-Driven Code Generation
+  # =========================================================================
+  # Purpose: Generate Erlang/OTP code, K8s manifests, Docker configs from RDF ontologies
+  # Gates: ggen-validate, ggen-sync
+  # Resources: 1 CPU, 1GB RAM (code generation is lightweight)
+  # Usage: docker compose run --rm ggen ggen validate
+  # =========================================================================
+  ggen:
+    image: ghcr.io/seanchatmangpt/ggen:latest
+    container_name: erlmcp-ggen
+    hostname: ggen
+    networks:
+      - erlmcp-network
+    environment:
+      GGEN_DIR: /workspace/ggen
+      GGEN_OUTPUT: /workspace/apps
+      TERM: dumb
+    volumes:
+      - ./ggen:/workspace/ggen
+      - ./apps:/workspace/apps
+    working_dir: /workspace/ggen
+    deploy:
+      resources:
+        limits:
+          cpus: '${GGEN_CPU_LIMIT:-1.0}'
+          memory: '${GGEN_MEMORY_LIMIT:-1G}'
+        reservations:
+          cpus: '${GGEN_CPU_RESERVATION:-0.5}'
+          memory: '${GGEN_MEMORY_RESERVATION:-512M}'
+    profiles:
+      - tools
 
   # =========================================================================
   # MAIN SERVICES (existing services maintained)

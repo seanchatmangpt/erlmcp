@@ -11,6 +11,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_diagnostics).
+-compile({no_auto_import,[process_info/1]}).
 
 -export([diagnose/0, diagnose/1, memory_usage/0, memory_usage/1, system_info/0, process_info/0,
          process_info/1, check_health/0, check_health/1]).

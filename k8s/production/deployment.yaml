@@ -392,31 +392,29 @@ spec:
             - name: cache
               mountPath: /var/cache/erlmcp
 
-      # ----------------------------------------------------------------------
-      # SIDECAR CONTAINERS
-      # ----------------------------------------------------------------------
-
-      # Log collector sidecar (optional)
-      - name: log-collector
-        image: fluent/fluent-bit:2.2.0
-        command:
-          - /fluent-bit/bin/fluent-bit
-          - -c
-          - /fluent-bit/etc/fluent-bit.conf
-        volumeMounts:
-          - name: logs
-            mountPath: /var/log/erlmcp
-            readOnly: true
-          - name: fluent-bit-config
-            mountPath: /fluent-bit/etc
-            readOnly: true
-        resources:
-          requests:
-            cpu: 50m
-            memory: 64Mi
-          limits:
-            cpu: 100m
-            memory: 128Mi
+        # ----------------------------------------------------------------------
+        # SIDECAR CONTAINER - Log collector
+        # ----------------------------------------------------------------------
+        - name: log-collector
+          image: fluent/fluent-bit:2.2.0
+          command:
+            - /fluent-bit/bin/fluent-bit
+            - -c
+            - /fluent-bit/etc/fluent-bit.conf
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log/erlmcp
+              readOnly: true
+            - name: fluent-bit-config
+              mountPath: /fluent-bit/etc
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
 
       # ----------------------------------------------------------------------
       # VOLUMES

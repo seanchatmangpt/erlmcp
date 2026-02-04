@@ -50,7 +50,7 @@ start_link() ->
 %% @doc
 %% Start the Prometheus exporter with custom configuration
 %% @end
---------------------------------------------------------------------
+%%--------------------------------------------------------------------
 start_link(Config) when is_map(Config) ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, Config, []).
 
@@ -193,7 +193,8 @@ remote_writer_loop(Config, Queue) ->
     receive
         {remote_write, Data} ->
             NewQueue = [Data | Queue],
-            case length(NewQueue) >= Config#batch_size of
+            BatchSize = maps:get(batch_size, Config, 100),
+            case length(NewQueue) >= BatchSize of
                 true ->
                     send_batch(Config, lists:reverse(NewQueue)),
                     remote_writer_loop(Config, []);
@@ -237,7 +238,7 @@ collect_all_metrics(State) ->
 collect_metric_collector(Collector, State) ->
     try
         Metrics = call_collector(Collector, State),
-        cache_metrics(Collector, Metrics),
+        cache_metrics(Collector, Metrics, State),
         update_scrape_stats(State, ok)
     catch
         Error:Reason ->
@@ -255,10 +256,10 @@ call_collector(Collector, State) ->
             apply(M, F, Args)
     end.
 
-cache_metrics(Collector, Metrics) ->
+cache_metrics(Collector, Metrics, State) ->
     %% Clean cache if needed
     CacheSize = ets:info(?METRIC_CACHE, size),
-    MaxSize = maps:get(max_cache_size, State),
+    MaxSize = maps:get(max_cache_size, State, 10000),
     if
         CacheSize > MaxSize ->
             %% Remove oldest entries
@@ -300,7 +301,7 @@ export_prometheus_format(State) ->
         case format_metrics(Metrics) of
             {help_line, Help} -> [Help | Acc];
             {type_line, Type} -> [Type | Acc];
-            metric_lines, Lines} -> Lines ++ Acc
+            {metric_lines, Lines} -> Lines ++ Acc
         end
     end, [], ?METRIC_CACHE),
 

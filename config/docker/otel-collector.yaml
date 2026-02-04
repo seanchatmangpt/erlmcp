@@ -148,10 +148,10 @@ processors:
         action: delete
       - key: api_key
         action: delete
-      # Mask sensitive patterns
-      - key:.*
-        pattern: "password|secret|token|api_key|auth"
-        action: redact
+      # Mask sensitive patterns (note: pattern requires full processor config)
+      # - key: ".*"
+      #   pattern: "password|secret|token|api_key|auth"
+      #   action: redact
       # Add service name
       - key: service.name
         value: erlmcp

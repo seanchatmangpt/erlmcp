@@ -12,8 +12,6 @@
 # - All security features disabled for easy testing
 # ============================================================================
 
-version: '3.8'
-
 services:
   # Override erlmcp service for development
   erlmcp:

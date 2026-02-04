@@ -1,0 +1,151 @@
+{% extends "erlmcp_base_gen_server.tera" %}
+
+{% block module_name %}erlmcp_mcp_relay{% endblock %}
+{% block description %}MCP Proxy/Relay for routing requests to backend servers{% endblock %}
+
+{% block state_fields %}
+{%- for backend in backends %}
+    {{ backend.id }}_state :: backend_state(),
+{%- endfor %}
+    load_balancer :: load_balancer_strategy(),
+    retry_policy :: retry_policy()
+{% endblock %}
+
+{% block types %}
+-type backend_state() :: #{
+    url := binary(),
+    status := available | unavailable,
+    connections := non_neg_integer(),
+    last_health_check := erlang:timestamp()
+}.
+
+-type load_balancer_strategy() :: round_robin | least_connections | random | weighted_round_robin.
+-type retry_policy() :: #{
+    max_retries := non_neg_integer(),
+    backoff_ms := non_neg_integer()
+}.
+{% endblock %}
+
+{% block api_exports %}
+-export([
+    relay_request/1,
+    add_backend/1,
+    remove_backend/1,
+    list_backends/0,
+    set_load_balancer/1
+]).
+{% endblock %}
+
+{% block api_functions %}
+%% @doc Relay an MCP request to a backend server
+-spec relay_request(map()) -> {ok, map()} | {error, term()}.
+relay_request(Request) ->
+    gen_server:call(?MODULE, {relay_request, Request}).
+
+%% @doc Add a backend server
+-spec add_backend(map()) -> ok | {error, term()}.
+add_backend(Backend) ->
+    gen_server:call(?MODULE, {add_backend, Backend}).
+
+%% @doc Remove a backend server
+-spec remove_backend(binary()) -> ok | {error, term()}.
+remove_backend(BackendId) ->
+    gen_server:call(?MODULE, {remove_backend, BackendId}).
+
+%% @doc List all configured backends
+-spec list_backends() -> [map()].
+list_backends() ->
+    gen_server:call(?MODULE, list_backends).
+
+%% @doc Set load balancing strategy
+-spec set_load_balancer(load_balancer_strategy()) -> ok.
+set_load_balancer(Strategy) ->
+    gen_server:call(?MODULE, {set_load_balancer, Strategy}).
+{% endblock %}
+
+{% block handle_call %}
+handle_call({relay_request, Request}, _From, State) ->
+    {Reply, NewState} = do_relay_request(Request, State),
+    {reply, Reply, NewState};
+
+handle_call({add_backend, Backend}, _From, State) ->
+    {Reply, NewState} = do_add_backend(Backend, State),
+    {reply, Reply, NewState};
+
+handle_call({remove_backend, BackendId}, _From, State) ->
+    {Reply, NewState} = do_remove_backend(BackendId, State),
+    {reply, Reply, NewState};
+
+handle_call(list_backends, _From, State) ->
+    Backends = get_all_backends(State),
+    {reply, Backends, State};
+
+handle_call({set_load_balancer, Strategy}, _From, State) ->
+    {reply, ok, State#state{load_balancer = Strategy}};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+{% endblock %}
+
+{% block additional_functions %}
+%% =============================================================================
+%% Internal Functions
+%% =============================================================================
+
+%% @doc Select backend based on load balancing strategy
+-spec select_backend([backend_state()], load_balancer_strategy()) -> backend_state() | {error, no_backends}.
+select_backend(Backends, Strategy) ->
+    Available = [B || B <- Backends, B#backend_state.status =:= available],
+    select_backend_by_strategy(Available, Strategy).
+
+select_backend_by_strategy([], _Strategy) ->
+    {error, no_backends};
+select_backend_by_strategy([Backend], _Strategy) ->
+    Backend;
+select_backend_by_strategy(Backends, round_robin) ->
+    lists:nth(erlang:phash2(self(), length(Backends)) + 1, Backends);
+select_backend_by_strategy(Backends, least_connections) ->
+    hd(lists:keysort(#backend_state.connections, Backends));
+select_backend_by_strategy(Backends, random) ->
+    lists:nth(rand:uniform(length(Backends)), Backends);
+select_backend_by_strategy(Backends, weighted_round_robin) ->
+    % Weighted selection based on configured weights
+    weighted_select(Backends).
+
+%% @doc Execute request to backend with retry logic
+-spec do_relay_request(map(), #state{}) -> {{ok | error, term()}, #state{}}.
+do_relay_request(Request, State) ->
+    Backends = get_all_backends(State),
+    case select_backend(Backends, State#state.load_balancer) of
+        {error, no_backends} ->
+            {{error, no_backends_available}, State};
+        Backend ->
+            execute_with_retry(Request, Backend, State#state.retry_policy, 0)
+    end.
+
+execute_with_retry(Request, Backend, RetryPolicy, Attempt) when Attempt < RetryPolicy#retry_policy.max_retries ->
+    case execute_request(Backend, Request) of
+        {ok, Response} ->
+            {{ok, Response}, State};
+        {error, Reason} when Attempt < RetryPolicy#retry_policy.max_retries ->
+            timer:sleep(RetryPolicy#retry_policy.backoff_ms),
+            execute_with_retry(Request, Backend, RetryPolicy, Attempt + 1);
+        {error, Reason} ->
+            {{error, {max_retries_exceeded, Reason}}, State}
+    end;
+execute_with_retry(_Request, _Backend, _RetryPolicy, _Attempt) ->
+    {{error, max_retries_exceeded}, _State}.
+
+%% @doc Execute HTTP request to backend
+-spec execute_request(backend_state(), map()) -> {ok, map()} | {error, term()}.
+execute_request(Backend, Request) ->
+    Url = <<(Backend#backend_state.url)/binary, "/mcp">>,
+    case httpc:request(post, {binary_to_list(Url), [], "application/json", encode_request(Request)}, [], [{body_format, binary}]) of
+        {ok, {{_, 200, _}, _, ResponseBody}} ->
+            {ok, decode_response(ResponseBody)};
+        {ok, {{_, Code, _}, _, _}} ->
+            {error, {http_error, Code}};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+{% endblock %}

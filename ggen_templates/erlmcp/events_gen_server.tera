@@ -1,0 +1,242 @@
+{% extends "erlmcp_base_gen_server.tera" %}
+
+{% block module_name %}erlmcp_event_store{% endblock %}
+{% block description %}Event sourcing store with replay and snapshots{% endblock %}
+
+{% block state_fields %}
+    events := ets:tid(),
+    snapshots := ets:tid(),
+    projections := ets:tid(),
+    config := event_store_config()
+{% endblock %}
+
+{% block types %}
+-type event_store_config() :: #{
+    storage_backend := memory | ets | disk | postgresql,
+    snapshot_interval := non_neg_integer(),
+    compress_snapshots := boolean()
+}.
+
+-type event() :: #{
+    event_id := binary(),
+    aggregate_id := binary(),
+    event_type := binary(),
+    event_version := non_neg_integer(),
+    payload := map(),
+    metadata := map(),
+    timestamp := erlang:timestamp(),
+    sequence_number := non_neg_integer()
+}.
+
+-type snapshot() :: #{
+    aggregate_id := binary(),
+    version := non_neg_integer(),
+    data := map(),
+    timestamp := erlang:timestamp()
+}.
+
+-type projection() :: #{
+    name := binary(),
+    last_event_seq := non_neg_integer(),
+    state := map()
+}.
+{% endblock %}
+
+{% block api_exports %}
+-export([
+    append_events/2,
+    load_events/1,
+    load_events_from/2,
+    create_snapshot/2,
+    load_snapshot/1,
+    create_projection/1,
+    get_projection_state/1,
+    replay_events/2
+]).
+{% endblock %}
+
+{% block api_functions %}
+%% @doc Append events to the store
+-spec append_events(binary(), [map()]) -> {ok, [binary()]} | {error, term()}.
+append_events(AggregateId, Events) ->
+    gen_server:call(?MODULE, {append_events, AggregateId, Events}).
+
+%% @doc Load all events for an aggregate
+-spec load_events(binary()) -> {ok, [event()]} | {error, term()}.
+load_events(AggregateId) ->
+    gen_server:call(?MODULE, {load_events, AggregateId}).
+
+%% @doc Load events from a specific version
+-spec load_events_from(binary(), non_neg_integer()) -> {ok, [event()]}.
+load_events_from(AggregateId, FromVersion) ->
+    gen_server:call(?MODULE, {load_events_from, AggregateId, FromVersion}).
+
+%% @doc Create a snapshot
+-spec create_snapshot(binary(), map()) -> {ok, snapshot()}.
+create_snapshot(AggregateId, Data) ->
+    gen_server:call(?MODULE, {create_snapshot, AggregateId, Data}).
+
+%% @doc Load latest snapshot
+-spec load_snapshot(binary()) -> {ok, snapshot()} | {error, not_found}.
+load_snapshot(AggregateId) ->
+    gen_server:call(?MODULE, {load_snapshot, AggregateId}).
+
+%% @doc Create a projection
+-spec create_projection(binary()) -> ok.
+create_projection(Name) ->
+    gen_server:call(?MODULE, {create_projection, Name}).
+
+%% @doc Get projection state
+-spec get_projection_state(binary()) -> {ok, map()} | {error, not_found}.
+get_projection_state(Name) ->
+    gen_server:call(?MODULE, {get_projection_state, Name}).
+
+%% @doc Replay events through a handler function
+-spec replay_events(binary(), fun((event()) -> ok)) -> {ok, non_neg_integer()}.
+replay_events(AggregateId, HandlerFn) ->
+    gen_server:call(?MODULE, {replay_events, AggregateId, HandlerFn}).
+{% endblock %}
+
+{% block handle_call %}
+handle_call({append_events, AggregateId, RawEvents}, _From, State) ->
+    % Get current sequence number
+    CurrentSeq = case ets:lookup(State#state.snapshots, AggregateId) of
+        [] -> 0;
+        [{_, Snap}] -> maps:get(version, Snap, 0)
+    end,
+
+    % Create events with sequence numbers
+    Events = lists:map(fun({Idx, RawEvent}) ->
+        #{
+            event_id => make_event_id(),
+            aggregate_id => AggregateId,
+            event_type => maps:get(<<"type">>, RawEvent),
+            event_version => CurrentSeq + Idx,
+            payload => maps:get(<<"payload">>, RawEvent, #{}),
+            metadata => maps:get(<<"metadata">>, RawEvent, #{}),
+            timestamp => erlang:timestamp(),
+            sequence_number => CurrentSeq + Idx
+        }
+    end, lists:enumerate(RawEvents)),
+
+    % Store events
+    lists:foreach(fun(E) -> ets:insert(State#state.events, {maps:get(event_id, E), E}) end, Events),
+
+    % Update projections
+    NewState = update_projections(Events, State),
+
+    % Check if snapshot needed
+    Config = State#state.config,
+    case (CurrentSeq + length(Events)) rem maps:get(snapshot_interval, Config, 100) of
+        0 ->
+            % Trigger async snapshot creation
+            spawn(fun() -> maybe_create_snapshot(AggregateId, CurrentSeq + length(Events)) end),
+            {reply, {ok, [maps:get(event_id, E) || E <- Events]}, NewState};
+        _ ->
+            {reply, {ok, [maps:get(event_id, E) || E <- Events]}, NewState}
+    end;
+
+handle_call({load_events, AggregateId}, _From, State) ->
+    Events = ets:fold(fun({_, E}, Acc) ->
+        case maps:get(aggregate_id, E) =:= AggregateId of
+            true -> [E | Acc];
+            false -> Acc
+        end
+    end, [], State#state.events),
+    Sorted = lists:keysort(sequence_number, Events),
+    {reply, {ok, Sorted}, State};
+
+handle_call({load_events_from, AggregateId, FromVersion}, _From, State) ->
+    Events = ets:fold(fun({_, E}, Acc) ->
+        case maps:get(aggregate_id, E) =:= AggregateId andalso maps:get(sequence_number, E) >= FromVersion of
+            true -> [E | Acc];
+            false -> Acc
+        end
+    end, [], State#state.events),
+    Sorted = lists:keysort(sequence_number, Events),
+    {reply, {ok, Sorted}, State};
+
+handle_call({create_snapshot, AggregateId, Data}, _From, State) ->
+    Snapshot = #{
+        aggregate_id => AggregateId,
+        version => get_latest_version(AggregateId, State),
+        data => Data,
+        timestamp => erlang:timestamp()
+    },
+    ets:insert(State#state.snapshots, {AggregateId, Snapshot}),
+    {reply, {ok, Snapshot}, State};
+
+handle_call({load_snapshot, AggregateId}, _From, State) ->
+    case ets:lookup(State#state.snapshots, AggregateId) of
+        [{_, Snapshot}] -> {reply, {ok, Snapshot}, State};
+        [] -> {reply, {error, not_found}, State}
+    end;
+
+handle_call({create_projection, Name}, _From, State) ->
+    Projection = #{
+        name => Name,
+        last_event_seq => 0,
+        state => #{}
+    },
+    ets:insert(State#state.projections, {Name, Projection}),
+    {reply, ok, State};
+
+handle_call({get_projection_state, Name}, _From, State) ->
+    case ets:lookup(State#state.projections, Name) of
+        [{_, Projection}] -> {reply, {ok, Projection}, State};
+        [] -> {reply, {error, not_found}, State}
+    end;
+
+handle_call({replay_events, AggregateId, HandlerFn}, _From, State) ->
+    {ok, Events} = handle_call({load_events, AggregateId}, _From, State),
+    {reply, {ok, Events}, State},
+    Count = lists:foldl(fun(E, Acc) ->
+        HandlerFn(E),
+        Acc + 1
+    end, 0, element(2, Events)),
+    {reply, {ok, Count}, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+{% endblock %}
+
+{% block additional_functions %}
+%% @doc Generate event ID
+make_event_id() ->
+    <<Integer:128>> = crypto:strong_rand_bytes(16),
+    list_to_binary(io_lib:format("~32.16.0b", [Integer])).
+
+%% @doc Get latest version for aggregate
+get_latest_version(AggregateId, State) ->
+    Events = ets:fold(fun({_, E}, Acc) ->
+        case maps:get(aggregate_id, E) =:= AggregateId of
+            true -> max(maps:get(sequence_number, E, 0), Acc);
+            false -> Acc
+        end
+    end, 0, State#state.events),
+    Events.
+
+%% @doc Update all projections with new events
+update_projections(Events, State) ->
+    lists:foldl(fun(E, S) ->
+        ets:fold(fun({Name, Projection}, StateAcc) ->
+            LastSeq = maps:get(last_event_seq, Projection),
+            case maps:get(sequence_number, E) > LastSeq of
+                true ->
+                    % Apply event to projection
+                    NewState = apply_event_to_projection(E, Projection),
+                    ets:insert(StateAcc#state.projections, {Name, NewState}),
+                    StateAcc;
+                false ->
+                    StateAcc
+            end
+        end, S, ets:tab2list(State#state.projections))
+    end, State, Events).
+
+apply_event_to_projection(Event, Projection) ->
+    % This would call projection-specific handler
+    Projection#{
+        last_event_seq => maps:get(sequence_number, Event),
+        state => maps:get(state, Projection, #{})
+    }.
+{% endblock %}

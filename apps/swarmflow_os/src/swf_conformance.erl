@@ -818,15 +818,15 @@ generate_successors(LogPos, Marking, LogTrace, EventMap, Net) ->
         _ ->
             case lists:member(CurrentLogTransition, EnabledTransitions) of
                 true ->
-                    {NewMarking, _, _} = fire_transition(CurrentLogTransition, Marking, Net),
-                    Event = maps:get(CurrentLogTransition, EventMap, undefined),
-                    Move = #alignment_move{
+                    {NewMarking1, _, _} = fire_transition(CurrentLogTransition, Marking, Net),
+                    Event1 = maps:get(CurrentLogTransition, EventMap, undefined),
+                    Move1 = #alignment_move{
                         type = sync_move,
-                        log_event = Event,
+                        log_event = Event1,
                         model_transition = CurrentLogTransition,
                         cost = 0.0
                     },
-                    [{{LogPos + 1, NewMarking}, Move}];
+                    [{{LogPos + 1, NewMarking1}, Move1}];
                 false ->
                     []
             end
@@ -835,14 +835,14 @@ generate_successors(LogPos, Marking, LogTrace, EventMap, Net) ->
     % 2. Model moves (model advances, log stays)
     ModelMoves = [
         begin
-            {NewMarking, _, _} = fire_transition(TId, Marking, Net),
-            Move = #alignment_move{
+            {NewMarking2, _, _} = fire_transition(TId, Marking, Net),
+            Move2 = #alignment_move{
                 type = model_move,
                 log_event = undefined,
                 model_transition = TId,
                 cost = 1.0
             },
-            {{LogPos, NewMarking}, Move}
+            {{LogPos, NewMarking2}, Move2}
         end
         || TId <- EnabledTransitions,
            TId =/= CurrentLogTransition
@@ -853,14 +853,14 @@ generate_successors(LogPos, Marking, LogTrace, EventMap, Net) ->
         undefined ->
             [];
         _ ->
-            Event = maps:get(CurrentLogTransition, EventMap, undefined),
-            Move = #alignment_move{
+            Event3 = maps:get(CurrentLogTransition, EventMap, undefined),
+            Move3 = #alignment_move{
                 type = log_move,
-                log_event = Event,
+                log_event = Event3,
                 model_transition = undefined,
                 cost = 1.0
             },
-            [{{LogPos + 1, Marking}, Move}]
+            [{{LogPos + 1, Marking}, Move3}]
     end,
 
     Successors ++ SyncMoves ++ ModelMoves ++ LogMoves.

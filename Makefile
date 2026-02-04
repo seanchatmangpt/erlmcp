@@ -9,7 +9,8 @@
         doctor quick verify ci-local \
         example-mcp-complete example-help andon-clear andon-watch \
         setup-profile check-erlang-version \
-        test-shutdown shutdown-load-test validate-shutdown
+        test-shutdown shutdown-load-test validate-shutdown \
+        ggen-validate ggen-sync ggen-help ggen-shell
 .PHONY: all-inner compile-inner test-inner ct-inner eunit-inner check-inner clean-inner distclean-inner help-inner
 .PHONY: compile-core-inner compile-transports-inner compile-observability-inner compile-tcps-inner
 .PHONY: test-core-inner test-transports-inner test-observability-inner test-tcps-inner test-smoke-inner test-quick-inner test-full-inner
@@ -1678,3 +1679,54 @@ test-cli-regression: test-cli-performance ## Check for performance regressions i
 		echo "$(YELLOW)⚠ No baseline found, creating baseline...$(NC)"; \
 		./scripts/save_cli_performance_baseline.sh; \
 	fi
+
+# ============================================================================
+# ggen - Ontology-Driven Code Generation Targets
+# ============================================================================
+# Generate Erlang/OTP code, K8s manifests, Docker configs from RDF ontologies
+# All execution via Docker only (DOCKER-ONLY CONSTITUTION)
+# ============================================================================
+
+.PHONY: ggen-validate ggen-sync ggen-help ggen-shell
+
+ggen-validate: ## Validate ggen ontologies against SHACL shapes
+	@echo "$(BLUE)Validating ggen ontologies...$(NC)"
+	@docker compose run --rm ggen ggen validate
+	@echo "$(GREEN)✓ ggen validation passed$(NC)"
+
+ggen-sync: ## Generate code from ggen ontologies
+	@echo "$(BLUE)Generating code from ontologies...$(NC)"
+	@docker compose run --rm ggen ggen sync
+	@echo "$(GREEN)✓ Code generation complete$(NC)"
+	@echo "$(BLUE)Generated files in ggen/src/generated/$(NC)"
+
+ggen-help: ## Show ggen help
+	@echo "$(BLUE)ggen help:$(NC)"
+	@docker compose run --rm ggen ggen --help
+
+ggen-shell: ## Open ggen shell for interactive use
+	@echo "$(BLUE)Opening ggen shell...$(NC)"
+	@docker compose run --rm ggen /bin/bash
+
+ggen-validate-inner:
+	@echo "$(BLUE)Validating ggen ontologies (Docker-only)...$(NC)"
+	@docker compose run --rm ggen ggen validate
+
+ggen-sync-inner:
+	@echo "$(BLUE)Generating code from ontologies (Docker-only)...$(NC)"
+	@docker compose run --rm ggen ggen sync
+
+# Add ggen targets to DOCKER_REQUIRED_TARGETS list
+DOCKER_REQUIRED_TARGETS += ggen-validate ggen-sync ggen-help ggen-shell
+
+ggen-help-extra:
+	@echo ""
+	@echo "$(BOLD)$(BLUE)ggen - Ontology-Driven Code Generation$(NC)"
+	@echo ""
+	@echo "  make ggen-validate     - Validate RDF ontologies against SHACL shapes"
+	@echo "  make ggen-sync         - Generate code from ontologies"
+	@echo "  make ggen-help         - Show ggen CLI help"
+	@echo "  make ggen-shell        - Open interactive ggen shell"
+	@echo ""
+	@echo "$(YELLOW)Note: All ggen execution is Docker-only (constitution)$(NC)"
+	@echo ""

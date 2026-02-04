@@ -1,0 +1,175 @@
+{% extends "erlmcp_base_gen_server.tera" %}
+
+{% block module_name %}erlmcp_tool_sandbox{% endblock %}
+{% block description %}Secure tool execution sandbox with resource limits{% endblock %}
+
+{% block state_fields %}
+    permissions :: sets:set(permission()),
+    limits :: resource_limits(),
+    audit_log :: boolean(),
+    execution_count := non_neg_integer()
+{% endblock %}
+
+{% block types %}
+-type permission() :: read_file | write_file | network_access | execute_command | read_env | subprocess.
+-type resource_limits() :: #{
+    max_cpu_percent := pos_integer(),
+    max_memory_mb := pos_integer(),
+    max_timeout_sec := pos_integer(),
+    max_file_size_mb := pos_integer()
+}.
+-type execution_result() :: #{
+    status := success | timeout | killed | error,
+    output := binary(),
+    error := binary() | undefined,
+    resource_used := map()
+}.
+{% endblock %}
+
+{% block api_exports %}
+-export([
+    execute_tool/2,
+    add_permission/1,
+    remove_permission/1,
+    set_limits/1,
+    set_audit_logging/1
+]).
+{% endblock %}
+
+{% block api_functions %}
+%% @doc Execute a tool within the sandbox
+-spec execute_tool(binary(), map()) -> {ok, execution_result()} | {error, term()}.
+execute_tool(ToolName, Arguments) ->
+    gen_server:call(?MODULE, {execute_tool, ToolName, Arguments}, infinity).
+
+%% @doc Add a permission to the sandbox
+-spec add_permission(permission()) -> ok.
+add_permission(Permission) ->
+    gen_server:call(?MODULE, {add_permission, Permission}).
+
+%% @doc Remove a permission from the sandbox
+-spec remove_permission(permission()) -> ok.
+remove_permission(Permission) ->
+    gen_server:call(?MODULE, {remove_permission, Permission}).
+
+%% @doc Set resource limits
+-spec set_limits(resource_limits()) -> ok.
+set_limits(Limits) ->
+    gen_server:call(?MODULE, {set_limits, Limits}).
+
+%% @doc Enable/disable audit logging
+-spec set_audit_logging(boolean()) -> ok.
+set_audit_logging(Enabled) ->
+    gen_server:call(?MODULE, {set_audit_logging, Enabled}).
+{% endblock %}
+
+{% block handle_call %}
+handle_call({execute_tool, ToolName, Arguments}, _From, State) ->
+    {Reply, NewState} = do_execute_tool(ToolName, Arguments, State),
+    {reply, Reply, NewState};
+
+handle_call({add_permission, Permission}, _From, State) ->
+    NewPerms = sets:add_element(Permission, State#state.permissions),
+    {reply, ok, State#state{permissions = NewPerms}};
+
+handle_call({remove_permission, Permission}, _From, State) ->
+    NewPerms = sets:del_element(Permission, State#state.permissions),
+    {reply, ok, State#state{permissions = NewPerms}};
+
+handle_call({set_limits, Limits}, _From, State) ->
+    {reply, ok, State#state{limits = Limits}};
+
+handle_call({set_audit_logging, Enabled}, _From, State) ->
+    {reply, ok, State#state{audit_log = Enabled}};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+{% endblock %}
+
+{% block additional_functions }}
+%% =============================================================================
+%% Internal Functions
+%% =============================================================================
+
+%% @doc Execute tool with sandboxing
+do_execute_tool(ToolName, Arguments, State) ->
+    ExecutionId = make_ref(),
+    StartTime = erlang:monotonic_time(millisecond),
+
+    % Check permissions
+    case check_tool_permission(ToolName, Arguments, State#state.permissions) of
+        ok ->
+            % Execute with resource limits
+            Result = execute_with_limits(ToolName, Arguments, State#state.limits),
+            EndTime = erlang:monotonic_time(millisecond),
+
+            % Audit log if enabled
+            case State#state.audit_log of
+                true -> log_execution(ExecutionId, ToolName, Arguments, Result, EndTime - StartTime);
+                false -> ok
+            end,
+
+            {{ok, Result}, State#state{execution_count = State#state.execution_count + 1}};
+        {error, Reason} ->
+            {{error, {permission_denied, Reason}}, State}
+    end.
+
+%% @doc Check if tool execution is allowed
+check_tool_permission(_ToolName, Arguments, Permissions) ->
+    % Check if any restricted operations are requested
+    case maps:get(<<"read_file">>, Arguments, undefined) of
+        undefined -> ok;
+        _Path ->
+            case sets:is_element(read_file, Permissions) of
+                true -> ok;
+                false -> {error, read_file_not_permitted}
+            end
+    end.
+
+%% @doc Execute with resource limits
+execute_with_limits(ToolName, Arguments, Limits) ->
+    Parent = self(),
+
+    % Spawn execution process
+    {Pid, Ref} = spawn_monitor(fun() ->
+        % Apply CPU limit if supported
+        case Limits#resource_limits.max_cpu_percent of
+            Limit when Limit < 100 ->
+                % Would use cpu_limit port/driver in production
+                ok;
+            _ -> ok
+        end,
+
+        % Execute with timeout
+        Result = do_tool_execution(ToolName, Arguments),
+        Parent ! {execution_result, self(), Result}
+    end),
+
+    % Wait for completion or timeout
+    Timeout = Limits#resource_limits.max_timeout_sec * 1000,
+    receive
+        {execution_result, Pid, Result} ->
+            #{
+                status => success,
+                output => encode_result(Result),
+                error => undefined,
+                resource_used => #{}
+            };
+        {'DOWN', Ref, process, Pid, Reason} ->
+            #{
+                status => error,
+                output => <<>>,
+                error => list_to_binary(io_lib:format("~p", [Reason])),
+                resource_used => #{}
+            }
+    after Timeout ->
+        erlang:demonitor(Ref, [flush]),
+        exit(Pid, kill),
+        #{
+            status => timeout,
+            output => <<>>,
+            error => <<"execution timeout">>,
+            resource_used => #{}
+        }
+    end.
+{% endblock %}

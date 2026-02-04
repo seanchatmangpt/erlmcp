@@ -1,0 +1,382 @@
+# ggen Configuration for erlmcp - New Features
+# Ontology-driven code generation for Proxy, Workflow, Queue, etc.
+# Version: 1.0.0
+
+[project]
+name = "erlmcp_new_features"
+version = "1.0.0"
+description = "Erlang/OTP new features generated via ggen"
+authors = ["erlmcp Team"]
+license = "Apache-2.0"
+
+# RDF Ontology Configuration
+[ontology]
+source = "ontology/erlmcp_new/"
+
+# Ontology paths for new features
+paths = [
+    "ontology/erlmcp_new/proxy.ttl",
+    "ontology/erlmcp_new/sandbox.ttl",
+    "ontology/erlmcp_new/workflow.ttl",
+    "ontology/erlmcp_new/dlock.ttl",
+    "ontology/erlmcp_new/queue.ttl",
+    "ontology/erlmcp_new/events.ttl",
+    "ontology/erlmcp_new/watcher.ttl",
+    "ontology/erlmcp_new/multitenant.ttl",
+    "ontology/erlmcp_new/otp.ttl",
+    "ontology/erlmcp_new/mcp.ttl"
+]
+
+# SHACL shapes for validation
+shapes = "ontology/erlmcp_new/shapes/"
+
+format = "turtle"
+validate_on_load = true
+cache_parsed = true
+
+# SPARQL Queries Configuration
+[queries]
+source_dir = "sparql/erlmcp_queries/"
+timeout_ms = 10000
+cache_results = true
+
+# Template Configuration
+[templates]
+source_dir = "ggen_templates/erlmcp/"
+engine = "tera"
+output_dir = "apps/erlmcp_new_features/src/"
+
+# Output Configuration
+[output]
+create_dirs = true
+preserve_existing = false
+generate_index = true
+index_path = "apps/erlmcp_new_features/INDEX.md"
+generate_manifest = true
+manifest_path = "apps/erlmcp_new_features/MANIFEST.json"
+
+# Output paths by file type
+[output.paths]
+modules = "apps/erlmcp_new_features/src/"
+tests = "apps/erlmcp_new_features/test/"
+supervisors = "apps/erlmcp_new_features/src/"
+
+# =============================================================================
+# Generation Rules - New Features
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# MCP Relay / Proxy
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "proxy_server"
+description = "Generate MCP Proxy/Relay server"
+query = "extract_proxy"
+template = "proxy_gen_server.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_mcp_relay.erl"
+enabled = true
+
+[[generation.rules]]
+name = "proxy_tests"
+description = "Generate tests for Proxy"
+query = "extract_proxy"
+template = "eunit_test.tera"
+output = "apps/erlmcp_new_features/test/erlmcp_mcp_relay_tests.erl"
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Tool Sandbox
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "sandbox_server"
+description = "Generate Tool Sandbox server"
+query = "extract_sandbox"
+template = "sandbox_gen_server.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_tool_sandbox.erl"
+enabled = true
+
+[[generation.rules]]
+name = "sandbox_tests"
+description = "Generate tests for Sandbox"
+query = "extract_sandbox"
+template = "eunit_test.tera"
+output = "apps/erlmcp_new_features/test/erlmcp_tool_sandbox_tests.erl"
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Workflow Engine
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "workflow_server"
+description = "Generate Workflow Engine server"
+query = "extract_workflow"
+template = "workflow_gen_server.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_workflow_engine.erl"
+enabled = true
+
+[[generation.rules]]
+name = "workflow_tests"
+description = "Generate tests for Workflow"
+query = "extract_workflow"
+template = "eunit_test.tera"
+output = "apps/erlmcp_new_features/test/erlmcp_workflow_engine_tests.erl"
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Distributed Lock
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "dlock_server"
+description = "Generate Distributed Lock server"
+query = "extract_dlock"
+template = "dlock_gen_server.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_distributed_lock.erl"
+enabled = true
+
+[[generation.rules]]
+name = "dlock_tests"
+description = "Generate tests for Distributed Lock"
+query = "extract_dlock"
+template = "eunit_test.tera"
+output = "apps/erlmcp_new_features/test/erlmcp_distributed_lock_tests.erl"
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Message Queue
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "queue_server"
+description = "Generate Message Queue server"
+query = "extract_queue"
+template = "queue_gen_server.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_message_queue.erl"
+enabled = true
+
+[[generation.rules]]
+name = "queue_tests"
+description = "Generate tests for Message Queue"
+query = "extract_queue"
+template = "eunit_test.tera"
+output = "apps/erlmcp_new_features/test/erlmcp_message_queue_tests.erl"
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Event Store
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "events_server"
+description = "Generate Event Store server"
+query = "extract_events"
+template = "events_gen_server.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_event_store.erl"
+enabled = true
+
+[[generation.rules]]
+name = "events_tests"
+description = "Generate tests for Event Store"
+query = "extract_events"
+template = "eunit_test.tera"
+output = "apps/erlmcp_new_features/test/erlmcp_event_store_tests.erl"
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Resource Watcher
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "watcher_server"
+description = "Generate Resource Watcher server"
+query = "extract_watcher"
+template = "watcher_gen_server.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_resource_watcher.erl"
+enabled = true
+
+[[generation.rules]]
+name = "watcher_tests"
+description = "Generate tests for Resource Watcher"
+query = "extract_watcher"
+template = "eunit_test.tera"
+output = "apps/erlmcp_new_features/test/erlmcp_resource_watcher_tests.erl"
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Multi-Tenant Manager
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "multitenant_server"
+description = "Generate Multi-Tenant Manager server"
+query = "extract_multitenant"
+template = "multitenant_gen_server.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_multitenant.erl"
+enabled = true
+
+[[generation.rules]]
+name = "multitenant_tests"
+description = "Generate tests for Multi-Tenant"
+query = "extract_multitenant"
+template = "eunit_test.tera"
+output = "apps/erlmcp_new_features/test/erlmcp_multitenant_tests.erl"
+enabled = true
+
+# -----------------------------------------------------------------------------
+# Supervisor
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "supervisor"
+description = "Generate Supervisor for all new features"
+query = "extract_supervisor"
+template = "erlmcp_supervisor.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_new_features_sup.erl"
+enabled = true
+
+# =============================================================================
+# Validation Configuration
+# =============================================================================
+
+[validation]
+shacl_validate = true
+fail_on_error = true
+report_path = "apps/erlmcp_new_features/validation_report.md"
+strict_mode = true
+
+# =============================================================================
+# Quality Gates (TCPS Manufacturing Principles)
+# =============================================================================
+
+[quality]
+enforce_gates = true
+andon_on_failure = true
+
+[quality.gates]
+compilation_required = true
+zero_errors = true
+zero_warnings = false
+
+dialyzer_required = false  # Skip for generated code initially
+xref_required = true
+xref_no_undefined_calls = true
+
+eunit_required = true
+min_test_coverage = 0.60
+min_pass_rate = 1.00
+
+# =============================================================================
+# Erlang-Specific Settings
+# =============================================================================
+
+[erlang]
+min_otp_version = "26"
+max_otp_version = "28"
+module_prefix = "erlmcp_"
+generated_suffix = ""
+
+include_paths = [
+    "include/",
+    "apps/erlmcp_core/include/"
+]
+
+format_generated = true
+formatter = "rebar3_format"
+line_length = 100
+
+generate_types = true
+export_types = true
+strict_typing = false  # Start with relaxed typing
+
+validate_behaviors = true
+required_callbacks = true
+
+generate_edoc = false
+
+[erlang.supervision]
+default_strategy = "one_for_one"
+default_intensity = 3
+default_period = 5
+default_shutdown = 5000
+
+# =============================================================================
+# Hooks (Pre/Post Generation)
+# =============================================================================
+
+[hooks]
+pre_generate = [
+    "mkdir -p apps/erlmcp_new_features/src",
+    "mkdir -p apps/erlmcp_new_features/test"
+]
+
+post_generate = [
+    "rebar3 compile"
+]
+
+on_error = [
+    "echo 'Generation failed - check validation_report.md'"
+]
+
+# =============================================================================
+# Metadata & Provenance
+# =============================================================================
+
+[metadata]
+include_metadata = true
+metadata_format = "edoc_comment"
+include_provenance = true
+
+[metadata.provenance]
+generator = "ggen"
+generator_version = "6.0.0"
+ontology_source = "ontology/erlmcp_new/"
+generated_at = "{{ timestamp }}"
+
+# =============================================================================
+# Security
+# =============================================================================
+
+[security]
+validate_inputs = true
+prevent_path_traversal = true
+sanitize_variables = true
+max_file_size_mb = 10
+
+# -----------------------------------------------------------------------------
+# Application and Supervisor Generation Rules
+# -----------------------------------------------------------------------------
+
+[[generation.rules]]
+name = "application_module"
+description = "Generate application module"
+query = "instances"
+template = "application_module.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_new_features_app.erl"
+enabled = true
+
+[[generation.rules]]
+name = "application_resource"
+description = "Generate .app.src file"
+query = "instances"
+template = "application.app.src.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_new_features.app.src"
+enabled = true
+
+[[generation.rules]]
+name = "supervisor_module"
+description = "Generate supervisor with all children"
+query = "instances"
+template = "erlmcp_supervisor.tera"
+output = "apps/erlmcp_new_features/src/erlmcp_new_features_sup.erl"
+enabled = true
+
+[[generation.rules]]
+name = "rebar_config"
+description = "Generate rebar.config"
+query = "instances"
+template = "rebar.config.tera"
+output = "apps/erlmcp_new_features/rebar.config"
+enabled = true

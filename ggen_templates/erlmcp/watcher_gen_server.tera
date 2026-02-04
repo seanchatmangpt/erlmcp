@@ -1,0 +1,240 @@
+{% extends "erlmcp_base_gen_server.tera" %}
+
+{% block module_name %}erlmcp_resource_watcher{% endblock %}
+{% block description %}Filesystem and resource monitoring{% endblock %}
+
+{% block state_fields %}
+    watched := #{binary() => watch_state()},
+    config := watch_config(),
+    debounce_timers := #{binary() => reference()}
+{% endblock %}
+
+{% block types %}
+-type watch_config() :: #{
+    debounce_ms := non_neg_integer(),
+    throttle_ms := non_neg_integer(),
+    notify_subscribers := boolean()
+}.
+
+-type watch_state() :: #{
+    path := binary(),
+    recursive := boolean(),
+    include_pattern := binary() | undefined,
+    exclude_pattern := binary() | undefined,
+    subscribers := [pid()],
+    last_event := erlang:timestamp()
+}.
+
+-type change_event() :: #{
+    type := created | modified | deleted | renamed,
+    path := binary(),
+    timestamp := erlang:timestamp()
+}.
+{% endblock %}
+
+{% block api_exports %}
+-export([
+    watch/2,
+    unwatch/1,
+    subscribe/2,
+    unsubscribe/2,
+    list_watched/0
+]).
+{% endblock %}
+
+{% block api_functions %}
+%% @doc Watch a path for changes
+-spec watch(binary(), map()) -> {ok, binary()} | {error, term()}.
+watch(Path, Options) ->
+    gen_server:call(?MODULE, {watch, Path, Options}).
+
+%% @doc Stop watching a path
+-spec unwatch(binary()) -> ok.
+unwatch(WatchId) ->
+    gen_server:cast(?MODULE, {unwatch, WatchId}).
+
+%% @doc Subscribe to watch events
+-spec subscribe(binary(), pid()) -> ok.
+subscribe(WatchId, Pid) when is_pid(Pid) ->
+    gen_server:cast(?MODULE, {subscribe, WatchId, Pid});
+subscribe(WatchId, Name) when is_atom(Name) ->
+    case whereis(Name) of
+        undefined -> {error, not_found};
+        Pid -> subscribe(WatchId, Pid)
+    end.
+
+%% @doc Unsubscribe from watch events
+-spec unsubscribe(binary(), pid()) -> ok.
+unsubscribe(WatchId, Pid) ->
+    gen_server:cast(?MODULE, {unsubscribe, WatchId, Pid}).
+
+%% @doc List all watched paths
+-spec list_watched() -> [{binary(), binary()}].
+list_watched() ->
+    gen_server:call(?MODULE, list_watched).
+{% endblock %}
+
+{% block handle_call %}
+handle_call({watch, Path, Options}, _From, State) ->
+    WatchId = make_watch_id(Path),
+    WatchState = #{
+        path => Path,
+        recursive => maps:get(recursive, Options, false),
+        include_pattern => maps:get(include_pattern, Options, undefined),
+        exclude_pattern => maps:get(exclude_pattern, Options, undefined),
+        subscribers => [],
+        last_event => erlang:timestamp()
+    },
+
+    % Start fsmonitor or timer-based polling
+    case start_monitoring(WatchId, Path, Options) of
+        ok ->
+            {reply, {ok, WatchId}, State#state{watched = maps:put(WatchId, WatchState, State#state.watched)}};
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end;
+
+handle_call(list_watched, _From, State) ->
+    Watched = maps:fold(fun(WatchId, WatchState, Acc) ->
+        Path = maps:get(path, WatchState),
+        [{WatchId, Path} | Acc]
+    end, [], State#state.watched),
+    {reply, lists:reverse(Watched), State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+{% endblock %}
+
+{% block handle_cast %}
+handle_cast({unwatch, WatchId}, State) ->
+    case maps:get(WatchId, State#state.watched, undefined) of
+        undefined ->
+            {noreply, State};
+        _WatchState ->
+            stop_monitoring(WatchId),
+            {noreply, State#state{watched = maps:remove(WatchId, State#state.watched)}}
+    end;
+
+handle_cast({subscribe, WatchId, Pid}, State) ->
+    case maps:get(WatchId, State#state.watched, undefined) of
+        undefined ->
+            {noreply, State};
+        WatchState ->
+            Subscribers = maps:get(subscribers, WatchState, []),
+            NewState = State#state{watched = maps:put(WatchId, WatchState#{subscribers => [Pid | Subscribers]}, State#state.watched)},
+            {noreply, NewState}
+    end;
+
+handle_cast({unsubscribe, WatchId, Pid}, State) ->
+    case maps:get(WatchId, State#state.watched, undefined) of
+        undefined ->
+            {noreply, State};
+        WatchState ->
+            Subscribers = lists:delete(Pid, maps:get(subscribers, WatchState, [])),
+            NewState = State#state{watched = maps:put(WatchId, WatchState#{subscribers => Subscribers}, State#state.watched)},
+            {noreply, NewState}
+    end;
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+{% endblock %}
+
+{% block handle_info %}
+handle_info({file_change, WatchId, EventType, FilePath}, State) ->
+    case maps:get(WatchId, State#state.watched, undefined) of
+        undefined ->
+            {noreply, State};
+        WatchState ->
+            % Check debounce
+            Now = erlang:timestamp(),
+            LastEvent = maps:get(last_event, WatchState, {0, 0, 0}),
+            Elapsed = timer:now_diff(Now, LastEvent) div 1000,
+            DebounceMs = (State#state.config)#watch_config.debounce_ms,
+
+            case Elapsed >= DebounceMs of
+                true ->
+                    Event = #{
+                        type => EventType,
+                        path => FilePath,
+                        timestamp => Now
+                    },
+                    notify_subscribers(WatchId, Event, WatchState),
+
+                    UpdatedWatchState = WatchState#{last_event => Now},
+                    NewState = State#state{watched = maps:put(WatchId, UpdatedWatchState, State#state.watched)},
+                    {noreply, NewState};
+                false ->
+                    % Debounce - maybe schedule delayed notification
+                    {noreply, State}
+            end
+    end;
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+{% endblock %}
+
+{% block additional_functions %}
+%% @doc Generate watch ID
+make_watch_id(Path) ->
+    Hash = crypto:hash(md5, Path),
+    <<HashInt:128>> = Hash,
+    list_to_binary(io_lib:format("~32.16.0b", [HashInt])).
+
+%% @doc Start file monitoring
+start_monitoring(WatchId, Path, Options) ->
+    case code:ensure_loaded(fs) of
+        {module, fs} ->
+            % Use fs library if available
+            case fs:watch(Path, self()) of
+                {ok, _Watcher} -> ok;
+                Error -> Error
+            end;
+        _ ->
+            % Fallback to polling
+            start_polling(WatchId, Path, Options)
+    end.
+
+%% @doc Start polling-based monitoring
+start_polling(WatchId, Path, Options) ->
+    IntervalMs = maps:get(poll_interval_ms, Options, 5000),
+    spawn_link(fun() -> polling_loop(WatchId, Path, IntervalMs) end),
+    ok.
+
+%% @doc Polling loop for file changes
+polling_loop(WatchId, Path, IntervalMs) ->
+    CurrentState = get_file_state(Path),
+    receive
+        stop -> ok
+    after IntervalMs ->
+        NewState = get_file_state(Path),
+        case CurrentState =/= NewState of
+            true ->
+                erlang:send(erlang:whereis(erlmcp_resource_watcher), {file_change, WatchId, modified, Path});
+            false ->
+                ok
+        end,
+        polling_loop(WatchId, Path, IntervalMs)
+    end.
+
+%% @doc Get file state for comparison
+get_file_state(Path) ->
+    case filelib:is_file(Path) of
+        true ->
+            {ok, FileInfo} = file:read_file_info(Path),
+            {FileInfo#file_info.mtime, FileInfo#file_info.size};
+        false ->
+            not_found
+    end.
+
+%% @doc Notify all subscribers
+notify_subscribers(WatchId, Event, WatchState) ->
+    Subscribers = maps:get(subscribers, WatchState, []),
+    lists:foreach(fun(Pid) ->
+        catch Pid ! {watch_event, WatchId, Event}
+    end, Subscribers).
+
+%% @doc Stop monitoring
+stop_monitoring(WatchId) ->
+    % Stop the monitoring process
+    ok.
+{% endblock %}

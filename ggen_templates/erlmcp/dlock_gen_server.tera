@@ -1,0 +1,142 @@
+{% extends "erlmcp_base_gen_server.tera" %}
+
+{% block module_name %}erlmcp_distributed_lock{% endblock %}
+{% block description %}Cluster-wide distributed locking{% endblock %}
+
+{% block state_fields %}
+    locks := ets:tid(),
+    lock_requests := ets:tid(),
+    waiters := #{binary() => [pid()]}
+{% endblock %}
+
+{% block types %}
+-type lock_name() :: binary().
+-type lock_owner() :: {node(), pid()}.
+-type lock_options() :: #{
+    wait_timeout_ms := pos_integer() | infinity,
+    auto_extend := boolean()
+}.
+-type lock_info() :: #{
+    name := lock_name(),
+    owner := lock_owner(),
+    acquired_at := erlang:timestamp(),
+    expires_at := erlang:timestamp() | undefined
+}.
+{% endblock %}
+
+{% block api_exports %}
+-export([
+    acquire/2,
+    acquire/3,
+    release/1,
+    status/1,
+    list_locks/0
+]).
+{% endblock %}
+
+{% block api_functions %}
+%% @doc Acquire a lock with default options
+-spec acquire(lock_name(), lock_owner()) -> ok | {error, term()}.
+acquire(LockName, Owner) ->
+    acquire(LockName, Owner, #{
+        wait_timeout_ms => 30000,
+        auto_extend => false
+    }).
+
+%% @doc Acquire a lock with custom options
+-spec acquire(lock_name(), lock_owner(), lock_options()) -> ok | {error, term()}.
+acquire(LockName, Owner, Options) ->
+    gen_server:call(?MODULE, {acquire, LockName, Owner, Options}, infinity).
+
+%% @doc Release a held lock
+-spec release(lock_name()) -> ok | {error, not_held}.
+release(LockName) ->
+    gen_server:call(?MODULE, {release, LockName}).
+
+%% @doc Get lock status
+-spec status(lock_name()) -> {ok, lock_info()} | {error, not_found}.
+status(LockName) ->
+    gen_server:call(?MODULE, {status, LockName}).
+
+%% @doc List all locks
+-spec list_locks() -> [lock_info()].
+list_locks() ->
+    gen_server:call(?MODULE, list_locks).
+{% endblock %}
+
+{% block handle_call %}
+handle_call({acquire, LockName, Owner, Options}, From, State) ->
+    case ets:lookup(State#state.locks, LockName) of
+        [] ->
+            % Lock is available, acquire it
+            LockInfo = acquire_lock(LockName, Owner, Options),
+            ets:insert(State#state.locks, LockInfo),
+            {reply, ok, State};
+        [_] ->
+            % Lock is held, queue the request
+            WaitTimeout = maps:get(wait_timeout_ms, Options, 30000),
+            Waiters = maps:get(LockName, State#state.waiters, []),
+            NewWaiters = Waiters ++ [{From, Owner, Options}],
+            NewState = State#state{waiters = maps:put(LockName, NewWaiters, State#state.waiters)},
+            erlang:send_after(WaitTimeout, self(), {lock_timeout, LockName, From}),
+            {noreply, NewState}
+    end;
+
+handle_call({release, LockName}, {OwnerPid, _}, State) ->
+    case ets:lookup(State#state.locks, LockName) of
+        [#lock_info{owner = {_, OwnerPid}}] ->
+            ets:delete(State#state.locks, LockName),
+            % Notify next waiter
+            NewState = notify_next_waiter(LockName, State),
+            {reply, ok, NewState};
+        [_] ->
+            {reply, {error, not_owner}, State};
+        [] ->
+            {reply, {error, not_held}, State}
+    end;
+
+handle_call({status, LockName}, _From, State) ->
+    case ets:lookup(State#state.locks, LockName) of
+        [LockInfo] -> {reply, {ok, LockInfo}, State};
+        [] -> {reply, {error, not_found}, State}
+    end;
+
+handle_call(list_locks, _From, State) ->
+    Locks = ets:tab2list(State#state.locks),
+    {reply, Locks, State};
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+{% endblock %}
+
+{% block init_state %}
+    locks = ets:new(?MODULE, [set, private, named_table]),
+    lock_requests = ets:new(lock_requests, [set, private]),
+    waiters = #{}
+{% endblock %}
+
+{% block additional_functions %}
+%% @doc Create lock info record
+acquire_lock(LockName, Owner, Options) ->
+    #lock_info{
+        name = LockName,
+        owner = Owner,
+        acquired_at = erlang:timestamp(),
+        expires_at = case maps:get(auto_extend, Options, false) of
+            true -> undefined;
+            false -> erlang:timestamp() + 30000  % 30 second default TTL
+        end
+    }.
+
+%% @doc Notify next waiting process for a lock
+notify_next_waiter(LockName, State) ->
+    case maps:get(LockName, State#state.waiters, []) of
+        [] ->
+            State;
+        [{From, Owner, Options} | Rest] ->
+            gen_server:reply(From, ok),
+            LockInfo = acquire_lock(LockName, Owner, Options),
+            ets:insert(State#state.locks, LockInfo),
+            State#state{waiters = maps:put(LockName, Rest, State#state.waiters)}
+    end.
+{% endblock %}

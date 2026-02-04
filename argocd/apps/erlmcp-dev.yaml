@@ -61,7 +61,7 @@ spec:
       prune: true
       selfHeal: true
       allowEmpty: false
-      pruneLast: true
+    pruneLast: true
     syncOptions:
       - CreateNamespace=true
       - PrunePropagationPolicy=foreground
@@ -101,7 +101,7 @@ spec:
       prune: true
       selfHeal: true
       allowEmpty: false
-      pruneLast: true
+    pruneLast: true
     syncOptions:
       - CreateNamespace=true
       - PrunePropagationPolicy=foreground

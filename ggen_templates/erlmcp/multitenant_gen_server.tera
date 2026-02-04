@@ -1,0 +1,327 @@
+{% extends "erlmcp_base_gen_server.tera" %}
+
+{% block module_name %}erlmcp_multitenant{% endblock %}
+{% block description %}Multi-tenant isolation and resource management{% endblock %}
+
+{% block state_fields %}
+    tenants := ets:tid(),
+    tenant_contexts := ets:tid(),
+    rate_limiters := ets:tid()
+{% endblock %}
+
+{% block types %}
+-type tenant_id() :: binary().
+-type tenant() :: #{
+    id := tenant_id(),
+    name := binary(),
+    status := active | suspended | deleted | trial | premium | enterprise,
+    quota := tenant_quota(),
+    rate_limit := tenant_rate_limit(),
+    created_at := erlang:timestamp()
+}.
+
+-type tenant_quota() :: #{
+    max_concurrent_requests := non_neg_integer(),
+    max_connections := non_neg_integer(),
+    max_storage_mb := non_neg_integer(),
+    max_tools := non_neg_integer(),
+    max_resources := non_neg_integer(),
+    max_prompts := non_neg_integer()
+}.
+
+-type tenant_rate_limit() :: #{
+    requests_per_minute := non_neg_integer(),
+    requests_per_hour := non_neg_integer(),
+    tokens_per_day := non_neg_integer(),
+    burst_size := non_neg_integer()
+}.
+
+-type tenant_context() :: #{
+    tenant_id := tenant_id(),
+    api_key := binary(),
+    isolation_level := strict | moderate | shared
+}.
+{% endblock %}
+
+{% block api_exports %}
+-export([
+    create_tenant/2,
+    get_tenant/1,
+    update_tenant/2,
+    suspend_tenant/1,
+    activate_tenant/1,
+    delete_tenant/1,
+    check_quota/2,
+    check_rate_limit/2,
+    get_tenant_context/1,
+    authenticate_api_key/1
+]).
+{% endblock %}
+
+{% block api_functions %}
+%% @doc Create a new tenant
+-spec create_tenant(tenant_id(), map()) -> {ok, tenant()} | {error, exists}.
+create_tenant(TenantId, Options) ->
+    gen_server:call(?MODULE, {create_tenant, TenantId, Options}).
+
+%% @doc Get tenant information
+-spec get_tenant(tenant_id()) -> {ok, tenant()} | {error, not_found}.
+get_tenant(TenantId) ->
+    gen_server:call(?MODULE, {get_tenant, TenantId}).
+
+%% @doc Update tenant configuration
+-spec update_tenant(tenant_id(), map()) -> ok | {error, not_found}.
+update_tenant(TenantId, Updates) ->
+    gen_server:call(?MODULE, {update_tenant, TenantId, Updates}).
+
+%% @doc Suspend a tenant
+-spec suspend_tenant(tenant_id()) -> ok | {error, not_found}.
+suspend_tenant(TenantId) ->
+    gen_server:call(?MODULE, {suspend_tenant, TenantId}).
+
+%% @doc Activate a suspended tenant
+-spec activate_tenant(tenant_id()) -> ok | {error, not_found}.
+activate_tenant(TenantId) ->
+    gen_server:call(?MODULE, {activate_tenant, TenantId}).
+
+%% @doc Delete a tenant
+-spec delete_tenant(tenant_id()) -> ok | {error, not_found}.
+delete_tenant(TenantId) ->
+    gen_server:call(?MODULE, {delete_tenant, TenantId}).
+
+%% @doc Check if tenant has quota for operation
+-spec check_quota(tenant_id(), atom()) -> {ok, boolean()} | {error, not_found | quota_exceeded}.
+check_quota(TenantId, ResourceType) ->
+    gen_server:call(?MODULE, {check_quota, TenantId, ResourceType}).
+
+%% @doc Check if tenant is within rate limits
+-spec check_rate_limit(tenant_id(), pos_integer()) -> {ok, boolean()} | {error, not_found | rate_limit_exceeded}.
+check_rate_limit(TenantId, RequestCost) ->
+    gen_server:call(?MODULE, {check_rate_limit, TenantId, RequestCost}).
+
+%% @doc Get tenant context for request routing
+-spec get_tenant_context(tenant_id()) -> {ok, tenant_context()} | {error, not_found}.
+get_tenant_context(TenantId) ->
+    gen_server:call(?MODULE, {get_tenant_context, TenantId}).
+
+%% @doc Authenticate API key and return tenant ID
+-spec authenticate_api_key(binary()) -> {ok, tenant_id()} | {error, invalid_key}.
+authenticate_api_key(ApiKey) ->
+    gen_server:call(?MODULE, {authenticate_api_key, ApiKey}).
+{% endblock %}
+
+{% block handle_call %}
+handle_call({create_tenant, TenantId, Options}, _From, State) ->
+    case ets:lookup(State#state.tenants, TenantId) of
+        [] ->
+            Tenant = build_tenant(TenantId, Options),
+            ets:insert(State#state.tenants, {TenantId, Tenant}),
+            {reply, {ok, Tenant}, State};
+        [_] ->
+            {reply, {error, exists}, State}
+    end;
+
+handle_call({get_tenant, TenantId}, _From, State) ->
+    case ets:lookup(State#state.tenants, TenantId) of
+        [{_, Tenant}] -> {reply, {ok, Tenant}, State};
+        [] -> {reply, {error, not_found}, State}
+    end;
+
+handle_call({update_tenant, TenantId, Updates}, _From, State) ->
+    case ets:lookup(State#state.tenants, TenantId) of
+        [{_, Tenant}] ->
+            Updated = merge_updates(Tenant, Updates),
+            ets:insert(State#state.tenants, {TenantId, Updated}),
+            {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({suspend_tenant, TenantId}, _From, State) ->
+    case ets:lookup(State#state.tenants, TenantId) of
+        [{_, Tenant}] ->
+            Updated = Tenant#{status => suspended, suspended_at => erlang:timestamp()},
+            ets:insert(State#state.tenants, {TenantId, Updated}),
+            {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({activate_tenant, TenantId}, _From, State) ->
+    case ets:lookup(State#state.tenants, TenantId) of
+        [{_, Tenant}] ->
+            Updated = Tenant#{status => active},
+            ets:insert(State#state.tenants, {TenantId, Updated}),
+            {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({delete_tenant, TenantId}, _From, State) ->
+    case ets:lookup(State#state.tenants, TenantId) of
+        [_] ->
+            ets:delete(State#state.tenants, TenantId),
+            ets:delete(State#state.tenant_contexts, TenantId),
+            {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({check_quota, TenantId, ResourceType}, _From, State) ->
+    case ets:lookup(State#state.tenants, TenantId) of
+        [{_, #{status := suspended}}] ->
+            {reply, {error, suspended}, State};
+        [{_, Tenant}] ->
+            Quota = maps:get(quota, Tenant),
+            Current = get_current_usage(TenantId, ResourceType),
+            Limit = maps:get(ResourceType, Quota, infinity),
+            case Current < Limit of
+                true -> {reply, {ok, true}, State};
+                false -> {reply, {error, quota_exceeded}, State}
+            end;
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({check_rate_limit, TenantId, RequestCost}, _From, State) ->
+    case ets:lookup(State#state.tenants, TenantId) of
+        [{_, Tenant}] ->
+            RateLimit = maps:get(rate_limit, Tenant),
+            Key = {TenantId, erlang:timestamp() div 60},  % Per-minute bucket
+            Current = case ets:lookup(State#state.rate_limiters, Key) of
+                [{_, Count}] -> Count;
+                [] -> 0
+            end,
+            Rpm = maps:get(requests_per_minute, RateLimit),
+            case Current + RequestCost =< Rpm of
+                true ->
+                    ets:insert(State#state.rate_limiters, {Key, Current + RequestCost}),
+                    {reply, {ok, true}, State};
+                false ->
+                    {reply, {error, rate_limit_exceeded}, State}
+            end;
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({get_tenant_context, TenantId}, _From, State) ->
+    case ets:lookup(State#state.tenant_contexts, TenantId) of
+        [{_, Context}] -> {reply, {ok, Context}, State};
+        [] -> {reply, {error, not_found}, State}
+    end;
+
+handle_call({authenticate_api_key, ApiKey}, _From, State) ->
+    case ets:match_object(State#state.tenant_contexts, {('_', #tenant_context{api_key = ApiKey, _ = '_'}}) of
+        [{TenantId, _Context}] -> {reply, {ok, TenantId}, State};
+        [] -> {reply, {error, invalid_key}, State}
+    end;
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+{% endblock %}
+
+{% block additional_functions %}
+%% @doc Build tenant from options
+build_tenant(TenantId, Options) ->
+    Tier = maps:get(tier, Options, standard),
+    {Status, Quota, RateLimit} = case Tier of
+        trial -> {trial, trial_quota(), trial_rate_limit()};
+        standard -> {active, standard_quota(), standard_rate_limit()};
+        premium -> {premium, premium_quota(), premium_rate_limit()};
+        enterprise -> {enterprise, enterprise_quota(), enterprise_rate_limit()}
+    end,
+
+    #{
+        id => TenantId,
+        name => maps:get(name, Options, TenantId),
+        status => Status,
+        quota => maps:get(quota, Options, Quota),
+        rate_limit => maps:get(rate_limit, Options, RateLimit),
+        created_at => erlang:timestamp()
+    }.
+
+%% @doc Merge updates into tenant
+merge_updates(Tenant, Updates) ->
+    maps:merge(Tenant, Updates).
+
+%% @doc Get current usage for a resource type
+get_current_usage(TenantId, ResourceType) ->
+    % This would query actual usage metrics
+    0.
+
+%% @doc Trial tier quotas
+trial_quota() ->
+    #{
+        max_concurrent_requests => 5,
+        max_connections => 10,
+        max_storage_mb => 100,
+        max_tools => 10,
+        max_resources => 50,
+        max_prompts => 20
+    }.
+
+trial_rate_limit() ->
+    #{
+        requests_per_minute => 10,
+        requests_per_hour => 100,
+        tokens_per_day => 10000,
+        burst_size => 5
+    }.
+
+%% @doc Standard tier quotas
+standard_quota() ->
+    #{
+        max_concurrent_requests => 20,
+        max_connections => 50,
+        max_storage_mb => 1000,
+        max_tools => 100,
+        max_resources => 500,
+        max_prompts => 200
+    }.
+
+standard_rate_limit() ->
+    #{
+        requests_per_minute => 100,
+        requests_per_hour => 1000,
+        tokens_per_day => 100000,
+        burst_size => 20
+    }.
+
+%% @doc Premium tier quotas
+premium_quota() ->
+    #{
+        max_concurrent_requests => 50,
+        max_connections => 200,
+        max_storage_mb => 5000,
+        max_tools => 500,
+        max_resources => 2000,
+        max_prompts => 1000
+    }.
+
+premium_rate_limit() ->
+    #{
+        requests_per_minute => 500,
+        requests_per_hour => 5000,
+        tokens_per_day => 500000,
+        burst_size => 50
+    }.
+
+%% @doc Enterprise tier quotas
+enterprise_quota() ->
+    #{
+        max_concurrent_requests => 100,
+        max_connections => 500,
+        max_storage_mb => 10000,
+        max_tools => 1000,
+        max_resources => 5000,
+        max_prompts => 2000
+    }.
+
+enterprise_rate_limit() ->
+    #{
+        requests_per_minute => 1000,
+        requests_per_hour => 10000,
+        tokens_per_day => 1000000,
+        burst_size => 100
+    }.
+{% endblock %}

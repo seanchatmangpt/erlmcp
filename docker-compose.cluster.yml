@@ -1,5 +1,3 @@
-version: '3.8'
-
 # === erlmcp Multi-Region Docker Compose Configuration ===
 # Multi-region cluster setup for production deployment
 #

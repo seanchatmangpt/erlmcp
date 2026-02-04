@@ -46,7 +46,7 @@
     tags :: [binary()]
 }).
 
--record.transaction_result, {
+-record(transaction_result, {
     name :: binary(),
     timestamp :: integer(),
     duration :: integer(),
@@ -279,7 +279,11 @@ start_monitoring(State) ->
     erlang:send_after(0, Self, run_transactions),
 
     %% Schedule regular runs
-    Interval = min([T#transaction_config.interval || T <- maps:values(State#state.transactions)]),
+    Intervals = [T#transaction_config.interval || T <- maps:values(State#state.transactions)],
+    Interval = case Intervals of
+        [] -> ?DEFAULT_INTERVAL;
+        _ -> lists:min(Intervals)
+    end,
     TimerRef = erlang:send_after(Interval, Self, run_transactions),
 
     State#state{timer_ref = TimerRef, running = true}.
@@ -306,44 +310,22 @@ run_scheduled_transactions(State) ->
 execute_transaction(Transaction) ->
     StartTime = erlang:monotonic_time(millisecond),
 
-    try
-        %% Build HTTP request
-        Url = Transaction#transaction_config.endpoint,
-        Method = Transaction#transaction_config.method,
-        Headers = format_headers(Transaction#transaction_config.headers),
-        Body = Transaction#transaction_config.body,
-        Timeout = Transaction#transaction_config.timeout,
+    %% Build HTTP request
+    Url = Transaction#transaction_config.endpoint,
+    Method = Transaction#transaction_config.method,
+    Headers = format_headers(Transaction#transaction_config.headers),
+    Timeout = Transaction#transaction_config.timeout,
 
-        %% Execute request
-        Response = httpc:request(Method, {Url, Headers}, [{timeout, Timeout}], [], []),
-        EndTime = erlang:monotonic_time(millisecond),
-        Duration = EndTime - StartTime,
+    %% Execute request
+    Response = httpc:request(Method, {Url, Headers}, [{timeout, Timeout}], [], []),
+    EndTime = erlang:monotonic_time(millisecond),
+    Duration = EndTime - StartTime,
 
-        %% Process response
-        Result = process_response(Response, Transaction, Duration),
+    %% Process response
+    Result = process_response(Response, Transaction, Duration),
 
-        %% Store result
-        gen_server:call(?MODULE, {store_result, Result})
-
-    catch
-        Class:Reason:Stacktrace ->
-            EndTime = erlang:monotonic_time(millisecond),
-            Duration = EndTime - StartTime,
-
-            %% Create failure result
-            Result = #transaction_result{
-                name = Transaction#transaction_config.name,
-                timestamp = StartTime,
-                duration = Duration,
-                status = failure,
-                http_status = 0,
-                error = format_error(Class, Reason),
-                metadata = #{stacktrace => Stacktrace}
-            },
-
-            %% Store result
-            gen_server:call(?MODULE, {store_result, Result})
-    end.
+    %% Store result
+    gen_server:call(?MODULE, {store_result, Result}).
 
 %% @doc Process HTTP response
 process_response({ok, {{Status, _}, Headers, Body}}, Transaction, Duration) ->
@@ -416,24 +398,24 @@ check_threshold_violations(Result) ->
     case Result#transaction_result.status of
         timeout ->
             TimeoutRate = calculate_timeout_rate(Result#transaction_result.name),
-            if TimeoutRate > maps:get(timeout_rate, Thresholds) ->
-                   send_alert(timeout_high, Result);
-               true ->
-                   ok
+            TimeoutThreshold = maps:get(timeout_rate, Thresholds, 0.1),
+            case TimeoutRate > TimeoutThreshold of
+                true -> send_alert(timeout_high, Result);
+                false -> ok
             end;
         failure ->
             ErrorRate = calculate_error_rate(Result#transaction_result.name),
-            if ErrorRate > maps:get(error_rate, Thresholds) ->
-                   send_alert(error_rate_high, Result);
-               true ->
-                   ok
+            ErrorThreshold = maps:get(error_rate, Thresholds, 0.05),
+            case ErrorRate > ErrorThreshold of
+                true -> send_alert(error_rate_high, Result);
+                false -> ok
             end;
         success ->
             Latency = Result#transaction_result.duration,
-            if Latency > maps:get(latency_p99, Thresholds) ->
-                   send_alert(latency_high, Result);
-               true ->
-                   ok
+            LatencyThreshold = maps:get(latency_p99, Thresholds, 1000),
+            case Latency > LatencyThreshold of
+                true -> send_alert(latency_high, Result);
+                false -> ok
             end
     end.
 

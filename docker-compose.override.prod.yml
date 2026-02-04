@@ -19,13 +19,11 @@
 # - Network policies should restrict inter-service communication
 # ============================================================================
 
-version: '3.8'
-
 services:
   # Production erlmcp service
   erlmcp:
     image: ${ERLMCP_IMAGE:-ghcr.io/your-org/erlmcp:3.0.0}
-    container_name: erlmcp-prod
+    # container_name removed - incompatible with Swarm deploy.replicas
     hostname: erlmcp-prod
 
     # Production port mappings
@@ -46,9 +44,6 @@ services:
       ERL_AFLAGS: "-proto_dist inet_tls"
       ERL_DIST_PORT: "${ERLMCP_PORT:-9100}"
       ERLANG_DISTRIBUTION_PORT_RANGE: "${ERL_DIST_PORT_MIN:-9100}-${ERL_DIST_PORT_MAX:-9200}"
-
-      # Logging - minimal in production
-      ERLMCP_LOG_LEVEL: warn
 
       # Database - with SSL required
       ERLMCP_DB_HOST: ${DB_HOST:-postgres-prod}

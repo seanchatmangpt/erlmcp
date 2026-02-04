@@ -263,8 +263,36 @@ Convert memory string to Mi for quota calculations
 */}}
 {{- define "erlmcp-enterprise.memoryToMi" -}}
 {{- $mem := . | toString -}}
-{{- $value := $mem | trimSuffix "Ki" | trimSuffix "Mi" | trimSuffix "Gi" | trimSuffix "Ti" | trimSuffix "K" | trimSuffix "M" | trimSuffix "G" | trimSuffix "T" | int -}}
-{{- $unit := $mem | regexp.Find "[A-Za-z]+$" -}}
+{{- $value := 0 -}}
+{{- $unit := "" -}}
+{{- if hasSuffix "Ki" $mem -}}
+{{- $value = trimSuffix "Ki" $mem | int -}}
+{{- $unit = "Ki" -}}
+{{- else if hasSuffix "Mi" $mem -}}
+{{- $value = trimSuffix "Mi" $mem | int -}}
+{{- $unit = "Mi" -}}
+{{- else if hasSuffix "Gi" $mem -}}
+{{- $value = trimSuffix "Gi" $mem | int -}}
+{{- $unit = "Gi" -}}
+{{- else if hasSuffix "Ti" $mem -}}
+{{- $value = trimSuffix "Ti" $mem | int -}}
+{{- $unit = "Ti" -}}
+{{- else if hasSuffix "K" $mem -}}
+{{- $value = trimSuffix "K" $mem | int -}}
+{{- $unit = "K" -}}
+{{- else if hasSuffix "M" $mem -}}
+{{- $value = trimSuffix "M" $mem | int -}}
+{{- $unit = "M" -}}
+{{- else if hasSuffix "G" $mem -}}
+{{- $value = trimSuffix "G" $mem | int -}}
+{{- $unit = "G" -}}
+{{- else if hasSuffix "T" $mem -}}
+{{- $value = trimSuffix "T" $mem | int -}}
+{{- $unit = "T" -}}
+{{- else -}}
+{{- $value = $mem | int -}}
+{{- $unit = "" -}}
+{{- end -}}
 {{- if eq $unit "Ki" }}{{ div $value 1024 }}{{- else if eq $unit "Mi" }}{{ $value }}{{- else if eq $unit "Gi" }}{{ mul $value 1024 }}{{- else if eq $unit "Ti" }}{{ mul $value 1048576 }}{{- else if eq $unit "K" }}{{ div $value 1000 }}{{- else if eq $unit "M" }}{{ $value }}{{- else if eq $unit "G" }}{{ mul $value 1000 }}{{- else if eq $unit "T" }}{{ mul $value 1000000 }}{{- else }}0{{- end }}
 {{- end }}
 

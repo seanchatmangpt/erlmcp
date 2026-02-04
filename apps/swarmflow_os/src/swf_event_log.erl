@@ -333,11 +333,12 @@ handle_call(stats, _From, State) ->
     SegmentCount = ets:info(State#state.segment_index, size),
     SubscriberCount = ets:info(State#state.subscriber_table, size),
 
-    ExtendedStats = State#state.stats#{
+    BaseStats = State#state.stats,
+    ExtendedStats = maps:merge(BaseStats, #{
         hot_events => HotSize,
         segments => SegmentCount,
         subscribers => SubscriberCount
-    },
+    }),
     {reply, ExtendedStats, State};
 
 %% Get sequence for case

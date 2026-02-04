@@ -20,6 +20,10 @@
 -include("erlmcp.hrl").
 -include("otp_compat.hrl").
 
+%% Version detection helpers
+-import(erlmcp_otp_compat, [otp_version/0, have_native_json/0,
+                            have_process_iterator/0, have_priority_messages/0]).
+
 %% API exports
 -export([start_link/0, register/4, unregister/2, whereis/2, list/1, update/3,
          join_group/2, leave_group/2, get_group_members/1, is_distributed/0,
@@ -159,7 +163,7 @@ init([]) ->
 
     %% Get OTP version and features
     {ok, Features} = init_features(),
-    OTPVersion = erlmcp_version_detector:otp_version(),
+    OTPVersion = otp_version(),
 
     %% Determine optimization level
     OptimizationLevel = determine_optimization_level(OTPVersion, Features),
@@ -310,7 +314,7 @@ code_change(_OldVsn, State = #state{otp_version = OTPVersion}, _Extra) ->
 %% Initialize features based on OTP version
 -spec init_features() -> {ok, #{feature_flag() => boolean()}}.
 init_features() ->
-    OTPVersion = erlmcp_version_detector:otp_version(),
+    OTPVersion = otp_version(),
     Features = get_features_for_version(OTPVersion),
     put(state, #state{otp_version = OTPVersion, features = Features}),
     {ok, Features}.
@@ -320,9 +324,9 @@ init_features() ->
     #{feature_flag() => boolean()}.
 get_features_for_version(Version) ->
     #{
-        native_json => erlmcp_version_detector:has_native_json(Version),
-        process_iterator => erlmcp_version_detector:has_process_iterator(Version),
-        priority_messages => erlmcp_version_detector:has_priority_messages(Version),
+        native_json => have_native_json(),
+        process_iterator => have_process_iterator(),
+        priority_messages => have_priority_messages(),
         pg_optimized => has_pg_optimization(Version)
     }.
 
@@ -339,12 +343,15 @@ has_pg_optimization(Version) ->
 -spec determine_optimization_level({non_neg_integer(), non_neg_integer(), non_neg_integer()},
                                   #{feature_flag() => boolean()}) -> basic | standard | optimal.
 determine_optimization_level(Version, Features) ->
-    case {Version, Features} of
-        {{28, _, _}, _} when Features#{process_iterator := true, priority_messages := true} ->
+    ProcessIterator = maps:get(process_iterator, Features, false),
+    PriorityMessages = maps:get(priority_messages, Features, false),
+    NativeJSON = maps:get(native_json, Features, false),
+    case {Version, ProcessIterator, PriorityMessages, NativeJSON} of
+        {{28, _, _}, true, true, _} ->
             optimal;
-        {{27, _, _}, _} when Features#{native_json := true} ->
+        {{27, _, _}, _, _, true} ->
             standard;
-        {{26, _, _}, _} ->
+        {{26, _, _}, _, _, _} ->
             basic;
         _ ->
             standard  % Default fallback
@@ -354,7 +361,7 @@ determine_optimization_level(Version, Features) ->
 -spec apply_optimizations(state()) -> ok.
 apply_optimizations(State = #state{otp_version = Version, features = Features}) ->
     %% Apply priority message optimization if available
-    case Features#{priority_messages := true} of
+    case maps:get(priority_messages, Features, false) of
         true ->
             ?SET_PRIORITY_HIGH(),
             logger:debug("Priority messages enabled for distribution registry");
@@ -363,7 +370,7 @@ apply_optimizations(State = #state{otp_version = Version, features = Features}) 
     end,
 
     %% Apply process iterator optimization if available
-    case Features#{process_iterator := true} of
+    case maps:get(process_iterator, Features, false) of
         true ->
             %% Enable optimized process monitoring
             enable_process_iterator_optimization(State);
@@ -570,7 +577,7 @@ update_entity(Type, Id, Config, State) ->
 %% Join process group with version awareness
 -spec join_process_group(atom(), pid(), state()) -> ok | {error, term()}.
 join_process_group(Group, Pid, State = #state{features = Features}) ->
-    case Features#{pg_optimized := true} of
+    case maps:get(pg_optimized, Features, false) of
         true ->
             %% Use optimized pg join
             case pg_optimized_join(?PG_SCOPE, Group, Pid, State) of
@@ -614,7 +621,7 @@ pg_optimized_join(Scope, Group, Pid, State = #state{otp_version = Version}) ->
 %% Leave process group with version awareness
 -spec leave_process_group(atom(), pid(), state()) -> ok | {error, term()}.
 leave_process_group(Group, Pid, State = #state{features = Features}) ->
-    case Features#{pg_optimized := true} of
+    case maps:get(pg_optimized, Features, false) of
         true ->
             %% Use optimized pg leave
             case pg_optimized_leave(?PG_SCOPE, Group, Pid, State) of
@@ -658,7 +665,7 @@ pg_optimized_leave(Scope, Group, Pid, State = #state{otp_version = Version}) ->
 %% Get process group members with version optimization
 -spec get_process_group_members(atom(), state()) -> [pid()].
 get_process_group_members(Group, State = #state{features = Features}) ->
-    case Features#{process_iterator := true} of
+    case maps:get(process_iterator, Features, false) of
         true ->
             %% Use process iterator for large groups (OTP 28+)
             Count = ?SAFE_PROCESS_COUNT(),
@@ -705,16 +712,19 @@ init_process_groups() ->
 %% Apply system optimization
 -spec apply_system_optimization(term(), state()) -> ok.
 apply_system_optimization(Data, State = #state{otp_version = Version, features = Features}) ->
-    case Version of
-        {28, _, _} when Features#{priority_messages := true} ->
+    PriorityMessages = maps:get(priority_messages, Features, false),
+    case {Version, PriorityMessages} of
+        {{28, _, _}, true} ->
             %% Apply advanced optimizations for OTP 28+
             apply_advanced_optimizations(Data, State);
-        {27, _, _} ->
+        {{27, _, _}, _} ->
             %% Apply standard optimizations for OTP 27
             apply_standard_optimizations(Data, State);
-        {26, _, _} ->
+        {{26, _, _}, _} ->
             %% Apply basic optimizations for OTP 26
-            apply_basic_optimizations(Data, State)
+            apply_basic_optimizations(Data, State);
+        _ ->
+            ok
     end.
 
 %% Enhanced cleanup for OTP 28+

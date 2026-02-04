@@ -2,15 +2,33 @@
 %%% @doc
 %%% erlmcp_observability_sup - Observability Subsystem Supervisor
 %%%
-%%% Manages observability infrastructure in isolated supervision tree.
-%%% Failures in observability do not affect core MCP protocol operation.
+%%% Top-level supervisor for the observability layer in erlmcp v3.
+%%% Manages metrics, tracing, health monitoring, and SLA tracking.
 %%%
-%%% Supervision Strategy: one_for_one
-%%% - Metrics server crash: restart independently
-%%% - Health monitor crash: restart independently
-%%% - Recovery manager crash: restart independently
-%%% - Chaos framework crash: restart independently
-%%% - Receipt chain is ETS-based (survives restarts)
+%%% == Supervision Strategy ==
+%%% Strategy: one_for_one
+%%% - Isolated failures prevent cascading restarts
+%%% - Intensity: 10 restarts within 60 seconds
+%%%
+%%% == Core Observability Components ==
+%%% - erlmcp_metrics_collector: Prometheus-compatible metrics
+%%% - erlmcp_tracer: OTP 28 distributed tracing
+%%% - erlmcp_prometheus_exporter: HTTP /metrics endpoint
+%%% - erlmcp_health_monitor: Component health tracking
+%%% - erlmcp_sla_monitor: Service Level Agreement monitoring
+%%%
+%%% == Dependency Graph ==
+%%% ```
+%%% prometheus_exporter -> metrics_collector
+%%% prometheus_exporter -> tracer
+%%% sla_monitor -> metrics_collector
+%%% sla_monitor -> health_monitor
+%%% opentelemetry -> tracer
+%%% opentelemetry -> metrics_collector
+%%% ```
+%%%
+%%% == Generated from ggen Ontology ==
+%%% Instance: ggen/ontology/instances/observability_supervisor.ttl
 %%%
 %%% @end
 %%%-------------------------------------------------------------------
@@ -23,18 +41,50 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+-include_lib("kernel/include/logger.hrl").
+
 -define(SERVER, ?MODULE).
+
+%% Child IDs - matching ontology instance definitions
+-define(CHILD_METRICS_COLLECTOR, erlmcp_metrics_collector).
+-define(CHILD_TRACER, erlmcp_tracer).
+-define(CHILD_PROMETHEUS_EXPORTER, erlmcp_prometheus_exporter).
+-define(CHILD_HEALTH_MONITOR, erlmcp_health_monitor).
+-define(CHILD_SLA_MONITOR, erlmcp_sla_monitor).
+-define(CHILD_EVENT_MANAGER, erlmcp_event_manager).
+-define(CHILD_OTEL, erlmcp_otel).
+
+%%====================================================================
+%% Type Definitions
+%%====================================================================
+
+-type child_id() :: ?CHILD_METRICS_COLLECTOR |
+                    ?CHILD_TRACER |
+                    ?CHILD_PROMETHEUS_EXPORTER |
+                    ?CHILD_HEALTH_MONITOR |
+                    ?CHILD_SLA_MONITOR |
+                    ?CHILD_EVENT_MANAGER |
+                    ?CHILD_OTEL |
+                    atom().
+
+-type restart() :: permanent | transient | temporary.
+-type shutdown() :: 5000 | infinity | pos_integer().
+-type child_type() :: worker | supervisor.
 
 %%====================================================================
 %% API Functions
 %%====================================================================
 
-%% @doc Start the observability supervisor
+%% @doc Start the observability supervisor with default configuration
 -spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     start_link([]).
 
 %% @doc Start the observability supervisor with options
+%% Options:
+%%   - enable_otel: boolean() - Enable OpenTelemetry integration (default: false)
+%%   - prometheus_port: pos_integer() - Prometheus exporter port (default: 9090)
+%%   - health_check_interval: pos_integer() - Health check interval in ms (default: 30000)
 -spec start_link(list()) -> {ok, pid()} | {error, term()}.
 start_link(Opts) ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, Opts).
@@ -44,150 +94,154 @@ start_link(Opts) ->
 %%====================================================================
 
 %% @doc Initialize the supervisor with observability workers
-%% Strategy: one_for_one - isolated failures, no cascading restarts
+%% Returns child specs in dependency order - children with no
+%% dependencies start first.
+%%
+%% == Supervision Flags ==
+%% - Strategy: one_for_one - each child restarted independently
+%% - Intensity: 10 - max restarts before shutdown
+%% - Period: 60 - time window for restart intensity
+%%
 -spec init(list()) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
-init(_Opts) ->
+init(Opts) ->
+    ?LOG_INFO("Initializing observability supervisor with options: ~p", [Opts]),
+
     SupFlags =
         #{strategy => one_for_one,
-          intensity => 10,      % Max 10 restarts
-          period => 60},          % Within 60 seconds
+          intensity => 10,
+          period => 60},
 
-    %% Child specifications
-    Children =
-        [%% Event Manager - gen_event based event handling
-         %% Must start before other observability components that emit events
-         #{id => erlmcp_event_manager,
-           start => {erlmcp_event_manager, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_event_manager]},
-         %% Metrics Server - Core metrics collection
-         #{id => erlmcp_metrics,
-           start => {erlmcp_metrics, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_metrics]},
-         %% Metrics HTTP Server - HTTP metrics endpoint
-         #{id => erlmcp_metrics_server,
-           start => {erlmcp_metrics_server, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_metrics_server]},
-         %% Metrics Aggregator - Time-series aggregation and percentiles
-         #{id => erlmcp_metrics_aggregator,
-           start => {erlmcp_metrics_aggregator, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_metrics_aggregator]},
-         %% Dashboard Server - Real-time metrics dashboard (Cowboy + WebSocket)
-         #{id => erlmcp_dashboard_server,
-           start => {erlmcp_dashboard_server, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_dashboard_server]},
-         %% Health Monitor - Component health tracking
-         #{id => erlmcp_health_monitor,
-           start => {erlmcp_health_monitor, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_health_monitor]},
-         %% Recovery Manager - Automatic recovery and circuit breakers
-         #{id => erlmcp_recovery_manager,
-           start => {erlmcp_recovery_manager, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_recovery_manager]},
-         %% OTP 28 Native Debugger (optional, only if +D flag is set)
-         %% This is a transient worker - it may fail if +D flag is not set
-         #{id => erlmcp_otp_debugger,
-           start => {erlmcp_otp_debugger, start_link, []},
-           restart => transient,      % Don't restart if not supported
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_otp_debugger]},
-         %% Chaos Engineering Framework - Resilience testing
-         #{id => erlmcp_chaos,
-           start => {erlmcp_chaos, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_chaos]},
-         %% Chaos Worker Supervisor - Supervises chaos experiment workers
-         #{id => erlmcp_chaos_worker_sup,
-           start => {erlmcp_chaos_worker_sup, start_link, []},
-           restart => permanent,
-           shutdown => infinity,
-           type => supervisor,
-           modules => [erlmcp_chaos_worker_sup]},
-         %% Process Monitor - Process count monitoring and capacity planning
-         #{id => erlmcp_process_monitor,
-           start => {erlmcp_process_monitor, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_process_monitor]},
-         %% OTP 28 Tracer - Distributed tracing with trace:system/3
-         %% Uses OTP 28 trace sessions for tool invocation chains
-         #{id => erlmcp_tracer,
-           start => {erlmcp_tracer, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_tracer]},
-         %% Audit Log - Tamper-proof audit trail with hash chain
-         %% Critical: Maintains compliance trail for GDPR, SOC2, HIPAA
-         #{id => erlmcp_audit_log,
-           start => {erlmcp_audit_log, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_audit_log]},
-         %% Transport Health Monitor - Comprehensive transport health checks
-         #{id => erlmcp_transport_health,
-           start => {erlmcp_transport_health, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_transport_health]},
-         %% Transport Telemetry - OTEL metrics for transport health
-         #{id => erlmcp_transport_telemetry,
-           start => {erlmcp_transport_telemetry, init, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_transport_telemetry]},
-         %% Health Dashboard - Real-time health monitoring dashboard
-         #{id => erlmcp_health_dashboard,
-           start => {erlmcp_health_dashboard, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_health_dashboard]},
-         %% Health HTTP Server - Health check endpoints for Docker/Kubernetes
-         %% Provides /health, /ready, /live endpoints on port 8080
-         %% Level 1: HTTP endpoint (application health)
-         %% Level 2: Node ping (distribution)
-         %% Level 3: ETS table availability (state)
-         #{id => erlmcp_health_http_server,
-           start => {erlmcp_health_http_server, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_health_http_server]}],
+    %% Build child specs in dependency order
+    Children = child_specs(Opts),
 
-    %% Note: Receipt chain (erlmcp_receipt_chain) is ETS-based with no process
-    %% Note: OTEL (erlmcp_otel) is a library module with no supervision
-    %% Note: Evidence path (erlmcp_evidence_path) is a library module
-    %% Note: Chaos primitives are library modules (no supervision needed)
+    ?LOG_INFO("Starting ~p observability children", [length(Children)]),
+
     {ok, {SupFlags, Children}}.
 
 %%====================================================================
 %% Internal Functions
 %%====================================================================
+
+%% @private
+%% Build child specifications in dependency order.
+%% Level 1: No dependencies
+%% Level 2: Depends on Level 1
+%% Level 3: Depends on Level 1-2
+-spec child_specs(list()) -> [supervisor:child_spec()].
+child_specs(Opts) ->
+    EnableOtel = proplists:get_value(enable_otel, Opts, false),
+
+    %% Level 1: Core components with no dependencies
+    Level1 = [
+        child_spec_event_manager(),
+        child_spec_metrics_collector(),
+        child_spec_tracer(),
+        child_spec_health_monitor()
+    ],
+
+    %% Level 2: Components depending on Level 1
+    Level2 = [
+        child_spec_prometheus_exporter(Opts),
+        child_spec_sla_monitor()
+    ],
+
+    %% Level 3: Optional components depending on Level 1-2
+    Level3 =
+        case EnableOtel of
+            true -> [child_spec_otel()];
+            false -> []
+        end,
+
+    Level1 ++ Level2 ++ Level3.
+
+%%====================================================================
+%% Child Specification Builders
+%%====================================================================
+
+%% @private
+%% Event Manager - gen_event based event handling
+%% Must start before other observability components that emit events
+-spec child_spec_event_manager() -> supervisor:child_spec().
+child_spec_event_manager() ->
+    #{id => ?CHILD_EVENT_MANAGER,
+      start => {erlmcp_event_manager, start_link, []},
+      restart => permanent,
+      shutdown => 5000,
+      type => worker,
+      modules => [erlmcp_event_manager]}.
+
+%% @private
+%% Metrics Collector - Prometheus-compatible metrics collection
+%% Provides counter, gauge, histogram metric types
+-spec child_spec_metrics_collector() -> supervisor:child_spec().
+child_spec_metrics_collector() ->
+    #{id => ?CHILD_METRICS_COLLECTOR,
+      start => {erlmcp_metrics_collector, start_link, []},
+      restart => permanent,
+      shutdown => 5000,
+      type => worker,
+      modules => [erlmcp_metrics_collector]}.
+
+%% @private
+%% Distributed Tracer - OTP 28 trace:system/3 based tracing
+%% Manages trace sessions for tool invocation chains
+-spec child_spec_tracer() -> supervisor:child_spec().
+child_spec_tracer() ->
+    #{id => ?CHILD_TRACER,
+      start => {erlmcp_tracer, start_link, []},
+      restart => permanent,
+      shutdown => 5000,
+      type => worker,
+      modules => [erlmcp_tracer]}.
+
+%% @private
+%% Health Monitor - Component health tracking with circuit breaker integration
+%% Supports OTP 28 priority messages for urgent health updates
+-spec child_spec_health_monitor() -> supervisor:child_spec().
+child_spec_health_monitor() ->
+    #{id => ?CHILD_HEALTH_MONITOR,
+      start => {erlmcp_health_monitor, start_link, []},
+      restart => permanent,
+      shutdown => 5000,
+      type => worker,
+      modules => [erlmcp_health_monitor]}.
+
+%% @private
+%% Prometheus Exporter - HTTP server for metrics scraping
+%% Depends on: metrics_collector, tracer
+-spec child_spec_prometheus_exporter(list()) -> supervisor:child_spec().
+child_spec_prometheus_exporter(Opts) ->
+    Port = proplists:get_value(prometheus_port, Opts, 9090),
+    Config = #{port => Port, path => "/metrics"},
+    #{id => ?CHILD_PROMETHEUS_EXPORTER,
+      start => {erlmcp_prometheus_exporter, start_link, [Config]},
+      restart => permanent,
+      shutdown => 5000,
+      type => worker,
+      modules => [erlmcp_prometheus_exporter]}.
+
+%% @private
+%% SLA Monitor - Service Level Agreement monitoring
+%% Tracks: uptime, response_time, error_rate, throughput, session_success
+%% Depends on: metrics_collector, health_monitor
+-spec child_spec_sla_monitor() -> supervisor:child_spec().
+child_spec_sla_monitor() ->
+    #{id => ?CHILD_SLA_MONITOR,
+      start => {erlmcp_sla_monitor, start_link, []},
+      restart => permanent,
+      shutdown => 5000,
+      type => worker,
+      modules => [erlmcp_sla_monitor]}.
+
+%% @private
+%% OpenTelemetry Integration (optional)
+%% Supports exporters: console, datadog, honeycomb, jaeger
+%% Depends on: tracer, metrics_collector
+-spec child_spec_otel() -> supervisor:child_spec().
+child_spec_otel() ->
+    #{id => ?CHILD_OTEL,
+      start => {erlmcp_otel, init, []},
+      restart => transient,  % Don't restart if not supported
+      shutdown => 5000,
+      type => worker,
+      modules => [erlmcp_otel]}.

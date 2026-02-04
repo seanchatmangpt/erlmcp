@@ -71,7 +71,7 @@ COPY apps/erlmcp_core/ ./apps/erlmcp_core/
 COPY apps/erlmcp_transports/ ./apps/erlmcp_transports/
 COPY apps/erlmcp_observability/ ./apps/erlmcp_observability/
 COPY apps/erlmcp_validation/ ./apps/erlmcp_validation/
-COPY apps/erlmcp_zero_trust/ ./apps/erlmcp_zero_trust/
+# COPY apps/erlmcp_zero_trust/ ./apps/erlmcp_zero_trust/  %% Temporarily removed
 COPY apps/swarmflow_os/ ./apps/swarmflow_os/
 COPY apps/swarmflow_pqchain/ ./apps/swarmflow_pqchain/
 

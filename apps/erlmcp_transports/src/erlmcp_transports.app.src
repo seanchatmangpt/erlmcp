@@ -2,7 +2,10 @@
  [{description, "Erlang MCP Transports - STDIO, TCP, HTTP, WebSocket"},
   {vsn, "2.1.0"},
   {registered, [
-      erlmcp_transport_sup
+      erlmcp_transport_sup,
+      erlmcp_transport_health,
+      erlmcp_transport_registry,
+      erlmcp_connection_pool
   ]},
   {applications, [
       kernel,
@@ -34,13 +37,29 @@
           stdio => #{
               buffer_size => 65536,
               read_timeout => infinity
+          },
+          ws => #{
+              port => 3001,
+              path => "/ws"
+          },
+          sse => #{
+              port => 3001,
+              path => "/events"
           }
-      }}
+      }},
+      {pool_config, #{
+          worker_count => 10,
+          max_overflow => 20,
+          worker_ttl => 60000
+      }},
+      {health_check_interval, 30000},
+      {connection_timeout, 5000},
+      {max_connections_per_transport, 100}
   ]},
   {modules, []},
   {licenses, ["Apache-2.0"]},
   {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]},
-  %% OTP 27+ Runtime Dependencies
+  %% OTP 28+ Runtime Dependencies
   {runtime_dependencies, [
     "erts-16.0.3",     % OTP 28 ERTS minimum
     "kernel-10.4",     % OTP 28 Kernel minimum
@@ -58,9 +77,9 @@
   {notes, [
       "Requires: Erlang/OTP 28+ (STRICT)",
       "OTP 28+ features: priority message routing for critical transport events, hibernate/0",
-      "OTP 26+ features: concurrent startup, improved socket handling, persistent config",
+      "OTP 27+ features: concurrent startup, improved socket handling, persistent config",
       "Dependencies: gun 2.0+, ranch 2.1+, cowboy 2.10+, poolboy 1.5.2+",
       "Previous OTP 25 support deprecated - upgrade to OTP 28+ required",
-      "See docs/OTP_APPLICATION_CONFIG_RESEARCH.md for transport-specific features"
+      "Ontology: ggen/ontology/instances/transports_application.ttl"
   ]}
  ]}.

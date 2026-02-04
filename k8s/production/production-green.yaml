@@ -62,7 +62,7 @@ spec:
         effect: "NoSchedule"
       containers:
       - name: erlmcp
-        image: ghcr.io/your-org/erlmcp:production-v3.0.0
+        image: ghcr.io/erlmcp/erlmcp:3.0.0
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
@@ -73,9 +73,11 @@ spec:
           requests:
             cpu: "200m"
             memory: "512Mi"
+            ephemeral-storage: "1Gi"
           limits:
             cpu: "1000m"
             memory: "2Gi"
+            ephemeral-storage: "2Gi"
         env:
         - name: ENVIRONMENT
           value: "production"
@@ -115,7 +117,7 @@ spec:
         - name: OTEL_EXPORTER_OTLP_ENDPOINT
           value: "http://otlp-collector.REGION:4317"
         - name: OTEL_EXPORTER_OTLP_HEADERS
-          value: "x-honeycomb-team=PLACEHOLDER_HONEYCOMB_API_KEY"
+          value: "x-honeycomb-team=${HONEYCOMB_API_KEY}"
         livenessProbe:
           httpGet:
             path: /mcp/health
@@ -163,15 +165,6 @@ spec:
           preStop:
             exec:
               command: ["/bin/sh", "-c", "curl -X POST http://localhost:8080/mcp/shutdown || true; sleep 15"]
-        resources:
-          limits:
-            cpu: "1000m"
-            memory: "2Gi"
-            ephemeral-storage: "2Gi"
-          requests:
-            cpu: "200m"
-            memory: "512Mi"
-            ephemeral-storage: "1Gi"
       volumes:
       - name: config
         configMap:
