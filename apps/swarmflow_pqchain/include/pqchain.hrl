@@ -197,6 +197,24 @@
 %%% Block Records
 %%% ============================================================================
 
+%% Execution Receipt (per transaction) - defined before pqc_block which references it
+-record(execution_receipt, {
+    tx_id :: binary(),
+    status :: success | failure | reverted,
+    gas_used :: non_neg_integer(),
+    state_changes :: [state_change()],
+    events :: [workflow_event()],
+    error :: binary() | undefined
+}).
+
+%% State Change - defined before execution_receipt which references it
+-record(state_change, {
+    address :: binary(),
+    key :: binary(),
+    old_value :: binary() | undefined,
+    new_value :: binary() | undefined
+}).
+
 %% Block Header
 -record(pqc_block_header, {
     version :: pos_integer(),
@@ -219,24 +237,6 @@
     receipts :: [#execution_receipt{}],
     validator_set_hash :: binary(),
     next_validator_set_hash :: binary() | undefined
-}).
-
-%% Execution Receipt (per transaction)
--record(execution_receipt, {
-    tx_id :: binary(),
-    status :: success | failure | reverted,
-    gas_used :: non_neg_integer(),
-    state_changes :: [state_change()],
-    events :: [workflow_event()],
-    error :: binary() | undefined
-}).
-
-%% State Change
--record(state_change, {
-    address :: binary(),
-    key :: binary(),
-    old_value :: binary() | undefined,
-    new_value :: binary() | undefined
 }).
 
 %%% ============================================================================
