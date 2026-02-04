@@ -20,7 +20,7 @@
 .PHONY: doctor-inner quick-inner verify-inner ci-local-inner
 .PHONY: setup-profile-inner check-erlang-version-inner
 
-SHELL := /bin/bash
+SHELL := /bin/sh
 
 # ============================================================================
 # DOCKER-ONLY CONSTITUTION (ANDON ENFORCEMENT)

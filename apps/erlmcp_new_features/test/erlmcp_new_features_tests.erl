@@ -6,8 +6,10 @@
 %%====================================================================
 
 setup() ->
-    {ok, Pid} = erlmcp_new_features_app:start(normal, []),
-    Pid.
+    case whereis(erlmcp_new_features_sup) of
+        undefined -> {ok, Pid} = erlmcp_new_features_app:start(normal, []), Pid;
+        Pid -> Pid
+    end.
 
 cleanup(_Pid) ->
     ok.
@@ -25,7 +27,9 @@ erlmcp_new_features_test_() ->
       fun mcp_proxy_relay_tests/0,
       fun batch_processor_tests/0,
       fun json_schema_validator_tests/0,
-      fun event_bus_tests/0
+      fun event_bus_tests/0,
+      fun workflow_engine_tests/0,
+      fun tool_sandbox_tests/0
      ]}.
 
 %%====================================================================
@@ -183,5 +187,72 @@ event_bus_tests() ->
             ?assert(maps:is_key(events_published, Metrics)),
             ?assert(maps:is_key(events_delivered, Metrics)),
             ?assert(maps:is_key(subscribers, Metrics))
+        end}
+    ]}.
+
+workflow_engine_tests() ->
+    {"Workflow Engine Tests", [
+        {"start_link initializes server", fun() ->
+            case whereis(erlmcp_workflow_engine) of
+                undefined ->
+                    {ok, Pid} = erlmcp_workflow_engine:start_link(),
+                    ?assert(is_pid(Pid));
+                Pid ->
+                    ?assert(is_pid(Pid))
+            end
+        end},
+        {"define_workflow creates new workflow", fun() ->
+            Workflow = #{
+                id => <<"test_wf">>,
+                steps => [
+                    #{
+                        id => <<"step1">>,
+                        type => tool,
+                        tool_name => <<"echo">>,
+                        tool_arguments => #{}
+                    }
+                ],
+                transitions => []
+            },
+            Result = erlmcp_workflow_engine:define_workflow(Workflow),
+            ?assertEqual(ok, Result)
+        end},
+        {"list_workflows returns defined workflows", fun() ->
+            Workflow = #{
+                id => <<"list_test">>,
+                steps => [],
+                transitions => []
+            },
+            ok = erlmcp_workflow_engine:define_workflow(Workflow),
+            {ok, Workflows} = erlmcp_workflow_engine:list_workflows(),
+            ?assert(lists:member(<<"list_test">>, Workflows))
+        end}
+    ]}.
+
+tool_sandbox_tests() ->
+    {"Tool Sandbox Tests", [
+        {"start_link initializes server", fun() ->
+            case whereis(erlmcp_tool_sandbox) of
+                undefined ->
+                    {ok, Pid} = erlmcp_tool_sandbox:start_link(),
+                    ?assert(is_pid(Pid));
+                Pid ->
+                    ?assert(is_pid(Pid))
+            end
+        end},
+        {"register_tool adds tool definition", fun() ->
+            ToolDef = #{
+                name => <<"test_tool">>,
+                command => ["/bin/echo"],
+                args => [<<"hello">>],
+                timeout_ms => 1000
+            },
+            Result = erlmcp_tool_sandbox:register_tool(test_tool_reg, ToolDef),
+            ?assertEqual(ok, Result)
+        end},
+        {"get_metrics returns performance data", fun() ->
+            Metrics = erlmcp_tool_sandbox:get_metrics(),
+            ?assert(is_map(Metrics)),
+            ?assert(maps:is_key(total_executions, Metrics))
         end}
     ]}.

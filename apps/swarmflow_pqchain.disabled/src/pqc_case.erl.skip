@@ -315,8 +315,8 @@ handle_event({call, From}, {tool_call, ToolName, Args}, State, Data) ->
                     stacktrace => Stacktrace
                 }
             },
-            {NewData, _} = append_event(Data, ErrorEvent),
-            {keep_state, NewData, [{reply, From, {error, Reason}}]}
+            {NewDataCatch, _} = append_event(Data, ErrorEvent),
+            {keep_state, NewDataCatch, [{reply, From, {error, Reason}}]}
     end;
 
 %% Handle snapshot request
@@ -518,8 +518,8 @@ drive_net(#case_data{net = Net, marking = Marking, metadata = Metadata} = Data) 
                 Data
         end
     catch
-        error:Reason ->
-            update_status(Data, failed, iolist_to_binary(io_lib:format("Net error: ~p", [Reason])))
+        error:_Reason ->
+            update_status(Data, failed, iolist_to_binary(io_lib:format("Net error: ~p", [_Reason])))
     end.
 
 %% @doc Fire enabled transitions

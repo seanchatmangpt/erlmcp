@@ -159,7 +159,7 @@ init([Name, Config]) ->
     PendingQueue = init_storage(StorageBackend, Name),
 
     %% Set up ack timeout monitoring
-    AckTimerRef = erlang:send_after(AckTimeout, self(), ack_timeout_check),
+    erlang:send_after(AckTimeout, self(), ack_timeout_check),
 
     State = #state{
         name = Name,
@@ -212,14 +212,11 @@ handle_call({enqueue, Payload, Priority}, _From, State) ->
                 expires_at => undefined
             },
 
-            {NewPendingQueue, NewStats} =
-                insert_message(Message, PendingQueue, Priority, State),
+            NewPendingQueue = insert_message(Message, PendingQueue, Priority, State),
 
             NewState = State#state{
                 pending_queue = NewPendingQueue,
-                stats = Stats#{
-                    pending => maps:get(pending, Stats, 0) + 1
-                }
+                stats = Stats#{pending => maps_get_safe(pending, Stats, 0) + 1}
             },
 
             {reply, {ok, MessageId}, NewState}
@@ -246,7 +243,7 @@ handle_call({dequeue, WorkerPid}, _From, State) ->
                 worker_pid => WorkerPid
             },
 
-            MessageId = maps:get(id, Message),
+            MessageId = maps_get_safe(id, Message, undefined),
             NewDelivered = maps:put(MessageId, Delivery, Delivered),
 
             NewState = State#state{
@@ -258,7 +255,7 @@ handle_call({dequeue, WorkerPid}, _From, State) ->
                 }
             },
 
-            {reply, {ok, MessageId, maps:get(payload, Message), DeliveryRef}, NewState}
+            {reply, {ok, MessageId, maps_get_safe(payload, Message, undefined), DeliveryRef}, NewState}
     end;
 
 handle_call({acknowledge, DeliveryRef}, _From, State) ->
@@ -292,9 +289,9 @@ handle_call({nack, DeliveryRef, Requeue}, _From, State) ->
 
     case find_delivery_by_ref(DeliveryRef, Delivered) of
         {ok, MessageId, Delivery} ->
-            Message = maps:get(message, Delivery),
-            Attempts = maps:get(attempts, Message, 0) + 1,
-            MaxAttempts = maps:get(max_attempts, Message, 5),
+            Message = maps_get_safe(message, Delivery, #{}),
+            Attempts = maps_get_safe(attempts, Message, 0) + 1,
+            MaxAttempts = maps_get_safe(max_attempts, Message, 5),
 
             NewDelivered = maps:remove(MessageId, Delivered),
 
@@ -345,9 +342,7 @@ handle_call(get_stats, _From, State) ->
 
     PendingCount = queue_size(PendingQueue, State),
 
-    FullStats = Stats#{
-        pending => PendingCount
-    },
+    FullStats = Stats#{pending => PendingCount},
 
     {reply, {ok, FullStats}, State};
 
@@ -370,7 +365,7 @@ handle_info(ack_timeout_check, State) ->
     %% Check for timed out deliveries
     {TimeoutDeliveries, ActiveDeliveries} =
         maps:fold(fun(_MessageId, Delivery, {TimeoutAcc, ActiveAcc}) ->
-            DeliveredAt = maps:get(delivered_at, Delivery, 0),
+            DeliveredAt = maps_get_safe(delivered_at, Delivery, 0),
             case Now - DeliveredAt >= AckTimeoutMs of
                 true ->
                     {[Delivery | TimeoutAcc], ActiveAcc};
@@ -381,8 +376,8 @@ handle_info(ack_timeout_check, State) ->
 
     %% Requeue timed out messages
     NewState = lists:foldl(fun(Delivery, AccState) ->
-        Message = maps:get(message, Delivery),
-        MessageId = maps:get(id, Message),
+        Message = maps_get_safe(message, Delivery, #{}),
+        MessageId = maps_get_safe(id, Message, undefined),
         ?LOG_WARNING("Message ~p ack timeout, requeueing", [MessageId]),
         %% Send nack for timeout
         {ok, NackState} = handle_nack_internal(Delivery, true, AccState),
@@ -443,16 +438,16 @@ queue_table_name(Name) ->
 
 %% @doc Insert message into queue (priority-aware for ETS).
 -spec insert_message(message(), queue:queue(message()) | ets:tid(), priority(), state()) ->
-    {queue:queue(message()) | ets:tid(), map()}.
+    queue:queue(message()) | ets:tid().
 insert_message(Message, PendingQueue, _Priority, #state{storage_backend = memory}) ->
     %% Simple FIFO for in-memory (queue module doesn't support priority)
-    {queue:in(Message, PendingQueue), #{}};
+    queue:in(Message, PendingQueue);
 insert_message(Message, PendingQueue, Priority, #state{storage_backend = ets}) ->
     %% Priority-based insert for ETS (use key = {Priority, Timestamp})
     Now = erlang:system_time(millisecond),
     Key = {10 - Priority, Now},  % Invert priority so higher = first
     ets:insert(PendingQueue, {Key, Message}),
-    {PendingQueue, #{}}.
+    PendingQueue.
 
 %% @doc Simple message insert without priority (for requeue).
 -spec insert_message_simple(message(), queue:queue(message()) | ets:tid(), state()) ->
@@ -494,13 +489,13 @@ queue_size(Queue, #state{storage_backend = ets}) ->
 find_delivery_by_ref(DeliveryRef, Delivered) ->
     try
         maps:fold(fun(MessageId, Delivery, _Acc) ->
-            case maps:get(delivery_id, Delivery, undefined) of
+            case maps_get_safe(delivery_id, Delivery, undefined) of
                 DeliveryRef ->
                     throw({found, MessageId, Delivery});
                 _ ->
-                    continue
+                    ok
             end
-        end, continue, Delivered),
+        end, ok, Delivered),
         error
     catch
         throw:{found, MessageId, Delivery} ->
@@ -519,8 +514,8 @@ handle_nack_internal(Delivery, Requeue, State) ->
         stats = Stats
     } = State,
 
-    Message = maps:get(message, Delivery),
-    MessageId = maps:get(id, Message),
+    Message = maps_get_safe(message, Delivery, #{}),
+    MessageId = maps_get_safe(id, Message, undefined),
     Attempts = maps_get_safe(attempts, Message, 0) + 1,
     MaxAttempts = maps_get_safe(max_attempts, Message, 5),
 

@@ -31,11 +31,13 @@
 -module(pqc_alpha_miner).
 
 -include("pqchain.hrl").
+-include_lib("swarmflow_os/include/swarmflow.hrl").
 
 %% API exports
 -export([
     discover/1,
-    footprint/1,]).
+    footprint/1
+]).
 
 %% Utility exports for testing
 -export([

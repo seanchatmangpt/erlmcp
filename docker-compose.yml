@@ -52,6 +52,7 @@ services:
       ERLMCP_PROFILE: ${ERLMCP_PROFILE:-dev}
       ERLANG_COOKIE: ${ERLANG_COOKIE:-erlmcp_build_cookie}
       ERLMCP_NODE_NAME: erlmcp-build@erlmcp-build
+      OTP_VERSION: 28
 
       # Compilation settings
       TERM: dumb

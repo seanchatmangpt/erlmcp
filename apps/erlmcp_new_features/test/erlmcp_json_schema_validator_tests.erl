@@ -6,8 +6,10 @@
 %%%===================================================================
 
 setup() ->
-    {ok, Pid} = erlmcp_json_schema_validator:start_link(),
-    Pid.
+    case whereis(erlmcp_json_schema_validator) of
+        undefined -> {ok, Pid} = erlmcp_json_schema_validator:start_link(), Pid;
+        Pid -> Pid
+    end.
 
 cleanup(_Pid) ->
     ok.

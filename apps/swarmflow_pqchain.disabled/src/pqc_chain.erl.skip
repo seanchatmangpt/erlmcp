@@ -170,8 +170,8 @@ handle_call(get_state, _From, State) ->
     {reply, {ok, ChainState}, State};
 
 handle_call({add_block, Block, ValidatorSet}, _From, State) ->
-    #pqc_block{header = Header} = Block,
-    #pqc_block_header{height = Height, hash = Hash} = Header,
+    #pqc_block{header = #pqc_block_header{height = Height}} = Block,
+    Hash = pqc_block:hash(Block),
 
     %% Update state
     NewState = State#state{

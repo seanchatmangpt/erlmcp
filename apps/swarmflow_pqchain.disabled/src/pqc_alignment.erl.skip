@@ -81,6 +81,8 @@
     cost :: non_neg_integer()
 }).
 
+-type alignment_move() :: #alignment_move{}.
+
 %% Alignment result record
 -record(alignment, {
     trace :: trace(),
@@ -89,6 +91,8 @@
     fitness :: float()  % 1.0 = perfect, 0.0 = no fit
 }).
 
+-type alignment() :: #alignment{}.
+
 %% Alignment configuration
 -record(alignment_config, {
     log_move_cost = 1 :: pos_integer(),
@@ -96,6 +100,8 @@
     sync_move_cost = 0 :: non_neg_integer(),
     max_states = 100000 :: pos_integer()
 }).
+
+-type alignment_config() :: #alignment_config{}.
 
 %% A* search state
 -record(search_state, {
@@ -176,12 +182,12 @@ align(Trace, Net, Config) when is_list(Trace), is_map(Net) ->
                     total_cost = TotalCost,
                     fitness = Fitness
                 }};
-            {error, Reason} ->
-                {error, Reason}
+            {error, _Reason} ->
+                {error, _Reason}
         end
     catch
-        error:Reason:Stack ->
-            {error, {alignment_failed, Reason, Stack}}
+        error:CatchReason:Stack ->
+            {error, {alignment_failed, CatchReason, Stack}}
     end.
 
 %% @doc Compute replay fitness over entire event log.
@@ -197,8 +203,8 @@ fitness(Alignments, EventLog) when is_list(Alignments), is_list(EventLog) ->
     MaxCost = TotalEvents,  % Worst case: all log moves
 
     case MaxCost of
-        0 -> 1.0;
-        _ -> max(0.0, 1.0 - (TotalCost / MaxCost))
+        +0 -> 1.0;
+        _ -> max(+0.0, 1.0 - (TotalCost / MaxCost))
     end.
 
 %% @doc Compute ETC precision (Escaping Edges).
@@ -221,7 +227,7 @@ precision(Net, EventLog) when is_map(Net), is_list(EventLog) ->
     TotalEnabled = lists:sum([En || {_E, En} <- Results]),
 
     case TotalEnabled of
-        0 -> 1.0;
+        +0 -> 1.0;
         _ -> TotalExecuted / TotalEnabled
     end.
 
@@ -247,7 +253,7 @@ generalization(Net, EventLog) when is_map(Net), is_list(EventLog) ->
     TotalTransitions = length(AllTransitions),
 
     case TotalTransitions of
-        0 -> 0.0;
+        +0 -> 0.0;
         _ ->
             Coverage = UsedTransitions / TotalTransitions,
             %% Generalization inversely related to coverage
@@ -277,14 +283,14 @@ simplicity(Net) when is_map(Net) ->
     Nodes = NumPlaces + NumTransitions,
 
     case Nodes of
-        0 -> 1.0;
+        +0 -> 1.0;
         _ ->
             %% Average degree
             AvgDegree = (2 * ArcCount) / Nodes,
 
             %% Place/transition ratio (ideal is 1.0-2.0)
             PTRatio = case NumTransitions of
-                0 -> 0.0;
+                +0 -> 0.0;
                 _ -> NumPlaces / NumTransitions
             end,
 
@@ -302,17 +308,17 @@ simplicity(Net) when is_map(Net) ->
 %% Beta > 1.0 weights fitness more.
 %% Beta < 1.0 weights precision more.
 -spec f_measure(Fitness :: float(), Precision :: float(), Beta :: float()) -> float().
-f_measure(0.0, _Precision, _Beta) ->
+f_measure(+0.0, _Precision, _Beta) ->
     0.0;
-f_measure(_Fitness, 0.0, _Beta) ->
+f_measure(_Fitness, +0.0, _Beta) ->
     0.0;
-f_measure(Fitness, Precision, Beta) when Fitness >= 0.0, Precision >= 0.0, Beta > 0.0 ->
+f_measure(Fitness, Precision, Beta) when Fitness >= +0.0, Precision >= +0.0, Beta > +0.0 ->
     BetaSquared = Beta * Beta,
     Numerator = (1.0 + BetaSquared) * Fitness * Precision,
     Denominator = (BetaSquared * Fitness) + Precision,
 
     case Denominator of
-        0.0 -> 0.0;
+        +0.0 -> 0.0;
         _ -> Numerator / Denominator
     end.
 
@@ -413,29 +419,27 @@ is_goal_state(#search_state{trace_pos = Pos, marking = Marking}, Trace, Net) ->
 generate_successors(State, Trace, Net, Config) ->
     #search_state{marking = Marking, trace_pos = Pos, cost = Cost, moves = Moves} = State,
 
-    Successors = [],
-
     %% 1. Synchronous moves
     SyncMoves = case Pos < length(Trace) of
         true ->
             CurrentEvent = lists:nth(Pos + 1, Trace),
             case is_transition_enabled(CurrentEvent, Marking, Net) of
                 true ->
-                    NewMarking = fire_transition(CurrentEvent, Marking, Net),
-                    Move = #alignment_move{
+                    SyncMarking = fire_transition(CurrentEvent, Marking, Net),
+                    SyncMove = #alignment_move{
                         type = sync,
                         log_event = CurrentEvent,
                         model_transition = CurrentEvent,
                         cost = Config#alignment_config.sync_move_cost
                     },
-                    NewState = State#search_state{
-                        marking = NewMarking,
+                    SyncState = State#search_state{
+                        marking = SyncMarking,
                         trace_pos = Pos + 1,
-                        cost = Cost + Move#alignment_move.cost,
-                        moves = [Move | Moves]
+                        cost = Cost + SyncMove#alignment_move.cost,
+                        moves = [SyncMove | Moves]
                     },
-                    Heuristic = length(Trace) - (Pos + 1),
-                    [{NewState, Move#alignment_move.cost, Heuristic}];
+                    SyncHeuristic = length(Trace) - (Pos + 1),
+                    [{SyncState, SyncMove#alignment_move.cost, SyncHeuristic}];
                 false ->
                     []
             end;
@@ -446,20 +450,20 @@ generate_successors(State, Trace, Net, Config) ->
     %% 2. Log-only moves
     LogMoves = case Pos < length(Trace) of
         true ->
-            CurrentEvent = lists:nth(Pos + 1, Trace),
-            Move = #alignment_move{
+            LogEvent = lists:nth(Pos + 1, Trace),
+            LogMove = #alignment_move{
                 type = log_only,
-                log_event = CurrentEvent,
+                log_event = LogEvent,
                 model_transition = undefined,
                 cost = Config#alignment_config.log_move_cost
             },
-            NewState = State#search_state{
+            LogState = State#search_state{
                 trace_pos = Pos + 1,
-                cost = Cost + Move#alignment_move.cost,
-                moves = [Move | Moves]
+                cost = Cost + LogMove#alignment_move.cost,
+                moves = [LogMove | Moves]
             },
-            Heuristic = length(Trace) - (Pos + 1),
-            [{NewState, Move#alignment_move.cost, Heuristic}];
+            LogHeuristic = length(Trace) - (Pos + 1),
+            [{LogState, LogMove#alignment_move.cost, LogHeuristic}];
         false ->
             []
     end,
@@ -468,25 +472,25 @@ generate_successors(State, Trace, Net, Config) ->
     EnabledTransitions = get_enabled_transitions(Marking, Net),
     ModelMoves = lists:map(
         fun(Tid) ->
-            NewMarking = fire_transition(Tid, Marking, Net),
-            Move = #alignment_move{
+            ModelMarking = fire_transition(Tid, Marking, Net),
+            ModelMove = #alignment_move{
                 type = model_only,
                 log_event = undefined,
                 model_transition = Tid,
                 cost = Config#alignment_config.model_move_cost
             },
-            NewState = State#search_state{
-                marking = NewMarking,
-                cost = Cost + Move#alignment_move.cost,
-                moves = [Move | Moves]
+            ModelState = State#search_state{
+                marking = ModelMarking,
+                cost = Cost + ModelMove#alignment_move.cost,
+                moves = [ModelMove | Moves]
             },
-            Heuristic = length(Trace) - Pos,
-            {NewState, Move#alignment_move.cost, Heuristic}
+            ModelHeuristic = length(Trace) - Pos,
+            {ModelState, ModelMove#alignment_move.cost, ModelHeuristic}
         end,
         EnabledTransitions
     ),
 
-    Successors ++ SyncMoves ++ LogMoves ++ ModelMoves.
+    SyncMoves ++ LogMoves ++ ModelMoves.
 
 %% @private Get enabled transitions in current marking.
 -spec get_enabled_transitions(Marking :: map(), Net :: map()) -> [atom()].
@@ -578,10 +582,10 @@ get_final_places(Net) ->
 -spec is_final_marking(Marking :: map(), FinalPlaces :: [atom()]) -> boolean().
 is_final_marking(Marking, []) ->
     %% No final places defined, check if no tokens anywhere
-    maps:fold(fun(_P, Count, Acc) -> Acc andalso (Count == 0) end, true, Marking);
+    maps:fold(fun(_P, Count, Acc) -> Acc andalso (Count =:= +0) end, true, Marking);
 is_final_marking(Marking, FinalPlaces) ->
     %% Check if at least one final place has tokens
-    lists:any(fun(P) -> maps:get(P, Marking, 0) > 0 end, FinalPlaces).
+    lists:any(fun(P) -> maps:get(P, Marking, +0) > +0 end, FinalPlaces).
 
 %%====================================================================
 %% Internal Functions - Metrics
@@ -589,13 +593,13 @@ is_final_marking(Marking, FinalPlaces) ->
 
 %% @private Calculate fitness from alignment cost.
 -spec calculate_alignment_fitness(Cost :: non_neg_integer(), Trace :: trace()) -> float().
-calculate_alignment_fitness(0, _Trace) ->
+calculate_alignment_fitness(+0, _Trace) ->
     1.0;
 calculate_alignment_fitness(Cost, Trace) ->
     MaxCost = length(Trace),  % Worst case: all log moves
     case MaxCost of
-        0 -> 1.0;
-        _ -> max(0.0, 1.0 - (Cost / MaxCost))
+        +0 -> 1.0;
+        _ -> max(+0.0, 1.0 - (Cost / MaxCost))
     end.
 
 %% @private Compute precision for a single trace.

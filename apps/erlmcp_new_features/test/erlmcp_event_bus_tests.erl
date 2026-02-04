@@ -6,8 +6,10 @@
 %%%===================================================================
 
 setup() ->
-    {ok, Pid} = erlmcp_event_bus:start_link(),
-    Pid.
+    case whereis(erlmcp_event_bus) of
+        undefined -> {ok, Pid} = erlmcp_event_bus:start_link(), Pid;
+        Pid -> Pid
+    end.
 
 cleanup(_Pid) ->
     ok.

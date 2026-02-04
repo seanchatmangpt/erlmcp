@@ -68,27 +68,156 @@ init([]) ->
     {ok, #state{}}.
 
 handle_call({validate, SchemaName, Data}, _From, State) ->
+    StartTime = erlang:monotonic_time(millisecond),
+    TraceContext = erlmcp_observability:trace_span(<<"json_schema_validator_validate">>, #{
+        schema_name => atom_to_binary(SchemaName),
+        data_size => size(jsone:encode(Data))
+    }),
+
+    % Record validation request
+    erlmcp_observability:counter(<<"json_schema_validator_requests_total">>, #{
+        service => ?MODULE
+    }),
+
     #state{schemas = Schemas, compiled = Compiled} = State,
     case maps:find(SchemaName, Schemas) of
         {ok, Schema} ->
             case validate_data(Data, Schema) of
                 {ok, _} = Ok ->
+                    Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+                    % Record success metrics
+                    erlmcp_observability:counter(<<"json_schema_validator_requests_total">>, #{
+                        service => ?MODULE,
+                        status => "success"
+                    }),
+                    erlmcp_observability:histogram_observe(<<"json_schema_validator_duration_ms">>, Duration),
+                    erlmcp_observability:gauge_set(<<"json_schema_validator_active_connections">>, #{
+                        service => ?MODULE
+                    }, 1),
+
+                    erlmcp_observability:log(<<"json_validation_success">>, #{
+                        schema_name => atom_to_binary(SchemaName),
+                        duration => Duration,
+                        data_size => size(jsone:encode(Data))
+                    }, TraceContext),
+                    erlmcp_observability:trace_span(<<"validation_result">>, #{
+                        result => success,
+                        duration => Duration
+                    }, TraceContext),
+
                     {reply, Ok, State};
                 {error, _} = Error ->
+                    Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+                    % Record error metrics
+                    erlmcp_observability:counter(<<"json_schema_validator_requests_total">>, #{
+                        service => ?MODULE,
+                        status => "error"
+                    }),
+                    erlmcp_observability:histogram_observe(<<"json_schema_validator_duration_ms">>, Duration),
+                    erlmcp_observability:counter(<<"json_schema_validator_errors_total">>, #{
+                        type => "validation",
+                        schema_name => atom_to_binary(SchemaName)
+                    }),
+
+                    erlmcp_observability:log(<<"json_validation_failed">>, #{
+                        schema_name => atom_to_binary(SchemaName),
+                        duration => Duration,
+                        data_size => size(jsone:encode(Data))
+                    }, TraceContext),
+                    erlmcp_observability:trace_span(<<"validation_result">>, #{
+                        result => error,
+                        duration => Duration
+                    }, TraceContext),
+
                     {reply, Error, State}
             end;
         error ->
+            Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+            % Record not found error
+            erlmcp_observability:counter(<<"json_schema_validator_requests_total">>, #{
+                service => ?MODULE,
+                status => "error"
+            }),
+            erlmcp_observability:histogram_observe(<<"json_schema_validator_duration_ms">>, Duration),
+            erlmcp_observability:counter(<<"json_schema_validator_errors_total">>, #{
+                type => "schema_not_found",
+                schema_name => atom_to_binary(SchemaName)
+            }),
+
+            erlmcp_observability:log(<<"json_schema_not_found">>, #{
+                schema_name => atom_to_binary(SchemaName),
+                duration => Duration
+            }, TraceContext),
+            erlmcp_observability:trace_span(<<"validation_result">>, #{
+                result => error,
+                reason => schema_not_found,
+                duration => Duration
+            }, TraceContext),
+
             {reply, {error, [<<"Schema not found: ", (atom_to_binary(SchemaName))/binary>>]}, State}
     end;
 
 handle_call({load_schema, Name, Schema}, _From, State) ->
+    StartTime = erlang:monotonic_time(millisecond),
+    TraceContext = erlmcp_observability:trace_span(<<"json_schema_validator_load">>, #{
+        schema_name => atom_to_binary(Name),
+        schema_size => size(jsone:encode(Schema))
+    }),
+
+    % Record load request
+    erlmcp_observability:counter(<<"json_schema_validator_load_requests_total">>, #{
+        service => ?MODULE
+    }),
+
     #state{schemas = Schemas} = State,
     try
         validate_schema_structure(Schema),
         NewSchemas = maps:put(Name, Schema, Schemas),
+
+        Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+        % Record success metrics
+        erlmcp_observability:counter(<<"json_schema_validator_load_requests_total">>, #{
+            service => ?MODULE,
+            status => "success"
+        }),
+        erlmcp_observability:histogram_observe(<<"json_schema_validator_load_duration_ms">>, Duration),
+        erlmcp_observability:gauge_set(<<"json_schema_validator_schema_count">>, #{
+            service => ?MODULE
+        }, map_size(NewSchemas)),
+
+        erlmcp_observability:log(<<"json_schema_loaded">>, #{
+            schema_name => atom_to_binary(Name),
+            duration => Duration,
+            schema_size => size(jsone:encode(Schema)),
+            total_schemas => map_size(NewSchemas)
+        }, TraceContext),
+
         {reply, ok, State#state{schemas = NewSchemas}}
     catch
         _:Error ->
+            ErrorDuration = erlang:monotonic_time(millisecond) - StartTime,
+
+            % Record error metrics
+            erlmcp_observability:counter(<<"json_schema_validator_load_requests_total">>, #{
+                service => ?MODULE,
+                status => "error"
+            }),
+            erlmcp_observability:histogram_observe(<<"json_schema_validator_load_duration_ms">>, ErrorDuration),
+            erlmcp_observability:counter(<<"json_schema_validator_errors_total">>, #{
+                type => "load",
+                schema_name => atom_to_binary(Name)
+            }),
+
+            erlmcp_observability:log(<<"json_schema_load_failed">>, #{
+                schema_name => atom_to_binary(Name),
+                duration => ErrorDuration,
+                error => binary_to_list(io_lib:format("~p", [Error]))
+            }, TraceContext),
+
             {reply, {error, {invalid_schema, Error}}, State}
     end;
 

@@ -94,17 +94,102 @@ handle_call(get_stats, _From, State) ->
     {reply, State#state.stats, State};
 
 handle_call({forward_request, Request}, _From, State) ->
+    StartTime = erlang:monotonic_time(millisecond),
+    TraceContext = erlmcp_observability:trace_span(<<"mcp_proxy_relay_forward">>, #{
+        module => ?MODULE,
+        request_size => size(jsone:encode(Request))
+    }),
+
+    % Record request metric
+    erlmcp_observability:counter(<<"mcp_proxy_relay_requests_total">>, #{
+        type => "received"
+    }),
+
+    erlmcp_observability:log(<<"forward_request">>, #{
+        module => ?MODULE,
+        request_size => size(jsone:encode(Request))
+    }, TraceContext),
+
     case maps:size(State#state.upstreams) of
         0 ->
             NewStats = increment_error(State#state.stats, no_upstreams),
+            Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+            % Record error metrics
+            erlmcp_observability:counter(<<"mcp_proxy_relay_requests_total">>, #{
+                type => "error",
+                error => "no_upstreams"
+            }),
+            erlmcp_observability:histogram_observe(<<"mcp_proxy_relay_request_duration_ms">>, Duration),
+            erlmcp_observability:counter(<<"mcp_proxy_relay_errors_total">>, #{
+                type => "forward",
+                error => "no_upstreams"
+            }),
+
+            erlmcp_observability:log(<<"forward_request_failed">>, #{
+                error => no_upstreams,
+                duration => Duration,
+                request_size => size(jsone:encode(Request))
+            }, TraceContext),
+            erlmcp_observability:trace_span(<<"forward_result">>, #{
+                result => error,
+                reason => no_upstreams,
+                duration => Duration
+            }, TraceContext),
             {reply, {error, no_upstreams}, State#state{stats = NewStats}};
         _ ->
             case do_forward(Request, State#state.upstreams) of
                 {ok, Response} ->
                     NewStats = increment_forwarded(State#state.stats),
+                    Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+                    % Record success metrics
+                    erlmcp_observability:counter(<<"mcp_proxy_relay_requests_total">>, #{
+                        type => "success"
+                    }),
+                    erlmcp_observability:histogram_observe(<<"mcp_proxy_relay_request_duration_ms">>, Duration),
+                    erlmcp_observability:gauge_set(<<"mcp_proxy_relay_active_connections">>, #{
+                        service => ?MODULE
+                    }, 1),
+
+                    erlmcp_observability:log(<<"forward_request_success">>, #{
+                        duration => Duration,
+                        upstream => maps:get(url, hd([U || U = #{enabled := true} <- maps:values(State#state.upstreams)])),
+                        response_size => size(jsone:encode(Response))
+                    }, TraceContext),
+                    erlmcp_observability:trace_span(<<"forward_result">>, #{
+                        result => success,
+                        duration => Duration,
+                        response_size => size(jsone:encode(Response))
+                    }, TraceContext),
+
                     {reply, {ok, Response}, State#state{stats = NewStats}};
                 {error, Reason} ->
                     NewStats = increment_error(State#state.stats, Reason),
+                    Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+                    % Record error metrics
+                    erlmcp_observability:counter(<<"mcp_proxy_relay_requests_total">>, #{
+                        type => "error",
+                        error => atom_to_list(Reason)
+                    }),
+                    erlmcp_observability:histogram_observe(<<"mcp_proxy_relay_request_duration_ms">>, Duration),
+                    erlmcp_observability:counter(<<"mcp_proxy_relay_errors_total">>, #{
+                        type => "forward",
+                        error => atom_to_list(Reason)
+                    }),
+
+                    erlmcp_observability:log(<<"forward_request_failed">>, #{
+                        error => Reason,
+                        duration => Duration,
+                        request_size => size(jsone:encode(Request))
+                    }, TraceContext),
+                    erlmcp_observability:trace_span(<<"forward_result">>, #{
+                        result => error,
+                        reason => Reason,
+                        duration => Duration
+                    }, TraceContext),
+
                     {reply, {error, Reason}, State#state{stats = NewStats}}
             end
     end;

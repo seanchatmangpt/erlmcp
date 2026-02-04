@@ -6,8 +6,10 @@
 %%%===================================================================
 
 setup() ->
-    {ok, Pid} = erlmcp_batch_processor:start_link(),
-    Pid.
+    case whereis(erlmcp_batch_processor) of
+        undefined -> {ok, Pid} = erlmcp_batch_processor:start_link(), Pid;
+        Pid -> Pid
+    end.
 
 cleanup(_Pid) ->
     ok.
@@ -47,7 +49,7 @@ get_config_test() ->
         ?assert(maps:is_key(max_batch_size, Config)),
         ?assert(maps:is_key(batch_timeout, Config)),
         ?assert(maps:is_key(max_concurrency, Config)),
-        ?assert(Config#{max_batch_size := _} =/= undefined)
+        ?assertNotEqual(undefined, maps:get(max_batch_size, Config, undefined))
     end}.
 
 process_batch_single_test() ->

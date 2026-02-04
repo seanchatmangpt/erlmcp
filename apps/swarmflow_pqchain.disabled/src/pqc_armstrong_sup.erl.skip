@@ -86,6 +86,11 @@
 -type child_tier() :: error_kernel | critical | normal | peripheral.
 -type restart_action() :: restart | isolate | escalate | circuit_break.
 -type circuit_state() :: closed | open | half_open.
+-type circuit_breaker_config() :: #{
+    failure_threshold := pos_integer(),
+    recovery_time_ms := pos_integer(),
+    half_open_attempts := pos_integer()
+}.
 
 -record(armstrong_child, {
     id :: atom(),
@@ -107,7 +112,7 @@
     circuit_breaker :: circuit_breaker_config() | undefined
 }).
 
--record(circuit_breaker_config, {
+-record(circuit_breaker_record, {
     failure_threshold :: pos_integer(),
     recovery_time_ms :: pos_integer(),
     half_open_attempts :: pos_integer()
@@ -128,7 +133,7 @@
     failures = 0 :: non_neg_integer(),
     last_failure :: non_neg_integer() | undefined,
     half_open_successes = 0 :: non_neg_integer(),
-    config :: #circuit_breaker_config{}
+    config :: circuit_breaker_config()
 }).
 
 -record(upgrade_request, {
@@ -317,10 +322,11 @@ escalate(Sup, ChildId, Reason) ->
 %%
 %% @end
 -spec apply_circuit_breaker(Sup :: atom() | pid(), ChildId :: atom(),
-                           Config :: #circuit_breaker_config{}) -> ok.
-apply_circuit_breaker(#circuit_breaker_config{} = Config) ->
+                           Config :: circuit_breaker_config()) -> ok.
+apply_circuit_breaker(Sup, ChildId, Config) when is_map(Config) ->
+    FailureThreshold = maps:get(failure_threshold, Config),
     logger:info("Applying circuit breaker to ~p in ~p: threshold=~p",
-               [ChildId, Sup, Config#circuit_breaker_config.failure_threshold]),
+               [ChildId, Sup, FailureThreshold]),
 
     %% Initialize circuit breaker state
     State = #circuit_breaker_state{

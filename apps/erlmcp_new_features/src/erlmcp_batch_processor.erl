@@ -83,22 +83,108 @@ init([]) ->
 handle_call({process_batch, Batch}, _From, State) ->
     #state{config = Config, metrics = Metrics0} = State,
     StartTime = erlang:monotonic_time(millisecond),
+    TraceContext = erlmcp_observability:trace_span(<<"batch_processor_process">>, #{
+        batch_size => length(Batch),
+        max_size => Config#config.max_batch_size
+    }),
+
+    % Record batch processing start
+    erlmcp_observability:log(<<"batch_processing_started">>, #{
+        module => ?MODULE,
+        batch_size => length(Batch),
+        max_batch_size => Config#config.max_batch_size
+    }, TraceContext),
+
+    % Record request metrics
+    erlmcp_observability:counter(<<"batch_processor_requests_total">>, #{
+        service => ?MODULE
+    }),
+    erlmcp_observability:histogram_observe(<<"batch_processor_batch_size">>, length(Batch)),
 
     % Validate batch size
     MaxSize = Config#config.max_batch_size,
     case length(Batch) of
         N when N > MaxSize ->
+            Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+            % Record error metrics
+            erlmcp_observability:counter(<<"batch_processor_requests_total">>, #{
+                service => ?MODULE,
+                status => "error"
+            }),
+            erlmcp_observability:histogram_observe(<<"batch_processor_duration_ms">>, Duration),
+            erlmcp_observability:counter(<<"batch_processor_errors_total">>, #{
+                type => "validation",
+                error => "batch_too_large"
+            }),
+
+            erlmcp_observability:log(<<"batch_processing_failed">>, #{
+                error => batch_too_large,
+                batch_size => N,
+                max_size => MaxSize,
+                duration => Duration
+            }, TraceContext),
+            erlmcp_observability:trace_span(<<"batch_result">>, #{
+                result => error,
+                reason => batch_too_large,
+                duration => Duration
+            }, TraceContext),
             {reply, {error, {batch_too_large, N, MaxSize}}, State};
         _ ->
             % Process the batch
             {Results, Metrics1} = process_batch_items(Batch, Metrics0),
             EndTime = erlang:monotonic_time(millisecond),
+            Duration = EndTime - StartTime,
 
             % Update metrics
             Metrics2 = Metrics1#metrics{
                 batches_processed = Metrics1#metrics.batches_processed + 1,
-                last_batch_time = EndTime - StartTime
+                last_batch_time = EndTime - StartTime,
+                items_processed = Metrics1#metrics.items_processed + length(Batch)
             },
+
+            % Record metrics
+            erlmcp_observability:counter(<<"batch_processor_batches_total">>, #{
+                batch_size => length(Batch)
+            }),
+            erlmcp_observability:histogram_observe(<<"batch_processor_duration_ms">>, Duration),
+            erlmcp_observability:histogram_observe(<<"batch_processor_items_per_batch">>, length(Batch)),
+
+            % Update active connections gauge
+            erlmcp_observability:gauge_set(<<"batch_processor_active_connections">>, #{
+                service => ?MODULE
+            }, 1),
+
+            % Log completion
+            SuccessCount = length(maps:get(success, Results, [])),
+            ErrorCount = length(maps:get(errors, Results, [])),
+
+            % Record success/failure metrics
+            case ErrorCount of
+                0 ->
+                    erlmcp_observability:counter(<<"batch_processor_requests_total">>, #{
+                        service => ?MODULE,
+                        status => "success"
+                    });
+                _ ->
+                    erlmcp_observability:counter(<<"batch_processor_requests_total">>, #{
+                        service => ?MODULE,
+                        status => "partial_success"
+                    })
+            end,
+
+            erlmcp_observability:log(<<"batch_processing_completed">>, #{
+                batch_size => length(Batch),
+                success_count => SuccessCount,
+                error_count => ErrorCount,
+                duration => Duration
+            }, TraceContext),
+            erlmcp_observability:trace_span(<<"batch_result">>, #{
+                result => success,
+                success_count => SuccessCount,
+                error_count => ErrorCount,
+                duration => Duration
+            }, TraceContext),
 
             {reply, {ok, Results}, State#state{metrics = Metrics2}}
     end;

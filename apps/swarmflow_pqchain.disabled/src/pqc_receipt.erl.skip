@@ -209,7 +209,7 @@ extend(_InvalidReceipt, _Event, _Ts, _SigningKey) ->
              PublicKey :: binary()) ->
     {ok, boolean()} | {error, term()}.
 verify(#{hash := Hash, signature := Signature} = _Receipt, PublicKey)
-    when is_binary(Hash), #pqc_signature{} = Signature, is_binary(PublicKey) ->
+    when is_binary(Hash), is_binary(PublicKey) ->
     try
         % Verify ML-DSA signature
         pqc_crypto:verify(Hash, Signature, PublicKey)
@@ -268,8 +268,8 @@ verify_chain([GenesisReceipt | RestReceipts], PublicKey)
                 {error, {genesis_invalid, Reason}}
         end
     catch
-        error:Reason:Stack ->
-            {error, {verify_chain_failed, Reason, Stack}}
+        error:Error:Stack ->
+            {error, {verify_chain_failed, Error, Stack}}
     end.
 
 %%% ============================================================================

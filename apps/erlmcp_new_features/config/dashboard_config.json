@@ -1,0 +1,166 @@
+{
+  "dashboard": {
+    "enabled": true,
+    "port": 8080,
+    "refresh_interval": 5000,
+    "websocket_enabled": true,
+    "max_clients": 100,
+    "auth_required": false
+  },
+  "metrics": {
+    "collection_interval": 10000,
+    "retention_days": 7,
+    "exporters": {
+      "prometheus": {
+        "enabled": true,
+        "port": 9090,
+        "path": "/metrics"
+      },
+      "otlp": {
+        "enabled": true,
+        "endpoint": "http://localhost:4317",
+        "headers": {}
+      }
+    }
+  },
+  "tracing": {
+    "enabled": true,
+    "sample_rate": 1.0,
+    "exporter": "otlp",
+    "endpoint": "http://localhost:4317",
+    "resource_attributes": {
+      "service.name": "erlmcp_new_features",
+      "service.version": "1.0.0",
+      "telemetry.sdk.name": "erlmcp",
+      "telemetry.sdk.language": "erlang",
+      "telemetry.sdk.version": "1.0.0"
+    }
+  },
+  "logging": {
+    "level": "info",
+    "format": "json",
+    "batch_size": 100,
+    "flush_timeout": 5000,
+    "outputs": {
+      "console": {
+        "enabled": true,
+        "format": "json"
+      },
+      "file": {
+        "enabled": true,
+        "path": "/var/log/erlmcp/observability.log",
+        "rotation": {
+          "max_size": "100MB",
+          "max_files": 5
+        }
+      }
+    }
+  },
+  "health_checks": {
+    "enabled": true,
+    "interval": 30000,
+    "timeout": 5000,
+    "checks": {
+      "memory": {
+        "enabled": true,
+        "warning_threshold": 100000000,
+        "error_threshold": 500000000
+      },
+      "processes": {
+        "enabled": true,
+        "warning_threshold": 1000,
+        "error_threshold": 2000
+      },
+      "connections": {
+        "enabled": true,
+        "warning_threshold": 100,
+        "error_threshold": 500
+      },
+      "registry": {
+        "enabled": true,
+        "warning_threshold": 0.1,
+        "error_threshold": 0.5
+      },
+      "supervision": {
+        "enabled": true,
+        "warning_threshold": 0.1,
+        "error_threshold": 0.3
+      }
+    }
+  },
+  "alerts": {
+    "enabled": true,
+    "thresholds": {
+      "cpu_usage": 0.8,
+      "memory_usage": 0.8,
+      "error_rate": 0.1,
+      "response_time": 1000
+    },
+    "notifications": {
+      "email": {
+        "enabled": false,
+        "recipients": []
+      },
+      "webhook": {
+        "enabled": false,
+        "url": ""
+      },
+      "log": {
+        "enabled": true,
+        "level": "warning"
+      }
+    }
+  },
+  "dashboard_ui": {
+    "theme": "dark",
+    "auto_refresh": true,
+    "default_views": [
+      "overview",
+      "metrics",
+      "traces",
+      "health",
+      "alerts"
+    ],
+    "widgets": {
+      "overview": [
+        {
+          "type": "health_status",
+          "position": [0, 0],
+          "size": [1, 1]
+        },
+        {
+          "type": "metrics_summary",
+          "position": [1, 0],
+          "size": [1, 1]
+        }
+      ],
+      "metrics": [
+        {
+          "type": "line_chart",
+          "metric": "mcp_proxy_relay_requests_total",
+          "title": "Request Count"
+        },
+        {
+          "type": "line_chart",
+          "metric": "mcp_proxy_relay_request_duration_ms",
+          "title": "Response Time"
+        }
+      ],
+      "traces": [
+        {
+          "type": "trace_list",
+          "title": "Recent Traces"
+        }
+      ]
+    }
+  },
+  "security": {
+    "api_key_required": false,
+    "cors_enabled": true,
+    "allowed_origins": ["*"],
+    "rate_limit": {
+      "enabled": true,
+      "requests_per_minute": 100
+    }
+  }
+}

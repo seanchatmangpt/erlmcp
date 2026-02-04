@@ -39,13 +39,13 @@
     blake3/1,
 
     %% Key derivation
-    hkdf_sha3/3,
+    hkdf_sha3/4,
 
     %% Merkle tree operations
     merkle_root/1,
 
     %% Batch operations
-    batch_hash/1
+    batch_hash/2
 ]).
 
 -on_load(init/0).

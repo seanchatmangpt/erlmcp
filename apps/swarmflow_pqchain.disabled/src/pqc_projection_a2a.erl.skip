@@ -114,9 +114,9 @@ send_message(#{
                 {error, {case_creation_failed, Reason}}
         end
     catch
-        error:Reason:Stacktrace ->
-            logger:error("send_message failed: ~p~n~p", [Reason, Stacktrace]),
-            {error, {internal_error, Reason}}
+        error:ErrReason:Stacktrace ->
+            logger:error("send_message failed: ~p~n~p", [ErrReason, Stacktrace]),
+            {error, {internal_error, ErrReason}}
     end;
 send_message(#{<<"message">> := MessageMap}) ->
     %% No configuration provided - use defaults

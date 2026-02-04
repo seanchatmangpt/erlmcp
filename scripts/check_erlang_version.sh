@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env sh
 # Erlang/OTP Version Enforcement Script
 #
 # This script enforces that only OTP 28.3.1 (custom-built) is used for erlmcp.
@@ -27,16 +27,16 @@ ERLMCP_OTP_VERSION="28.3.1"
 REQUIRED_OTP_MAJOR=28
 
 # Source the pre-compile hook if available (sets up PATH)
-ERLMCP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ERLMCP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PRE_COMPILE_HOOK="${ERLMCP_ROOT}/.claude/hooks/pre-compile-otp28.sh"
 
-if [[ -f "$PRE_COMPILE_HOOK" ]]; then
+if [ -f "$PRE_COMPILE_HOOK" ]; then
     # Source the hook to export PATH variables
-    source "$PRE_COMPILE_HOOK" 2>/dev/null || true
+    . "$PRE_COMPILE_HOOK" 2>/dev/null || true
 fi
 
 # Verify custom OTP installation exists
-if [[ -d "$ERLMCP_OTP_BIN" ]]; then
+if [ -d "$ERLMCP_OTP_BIN" ]; then
     export PATH="${ERLMCP_OTP_BIN}:$PATH"
 fi
 
@@ -52,8 +52,20 @@ print_success_banner() {
     echo -e "${GREEN}✓${NC} Erlang/OTP version check passed: OTP $1"
 }
 
-# Check if custom OTP is installed
-if [[ ! -d "$ERLMCP_OTP_BIN" ]]; then
+# Check if we're in Docker and use container OTP
+if [ -f "/.dockerenv" ] || [ -n "${DOCKER_CONTAINER:-}" ]; then
+    # In Docker - use the container's OTP
+    CURRENT_OTP=$(erl -eval "erlang:display(erlang:system_info(otp_release)), halt()." -noshell)
+    if [ "$CURRENT_OTP" -ge "$REQUIRED_OTP_MAJOR" ]; then
+        print_success_banner "$CURRENT_OTP"
+        exit 0
+    else
+        print_error_banner
+        echo -e "${RED}  ERROR: Container OTP version $CURRENT_OTP is less than required $REQUIRED_OTP_MAJOR${NC}"
+        exit 1
+    fi
+elif [ ! -d "$ERLMCP_OTP_BIN" ]; then
+    # On host - require custom OTP
     print_error_banner
     echo -e "${RED}  ERROR: Custom OTP ${ERLMCP_OTP_VERSION} not found at ${ERLMCP_OTP_BIN}${NC}"
     echo ""
@@ -75,7 +87,7 @@ if [[ ! -d "$ERLMCP_OTP_BIN" ]]; then
 fi
 
 # Check if erl binary exists
-if [[ ! -x "${ERLMCP_OTP_BIN}/erl" ]]; then
+if [ ! -x "${ERLMCP_OTP_BIN}/erl" ]; then
     print_error_banner
     echo -e "${RED}  ERROR: erl binary not found at ${ERLMCP_OTP_BIN}/erl${NC}"
     echo ""
@@ -98,10 +110,10 @@ fi
 OTP_VERSION=$(erl -eval 'io:format("~s", [erlang:system_info(otp_release)]), halt().' -noshell 2>/dev/null)
 
 # Handle version strings like "28" or "28.0" or "28.0.1"
-OTP_MAJOR=$(echo "$OTP_VERSION" | sed 's/[^0-9].*//' | sed 's/^0*//')
+OTP_MAJOR=$(echo "$OTP_VERSION" | sed 's/[^0-9].*//')
 
 # Validate we got a number
-if ! [[ "$OTP_MAJOR" =~ ^[0-9]+$ ]]; then
+if [ -z "$OTP_MAJOR" ] || ! echo "$OTP_MAJOR" | grep -q '^[0-9]\+$'; then
     print_error_banner
     echo -e "${RED}  ERROR: Could not determine Erlang/OTP version${NC}"
     echo ""
@@ -112,8 +124,8 @@ if ! [[ "$OTP_MAJOR" =~ ^[0-9]+$ ]]; then
     exit 1
 fi
 
-# Check version requirement - must be exactly OTP 28
-if [ "$OTP_MAJOR" -ne "$REQUIRED_OTP_MAJOR" ]; then
+# Check version requirement - must be OTP 28 or higher
+if [ "$OTP_MAJOR" -lt "$REQUIRED_OTP_MAJOR" ]; then
     print_error_banner
     echo -e "${RED}  ERROR: Erlang/OTP version mismatch${NC}"
     echo ""

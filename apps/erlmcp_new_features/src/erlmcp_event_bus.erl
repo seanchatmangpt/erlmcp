@@ -93,8 +93,38 @@ init([]) ->
     {ok, #state{}}.
 
 handle_call({subscribe, EventType, Pid}, _From, State) ->
+    StartTime = erlang:monotonic_time(millisecond),
+    TraceContext = erlmcp_observability:trace_span(<<"event_bus_subscribe">>, #{
+        event_type => atom_to_binary(EventType),
+        subscriber_pid => pid_to_list(Pid)
+    }),
+
+    % Record subscription request
+    erlmcp_observability:counter(<<"event_bus_subscribe_requests_total">>, #{
+        service => ?MODULE
+    }),
+
     case is_process_alive(Pid) of
         false ->
+            Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+            % Record dead process error
+            erlmcp_observability:counter(<<"event_bus_subscribe_requests_total">>, #{
+                service => ?MODULE,
+                status => "error"
+            }),
+            erlmcp_observability:histogram_observe(<<"event_bus_subscribe_duration_ms">>, Duration),
+            erlmcp_observability:counter(<<"event_bus_errors_total">>, #{
+                type => "dead_process"
+            }),
+
+            erlmcp_observability:log(<<"event_bus_subscribe_failed">>, #{
+                event_type => atom_to_binary(EventType),
+                subscriber_pid => pid_to_list(Pid),
+                duration => Duration,
+                reason => "dead_process"
+            }, TraceContext),
+
             {reply, {error, dead_process}, State};
         true ->
             SubscriptionId = make_ref(),
@@ -119,6 +149,25 @@ handle_call({subscribe, EventType, Pid}, _From, State) ->
 
             % Monitor the subscriber
             erlang:monitor(process, Pid),
+
+            Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+            % Record success metrics
+            erlmcp_observability:counter(<<"event_bus_subscribe_requests_total">>, #{
+                service => ?MODULE,
+                status => "success"
+            }),
+            erlmcp_observability:histogram_observe(<<"event_bus_subscribe_duration_ms">>, Duration),
+            erlmcp_observability:gauge_set(<<"event_bus_active_subscribers">>, #{
+                service => ?MODULE
+            }, SubCount),
+
+            erlmcp_observability:log(<<"event_bus_subscribe_success">>, #{
+                event_type => atom_to_binary(EventType),
+                subscriber_pid => pid_to_list(Pid),
+                duration => Duration,
+                total_subscribers => SubCount
+            }, TraceContext),
 
             {reply, {ok, SubscriptionId}, State#state{
                 subscribers = NewSubscribersMap,
@@ -197,6 +246,17 @@ handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 handle_cast({publish, EventType, Event}, State) ->
+    StartTime = erlang:monotonic_time(millisecond),
+    TraceContext = erlmcp_observability:trace_span(<<"event_bus_publish">>, #{
+        event_type => atom_to_binary(EventType),
+        event_size => size(jsone:encode(Event))
+    }),
+
+    % Record publish request
+    erlmcp_observability:counter(<<"event_bus_publish_requests_total">>, #{
+        service => ?MODULE
+    }),
+
     #state{subscribers = SubscribersMap, metrics = Metrics0} = State,
     Subscribers = maps:get(EventType, SubscribersMap, []),
 
@@ -215,8 +275,33 @@ handle_cast({publish, EventType, Event}, State) ->
     DeliveredCount = length(AliveSubs),
     NewMetrics = Metrics0#metrics{
         events_published = Metrics0#metrics.events_published + 1,
-        events_delivered = Metrics0#metrics.events_delivered + DeliveredCount
+        events_delivered = Metrics0#metrics.events_delivered + DeliveredCount,
+        events_dropped = Metrics0#metrics.events_dropped + (length(Subscribers) - DeliveredCount)
     },
+
+    Duration = erlang:monotonic_time(millisecond) - StartTime,
+
+    % Record publish metrics
+    erlmcp_observability:counter(<<"event_bus_publish_requests_total">>, #{
+        service => ?MODULE,
+        status => "success"
+    }),
+    erlmcp_observability:histogram_observe(<<"event_bus_publish_duration_ms">>, Duration),
+    erlmcp_observability:histogram_observe(<<"event_bus_subscribers_per_event">>, DeliveredCount),
+
+    % Update active connections gauge
+    erlmcp_observability:gauge_set(<<"event_bus_active_publishers">>, #{
+        service => ?MODULE
+    }, 1),
+
+    % Log publish activity
+    erlmcp_observability:log(<<"event_published">>, #{
+        event_type => atom_to_binary(EventType),
+        total_subscribers => length(Subscribers),
+        alive_subscribers => DeliveredCount,
+        event_size => size(jsone:encode(Event)),
+        duration => Duration
+    }, TraceContext),
 
     {noreply, State#state{metrics = NewMetrics}};
 

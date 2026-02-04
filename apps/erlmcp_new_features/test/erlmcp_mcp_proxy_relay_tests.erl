@@ -6,8 +6,10 @@
 %%%===================================================================
 
 setup() ->
-    {ok, Pid} = erlmcp_mcp_proxy_relay:start_link(),
-    Pid.
+    case whereis(erlmcp_mcp_proxy_relay) of
+        undefined -> {ok, Pid} = erlmcp_mcp_proxy_relay:start_link(), Pid;
+        Pid -> Pid
+    end.
 
 cleanup(_Pid) ->
     ok.

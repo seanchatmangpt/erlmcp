@@ -113,7 +113,7 @@ init(Options) ->
     },
     {ok, State}.
 
-handle_call({execute_tool, ToolName, Arguments}, From, State) ->
+handle_call({execute_tool, ToolName, Arguments}, _From, State) ->
     ExecutionId = generate_execution_id(),
     Context = #execution_context{
         tool_name = ToolName,
@@ -121,12 +121,9 @@ handle_call({execute_tool, ToolName, Arguments}, From, State) ->
         start_time = erlang:timestamp(),
         execution_id = ExecutionId
     },
-    %% Execute in spawned process to enforce timeout
-    _ = spawn(fun() ->
-        Result = do_execute_tool(Context, State),
-        gen_server:reply(From, Result)
-    end),
-    {noreply, State};
+    %% Execute tool with permission checks and resource limits
+    Result = do_execute_tool(Context, State),
+    {reply, Result, State};
 
 handle_call({add_permission, Permission}, _From, State) ->
     case validate_permission(Permission) of
@@ -202,12 +199,10 @@ do_execute_tool(Context, State) ->
             Result = execute_with_limits(ToolName, Arguments, TimeoutMs, MaxMemory),
 
             %% Log execution
-            AuditEntry = #{
-                execution_id => ExecutionId,
+            AuditEntry = #{execution_id => ExecutionId,
                 tool_name => ToolName,
                 timestamp => erlang:system_time(millisecond),
-                result => Result
-            },
+                result => Result},
             _ = log_audit(AuditEntry, State),
 
             Result;
@@ -298,14 +293,15 @@ merge_limits(NewLimits) ->
 merge_limits(NewLimits, CurrentLimits) ->
     maps:merge(CurrentLimits, NewLimits).
 
-%% @private Log audit entry
+%% @private Log audit entry - updates state internally (discarded in spawn)
 log_audit(Entry, State) ->
     NewLog = [Entry | State#state.audit_log],
     %% Keep last 1000 entries
     TrimmedLog = lists:sublist(NewLog, 1000),
-    State#state{audit_log = TrimmedLog}.
+    _UpdatedState = State#state{audit_log = TrimmedLog},
+    ok.
 
 %% @private Generate unique execution ID
 generate_execution_id() ->
-    Bin = <<(erlang:unique_integer([positive]))>>,
+    Bin = <<(erlang:unique_integer([positive])):64>>,
     <<Bin/binary, (integer_to_binary(erlang:system_time(millisecond)))/binary>>.
