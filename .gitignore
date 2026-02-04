@@ -224,3 +224,4 @@ coverage_reports/
 # Performance reports
 PERFORMANCE_*.md
 reports/PERFORMANCE_*.md
+.!*
