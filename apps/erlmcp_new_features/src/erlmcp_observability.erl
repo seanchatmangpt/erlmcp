@@ -334,19 +334,19 @@ terminate(_Reason, State) ->
     end,
 
     case State#state.metrics_buffer of
-        #{_ => _} -> flush_metrics(State);
+        #{_ := _} -> flush_metrics(State);
         _ -> ok
     end,
 
     % Clean up timers
     case State#state.flush_timer of
         undefined -> ok;
-        Timer -> erlang:cancel_timer(Timer)
+        FlushTimer -> erlang:cancel_timer(FlushTimer)
     end,
 
     case State#state.health_timer of
         undefined -> ok;
-        Timer -> erlang:cancel_timer(Timer)
+        HealthTimer -> erlang:cancel_timer(HealthTimer)
     end,
 
     ok.
