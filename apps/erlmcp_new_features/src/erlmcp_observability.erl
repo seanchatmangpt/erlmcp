@@ -334,7 +334,7 @@ terminate(_Reason, State) ->
     end,
 
     case State#state.metrics_buffer of
-        #{_ := _} -> flush_metrics(State);
+        #{_ := _Metrics} -> flush_metrics(State);
         _ -> ok
     end,
 
