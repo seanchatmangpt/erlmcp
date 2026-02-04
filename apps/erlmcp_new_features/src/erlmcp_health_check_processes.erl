@@ -31,20 +31,55 @@ check(Options) ->
         CrashStatus = check_process_crashes(ProcessInfo, Options),
 
         % Generate summary
-        Summary = generate_process_summary(ProcessCountStatus, SupervisionStatus, MailboxStatus, CrashStatus),
+        CriticalCount = lists:sum([
+            1 || Status <- [ProcessCountStatus, SupervisionStatus, MailboxStatus, CrashStatus],
+                 Status =:= critical
+        ]),
+        WarningCount = lists:sum([
+            1 || Status <- [ProcessCountStatus, SupervisionStatus, MailboxStatus, CrashStatus],
+                 Status =:= warning
+        ]),
 
-        case Summary#process_summary.critical_count > 0 of
+        case CriticalCount > 0 of
             true ->
-                {error, Summary#process_summary.error_message, Summary#process_summary.details};
-            _ when Summary#process_summary.warning_count > 0 ->
-                {warning, Summary#process_summary.warning_message, Summary#process_summary.details};
+                {error, <<"Critical process issues detected">>, #{
+                    critical_count => CriticalCount,
+                    warning_count => WarningCount,
+                    details => #{
+                        process_count_status => ProcessCountStatus,
+                        supervision_status => SupervisionStatus,
+                        mailbox_status => MailboxStatus,
+                        crash_status => CrashStatus
+                    }
+                }};
+            _ when WarningCount > 0 ->
+                {warning, <<"Process issues detected">>, #{
+                    critical_count => CriticalCount,
+                    warning_count => WarningCount,
+                    details => #{
+                        process_count_status => ProcessCountStatus,
+                        supervision_status => SupervisionStatus,
+                        mailbox_status => MailboxStatus,
+                        crash_status => CrashStatus
+                    }
+                }};
             true ->
-                {ok, Summary#process_summary.ok_message, Summary#process_summary.details}
+                {ok, <<"Process usage within normal bounds">>, #{
+                    critical_count => CriticalCount,
+                    warning_count => WarningCount,
+                    details => #{
+                        process_count_status => ProcessCountStatus,
+                        supervision_status => SupervisionStatus,
+                        mailbox_status => MailboxStatus,
+                        crash_status => CrashStatus
+                    }
+                }}
         end
     catch
         Error:Reason ->
-            {error, io_lib:format("Process check failed: ~p:~p", [Error, Reason]), #{error = {Error, Reason}}}
+            {error, io_lib:format("Process check failed: ~p:~p", [Error, Reason]), #{error => {Error, Reason}}}
     end.
+
 
 %% Process info records
 -record(process_info, {
@@ -54,18 +89,6 @@ check(Options) ->
     workers :: list(),
     mailbox_sizes :: map(),
     crash_counts :: map()
-}).
-
--record(process_summary, {
-    total_count :: non_neg_integer(),
-    supervisor_count :: non_neg_integer(),
-    worker_count :: non_neg_integer(),
-    critical_count :: non_neg_integer(),
-    warning_count :: non_neg_integer(),
-    error_message :: binary(),
-    warning_message :: binary(),
-    ok_message :: binary(),
-    details :: map()
 }).
 
 get_process_info() ->
@@ -219,63 +242,4 @@ check_process_crashes(#process_info{crash_counts = CrashCounts}, _Options) ->
         0 -> ok;
         N when N > 5 -> error;
         _ -> warning
-    end.
-
-generate_process_summary(ProcessCountStatus, SupervisionStatus, MailboxStatus, CrashStatus) ->
-    WarningCount = lists:sum([
-        1 || Status <- [ProcessCountStatus, SupervisionStatus, MailboxStatus, CrashStatus],
-             Status =:= warning
-    ]),
-
-    CriticalCount = lists:sum([
-        1 || Status <- [ProcessCountStatus, SupervisionStatus, MailboxStatus, CrashStatus],
-             Status =:= critical
-    ]),
-
-    Details = #{
-        process_count_status = ProcessCountStatus,
-        supervision_status = SupervisionStatus,
-        mailbox_status = MailboxStatus,
-        crash_status = CrashStatus,
-        warning_count = WarningCount,
-        critical_count => CriticalCount
-    },
-
-    case CriticalCount > 0 of
-        true ->
-            #process_summary{
-                total_count = get_process_info().total_count,
-                supervisor_count = length(get_process_info().supervisors),
-                worker_count = length(get_process_info().workers),
-                critical_count = CriticalCount,
-                warning_count = WarningCount,
-                error_message = <<"Critical process issues detected">>,
-                warning_message = <<"Process issues present">>,
-                ok_message = <<"Process usage within normal bounds">>,
-                details = Details
-            };
-        _ when WarningCount > 0 ->
-            #process_summary{
-                total_count = get_process_info().total_count,
-                supervisor_count = length(get_process_info().supervisors),
-                worker_count = length(get_process_info().workers),
-                critical_count = CriticalCount,
-                warning_count = WarningCount,
-                error_message = <<"Process issues detected">>,
-                warning_message = <<"Process usage elevated">>,
-                ok_message = <<"Process usage within normal bounds">>,
-                details = Details
-            };
-        true ->
-            #process_summary{
-                total_count = get_process_info().total_count,
-                supervisor_count = length(get_process_info().supervisors),
-                worker_count = length(get_process_info().workers),
-                critical_count = CriticalCount,
-                warning_count = WarningCount,
-                error_message = <<"">>,
-                warning_message = <<"">>,
-                ok_message = <<"Process usage within normal bounds">>,
-                details = Details
-            }
     end.

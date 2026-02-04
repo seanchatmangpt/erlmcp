@@ -39,6 +39,8 @@
     alerts :: map(),
     thresholds :: #alert_threshold{},
     websocket_enabled :: boolean(),
+    websocket_pid :: pid() | undefined,
+    update_timer :: reference() | undefined,
     metrics_buffer :: list(),
     health_data :: map()
 }).
