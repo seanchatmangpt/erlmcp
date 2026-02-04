@@ -448,8 +448,6 @@ handle_call({get_context, CaseId}, _From, State) ->
     end;
 
 %% @private
--spec handle_call(term(), {pid(), term()}, #state{}) ->
-    {reply, {error, unknown_request}, #state{}}.
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
