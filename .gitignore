@@ -156,8 +156,10 @@ marketplace/gcp/test-evidence/
 !terraform.tfvars.example
 .terraform/
 .terraform.lock.hcl
+**/.terraform.lock.hcl
 terraform.tfplan
 *.backup
+**/.terraform/
 
 # Crash dumps
 *.crashdump
