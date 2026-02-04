@@ -55,35 +55,50 @@ print_success_banner() {
 # Check if we're in Docker and use container OTP
 if [ -f "/.dockerenv" ] || [ -n "${DOCKER_CONTAINER:-}" ]; then
     # In Docker - use the container's OTP
-    CURRENT_OTP=$(erl -eval "erlang:display(erlang:system_info(otp_release)), halt()." -noshell)
-    if [ "$CURRENT_OTP" -ge "$REQUIRED_OTP_MAJOR" ]; then
+    CURRENT_OTP=$(erl -eval "io:format(\"~s\", [erlang:system_info(otp_release)]), halt()." -noshell 2>/dev/null || echo "unknown")
+
+    # Extract major version number
+    CURRENT_MAJOR=$(echo "$CURRENT_OTP" | sed 's/[^0-9].*//' || echo "0")
+
+    if [ "$CURRENT_MAJOR" -ge "$REQUIRED_OTP_MAJOR" ]; then
         print_success_banner "$CURRENT_OTP"
         exit 0
     else
         print_error_banner
         echo -e "${RED}  ERROR: Container OTP version $CURRENT_OTP is less than required $REQUIRED_OTP_MAJOR${NC}"
+        echo -e "${YELLOW}  Current OTP version: $CURRENT_OTP${NC}"
+        echo -e "${YELLOW}  Required OTP major version: $REQUIRED_OTP_MAJOR${NC}"
         exit 1
     fi
-elif [ ! -d "$ERLMCP_OTP_BIN" ]; then
-    # On host - require custom OTP
-    print_error_banner
-    echo -e "${RED}  ERROR: Custom OTP ${ERLMCP_OTP_VERSION} not found at ${ERLMCP_OTP_BIN}${NC}"
-    echo ""
-    echo -e "${YELLOW}  This project requires Erlang/OTP ${ERLMCP_OTP_VERSION} (built from GitHub source).${NC}"
-    echo ""
-    echo -e "${BLUE}  To build and install OTP ${ERLMCP_OTP_VERSION} from source:${NC}"
-    echo ""
-    echo "    cd /Users/sac"
-    echo "    curl -LO https://github.com/erlang/otp/releases/download/OTP-${ERLMCP_OTP_VERSION}/otp_src_${ERLMCP_OTP_VERSION}.tar.gz"
-    echo "    tar xzf otp_src_${ERLMCP_OTP_VERSION}.tar.gz"
-    echo "    cd otp_src_${ERLMCP_OTP_VERSION}"
-    echo "    ./configure --prefix=/Users/sac/.erlmcp/otp-${ERLMCP_OTP_VERSION}"
-    echo "    make -j\$(sysctl -n hw.ncpu)"
-    echo "    make install"
-    echo ""
-    echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
-    echo ""
-    exit 1
+else
+    # On host - try to detect any working Erlang installation
+    CURRENT_OTP=$(erl -eval "io:format(\"~s\", [erlang:system_info(otp_release)]), halt()." -noshell 2>/dev/null || echo "unknown")
+    CURRENT_MAJOR=$(echo "$CURRENT_OTP" | sed 's/[^0-9].*//' || echo "0")
+
+    if [ "$CURRENT_MAJOR" -lt "$REQUIRED_OTP_MAJOR" ]; then
+        print_error_banner
+        echo -e "${RED}  ERROR: Host Erlang/OTP version $CURRENT_OTP is less than required $REQUIRED_OTP_MAJOR${NC}"
+        echo ""
+        echo -e "${YELLOW}  This project requires Erlang/OTP ${ERLMCP_OTP_VERSION} or higher.${NC}"
+        echo ""
+        echo -e "${BLUE}  Option 1: Build custom OTP ${ERLMCP_OTP_VERSION} from source:${NC}"
+        echo ""
+        echo "    cd /Users/sac"
+        echo "    curl -LO https://github.com/erlang/otp/releases/download/OTP-${ERLMCP_OTP_VERSION}/otp_src_${ERLMCP_OTP_VERSION}.tar.gz"
+        echo "    tar xzf otp_src_${ERLMCP_OTP_VERSION}.tar.gz"
+        echo "    cd otp_src_${ERLMCP_OTP_VERSION}"
+        echo "    ./configure --prefix=/Users/sac/.erlmcp/otp-${ERLMCP_OTP_VERSION}"
+        echo "    make -j\$(sysctl -n hw.ncpu)"
+        echo "    make install"
+        echo ""
+        echo -e "${BLUE}  Option 2: Use Docker for all operations:${NC}"
+        echo ""
+        echo "    docker compose run --rm erlmcp-build make compile"
+        echo ""
+        echo -e "${RED}════════════════════════════════════════════════════════════════════${NC}"
+        echo ""
+        exit 1
+    fi
 fi
 
 # Check if erl binary exists
