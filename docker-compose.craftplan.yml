@@ -1,0 +1,349 @@
+# ============================================================================
+# Craftplan ERP Integration - Docker Swarm Stack
+# ============================================================================
+# Self-hosted ERP for artisanal manufacturers integrated with erlmcp
+#
+# Tech Stack: Elixir 1.15, Phoenix 1.8, PostgreSQL 16, MinIO S3
+#
+# Services:
+#   - craftplan: Main Phoenix application (Ash Framework + LiveView)
+#   - craftplan-db: PostgreSQL 16 database
+#   - craftplan-s3: MinIO S3-compatible storage
+#
+# Networks:
+#   - erlmcp-frontend: External access via Traefik
+#   - erlmcp-backend: Internal service communication
+#   - erlmcp-mgmt: Management access
+#
+# Usage:
+#   1. Generate secrets: ./scripts/craftplan-secrets-setup.sh
+#   2. Configure environment: cp .env.craftplan.example .env.craftplan
+#   3. Deploy: docker stack deploy -c docker-compose.craftplan.yml craftplan
+#
+# Access:
+#   - Web UI: https://craftplan.local (via Traefik)
+#   - Direct: http://localhost:4000
+#   - MinIO Console: http://localhost:9001
+#   - API: https://craftplan.local/api
+# ============================================================================
+
+services:
+  # ===========================================================================
+  # Craftplan - Main Phoenix Application
+  # ===========================================================================
+  craftplan:
+    image: ghcr.io/puemos/craftplan:latest
+    hostname: "{{.Node.Hostname}}-craftplan"
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.craftplan == true
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 3
+        window: 120s
+      update_config:
+        parallelism: 1
+        delay: 30s
+        failure_action: rollback
+        monitor: 60s
+        order: stop-first
+      rollback_config:
+        parallelism: 1
+        delay: 30s
+    networks:
+      - erlmcp-frontend
+      - erlmcp-backend
+    environment:
+      # Phoenix Configuration
+      PHX_HOST: "${CRAFTPLAN_HOST:-craftplan.local}"
+      PORT: "${CRAFTPLAN_PORT:-4000}"
+      HOST: "${CRAFTPLAN_HOST:-craftplan.local}"
+      SECRET_KEY_BASE_FILE: /run/secrets/craftplan_secret_key_base
+      TOKEN_SIGNING_SECRET_FILE: /run/secrets/craftplan_token_signing_secret
+      CLOAK_KEY_FILE: /run/secrets/craftplan_cloak_key
+
+      # Database Connection
+      DATABASE_URL: "ecto://postgres:${POSTGRES_PASSWORD}@craftplan-db/craftplan"
+
+      # S3/MinIO Storage
+      AWS_S3_SCHEME: "http://"
+      AWS_S3_HOST: craftplan-s3
+      AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER:-minioadmin}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      AWS_S3_BUCKET: "${CRAFTPLAN_S3_BUCKET:-craftplan}"
+      AWS_REGION: "${CRAFTPLAN_AWS_REGION:-us-east-1}"
+      ASSET_HOST: "${CRAFTPLAN_ASSET_HOST:-http://craftplan.local:4000}"
+
+      # Email (optional - configured via UI)
+      EMAIL_PROVIDER: "${CRAFTPLAN_EMAIL_PROVIDER:-}"
+      EMAIL_API_KEY: "${CRAFTPLAN_EMAIL_API_KEY:-}"
+
+      # Observability
+      OTEL_SERVICE_NAME: craftplan
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+
+      # Logging
+      LOG_LEVEL: "${CRAFTPLAN_LOG_LEVEL:-info}"
+    secrets:
+      - craftplan_secret_key_base
+      - craftplan_token_signing_secret
+      - craftplan_cloak_key
+      - craftplan_db_password
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:4000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    labels:
+      # Traefik Routing
+      - "traefik.enable=true"
+      - "traefik.http.routers.craftplan.rule=Host(`${CRAFTPLAN_HOST:-craftplan.local}`)"
+      - "traefik.http.routers.craftplan.entrypoints=websecure"
+      - "traefik.http.routers.craftplan.tls.certresolver=default"
+      - "traefik.http.services.craftplan.loadbalancer.server.port=4000"
+
+      # API Routing
+      - "traefik.http.routers.craftplan-api.rule=Host(`${CRAFTPLAN_HOST:-craftplan.local}`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.craftplan-api.entrypoints=websecure"
+      - "traefik.http.routers.craftplan-api.tls.certresolver=default"
+      - "traefik.http.services.craftplan-api.loadbalancer.server.port=4000"
+
+      # CORS Headers
+      - "traefik.http.middlewares.craftplan-cors.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.craftplan-cors.headers.accesscontrolallowheaders=Authorization,Content-Type"
+      - "traefik.http.middlewares.craftplan-cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.routers.craftplan.middlewares=craftplan-cors"
+    depends_on:
+      - craftplan-db
+      - craftplan-s3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+        labels: "service=craftplan"
+
+  # ===========================================================================
+  # Craftplan Database - PostgreSQL 16
+  # ===========================================================================
+  craftplan-db:
+    image: postgres:16-alpine
+    hostname: "{{.Node.Hostname}}-craftplan-db"
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.craftplan-db == true
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+        max_attempts: 5
+        window: 120s
+    networks:
+      - erlmcp-backend
+    environment:
+      POSTGRES_DB: craftplan
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/craftplan_db_password
+      PGDATA: /var/lib/postgresql/data/pgdata
+      # Performance tuning
+      shared_buffers: 256MB
+      effective_cache_size: 1GB
+      maintenance_work_mem: 64MB
+      checkpoint_completion_target: 0.9
+      wal_buffers: 16MB
+      default_statistics_target: 100
+      random_page_cost: 1.1
+    secrets:
+      - craftplan_db_password
+    volumes:
+      - craftplan-db-data:/var/lib/postgresql/data
+      - craftplan-db-logs:/var/log/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    labels:
+      - "traefik.enable=false"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ===========================================================================
+  # Craftplan Storage - MinIO S3-compatible Object Storage
+  # ===========================================================================
+  craftplan-s3:
+    image: minio/minio:latest
+    hostname: "{{.Node.Hostname}}-craftplan-s3"
+    command: server /data --console-address ":9001"
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.labels.craftplan-storage == true
+        preferences:
+          - spread: node.labels.zone
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.3'
+          memory: 512M
+      restart_policy:
+        condition: any
+        delay: 10s
+        max_attempts: 3
+    networks:
+      - erlmcp-backend
+      - erlmcp-mgmt
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:-minioadmin}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD}"
+      MINIO_BROWSER: "on"
+      MINIO_LOG_LEVEL: "${CRAFTPLAN_MINIO_LOG_LEVEL:-INFO}"
+    volumes:
+      - craftplan-s3-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      # MinIO Console Access (management only network)
+      - "traefik.enable=true"
+      - "traefik.http.routers.craftplan-minio.rule=Host(`craftplan-minio.local`)"
+      - "traefik.http.routers.craftplan-minio.entrypoints=web"
+      - "traefik.http.services.craftplan-minio.loadbalancer.server.port=9001"
+      - "traefik.http.routers.craftplan-minio.service=craftplan-minio"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ===========================================================================
+  # Craftplan Backup - Automated PostgreSQL Backups to MinIO
+  # ===========================================================================
+  craftplan-backup:
+    image: prodrigestivill/postgres-backup-local:15
+    hostname: "{{.Node.Hostname}}-craftplan-backup"
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.craftplan == true
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+    networks:
+      - erlmcp-backend
+    environment:
+      POSTGRES_HOST: craftplan-db
+      POSTGRES_DB: craftplan
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/craftplan_db_password
+      SCHEDULE: "${CRAFTPLAN_BACKUP_SCHEDULE:-@daily}"
+      BACKUP_KEEP_DAYS: "${CRAFTPLAN_BACKUP_RETENTION:-30}"
+      BACKUP_NAME: craftplan
+    secrets:
+      - craftplan_db_password
+    volumes:
+      - craftplan-backups:/backups
+    labels:
+      - "traefik.enable=false"
+
+# ============================================================================
+# Networks - Use existing erlmcp overlay networks
+# ============================================================================
+networks:
+  erlmcp-frontend:
+    external: true
+    name: erlmcp-frontend
+  erlmcp-backend:
+    external: true
+    name: erlmcp-backend
+  erlmcp-mgmt:
+    external: true
+    name: erlmcp-mgmt
+
+# ============================================================================
+# Volumes - Persistent storage for Craftplan services
+# ============================================================================
+volumes:
+  craftplan-db-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${CRAFTPLAN_DB_PATH:-/var/lib/craftplan/db}"
+  craftplan-db-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${CRAFTPLAN_DB_LOGS_PATH:-/var/log/craftplan/postgres}"
+  craftplan-s3-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${CRAFTPLAN_S3_PATH:-/var/lib/craftplan/s3}"
+  craftplan-backups:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: "${CRAFTPLAN_BACKUPS_PATH:-/var/lib/craftplan/backups}"
+
+# ============================================================================
+# Docker Secrets - Secure credential management
+# ============================================================================
+secrets:
+  craftplan_secret_key_base:
+    external: true
+  craftplan_token_signing_secret:
+    external: true
+  craftplan_cloak_key:
+    external: true
+  craftplan_db_password:
+    external: true

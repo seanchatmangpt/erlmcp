@@ -1,0 +1,14 @@
+{application, erlmcp_new_features,
+ [{description, "New features application for Erlmcp"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {mod, {erlmcp_new_features_app, []}},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, []},
+  {licenses, ["Apache-2.0"]},
+  {links, []}
+ ]}.

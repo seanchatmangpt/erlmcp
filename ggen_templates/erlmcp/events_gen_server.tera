@@ -188,12 +188,17 @@ handle_call({get_projection_state, Name}, _From, State) ->
     end;
 
 handle_call({replay_events, AggregateId, HandlerFn}, _From, State) ->
-    {ok, Events} = handle_call({load_events, AggregateId}, _From, State),
-    {reply, {ok, Events}, State},
+    Events = ets:fold(fun({_, E}, Acc) ->
+        case maps:get(aggregate_id, E) =:= AggregateId of
+            true -> [E | Acc];
+            false -> Acc
+        end
+    end, [], State#state.events),
+    Sorted = lists:keysort(sequence_number, Events),
     Count = lists:foldl(fun(E, Acc) ->
         HandlerFn(E),
         Acc + 1
-    end, 0, element(2, Events)),
+    end, 0, Sorted),
     {reply, {ok, Count}, State};
 
 handle_call(_Request, _From, State) ->
