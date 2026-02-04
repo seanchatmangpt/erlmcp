@@ -1,14 +1,21 @@
 {application, erlmcp_new_features,
  [{description, "New features application for Erlmcp"},
   {vsn, "0.1.0"},
-  {registered, []},
+  {registered, [erlmcp_new_features_sup]},
   {mod, {erlmcp_new_features_app, []}},
   {applications,
    [kernel,
     stdlib
    ]},
   {env,[]},
-  {modules, []},
+  {modules, [
+    erlmcp_new_features_app,
+    erlmcp_new_features_sup,
+    erlmcp_mcp_proxy_relay,
+    erlmcp_batch_processor,
+    erlmcp_json_schema_validator,
+    erlmcp_event_bus
+  ]},
   {licenses, ["Apache-2.0"]},
-  {links, []}
+  {links, [{"GitHub", "https://github.com/banyan-platform/erlmcp"}]}
  ]}.

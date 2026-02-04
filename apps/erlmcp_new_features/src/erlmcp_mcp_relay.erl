@@ -90,17 +90,12 @@ start_link(Options) ->
 
 %% @doc Relay a JSON-RPC request to an available backend.
 %% Uses round-robin selection among enabled, healthy backends.
--spec relay_request(backend_id() | undefined, request()) ->
-    {ok, response()} | {error, term()}.
-relay_request(undefined, Request) ->
-    relay_request(Request, 5000).
-
+-spec relay_request(request(), pos_integer()) -> {ok, response()} | {error, term()}.
 relay_request(Request, Timeout) when is_map(Request), is_integer(Timeout) ->
     gen_server:call(?MODULE, {relay_request, Request, Timeout}, Timeout).
 
 %% @doc Relay a request to a specific backend.
--spec relay_request(backend_id(), request(), pos_integer()) ->
-    {ok, response()} | {error, term()}.
+-spec relay_request(backend_id(), request(), pos_integer()) -> {ok, response()} | {error, term()}.
 relay_request(BackendId, Request, Timeout) ->
     gen_server:call(?MODULE, {relay_request, BackendId, Request, Timeout}, Timeout).
 
@@ -142,7 +137,7 @@ init(Options) ->
 %% @private
 handle_call({relay_request, Request, Timeout}, From, State) ->
     case select_backend(State) of
-        {ok, BackendId, Config} ->
+        {ok, BackendId, _Config} ->
             do_relay_request(BackendId, Request, Timeout, From, State);
         {error, no_backends} ->
             {reply, {error, no_available_backends}, State}
@@ -156,7 +151,7 @@ handle_call({relay_request, BackendId, Request, Timeout}, From, State) ->
             {reply, {error, {backend_disabled, BackendId}}, State};
         #{healthy := false} ->
             {reply, {error, {backend_unhealthy, BackendId}}, State};
-        Config ->
+        _Config ->
             do_relay_request(BackendId, Request, Timeout, From, State)
     end;
 

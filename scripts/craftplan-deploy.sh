@@ -19,9 +19,10 @@ set -euo pipefail
 
 # Configuration
 ENVIRONMENT="${1:-dev}"
-NAMESPACE="craftplan-${ENVIRONMENT}"
+NAMESPACE="${2:-craftplan}"
 COMPOSE_FILE="docker-compose.craftplan.yml"
 ENV_FILE=".env.craftplan"
+SECRET_DIR="./secrets/${NAMESPACE}"
 
 # Colors
 RED='\033[0;31m'
@@ -164,7 +165,19 @@ setup_directories() {
 deploy_stack() {
     log_step "Deploying Craftplan stack: ${NAMESPACE}"
 
-    # Export environment variables for compose
+    # Extract secret values from local files for env var substitution
+    # Craftplan needs secrets as env vars, Docker Swarm uses secrets for persistence
+    local SECRET_KEY_BASE TOKEN_SIGNING_SECRET CLOAK_KEY POSTGRES_PASSWORD MINIO_ROOT_PASSWORD
+
+    log_info "Reading secret values from ${SECRET_DIR}..."
+    SECRET_KEY_BASE=$(cat "${SECRET_DIR}/secret_key_base.txt" 2>/dev/null | tr -d '\n' || echo "")
+    TOKEN_SIGNING_SECRET=$(cat "${SECRET_DIR}/token_signing_secret.txt" 2>/dev/null | tr -d '\n' || echo "")
+    CLOAK_KEY=$(cat "${SECRET_DIR}/cloak_key.txt" 2>/dev/null | tr -d '\n' || echo "")
+    POSTGRES_PASSWORD=$(cat "${SECRET_DIR}/db_password.txt" 2>/dev/null | tr -d '\n' || echo "")
+    MINIO_ROOT_PASSWORD=$(openssl rand -base64 16 | tr -d '\n')
+
+    # Export all environment variables
+    export SECRET_KEY_BASE TOKEN_SIGNING_SECRET CLOAK_KEY POSTGRES_PASSWORD MINIO_ROOT_PASSWORD
     set -a
     source "${ENV_FILE}"
     set +a

@@ -424,7 +424,7 @@ execute_steps([Step | Rest], AllSteps, InputData, Context) ->
     end.
 
 %% @private Execute a single step
-execute_step(#{type := tool, id := Id, tool_name := ToolName, tool_arguments := Args} = Step,
+execute_step(#{type := tool, tool_name := ToolName, tool_arguments := Args} = Step,
              _AllSteps, InputData, Context) ->
     Timeout = maps:get(timeout_sec, Step, 30) * 1000,
     MaxRetries = maps:get(max_retries, Step, 0),

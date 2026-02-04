@@ -71,18 +71,19 @@ services:
       PHX_HOST: "${CRAFTPLAN_HOST:-craftplan.local}"
       PORT: "${CRAFTPLAN_PORT:-4000}"
       HOST: "${CRAFTPLAN_HOST:-craftplan.local}"
-      SECRET_KEY_BASE_FILE: /run/secrets/craftplan_secret_key_base
-      TOKEN_SIGNING_SECRET_FILE: /run/secrets/craftplan_token_signing_secret
-      CLOAK_KEY_FILE: /run/secrets/craftplan_cloak_key
+      SECRET_KEY_BASE: "${SECRET_KEY_BASE}"
+      TOKEN_SIGNING_SECRET: "${TOKEN_SIGNING_SECRET}"
+      CLOAK_KEY: "${CLOAK_KEY}"
 
       # Database Connection
       DATABASE_URL: "ecto://postgres:${POSTGRES_PASSWORD}@craftplan-db/craftplan"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
 
       # S3/MinIO Storage
       AWS_S3_SCHEME: "http://"
       AWS_S3_HOST: craftplan-s3
       AWS_ACCESS_KEY_ID: "${MINIO_ROOT_USER:-minioadmin}"
-      AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD:-minioadmin}"
+      AWS_SECRET_ACCESS_KEY: "${MINIO_ROOT_PASSWORD}"
       AWS_S3_BUCKET: "${CRAFTPLAN_S3_BUCKET:-craftplan}"
       AWS_REGION: "${CRAFTPLAN_AWS_REGION:-us-east-1}"
       ASSET_HOST: "${CRAFTPLAN_ASSET_HOST:-http://craftplan.local:4000}"
@@ -98,16 +99,20 @@ services:
       # Logging
       LOG_LEVEL: "${CRAFTPLAN_LOG_LEVEL:-info}"
     secrets:
-      - craftplan_secret_key_base
-      - craftplan_token_signing_secret
-      - craftplan_cloak_key
-      - craftplan_db_password
+      - source: craftplan_secret_key_base
+        target: secret_key_base
+      - source: craftplan_token_signing_secret
+        target: token_signing_secret
+      - source: craftplan_cloak_key
+        target: cloak_key
+      - source: craftplan_db_password
+        target: db_password
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:4000/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:4000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      start_period: 90s
     labels:
       # Traefik Routing
       - "traefik.enable=true"
@@ -309,31 +314,17 @@ networks:
 # ============================================================================
 # Volumes - Persistent storage for Craftplan services
 # ============================================================================
+# Using managed volumes for Docker Swarm compatibility.
+# For custom paths, use Docker's volume driver options or bind mounts in host.
 volumes:
   craftplan-db-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: "${CRAFTPLAN_DB_PATH:-/var/lib/craftplan/db}"
   craftplan-db-logs:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: "${CRAFTPLAN_DB_LOGS_PATH:-/var/log/craftplan/postgres}"
   craftplan-s3-data:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: "${CRAFTPLAN_S3_PATH:-/var/lib/craftplan/s3}"
   craftplan-backups:
     driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: "${CRAFTPLAN_BACKUPS_PATH:-/var/lib/craftplan/backups}"
 
 # ============================================================================
 # Docker Secrets - Secure credential management
