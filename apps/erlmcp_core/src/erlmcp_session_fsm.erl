@@ -17,7 +17,7 @@
 -export([start_link/1, start_link/2, negotiate/2, activate/1, suspend/1, resume/1, close/1,
          state_name/1, add_connection/2, remove_connection/2, get_connections/1, stop/1]).
 %% gen_statem callbacks
--export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4, format_status/2]).
+-export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4, format_status/1]).
 
 %% State names for type specs
 -type session_state() :: negotiation | active | suspended | closed.
@@ -314,10 +314,8 @@ terminate(Reason, State, Data) ->
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
--spec format_status(Opt, Status) -> term()
-    when Opt :: normal | terminate,
-         Status :: list().
-format_status(_Opt, [_PDict, State, Data]) ->
+-spec format_status(term()) -> map().
+format_status([_PDict, State, Data]) ->
     #{state => State,
       session_id => Data#data.session_id,
       connections => maps:size(Data#data.connections),

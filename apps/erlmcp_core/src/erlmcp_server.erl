@@ -23,7 +23,7 @@
          unregister_all_handlers/1, stop/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
-         format_status/2]).
+         format_status/1]).
 
 %% pg scope for resource subscriptions (OTP built-in pubsub)
 -define(PG_SCOPE, erlmcp_pubsub).
@@ -678,15 +678,10 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Format process state for sys:get_status/1,2
 %% Sanitizes sensitive data in crash reports and debugging output
--spec format_status(normal | terminate, [term()]) -> term().
-format_status(Opt, [PDict, State]) ->
+-spec format_status(term()) -> term().
+format_status([PDict, State]) ->
     SanitizedState = sanitize_server_state(State),
-    case Opt of
-        terminate ->
-            SanitizedState;
-        normal ->
-            [{data, [{"State", SanitizedState}]}]
-    end.
+    [{data, [{"State", SanitizedState}]}].
 
 %%====================================================================
 %% Internal functions - State Sanitization

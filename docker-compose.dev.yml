@@ -50,17 +50,32 @@ services:
 
     # Environment configuration
     environment:
+      # Application configuration
       - ERLMCP_PROFILE=dev
       - ERLMCP_NODE_NAME=erlmcp@erlmcp-dev
-      - ERLANG_COOKIE=erlmcp_dev_cookie_change_in_production
       - ERLMCP_DISTRIBUTION_MODE=development
       - ERLMCP_LOG_LEVEL=debug
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
-      - ERLMCP_POSTGRES_URI=postgresql://erlmcp:dev_password@postgres:5432/erlmcp
-      - ERLMCP_REDIS_URI=redis://redis:6379
       - ERL_COMPILER_OPTIONS=deterministic
       - REBAR_NO_USER_CONFIG=true
       - TERM=dumb
+
+      # Observability
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+
+      # Database connections (using Docker service names)
+      - ERLMCP_POSTGRES_URI=postgresql://erlmcp:${ERLMCP_POSTGRES_PASSWORD}@postgres:5432/erlmcp
+      - ERLMCP_REDIS_URI=redis://redis:6379
+
+      # Erlang cookie - from environment variable or default to development value
+      - ERLANG_COOKIE=${ERLANG_COOKIE:-erlmcp_dev_secure_cookie_dev_only}
+
+      # Database password - from environment variable or default
+      - ERLMCP_POSTGRES_PASSWORD=${ERLMCP_POSTGRES_PASSWORD:-dev_password_insecure}
+    env_file:
+      # Load environment variables from file if it exists
+      - .env.dev
+      # Load Docker secrets if available (for production deployment patterns)
+      - ./secrets/.env.production  # Optional: for production secrets during testing
 
     # Volume mounts for hot reloading
     volumes:
@@ -117,10 +132,11 @@ services:
       - "5432:5432"
 
     environment:
-      - POSTGRES_PASSWORD=dev_password
       - POSTGRES_DB=erlmcp
       - POSTGRES_USER=erlmcp
       - POSTGRES_INITDB_ARGS=--encoding=UTF8 --locale=C
+      # Password from environment variable or default
+      - POSTGRES_PASSWORD=${ERLMCP_POSTGRES_PASSWORD:-dev_password_insecure}
 
     volumes:
       - postgres-dev-data:/var/lib/postgresql/data

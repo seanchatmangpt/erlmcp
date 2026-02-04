@@ -1348,28 +1348,28 @@ score_device_trust(DeviceId, IP, UserAgent) ->
     % Check IP reputation
     case check_ip_reputation(IP) of
         {ok, Reputation} ->
-            Score = Score + Reputation;
+            Score1 = Score + Reputation;
         {error, _} ->
-            Score = Score - 20
+            Score1 = Score - 20
     end,
 
     % Check user agent
     case check_user_agent(UserAgent) of
         {ok, _} ->
-            ok;
+            Score2 = Score1;
         {error, _} ->
-            Score = Score - 10
+            Score2 = Score1 - 10
     end,
 
     % Check device fingerprint
     case check_device_fingerprint(DeviceId) of
         {ok, _} ->
-            ok;
+            Score3 = Score2;
         {error, _} ->
-            Score = Score - 15
+            Score3 = Score2 - 15
     end,
 
-    max(0, min(100, Score)).
+    max(0, min(100, Score3)).
 
 %% Compliance functions
 get_compliance_checks(Standard) ->

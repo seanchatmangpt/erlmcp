@@ -294,7 +294,12 @@ export_prometheus_format(State) ->
     Header = [
         "# HELP erlmcp_info Information about erlmcp installation\n",
         "# TYPE erlmcp_info gauge\n",
-        "erlmcp_info{version=\"" ++ ?ERLMCP_VERSION ++ "\"} 1\n"
+        case ?ERLMCP_VERSION of
+        Version when is_list(Version) ->
+            "erlmcp_info{version=\"" ++ Version ++ "\"} 1\n";
+        _ ->
+            "erlmcp_info{version=\"unknown\"} 1\n"
+    end
     ],
 
     MetricLines = ets:foldl(fun({_, _, Metrics}, Acc) ->

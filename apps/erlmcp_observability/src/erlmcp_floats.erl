@@ -104,9 +104,9 @@ decode_fixed(Binary, Scale) when is_binary(Binary), is_integer(Scale), Scale >= 
 encode_json_safe(Float) when is_float(Float) ->
     %% Check for special values
     case Float of
-        PosInf when PosInf == 1.0e+308 * 2.0 -> null;
-        NegInf when NegInf == -1.0e+308 * 2.0 -> null;
-        NaN when NaN /= NaN -> null;
+        PosInf when PosInf == 1.0e+308 * 2.0, is_number(PosInf) -> null;
+        NegInf when NegInf == -1.0e+308 * 2.0, is_number(NegInf) -> null;
+        NaN when NaN /= NaN, is_number(NaN) -> null;
         _ -> Float
     end;
 encode_json_safe(Integer) when is_integer(Integer) ->
@@ -212,9 +212,9 @@ from_fraction(Numerator, Denominator) when is_integer(Numerator),
 is_json_safe(Float) when is_float(Float) ->
     %% Check for NaN and infinity
     case Float of
-        PosInf when PosInf == 1.0e+308 * 2.0 -> false;
-        NegInf when NegInf == -1.0e+308 * 2.0 -> false;
-        NaN when NaN /= NaN -> false;
+        PosInf when PosInf == 1.0e+308 * 2.0, is_number(PosInf) -> false;
+        NegInf when NegInf == -1.0e+308 * 2.0, is_number(NegInf) -> false;
+        NaN when NaN /= NaN, is_number(NaN) -> false;
         _ -> true
     end.
 

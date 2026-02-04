@@ -444,10 +444,10 @@ parse_protocol_args(["--file", FilePath | Rest], Opts) ->
     parse_protocol_args(Rest, maps:put(file, FilePath, Opts));
 parse_protocol_args(["--format", Format | Rest], Opts) ->
     parse_protocol_args(Rest, maps:put(format, Format, Opts));
-parse_protocol_args([], Opts) ->
-    {ok, {protocol, Opts}};
 parse_protocol_args([Invalid | _], _) ->
-    {error, "Invalid protocol option: " ++ Invalid}.
+    {error, "Invalid protocol option: " ++ Invalid};
+parse_protocol_args(Opts, _) when is_map(Opts) ->
+    {ok, {protocol, Opts}}.
 
 %% @doc Parse 'transport' command arguments
 parse_transport_args([], _Opts) ->
@@ -1588,7 +1588,7 @@ install_shell_completions(ShellType) ->
                     Instr =
                         io_lib:format("Installed to: ~s~n~n"
                                       "To activate, add this to your ~/.bashrc:~n"
-                                      "  source ~s~n~n"
+                                      "  source ~~s~n~n"
                                       "Or reload your shell:~n"
                                       "  source ~/.bashrc",
                                       [Dest, Dest]),
@@ -1603,7 +1603,7 @@ install_shell_completions(ShellType) ->
                     Instr =
                         io_lib:format("Installed to: ~s~n~n"
                                       "To activate, add this to your ~/.zshrc (if not already present):~n"
-                                      "  fpath=(~s $fpath)~n"
+                                      "  fpath=(~~s $fpath)~n"
                                       "  autoload -U compinit && compinit~n~n"
                                       "Then reload your shell:~n"
                                       "  source ~/.zshrc",

@@ -32,6 +32,7 @@
 
 %% gen_server callbacks
 -export([
+         init/1,
          handle_call/3,
          handle_cast/2,
          handle_info/2,
@@ -220,16 +221,17 @@ drain() ->
 %%====================================================================
 
 %% @private
-init(#conn_pool_config{name = Name,
-                   transport_type = TransportType,
-                   host = Host,
-                   port = Port,
-                   size = Size,
-                   max_overflow = MaxOverflow,
-                   strategy = Strategy,
-                   lease_timeout = LeaseTimeout,
-                   idle_timeout = IdleTimeout,
-                   connection_opts = ConnOpts} = Config) ->
+init(Config) when is_record(Config, conn_pool_config) ->
+    #conn_pool_config{name = Name,
+                       transport_type = TransportType,
+                       host = Host,
+                       port = Port,
+                       size = Size,
+                       max_overflow = MaxOverflow,
+                       strategy = Strategy,
+                       lease_timeout = LeaseTimeout,
+                       idle_timeout = IdleTimeout,
+                       connection_opts = ConnOpts} = Config,
 
     process_flag(trap_exit, true),
 

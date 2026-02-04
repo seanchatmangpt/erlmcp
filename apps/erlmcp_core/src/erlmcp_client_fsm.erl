@@ -16,7 +16,7 @@
 -export([start_link/1, start_link/2, connect/1, initialize/2, disconnect/1, reconnect/1,
          state_name/1, stop/1]).
 %% gen_statem callbacks
--export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4, format_status/2]).
+-export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4, format_status/1]).
 
 %% State names for type specs
 -type client_state() :: pre_initialization | initializing | initialized | error | disconnected.
@@ -238,10 +238,8 @@ terminate(Reason, State, Data) ->
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
--spec format_status(Opt, Status) -> term()
-    when Opt :: normal | terminate,
-         Status :: list().
-format_status(_Opt, [_PDict, State, Data]) ->
+-spec format_status(term()) -> map().
+format_status([_PDict, State, Data]) ->
     #{state => State,
       client_id => Data#data.client_id,
       reconnect_attempts => Data#data.reconnect_attempts,

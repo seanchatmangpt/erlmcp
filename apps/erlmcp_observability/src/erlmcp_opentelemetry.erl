@@ -391,7 +391,7 @@ extract_trace_headers(RequestHeaders) ->
         _ ->
             ParseTraceParent = fun(TP) ->
                 parts = binary:split(TP, <<"-">>, [global]),
-                case length(parts) of
+                case length(parts) when is_list(parts) of
                     4 ->
                         #{
                             trace_id => lists:nth(1, parts),
