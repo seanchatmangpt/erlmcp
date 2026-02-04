@@ -363,12 +363,12 @@ init_otel_config() ->
         service_name => ?DEFAULT_SERVICE_NAME,
         endpoint => ?DEFAULT_OTLP_ENDPOINT,
         resource_attributes => #{
-            service.name => ?DEFAULT_SERVICE_NAME,
-            service.version => <<"1.0.0">>,
-            service.instance.id => generate_instance_id(),
-            telemetry.sdk.name => <<"erlmcp">>,
-            telemetry.sdk.language => <<"erlang">>,
-            telemetry.sdk.version => <<"1.0.0">>
+            "service.name" => ?DEFAULT_SERVICE_NAME,
+            "service.version" => <<"1.0.0">>,
+            "service.instance.id" => generate_instance_id(),
+            "telemetry.sdk.name" => <<"erlmcp">>,
+            "telemetry.sdk.language" => <<"erlang">>,
+            "telemetry.sdk.version" => <<"1.0.0">>
         }
     }.
 
@@ -406,12 +406,12 @@ init_metrics() ->
 init_tracer() ->
     % Initialize distributed tracer
     ResourceAttributes = #{
-        service.name => ?DEFAULT_SERVICE_NAME,
-        service.version => <<"1.0.0">>,
-        service.instance.id => generate_instance_id(),
-        telemetry.sdk.name => <<"erlmcp">>,
-        telemetry.sdk.language => <<"erlang">>,
-        telemetry.sdk.version => <<"1.0.0">>
+        "service.name" => ?DEFAULT_SERVICE_NAME,
+        "service.version" => <<"1.0.0">>,
+        "service.instance.id" => generate_instance_id(),
+        "telemetry.sdk.name" => <<"erlmcp">>,
+        "telemetry.sdk.language" => <<"erlang">>,
+        "telemetry.sdk.version" => <<"1.0.0">>
     },
 
     % Configure OpenTelemetry tracer
