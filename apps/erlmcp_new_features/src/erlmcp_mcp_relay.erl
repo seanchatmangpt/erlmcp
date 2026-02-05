@@ -360,7 +360,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Authenticate and authorize a request using zero-trust principles.
 -spec authenticate_and_authorize(request(), state(), binary()) -> {ok, binary()} | {error, term()}.
-authenticate_and_authorize(Request, State, CorrelationId) ->
+authenticate_and_authorize(Request, _State, _CorrelationId) ->
     %% Use security manager for authentication and authorization
     case erlmcp_security_manager:authenticate_request(Request, #{}) of
         {ok, Subject} ->
@@ -394,6 +394,7 @@ authenticate_and_authorize(Request, State, CorrelationId) ->
 %% @doc Extract authentication information from request.
 -spec extract_auth_info(request()) -> {ok, binary()} | {error, term()}.
 extract_auth_info(Request) ->
+    %% This function is currently unused but kept for future implementation
     case maps:get(<<"auth">>, Request, undefined) of
         undefined ->
             case maps:get(<<"token">>, Request, undefined) of
@@ -412,7 +413,8 @@ extract_auth_info(Request) ->
 
 %% @doc Validate authentication token.
 -spec validate_token(binary(), state()) -> {ok, binary()} | {error, term()}.
-validate_token(Token, State) ->
+validate_token(Token, _State) ->
+    %% This function is currently unused but kept for future implementation
     %% Simple token validation - in production, use proper JWT validation
     case binary:length(Token) >= 32 of
         true ->
@@ -440,7 +442,8 @@ validate_token(Token, State) ->
 
 %% @doc Check if subject has required permissions.
 -spec check_permissions(binary(), binary(), state()) -> {ok, binary()} | {error, term()}.
-check_permissions(Subject, Resource, State) ->
+check_permissions(Subject, Resource, _State) ->
+    %% This function is currently unused but kept for future implementation
     %% Find permissions for subject
     case maps:get(Subject, State#state.permissions, undefined) of
         undefined ->
@@ -459,6 +462,7 @@ check_permissions(Subject, Resource, State) ->
 %% @doc Check capabilities against resource.
 -spec check_capabilities([capability()], binary()) -> boolean().
 check_capabilities(Capabilities, Resource) ->
+    %% This function is currently unused but kept for future implementation
     lists:any(fun(Capability) ->
         maps:get(<<"resource">>, Capability) == Resource orelse
         string:prefix(Resource, <<"/api/*">>)
@@ -466,7 +470,7 @@ check_capabilities(Capabilities, Resource) ->
 
 %% @doc Authenticate request permission.
 -spec authenticate_request_permission(state(), binary(), binary(), map()) -> ok | {error, term()}.
-authenticate_request_permission(State, Subject, Action, Context) ->
+authenticate_request_permission(State, Subject, Action, _Context) ->
     %% In production, implement proper permission checking
     case maps:get(Subject, State#state.permissions, undefined) of
         undefined ->

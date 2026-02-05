@@ -1864,7 +1864,7 @@ validate_method_requirement({Id, Name, Type, Required}) ->
     end.
 
 %% @doc Validate error code requirement
-validate_error_code_requirement({Code, Name, Type}) ->
+validate_error_code_requirement({Code, _Name, _Type}) ->
     try
         case erlmcp_spec_parser:validate_error_code(Code) of
             true ->
@@ -1878,7 +1878,7 @@ validate_error_code_requirement({Code, Name, Type}) ->
     end.
 
 %% @doc Validate transport requirement
-validate_transport_requirement({Id, Name, Type}) ->
+validate_transport_requirement({_Id, Name, Type}) ->
     try
         %% Check if transport module exists and exports required callbacks
         Module = transport_to_module(Name),
@@ -2256,7 +2256,7 @@ print_validate_result_text(Result) ->
                     case CatResult of
                         #{status := Status} = Details ->
                             io:format("    status: ~s~n", [Status]),
-                            maps:foreach(fun (K, V) when K =:= status ->
+                            maps:foreach(fun (K, _V) when K =:= status ->
                                                  ok;
                                              (K, V) ->
                                                  io:format("    ~s: ~p~n", [K, V])
@@ -2287,7 +2287,7 @@ print_validate_result_markdown(Result) ->
                     case CatResult of
                         #{status := Status} = Details ->
                             io:format("- **Status**: ~s~n", [Status]),
-                            maps:foreach(fun (K, V) when K =:= status ->
+                            maps:foreach(fun (K, _V) when K =:= status ->
                                                  ok;
                                              (K, V) ->
                                                  io:format("- **~s**: ~p~n", [K, V])
