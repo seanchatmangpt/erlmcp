@@ -419,7 +419,7 @@ validate_token(Token, _State) ->
     case binary:length(Token) >= 32 of
         true ->
             %% Check if token exists in permissions
-            case maps:find(Token, State#state.permissions) of
+            case maps:find(Token, _State#state.permissions) of
                 {ok, Permission} ->
                     %% Check if token is expired
                     case maps:get(<<"expires_at">>, Permission, undefined) of
@@ -445,7 +445,7 @@ validate_token(Token, _State) ->
 check_permissions(Subject, Resource, _State) ->
     %% This function is currently unused but kept for future implementation
     %% Find permissions for subject
-    case maps:get(Subject, State#state.permissions, undefined) of
+    case maps:get(Subject, _State#state.permissions, undefined) of
         undefined ->
             {error, no_permissions_for_subject};
         Permission ->
@@ -472,7 +472,7 @@ check_capabilities(Capabilities, Resource) ->
 -spec authenticate_request_permission(state(), binary(), binary(), map()) -> ok | {error, term()}.
 authenticate_request_permission(State, Subject, Action, _Context) ->
     %% In production, implement proper permission checking
-    case maps:get(Subject, State#state.permissions, undefined) of
+    case maps:get(Subject, _State#state.permissions, undefined) of
         undefined ->
             {error, no_permissions_for_subject};
         Permission ->
