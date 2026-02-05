@@ -390,13 +390,13 @@ extract_trace_headers(RequestHeaders) ->
             create_trace_context(undefined);
         _ ->
             ParseTraceParent = fun(TP) ->
-                parts = binary:split(TP, <<"-">>, [global]),
-                case length(parts) when is_list(parts) of
-                    4 ->
+                Parts = binary:split(TP, <<"-">>, [global]),
+                case Parts of
+                    [TraceId, SpanId, Flags, _Rest] ->
                         #{
-                            trace_id => lists:nth(1, parts),
-                            span_id => lists:nth(2, parts),
-                            trace_flags => lists:nth(3, parts)
+                            trace_id => TraceId,
+                            span_id => SpanId,
+                            trace_flags => Flags
                         };
                     _ ->
                         undefined

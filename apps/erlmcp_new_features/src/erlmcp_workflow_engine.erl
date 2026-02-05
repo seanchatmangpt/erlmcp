@@ -123,7 +123,7 @@
     completed_at => erlang:timestamp() | undefined,
     input_data => map(),
     output_data => map() | undefined,
-    error_message = binary() | undefined,
+    error_message => binary() | undefined,
     executor_pid => pid() | undefined,
     security_context => map(),
     audit_trail => [map()]
@@ -281,7 +281,7 @@ handle_call({execute_workflow, WorkflowId, InputData}, _From, State) ->
                 completed_at => undefined,
                 input_data => InputData,
                 output_data => undefined,
-                error_message = undefined,
+                error_message => undefined,
                 executor_pid => undefined,
                 security_context => State#state.security_context,
                 audit_trail => []
@@ -333,7 +333,7 @@ handle_call({execute_workflow, WorkflowId, InputData}, _From, State) ->
                             FailedExecution = Execution#{
                                 status => failed,
                                 completed_at => erlang:timestamp(),
-                                error_message = list_to_binary(io_lib:format("~p", [Reason]))
+                                error_message => list_to_binary(io_lib:format("~p", [Reason]))
                             },
                             NewExecutions = maps:put(ExecutionId, FailedExecution, State#state.executions),
                             {reply, {error, Reason}, NewState#state{executions = NewExecutions}}
@@ -534,7 +534,7 @@ handle_info({'DOWN', MonRef, process, _Pid, Reason}, State) ->
                     UpdatedExecution = Execution#{
                         status => failed,
                         completed_at => erlang:timestamp(),
-                        error_message = list_to_binary(io_lib:format("~p", [Reason]))
+                        error_message => list_to_binary(io_lib:format("~p", [Reason]))
                     },
                     NewExecutions = maps:put(ExecutionId, UpdatedExecution, Executions),
                     NewMonitors = maps:remove(ExecutionId, State#state.execution_monitors),
@@ -567,7 +567,7 @@ handle_info({execution_complete, ExecutionId, Result}, State) ->
 
             UpdatedExecution = case Result of
                 {ok, OutputData} ->
-                    AuditTrail = Execution#audit_trail ++ [AuditEvent],
+                    AuditTrail = maps:get(audit_trail, Execution, []) ++ [AuditEvent],
                     Execution#{
                         status => completed,
                         completed_at => erlang:timestamp(),
@@ -575,11 +575,11 @@ handle_info({execution_complete, ExecutionId, Result}, State) ->
                         audit_trail => AuditTrail
                     };
                 {error, Reason} ->
-                    AuditTrail = Execution#audit_trail ++ [AuditEvent],
+                    AuditTrail = maps:get(audit_trail, Execution, []) ++ [AuditEvent],
                     Execution#{
                         status => failed,
                         completed_at => erlang:timestamp(),
-                        error_message = list_to_binary(io_lib:format("~p", [Reason])),
+                        error_message => list_to_binary(io_lib:format("~p", [Reason])),
                         audit_trail => AuditTrail
                     }
             end,
@@ -965,3 +965,4 @@ find_execution_by_monitor(MonRef, #state{execution_monitors = Monitors}) ->
         {ExecutionId, MonRef} -> {ok, ExecutionId};
         false -> error
     end.
+

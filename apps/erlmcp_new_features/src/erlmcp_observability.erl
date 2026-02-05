@@ -8,8 +8,7 @@
 -export([counter/2, counter_inc/2, counter_inc/3]).
 -export([gauge/2, gauge_set/2, gauge_set/3]).
 -export([histogram/2, histogram_observe/2, histogram_observe/3]).
--export([trace_start/1, trace_start/2, trace_start/3]).
--export([trace_span/2, trace_span/3]).
+-export([trace_span/1, trace_span/2, trace_span/3]).
 -export([health_check/0, health_check/1]).
 -export([get_metrics_summary/0]).
 
@@ -146,16 +145,16 @@ histogram_observe(Name, Value, Labels) when is_binary(Name), is_number(Value), i
     gen_server:cast(?SERVER, {metric, histogram, Name, Labels, Value}).
 
 %% Distributed Tracing
--spec trace_start(binary()) -> #trace_context{}.
+-spec trace_span(binary()) -> #trace_context{}.
 trace_span(Name) when is_binary(Name) ->
-    trace_start(Name, #{}).
+    gen_server:call(?SERVER, {trace_start, Name, #{}, #{}}).
 
--spec trace_start(binary(), map()) -> #trace_context{}.
+-spec trace_span(binary(), map()) -> #trace_context{}.
 trace_span(Name, Attributes) when is_binary(Name), is_map(Attributes) ->
-    trace_start(Name, Attributes, #{}).
+    gen_server:call(?SERVER, {trace_start, Name, Attributes, #{}}).
 
--spec trace_start(binary(), map(), map()) -> #trace_context{}.
-trace_span(Name, Attributes, Links) ->
+-spec trace_span(binary(), map(), map()) -> #trace_context{}.
+trace_span(Name, Attributes, Links) when is_binary(Name), is_map(Attributes), is_map(Links) ->
     gen_server:call(?SERVER, {trace_start, Name, Attributes, Links}).
 
 %% Health Check
@@ -211,7 +210,7 @@ init([]) ->
 
     {ok, State}.
 
-handle_call({trace_start, Name, Attributes, Links}, _From, State) ->
+handle_call({trace_start, Name, Attributes, _Links}, _From, State) ->
     TraceId = generate_trace_id(),
     SpanId = generate_span_id(),
 
@@ -244,7 +243,7 @@ handle_call({health_check, Service}, _From, State) ->
     {reply, HealthStatus, State};
 
 handle_call(get_metrics_summary, _From, State) ->
-    Summary = generate_metrics_summary(State),
+    Summary = format_prometheus_metrics(State#state.metrics),
     {reply, Summary, State};
 
 handle_call(_Request, _From, State) ->
@@ -334,7 +333,7 @@ terminate(_Reason, State) ->
     end,
 
     case State#state.metrics_buffer of
-        #{_ := _Metrics} -> flush_metrics(State);
+        Metrics when is_map(Metrics) -> flush_metrics(State);
         _ -> ok
     end,
 
@@ -591,7 +590,7 @@ uptime() ->
     % Return uptime in milliseconds
     erlang:monotonic_time(millisecond).
 
-get_service_health(Service, State) ->
+get_service_health(Service, _State) ->
     case Service of
         erlmcp_mcp_proxy_relay ->
             case erlmcp_mcp_proxy_relay:get_stats() of
@@ -641,8 +640,8 @@ generate_metrics_summary(State) ->
         metrics_buffer_size => map_size(State#state.metrics_buffer),
         active_traces => map_size(State#state.trace_contexts),
         health_status => State#state.health_status,
-        service_name => State#state.otel_config.service_name,
-        endpoint => State#state.otel_config.endpoint,
+        service_name => maps:get(service_name, State#state.otel_config),
+        endpoint => maps:get(endpoint, State#state.otel_config),
         prometheus_metrics => PrometheusMetrics,
         system_metrics => get_system_metrics()
     }.
