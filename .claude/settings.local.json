@@ -7,7 +7,8 @@
       "Bash(cat:*)",
       "Bash(rebar3 eunit:*)",
       "Bash(docker build:*)",
-      "Bash(rebar3 compile:*)"
+      "Bash(rebar3 compile:*)",
+      "Bash(git push:*)"
     ]
   }
 }
