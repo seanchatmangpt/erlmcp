@@ -394,7 +394,7 @@ authenticate_and_authorize(Request, _State, _CorrelationId) ->
 %% @doc Extract authentication information from request.
 %% @deprecated This function is currently unused and reserved for future implementation.
 -spec extract_auth_info(request()) -> {ok, binary()} | {error, term()}.
-extract_auth_info(Request) ->
+_extract_auth_info(Request) ->
     %% This function is currently unused but kept for future implementation
     case maps:get(<<"auth">>, Request, undefined) of
         undefined ->
@@ -415,7 +415,7 @@ extract_auth_info(Request) ->
 %% @doc Validate authentication token.
 %% @deprecated This function is currently unused and reserved for future implementation.
 -spec validate_token(binary(), state()) -> {ok, binary()} | {error, term()}.
-validate_token(Token, _State) ->
+_validate_token(Token, _State) ->
     %% This function is currently unused but kept for future implementation
     %% Simple token validation - in production, use proper JWT validation
     case binary:length(Token) >= 32 of
@@ -445,7 +445,7 @@ validate_token(Token, _State) ->
 %% @doc Check if subject has required permissions.
 %% @deprecated This function is currently unused and reserved for future implementation.
 -spec check_permissions(binary(), binary(), state()) -> {ok, binary()} | {error, term()}.
-check_permissions(Subject, Resource, _State) ->
+_check_permissions(Subject, Resource, _State) ->
     %% This function is currently unused but kept for future implementation
     %% Find permissions for subject
     case maps:get(Subject, _State#state.permissions, undefined) of
@@ -465,7 +465,7 @@ check_permissions(Subject, Resource, _State) ->
 %% @doc Check capabilities against resource.
 %% @deprecated This function is currently unused and reserved for future implementation.
 -spec check_capabilities([capability()], binary()) -> boolean().
-check_capabilities(Capabilities, Resource) ->
+_check_capabilities(Capabilities, Resource) ->
     %% This function is currently unused but kept for future implementation
     lists:any(fun(Capability) ->
         maps:get(<<"resource">>, Capability) == Resource orelse
