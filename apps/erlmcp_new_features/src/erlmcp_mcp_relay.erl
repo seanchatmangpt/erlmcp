@@ -470,7 +470,7 @@ check_capabilities(Capabilities, Resource) ->
 
 %% @doc Authenticate request permission.
 -spec authenticate_request_permission(state(), binary(), binary(), map()) -> ok | {error, term()}.
-authenticate_request_permission(State, Subject, Action, _Context) ->
+authenticate_request_permission(_State, Subject, Action, _Context) ->
     %% In production, implement proper permission checking
     case maps:get(Subject, _State#state.permissions, undefined) of
         undefined ->
