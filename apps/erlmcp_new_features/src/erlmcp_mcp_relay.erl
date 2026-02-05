@@ -392,6 +392,7 @@ authenticate_and_authorize(Request, _State, _CorrelationId) ->
     end.
 
 %% @doc Extract authentication information from request.
+%% @deprecated This function is currently unused and reserved for future implementation.
 -spec extract_auth_info(request()) -> {ok, binary()} | {error, term()}.
 extract_auth_info(Request) ->
     %% This function is currently unused but kept for future implementation
@@ -412,6 +413,7 @@ extract_auth_info(Request) ->
     end.
 
 %% @doc Validate authentication token.
+%% @deprecated This function is currently unused and reserved for future implementation.
 -spec validate_token(binary(), state()) -> {ok, binary()} | {error, term()}.
 validate_token(Token, _State) ->
     %% This function is currently unused but kept for future implementation
@@ -441,6 +443,7 @@ validate_token(Token, _State) ->
     end.
 
 %% @doc Check if subject has required permissions.
+%% @deprecated This function is currently unused and reserved for future implementation.
 -spec check_permissions(binary(), binary(), state()) -> {ok, binary()} | {error, term()}.
 check_permissions(Subject, Resource, _State) ->
     %% This function is currently unused but kept for future implementation
@@ -460,6 +463,7 @@ check_permissions(Subject, Resource, _State) ->
     end.
 
 %% @doc Check capabilities against resource.
+%% @deprecated This function is currently unused and reserved for future implementation.
 -spec check_capabilities([capability()], binary()) -> boolean().
 check_capabilities(Capabilities, Resource) ->
     %% This function is currently unused but kept for future implementation
