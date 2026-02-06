@@ -18,15 +18,28 @@ erlmcp is a production-grade Erlang/OTP implementation of the Model Context Prot
 
 ### Prerequisites
 
-- Erlang/OTP 26, 27, or 28
-- rebar3 build tool
+- Docker and Docker Compose
+- Erlang/OTP 26, 27, or 28 (for local development)
+- Git
 
 ### From Source
 
+All compilation and testing must be performed via Docker as per project policy:
+
 ```bash
+# Clone the repository
 git clone https://github.com/erlmcp/erlmcp.git
 cd erlmcp
-rebar3 compile
+
+# Compile via Docker
+docker compose run erlmcp-build rebar3 compile
+
+# Verify compilation
+docker compose run erlmcp-build rebar3 as prod compile
+
+# Run tests via Docker
+docker compose run erlmcp-unit rebar3 eunit
+docker compose run erlmcp-ct rebar3 ct
 ```
 
 ### From Hex (Coming Soon)
@@ -110,9 +123,31 @@ start() ->
 
 ### Step 2: Compile and Run
 
+**For Local Development (Docker):**
+
+```bash
+# Create a Docker compose override for your server
+cat > docker-compose.override.yml <<EOF
+version: '3.8'
+services:
+  my-server:
+    build: .
+    volumes:
+      - ./my_server.erl:/app/my_server.erl
+    command: erl -pa /app/_build/default/lib/*/ebin -eval "my_server:start()" -noshell
+EOF
+
+# Run via Docker
+docker compose run my-server
+```
+
+**For Testing Without Docker (Development Only):**
+
+Note: This violates project policy and should only be used for quick local tests.
+
 ```bash
 # Compile
-erlc -I /path/to/erlmcp/apps/erlmcp/include my_server.erl
+erlc -I /path/to/erlmcp/apps/erlmcp_core/include my_server.erl
 
 # Run
 erl -pa /path/to/erlmcp/_build/default/lib/*/ebin -eval "my_server:start()" -noshell
@@ -143,6 +178,30 @@ Edit `claude_desktop_config.json`:
 **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
 **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
 **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+**Using Docker (Recommended for Production):**
+
+```json
+{
+  "mcpServers": {
+    "my-server": {
+      "command": "docker",
+      "args": [
+        "compose",
+        "run",
+        "--rm",
+        "my-server",
+        "erl",
+        "-pa", "/app/_build/default/lib/*/ebin",
+        "-eval", "my_server:start()",
+        "-noshell"
+      ]
+    }
+  }
+}
+```
+
+**Using Direct Erlang (Development Only):**
 
 ```json
 {
@@ -464,7 +523,8 @@ mcp-inspector erl -pa ebin -eval "my_server:start()" -noshell
 
 ## Getting Help
 
-- **Documentation**: `/Users/sac/erlmcp/docs/`
-- **Examples**: `/Users/sac/erlmcp/examples/`
+- **Documentation**: [/home/user/erlmcp/docs/](../README.md)
+- **API Reference**: [/home/user/erlmcp/docs/api/README.md](README.md)
+- **Examples**: `/home/user/erlmcp/examples/`
 - **Issues**: https://github.com/erlmcp/erlmcp/issues
-- **Discord**: https://discord.gg/erlmcp
+- **Discussions**: https://github.com/erlmcp/erlmcp/discussions

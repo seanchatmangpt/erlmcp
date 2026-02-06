@@ -7,10 +7,16 @@ Complete API documentation for erlmcp Model Context Protocol Server v3.0.
 | Document | Description |
 |----------|-------------|
 | [Quick Start](quick-start.md) | Get started in 5 minutes |
-| [OpenAPI Specification](openapi-spec.yaml) | Complete OpenAPI 3.0 specification |
+| [Complete Example](complete-example.md) | Full client-server implementation |
+| **Core API References** | |
+| [Server API Reference](server-api.md) | Complete server-side API documentation |
+| [Client API Reference](client-api.md) | Complete client-side API documentation |
 | [JSON-RPC Reference](json-rpc-reference.md) | Protocol method reference |
-| [Transport Protocols](transport-protocols.md) | stdio, TCP, HTTP, WebSocket, SSE |
+| **Transport & Communication** | |
+| [Transport Protocols](transport-protocols.md) | stdio, TCP, HTTP, WebSocket, SSE configuration |
+| [Error Handling Patterns](error-handling-patterns.md) | Comprehensive error handling guide |
 | [Error Codes](error-codes.md) | Complete error code reference |
+| **Security & Advanced Topics** | |
 | [Security](security.md) | Authentication, authorization, secrets |
 | [Client SDKs](client-sdks.md) | Python, Go, Java, JavaScript, Rust |
 | [Integration Examples](integration-examples.md) | Real-world integration patterns |
@@ -40,17 +46,19 @@ erlmcp implements the [Model Context Protocol (MCP)](https://spec.modelcontextpr
 
 ### Installation
 
+All compilation and testing must be performed via Docker as per project requirements:
+
 ```bash
 # Clone repository
 git clone https://github.com/erlmcp/erlmcp.git
 cd erlmcp
 
-# Compile
-rebar3 compile
+# Compile via Docker
+docker compose run erlmcp-build rebar3 compile
 
-# Run tests
-rebar3 eunit
-rebar3 ct
+# Run tests via Docker
+docker compose run erlmcp-unit rebar3 eunit
+docker compose run erlmcp-ct rebar3 ct
 ```
 
 ### Minimal Server Example
@@ -60,24 +68,85 @@ rebar3 ct
 -export([start/0]).
 
 start() ->
+    %% Start required applications
     application:ensure_all_started(erlmcp_core),
 
-    Capabilities = #mcp_server_capabilities{
-        tools = #mcp_tools_capability{}
+    %% Define server capabilities
+    Capabilities = #{
+        tools => #{},
+        resources => #{},
+        prompts => #{}
     },
 
+    %% Start the MCP server
     {ok, Server} = erlmcp_server:start_link(my_server, Capabilities),
 
+    %% Add a simple tool
     erlmcp_server:add_tool(Server, #{
         name => <<"hello">>,
-        description => <<"Say hello">>,
-        handler => fun(_) ->
-            #{content => [{type => text, text => <<"Hello World!">>}]}
+        description => <<"Say hello to the world">>,
+        input_schema => #{
+            type => object,
+            properties => #{
+                name => #{type => string}
+            }
+        },
+        handler => fun(Args) ->
+            Name = maps:get(<<"name">>, Args, <<"World">>),
+            #{content => [#{
+                type => text,
+                text => <<"Hello, ", Name/binary, "!">>
+            }]}
         end
     }),
 
-    {ok, _} = erlmcp_transport_stdio:start_link(Server),
+    %% Start stdio transport for Claude Desktop integration
+    {ok, _Transport} = erlmcp_transport_stdio:start_link(Server),
     receive stop -> ok end.
+```
+
+### Minimal Client Example
+
+```erlang
+-module(my_client).
+-export([start/0, call_tool/0]).
+
+start() ->
+    %% Start required applications
+    application:ensure_all_started(erlmcp_core),
+
+    %% Define client capabilities
+    Capabilities = #{
+        roots => #{},
+        sampling => #{}
+    },
+
+    ClientInfo = #{
+        name => <<"my-client">>,
+        version => <<"1.0.0">>
+    },
+
+    %% Connect via stdio transport
+    {ok, Client} = erlmcp_client:start_link(#{
+        transport => stdio,
+        capabilities => Capabilities,
+        client_info => ClientInfo
+    }),
+
+    {ok, Client}.
+
+call_tool() ->
+    {ok, Client} = start(),
+
+    %% List available tools
+    {ok, #{<<"tools">> := Tools}} = erlmcp_client:list_tools(Client),
+    io:format("Available tools: ~p~n", [Tools]),
+
+    %% Call a tool
+    {ok, Result} = erlmcp_client:call_tool(Client, <<"hello">>, #{
+        <<"name">> => <<"Erlang">>
+    }),
+    io:format("Result: ~p~n", [Result]).
 ```
 
 ## API Endpoints

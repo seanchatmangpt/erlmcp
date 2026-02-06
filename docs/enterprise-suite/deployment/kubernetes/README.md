@@ -2,7 +2,24 @@
 
 ## Overview
 
-This guide provides comprehensive instructions for deploying erlmcp v3 on Kubernetes. Kubernetes deployment offers advanced orchestration features including auto-scaling, rolling updates, and self-healing capabilities.
+This guide provides comprehensive instructions for deploying erlmcp v3 on Kubernetes. erlmcp v3 is an enterprise-grade Erlang/OTP MCP SDK with full Kubernetes support, including StatefulSet clustering, service mesh integration, and comprehensive observability.
+
+### Architecture Overview
+
+erlmcp v3 supports multiple deployment patterns:
+- **Stateless Deployment**: For API gateways and load-balanced workers
+- **StatefulSet Clustering**: For distributed Erlang clusters with persistent state
+- **Hybrid Pattern**: Combining both for optimal performance and scalability
+
+### Documentation Structure
+
+- **[Helm Chart Usage](./helm-usage.md)**: Comprehensive Helm chart configuration and customization
+- **[StatefulSet vs Deployment](./statefulset-vs-deployment.md)**: Deep dive into deployment patterns
+- **[Service Mesh Integration](./service-mesh-integration.md)**: Istio and Linkerd integration for mTLS and traffic management
+- **[Secrets Management](./secrets-management.md)**: External Secrets Operator, Vault, and cloud provider integration
+- **[Monitoring & Observability](./monitoring-observability.md)**: Prometheus, Grafana, and distributed tracing
+- **[High Availability](./high-availability.md)**: Multi-zone deployments and disaster recovery
+- **[Rolling Updates & Rollback](./rolling-updates-rollback.md)**: Safe deployment strategies and rollback procedures
 
 ## Prerequisites
 
@@ -1009,9 +1026,121 @@ kubectl get pods -n erlmcp -w
 kubectl get svc -n erlmcp
 ```
 
+## Quick Links
+
+### Core Documentation
+- [Helm Chart Usage and Customization](./helm-usage.md)
+- [StatefulSet vs Deployment Considerations](./statefulset-vs-deployment.md)
+- [Service Mesh Integration (Istio/Linkerd)](./service-mesh-integration.md)
+- [Secrets Management (Vault/ESO)](./secrets-management.md)
+- [Monitoring and Observability](./monitoring-observability.md)
+- [High Availability Configuration](./high-availability.md)
+- [Rolling Updates and Rollback](./rolling-updates-rollback.md)
+
+### Advanced Topics
+- GitOps Deployment: See `/gitops/` directory
+- Multi-Tenant Configuration: See `helm/erlmcp-enterprise/values.yaml` resourceQuota section
+- Disaster Recovery: See [High Availability](./high-availability.md)
+- Performance Tuning: See [Service Mesh Integration](./service-mesh-integration.md)
+
+### Helm Charts
+
+erlmcp v3 provides multiple Helm charts for different use cases:
+
+1. **Enterprise Chart** (`helm/erlmcp-enterprise/`)
+   - Full-featured enterprise deployment
+   - Includes ResourceQuota and LimitRange
+   - Multi-tenant support
+   - Comprehensive monitoring
+
+2. **Production Chart** (`k8s/deployments/helm/erlmcp/`)
+   - External Secrets integration
+   - mTLS configuration
+   - Advanced security policies
+
+3. **GitOps Manifests** (`gitops/`)
+   - Kustomize-based deployments
+   - Environment-specific overlays
+   - Canary deployment support
+
+## Enterprise Features
+
+### Zero-Trust Security
+- mTLS between all services via Istio/Linkerd
+- Pod Security Policies and NetworkPolicies
+- External Secrets management (Vault, AWS, Azure, GCP)
+- RBAC with least privilege
+
+### High Availability
+- Multi-zone pod distribution
+- Pod Disruption Budgets
+- StatefulSet for stable Erlang clustering
+- Automated failover and recovery
+
+### Observability
+- Prometheus metrics and ServiceMonitor
+- Distributed tracing with Jaeger/OpenTelemetry
+- Grafana dashboards
+- Structured logging
+
+### Scalability
+- Horizontal Pod Autoscaler (HPA)
+- Cluster Autoscaler support
+- Resource quotas per tenant
+- Efficient connection pooling
+
+### Operational Excellence
+- Rolling updates with zero downtime
+- Canary and blue/green deployments
+- Automated secret rotation
+- Backup and disaster recovery
+
+## Docker-Only Execution
+
+Per CLAUDE.md requirements, all validation and testing must use Docker:
+
+```bash
+# Validate Helm charts
+docker compose run erlmcp-build helm lint /workspace/helm/erlmcp-enterprise
+
+# Test manifest rendering
+docker compose run erlmcp-build helm template erlmcp /workspace/helm/erlmcp-enterprise \
+  --values /workspace/helm/erlmcp-enterprise/values-production.yaml
+
+# Validate Kubernetes manifests
+docker compose run erlmcp-build kubectl apply --dry-run=server -f /workspace/gitops/base/
+
+# Run tests
+docker compose run erlmcp-ct
+
+# Check quality gates
+docker compose run erlmcp-check
+```
+
+## Production Deployment Checklist
+
+Before deploying to production, ensure:
+
+- [ ] Secrets externalized to Vault or cloud provider
+- [ ] TLS certificates configured via cert-manager
+- [ ] Service mesh (Istio/Linkerd) enabled for mTLS
+- [ ] Pod Disruption Budget configured (minAvailable >= 2)
+- [ ] Resource requests and limits set appropriately
+- [ ] HPA configured for auto-scaling
+- [ ] Monitoring and alerting configured
+- [ ] Backup strategy implemented
+- [ ] Disaster recovery plan documented
+- [ ] RBAC policies reviewed
+- [ ] NetworkPolicies enforced
+- [ ] All quality gates passing (via Docker)
+
 ## Support
 
 For enterprise support, contact:
 - **Email**: enterprise-support@erlmcp.com
 - **Portal**: https://enterprise.erlmcp.com
-- **Documentation**: https://docs.erlmcp.com/v3
+- **Documentation**: https://docs.erlmcp.com/v3/kubernetes
+
+For community support:
+- **GitHub Issues**: https://github.com/erlang-mcp/erlmcp/issues
+- **Discussions**: https://github.com/erlang-mcp/erlmcp/discussions

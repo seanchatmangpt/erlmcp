@@ -22,15 +22,40 @@ The stdio (standard input/output) transport is the simplest and most commonly us
 
 No network configuration needed. The server reads from stdin and writes to stdout.
 
-### Erlang API
+### Erlang Server API
 
 ```erlang
-%% Start stdio server
-{ok, Server} = erlmcp_server:start_link(my_server, Capabilities).
-{ok, Transport} = erlmcp_transport_stdio:start_link(Server).
+%% Start MCP server
+{ok, Server} = erlmcp_server:start_link(my_server, #{
+    tools => #{},
+    resources => #{}
+}),
 
-%% Or using the client
-{ok, Client} = erlmcp_client:start_link({stdio, []}).
+%% Start stdio transport
+{ok, Transport} = erlmcp_transport_stdio:start_link(Server),
+
+%% Keep server running
+receive
+    stop -> ok
+end.
+```
+
+### Erlang Client API
+
+```erlang
+%% Connect to stdio server
+{ok, Client} = erlmcp_client:start_link(#{
+    transport => stdio,
+    capabilities => #{},
+    client_info => #{
+        name => <<"my-client">>,
+        version => <<"1.0.0">>
+    }
+}),
+
+%% Use the client
+{ok, Tools} = erlmcp_client:list_tools(Client),
+io:format("Available tools: ~p~n", [Tools]).
 ```
 
 ### Message Format
@@ -106,23 +131,46 @@ start() ->
 
 The TCP transport provides raw socket communication for high-performance scenarios.
 
-### Configuration
+### Server Configuration
 
 ```erlang
-%% Server
-{ok, Server} = erlmcp_server:start_link(tcp_server, Capabilities).
+%% Start MCP server
+{ok, Server} = erlmcp_server:start_link(tcp_server, #{
+    tools => #{},
+    resources => #{}
+}),
 
-{ok, Listener} = erlmcp_transport_tcp:start_listener([
+%% Start TCP listener
+{ok, Listener} = erlmcp_transport_tcp:start_listener(Server, [
     {port, 8765},
     {ip, {0, 0, 0, 0}},
-    {active, true}
+    {backlog, 128},
+    {nodelay, true},
+    {keepalive, true}
 ]).
+```
 
-%% Client
-{ok, Client} = erlmcp_client:start_link({tcp, #{
-    host => "localhost",
-    port => 8765
-}}).
+### Client Configuration
+
+```erlang
+%% Connect to TCP server
+{ok, Client} = erlmcp_client:start_link(#{
+    transport => tcp,
+    transport_opts => #{
+        host => "localhost",
+        port => 8765,
+        connect_timeout => 5000
+    },
+    capabilities => #{},
+    client_info => #{
+        name => <<"tcp-client">>,
+        version => <<"1.0.0">>
+    }
+}),
+
+%% Use the client
+{ok, Result} = erlmcp_client:call_tool(Client, <<"my_tool">>, #{}),
+io:format("Result: ~p~n", [Result]).
 ```
 
 ### Options

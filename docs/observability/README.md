@@ -1,8 +1,17 @@
 # erlmcp Observability
 
+**Version:** 2.1.0
+**Last Updated:** February 6, 2026
+
 ## Overview
 
-erlmcp provides comprehensive observability through OpenTelemetry integration, real-time metrics, distributed tracing, health monitoring, and chaos engineering. The observability stack follows Toyota Production System principles (Andon, Poka-Yoke, Jidoka, Kaizen) for zero-defect quality.
+erlmcp provides **operator-first**, **deterministic** observability through OpenTelemetry integration, structured logging, real-time metrics, distributed tracing, health monitoring, and chaos engineering. The observability stack follows Toyota Production System principles (Andon, Poka-Yoke, Jidoka, Kaizen) for zero-defect quality.
+
+**Key Principles:**
+- **Operator-First:** Every signal includes actionable context (WHAT, WHY, IMPACT, ACTION)
+- **Deterministic Dashboards:** Reproducible metrics with proof-based verification  - **Docker-Only Execution:** All observability operations via Docker (no host execution)
+- **Signals > Logs:** Metrics, traces, events preferred over verbose logging
+- **Zero-Trust Audit:** All security events logged with tamper-proof receipts
 
 ## Architecture
 
@@ -90,12 +99,70 @@ flowchart TB
     style Backends fill:#eceff1
 ```
 
-## Quick Start
+## Quick Start (Docker-Only)
 
-### 1. Enable Observability
+### 1. Start Observability Stack
+
+```bash
+# Start erlmcp with full observability stack
+docker compose -f docker-compose.yml \
+               -f docker-compose.monitoring.yml \
+               up -d
+
+# Verify all services started
+docker compose ps
+
+# Expected services:
+# - erlmcp-node1, erlmcp-node2, erlmcp-node3 (application)
+# - prometheus (metrics storage)
+# - grafana (visualization)
+# - loki (log aggregation)
+# - promtail (log collection)
+# - jaeger (distributed tracing)
+# - alertmanager (alerting)
+```
+
+### 2. Access Observability Dashboards
+
+```bash
+# Grafana (main dashboard)
+open http://localhost:3000
+# Default credentials: admin/admin
+
+# Prometheus (metrics query)
+open http://localhost:9090
+
+# Jaeger (distributed tracing)
+open http://localhost:16686
+
+# Alertmanager (alert management)
+open http://localhost:9093
+```
+
+### 3. Verify Data Collection
+
+```bash
+# Check metrics endpoint
+docker compose exec erlmcp-node1 curl http://localhost:8080/metrics
+
+# Query metrics via Prometheus
+docker compose exec prometheus \
+  promtool query instant 'http://localhost:9090' 'erlmcp_requests_total'
+
+# Check logs in Loki
+docker compose run --rm logcli \
+  --addr=http://loki:3100 \
+  query '{service="erlmcp"}' --limit=10
+
+# View traces in Jaeger
+docker compose exec jaeger-query curl -s \
+  'http://localhost:16686/api/traces?service=erlmcp&limit=10' | jq '.'
+```
+
+### 4. Enable Observability Features
 
 ```erlang
-% In sys.config or rebar.config
+% config/sys.config (already enabled in Docker images)
 {erlmcp_observability, [
     {otel_enabled, true},
     {metrics_enabled, true},
@@ -426,43 +493,174 @@ groups:
 - No in-memory buffering
 - Backend manages retention
 
-## Troubleshooting
+## Docker-Only Operations
+
+All observability operations MUST use Docker. Host execution is forbidden.
+
+### Start Observability Stack
+
+```bash
+# Start complete stack (app + monitoring)
+docker compose -f docker-compose.yml \
+               -f docker-compose.monitoring.yml \
+               up -d
+
+# Verify all containers running
+docker compose ps
+
+# Check logs
+docker compose logs -f erlmcp-node1
+```
+
+### Query Metrics (Docker-Only)
+
+```bash
+# Via Prometheus HTTP API
+docker compose exec prometheus \
+  promtool query instant 'http://localhost:9090' \
+    'erlmcp_requests_total'
+
+# Query range (last hour)
+docker compose exec prometheus \
+  promtool query range 'http://localhost:9090' \
+    'rate(erlmcp_requests_total[5m])' \
+    --start="$(date -d '1 hour ago' --iso-8601=seconds)" \
+    --end="$(date --iso-8601=seconds)"
+
+# Export metrics snapshot (for proof/receipt)
+docker compose exec prometheus \
+  promtool query instant 'http://localhost:9090' \
+    'erlmcp_requests_total' > metrics_snapshot_$(date +%Y%m%d_%H%M%S).txt
+```
+
+### Query Logs (Docker-Only)
+
+```bash
+# Via LogCLI
+docker compose run --rm logcli \
+  --addr=http://loki:3100 \
+  query '{service="erlmcp",level="error"}' \
+  --since=1h \
+  --limit=100
+
+# Follow logs in real-time
+docker compose run --rm logcli \
+  --addr=http://loki:3100 \
+  query --tail --follow '{service="erlmcp"}'
+
+# Export logs for incident analysis
+docker compose run --rm logcli \
+  --addr=http://loki:3100 \
+  query '{service="erlmcp"}' \
+  --since=24h \
+  --output=jsonl > incident_$(date +%Y%m%d_%H%M%S).jsonl
+```
+
+### Query Traces (Docker-Only)
+
+```bash
+# Find traces by service
+docker compose exec jaeger-query curl -s \
+  'http://localhost:16686/api/traces?service=erlmcp&limit=10' \
+  | jq '.data[].traceID'
+
+# Get specific trace
+docker compose exec jaeger-query curl -s \
+  "http://localhost:16686/api/traces/TRACE_ID" \
+  | jq '.'
+
+# Find slow traces (>1s)
+docker compose exec jaeger-query curl -s \
+  'http://localhost:16686/api/traces?service=erlmcp&minDuration=1s' \
+  | jq '.'
+```
+
+### Live System Inspection (Docker-Only)
+
+```bash
+# Top processes by memory
+docker compose exec erlmcp-node1 erl_call -a \
+  'recon:proc_count(memory, 10)'
+
+# Top processes by message queue
+docker compose exec erlmcp-node1 erl_call -a \
+  'recon:proc_count(message_queue_len, 10)'
+
+# Check memory usage
+docker compose exec erlmcp-node1 erl_call -a \
+  'erlang:memory()' | jq '.'
+
+# Check scheduler utilization
+docker compose exec erlmcp-node1 erl_call -a \
+  'erlang:statistics(scheduler_wall_time)'
+```
+
+## Troubleshooting (Docker-Only)
 
 ### High Memory Usage
 
 ```bash
-# Check metrics buffer size
-erlmcp_metrics_server:get_buffer_size()
+# Check container memory
+docker stats --no-stream erlmcp-node1
 
-# Reduce aggregation window
-# In config:
-{aggregation_window, 5000}  % 5 seconds instead of 1s
+# Check erlang memory breakdown
+docker compose exec erlmcp-node1 erl_call -a 'erlang:memory()' | jq '.'
+
+# Check metrics buffer size
+docker compose exec erlmcp-node1 erl_call -a \
+  'erlmcp_metrics_server:get_buffer_size()'
+
+# Find memory leaks
+docker compose exec erlmcp-node1 erl_call -a \
+  'recon:bin_leak(10)'
 ```
 
 ### Missing Spans
 
-```erlang
-% Check if tracing is enabled
-erlmcp_otel:is_enabled().
+```bash
+# Check if tracing is enabled
+docker compose exec erlmcp-node1 erl_call -a \
+  'erlmcp_otel:is_enabled()'
 
-% Check sampler configuration
-opentelemetry:get_sampler().
+# Check sampler configuration
+docker compose exec erlmcp-node1 erl_call -a \
+  'opentelemetry:get_sampler()'
 
-% Verify context propagation
-erlmcp_tracing:current_context().
+# Verify spans are being exported
+docker compose logs jaeger-collector | grep -i "span"
 ```
 
 ### Health Check Failures
 
 ```bash
+# Check health endpoint
+docker compose exec erlmcp-node1 curl http://localhost:8080/health
+
 # Check individual monitors
-curl http://localhost:8080/health/monitors
+docker compose exec erlmcp-node1 curl http://localhost:8080/health/monitors
 
-# Check thresholds
-erlmcp_health_monitor:get_thresholds().
+# View Andon dashboard
+open http://localhost:8080/andon
 
-# View state transitions
-erlmcp_health_monitor:get_history().
+# Check health monitor state
+docker compose exec erlmcp-node1 erl_call -a \
+  'erlmcp_health_monitor:get_system_health()' | jq '.'
+```
+
+### Container Not Starting
+
+```bash
+# Check container logs
+docker compose logs erlmcp-node1 --tail=100
+
+# Check container status
+docker compose ps erlmcp-node1
+
+# Inspect container
+docker compose exec erlmcp-node1 sh
+
+# Check network connectivity
+docker network inspect erlmcp-cluster
 ```
 
 ## Best Practices
@@ -680,11 +878,44 @@ flowchart TB
     style Backend fill:#e8f5e9
 ```
 
-## Further Reading
+## Documentation Index
 
-- [Metrics Reference](metrics.md)
-- [Tracing Guide](tracing.md)
-- [Dashboard & Andon](dashboard.md)
-- [Chaos Engineering](chaos.md)
-- [Toyota Production System Integration](../TCPS_HEALTH_SUMMARY.md)
-- [Metrology Compliance](../metrology/METRICS_GLOSSARY.md)
+### Core Observability Guides
+
+- **[Logging Best Practices](logging.md)** - Operator-first structured logging, audit trails, Docker-only log collection
+- **[Metrics Collection](metrics.md)** - Canonical metrics, metrology validation, Prometheus integration
+- **[Distributed Tracing](tracing.md)** - OpenTelemetry tracing, span analysis, context propagation
+- **[Dashboard & Health Monitoring](dashboard.md)** - Andon system, real-time dashboards, health checks
+- **[Chaos Engineering](chaos.md)** - Resilience testing, failure injection, recovery verification
+
+### Operational Guides
+
+- **[Alerting Rules & Configuration](alerting.md)** - Alert definitions, runbooks, deterministic thresholds
+- **[Performance Monitoring](performance.md)** - Baseline measurement, regression detection, profiling
+- **[Debugging Distributed Systems](debugging.md)** - Troubleshooting, root cause analysis, incident response
+
+### Architecture References
+
+- **[Monitoring Architecture](MONITORING_ARCHITECTURE.md)** - System topology, data flow, integration points
+- [Toyota Production System Integration](../TCPS_HEALTH_SUMMARY.md) - Andon, Poka-Yoke, Jidoka principles
+- [Metrology Compliance](../metrology/METRICS_GLOSSARY.md) - Canonical units, measurement standards
+
+## Quick Navigation
+
+### For Operators
+1. Start here: [Quick Start](#quick-start-docker-only)
+2. Set up alerts: [Alerting Rules](alerting.md)
+3. Debug issues: [Debugging Guide](debugging.md)
+4. View dashboards: [Dashboard Guide](dashboard.md)
+
+### For Developers
+1. Add logging: [Logging Best Practices](logging.md)
+2. Add metrics: [Metrics Collection](metrics.md)
+3. Add tracing: [Distributed Tracing](tracing.md)
+4. Test resilience: [Chaos Engineering](chaos.md)
+
+### For SREs
+1. Performance baselines: [Performance Monitoring](performance.md)
+2. Alert configuration: [Alerting Rules](alerting.md)
+3. Incident response: [Debugging Guide](debugging.md)
+4. Capacity planning: [Performance Monitoring](performance.md#capacity-planning)

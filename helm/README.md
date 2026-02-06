@@ -1,6 +1,20 @@
 # erlmcp Helm Charts for Kubernetes Deployment
 
-This directory contains Helm charts and deployment configurations for running erlmcp on Kubernetes (primarily GKE).
+This directory contains Helm charts and deployment configurations for running erlmcp v3 on Kubernetes.
+
+## Documentation
+
+### Comprehensive Kubernetes Deployment Documentation
+
+For enterprise-grade Kubernetes deployments, see the complete documentation suite:
+
+- **[Kubernetes Deployment Guide](../docs/enterprise-suite/deployment/kubernetes/README.md)** - Overview and quick start
+- **[Helm Chart Usage](../docs/enterprise-suite/deployment/kubernetes/helm-usage.md)** - Detailed Helm configuration
+- **[StatefulSet vs Deployment](../docs/enterprise-suite/deployment/kubernetes/statefulset-vs-deployment.md)** - Deployment pattern selection
+- **[Service Mesh Integration](../docs/enterprise-suite/deployment/kubernetes/service-mesh-integration.md)** - Istio/Linkerd mTLS
+- **[Secrets Management](../docs/enterprise-suite/deployment/kubernetes/secrets-management.md)** - Vault and External Secrets Operator
+
+This README focuses on GCP-specific deployment. For multi-cloud and advanced enterprise features, refer to the documentation above.
 
 ## Directory Structure
 

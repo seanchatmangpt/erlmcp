@@ -1,14 +1,110 @@
 # erlmcp Testing Documentation
 
-**Version:** 2.1.0
-**Last Updated:** 2026-01-31
-**Status:** Production-Ready
+**Version:** 3.0.0
+**Last Updated:** 2026-02-06
+**OTP Requirements:** 28.3.1+
+**Status:** Production-Ready ✅
 
 ---
 
-## Overview
+## Welcome
 
-erlmcp follows **Chicago School TDD** methodology with zero tolerance for defects. Our testing strategy enforces Lean Six Sigma quality standards (99.99966% defect-free delivery) through comprehensive automated validation.
+This directory contains comprehensive testing documentation for the **erlmcp** project. Our testing approach is built on three pillars:
+
+1. **Chicago School TDD** - Real processes, no mocks, state-based verification
+2. **Docker-Only Execution** - All tests run via Docker quality lanes
+3. **Zero-Defect Quality** - errors=0, failures=0, coverage≥80%
+
+---
+
+## Quick Start
+
+### For New Team Members
+
+**Start here:**
+
+1. Read **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - 5-minute overview
+2. Follow **[TESTING_GUIDE.md](TESTING_GUIDE.md)** - Complete guide
+3. Review **[CHICAGO_SCHOOL_TDD.md](CHICAGO_SCHOOL_TDD.md)** - TDD patterns
+
+**Run your first test:**
+
+```bash
+# Compile
+docker compose run --rm erlmcp-build make compile
+
+# Run unit tests
+docker compose run --rm erlmcp-unit make eunit
+
+# Check coverage
+docker compose run --rm erlmcp-check rebar3 cover --verbose
+```
+
+### For Experienced Developers
+
+**Daily workflow:**
+
+```bash
+# Full quality pipeline
+docker compose run --rm erlmcp-build make compile && \
+docker compose run --rm erlmcp-unit make eunit && \
+docker compose run --rm erlmcp-ct make ct && \
+docker compose run --rm erlmcp-check make validate
+```
+
+**Quick checks:**
+
+```bash
+# Fast unit tests
+docker compose run --rm erlmcp-unit make eunit
+
+# Specific module
+docker compose run --rm erlmcp-unit rebar3 eunit --module=erlmcp_json_rpc_tests
+
+# Coverage validation
+docker compose run --rm erlmcp-check make validate-coverage
+```
+
+---
+
+## Documentation Structure
+
+### 🎯 Core Guides (START HERE)
+
+| Document | Purpose | Lines | When to Read |
+|----------|---------|-------|--------------|
+| **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** | Fast command lookup | 300+ | Every day |
+| **[TESTING_GUIDE.md](TESTING_GUIDE.md)** | Complete testing guide | 1,200+ | First week |
+| **[DOCKER_TESTING.md](DOCKER_TESTING.md)** | Docker execution | 800+ | Setup phase |
+| **[CHICAGO_SCHOOL_TDD.md](CHICAGO_SCHOOL_TDD.md)** | TDD patterns | 1,000+ | Writing tests |
+
+### 📚 Deep Dive Documentation
+
+| Document | Purpose | Audience |
+|----------|---------|----------|
+| [TESTING_ARCHITECTURE.md](TESTING_ARCHITECTURE.md) | System architecture | Architects |
+| [TEST_PATTERNS_LIBRARY.md](TEST_PATTERNS_LIBRARY.md) | Pattern catalog | Engineers |
+| [TESTING_WORKFLOWS.md](TESTING_WORKFLOWS.md) | Step-by-step guides | All |
+| [coverage-analysis.md](coverage-analysis.md) | Coverage metrics | Managers |
+| [integration-tests.md](integration-tests.md) | CT patterns | Engineers |
+| [tdd-strategy.md](tdd-strategy.md) | TDD methodology | All |
+
+### 📋 Reference Materials
+
+| Document | Purpose |
+|----------|---------|
+| [TESTING_DOCUMENTATION_INDEX.md](TESTING_DOCUMENTATION_INDEX.md) | Complete index |
+| [TEST_COVERAGE_SUMMARY.md](TEST_COVERAGE_SUMMARY.md) | Coverage status |
+| [TEST_COVERAGE_PLAN.md](TEST_COVERAGE_PLAN.md) | Coverage roadmap |
+| [AUTOMATED_VALIDATION.md](AUTOMATED_VALIDATION.md) | Quality automation |
+
+---
+
+## Testing Philosophy
+
+### Chicago School TDD
+
+erlmcp follows the **Chicago School** (Detroit School) of Test-Driven Development:
 
 ### Testing Philosophy
 

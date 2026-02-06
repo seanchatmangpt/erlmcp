@@ -41,7 +41,7 @@ All JSON-RPC messages share a common structure:
 
 The first message sent by the client. Establishes the protocol version and exchanges capabilities.
 
-**Request:**
+**JSON Request:**
 ```json
 {
   "jsonrpc": "2.0",
@@ -63,7 +63,7 @@ The first message sent by the client. Establishes the protocol version and excha
 }
 ```
 
-**Response:**
+**JSON Response:**
 ```json
 {
   "jsonrpc": "2.0",
@@ -86,6 +86,51 @@ The first message sent by the client. Establishes the protocol version and excha
     }
   }
 }
+```
+
+**Erlang Client Example:**
+```erlang
+%% Initialize automatically happens when starting the client
+{ok, Client} = erlmcp_client:start_link(#{
+    transport => http,
+    transport_opts => #{
+        host => "localhost",
+        port => 8765
+    },
+    capabilities => #{
+        roots => #{},
+        sampling => #{
+            modelPreferences => #{}
+        }
+    },
+    client_info => #{
+        name => <<"erlmcp-client">>,
+        version => <<"3.0.0">>
+    }
+}),
+
+%% Get server info from initialization
+{ok, ServerInfo} = erlmcp_client:get_server_info(Client),
+#{
+    <<"name">> := ServerName,
+    <<"version">> := ServerVersion
+} = ServerInfo.
+```
+
+**Erlang Server Implementation:**
+```erlang
+%% Initialize is handled automatically by erlmcp_server
+%% Just declare your server capabilities
+{ok, Server} = erlmcp_server:start_link(my_server, #{
+    resources => #{
+        subscribe => true,
+        listChanged => true
+    },
+    tools => #{
+        listChanged => true
+    },
+    prompts => #{}
+}).
 ```
 
 ### notifications/initialized
@@ -316,7 +361,7 @@ Lists all available tools.
 
 Invokes a tool with the provided arguments.
 
-**Request:**
+**JSON Request:**
 ```json
 {
   "jsonrpc": "2.0",
@@ -333,7 +378,7 @@ Invokes a tool with the provided arguments.
 }
 ```
 
-**Response:**
+**JSON Response:**
 ```json
 {
   "jsonrpc": "2.0",
@@ -347,6 +392,58 @@ Invokes a tool with the provided arguments.
     ]
   }
 }
+```
+
+**Erlang Client Example:**
+```erlang
+%% Call a tool
+{ok, Result} = erlmcp_client:call_tool(Client, <<"calculate">>, #{
+    <<"a">> => 10,
+    <<"b">> => 5,
+    <<"op">> => <<"multiply">>
+}),
+
+%% Extract result
+#{<<"content">> := [#{<<"text">> := Text}]} = Result,
+io:format("Result: ~s~n", [Text]).  %% Output: Result: 50
+```
+
+**Erlang Server Implementation:**
+```erlang
+%% Define the tool
+erlmcp_server:add_tool(Server, #{
+    name => <<"calculate">>,
+    description => <<"Perform arithmetic operations">>,
+    input_schema => #{
+        type => object,
+        properties => #{
+            a => #{type => number},
+            b => #{type => number},
+            op => #{
+                type => string,
+                enum => [<<"add">>, <<"subtract">>, <<"multiply">>, <<"divide">>]
+            }
+        },
+        required => [a, b, op]
+    },
+    handler => fun(Args) ->
+        A = maps:get(<<"a">>, Args),
+        B = maps:get(<<"b">>, Args),
+        Op = maps:get(<<"op">>, Args),
+
+        Result = case Op of
+            <<"add">> -> A + B;
+            <<"subtract">> -> A - B;
+            <<"multiply">> -> A * B;
+            <<"divide">> -> A / B
+        end,
+
+        #{content => [#{
+            type => text,
+            text => float_to_binary(Result, [{decimals, 2}])
+        }]}
+    end
+}).
 ```
 
 **With progress token:**

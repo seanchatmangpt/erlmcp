@@ -1,742 +1,1282 @@
 # erlmcp v3 Docker Deployment Guide
 
+**DOCKER-ONLY CONSTITUTION: All execution MUST run via Docker. Host execution forbidden.**
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Docker-Only Constitution](#docker-only-constitution)
+3. [Multi-Stage Builds](#multi-stage-builds)
+4. [Docker Compose Setup](#docker-compose-setup)
+5. [Service Definitions](#service-definitions)
+6. [Volume Management](#volume-management)
+7. [Networking Configuration](#networking-configuration)
+8. [Security Best Practices](#security-best-practices)
+9. [Production Deployment Patterns](#production-deployment-patterns)
+10. [Quality Gates](#quality-gates)
+11. [Cluster Deployment](#cluster-deployment)
+12. [Monitoring and Observability](#monitoring-and-observability)
+13. [Troubleshooting](#troubleshooting)
+
+---
+
 ## Overview
 
-This guide provides comprehensive instructions for deploying erlmcp v3 using Docker. Docker deployment offers isolated, reproducible environments ideal for development, testing, and production scenarios.
+erlmcp v3 is a production-grade Erlang/OTP implementation of the Model Context Protocol (MCP) SDK. This guide provides comprehensive Docker deployment patterns for development, testing, and production environments.
 
-## Prerequisites
+**Key Features:**
+- **OTP 28.3.1**: Built on latest Erlang/OTP with deterministic compilation
+- **Multi-Stage Builds**: Optimized image sizes (<150MB runtime)
+- **Quality Gates**: Docker services for compile, test, check, bench, cluster
+- **EPMD-less Clustering**: Production-ready distributed Erlang without EPMD
+- **Zero-Trust Security**: Least privilege, secrets externalization, audit trails
+- **Enterprise Observability**: OpenTelemetry, Prometheus, Grafana integration
 
-### System Requirements
+---
 
-- **Docker Engine**: Version 20.10 or later
-- **Docker Compose**: Version 2.1 or later
-- **Minimum Resources**:
-  - CPU: 2 cores
-  - Memory: 4GB RAM
-  - Storage: 20GB SSD
-- **Network**: Access to Docker registry (Docker Hub or private registry)
+## Docker-Only Constitution
 
-### Required Files
+**CRITICAL: All execution = Docker. Host execution forbidden. No exceptions.**
 
-- `docker-compose.yml` - Main orchestration file
-- `Dockerfile` - Container build configuration
-- `docker.env` - Environment variables
-- `certs/` - SSL certificates (for production)
-- `config/` - Configuration files
-
-## Quick Start
-
-### 1. Clone the Repository
+### Allowed Execution Forms
 
 ```bash
-git clone https://github.com/your-org/erlmcp.git
-cd erlmcp/docs/enterprise-suite/deployment/docker
+# ✅ ALLOWED - Docker execution
+docker compose run --rm erlmcp-build
+docker compose up -d
+docker build -t erlmcp:3.0.0 .
+docker stack deploy -c docker-compose.prod.yml erlmcp
+kubectl apply --dry-run=server -f k8s/
+
+# ❌ FORBIDDEN - Host execution
+rebar3 compile           # NO
+make test                # NO
+erl -eval "..."          # NO
+dialyzer                 # NO
+ct_run                   # NO
 ```
 
-### 2. Configure Environment
+### Rewrite Calculus
+
+Transform all host commands to Docker equivalents:
 
 ```bash
-# Copy environment template
-cp docker.env.example docker.env
-
-# Edit environment variables
-nano docker.env
+# Host command → Docker command
+rebar3 compile        → docker compose run --rm erlmcp-build make compile
+rebar3 eunit          → docker compose run --rm erlmcp-unit make eunit
+rebar3 ct             → docker compose run --rm erlmcp-ct make ct
+rebar3 dialyzer       → docker compose run --rm erlmcp-check make dialyzer
+rebar3 xref           → docker compose run --rm erlmcp-check make xref
+make benchmark        → docker compose run --rm erlmcp-bench make benchmark
 ```
 
-### 3. Start the Stack
+### Gate Mapping
 
-```bash
-# Build and start all services
-docker-compose up -d
+Quality gates map to Docker services:
 
-# Check status
-docker-compose ps
+| Gate | Docker Service | Purpose |
+|------|----------------|---------|
+| `compile` | `erlmcp-build` | Compilation with OTP 28 |
+| `eunit` | `erlmcp-unit` | Unit tests with EUnit |
+| `ct` | `erlmcp-ct` | Integration tests with Common Test |
+| `dialyzer` | `erlmcp-check` | Static analysis |
+| `xref` | `erlmcp-check` | Cross-reference analysis |
+| `coverage` | `erlmcp-check` | Coverage ≥80% validation |
+| `bench` | `erlmcp-bench` | Performance benchmarks |
+| `cluster` | `erlmcp-node*` | Distributed Erlang cluster tests |
+
+### Quality Invariants
+
+- **errors=0**: Zero compilation errors
+- **failures=0**: Zero test failures
+- **coverage≥0.8**: Minimum 80% code coverage
+- **regression<0.1**: Performance regression <10%
+
+---
+
+## Multi-Stage Builds
+
+erlmcp uses optimized multi-stage Docker builds for minimal attack surface and fast deployments.
+
+### Stage 1: Builder
+
+Full build environment with OTP 28.3.1, rebar3, and all dependencies.
+
+```dockerfile
+# ============================================================================
+# STAGE 1: BUILDER - Full build environment with OTP 28.3.1
+# ============================================================================
+FROM erlang:28.3.1-alpine AS builder
+
+LABEL stage="builder"
+
+# Build metadata
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION=3.0.0
+
+# Deterministic builds
+ENV ERL_COMPILER_OPTIONS=deterministic \
+    REBAR_NO_USER_CONFIG=true
+
+WORKDIR /build
+
+# Install build dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    git \
+    make \
+    g++ \
+    gcc \
+    musl-dev \
+    openssl-dev \
+    ncurses-dev \
+    zlib-dev
+
+# Copy project structure
+COPY rebar.config rebar.lock ./
+COPY apps/ ./apps/
+COPY config/ ./config/
+COPY include/ ./include/
+
+# Build production release
+RUN rebar3 as prod get-deps compile
+RUN rebar3 as prod release
+
+# Verify release
+RUN ls -la _build/prod/rel/erlmcp && \
+    test -x _build/prod/rel/erlmcp/bin/erlmcp
 ```
 
-### 4. Verify Deployment
+**Build Command:**
 
 ```bash
-# Check health
-curl -f http://localhost:8080/v3/health
+docker build --target builder -t erlmcp:3.0.0-builder .
+```
+
+### Stage 2: Runtime
+
+Minimal runtime image (<150MB) with only production dependencies.
+
+```dockerfile
+# ============================================================================
+# STAGE 2: RUNTIME - Minimal production image
+# ============================================================================
+FROM alpine:3.20
+
+LABEL stage="runtime"
+
+# Install runtime dependencies only
+RUN apk add --no-cache \
+    ca-certificates \
+    libssl3 \
+    libcrypto3 \
+    ncurses-libs \
+    libstdc++ \
+    bash \
+    curl \
+    tzdata
+
+# Create application directories
+RUN mkdir -p /opt/erlmcp \
+    /var/log/erlmcp \
+    /var/lib/erlmcp \
+    /etc/erlmcp
+
+WORKDIR /opt/erlmcp
+
+# Copy release from builder
+COPY --from=builder /build/_build/prod/rel/erlmcp /opt/erlmcp
+
+# Create non-root user (uid 1000)
+RUN addgroup -S -g 1000 erlmcp && \
+    adduser -S -u 1000 -G erlmcp -h /opt/erlmcp -s /bin/sh erlmcp && \
+    chown -R erlmcp:erlmcp /opt/erlmcp /var/log/erlmcp /var/lib/erlmcp
+
+USER erlmcp
+
+# Exposed ports
+EXPOSE 8080 9100 9090
+
+HEALTHCHECK --interval=15s --timeout=10s --start-period=45s --retries=3 \
+    CMD /opt/erlmcp/bin/healthcheck.sh
+
+ENTRYPOINT ["/opt/erlmcp/bin/start-cluster.sh"]
+```
+
+**Build Command:**
+
+```bash
+docker build -t erlmcp:3.0.0 .
+```
+
+### Stage 3: Debug
+
+Debug image with additional tools for troubleshooting.
+
+```dockerfile
+# ============================================================================
+# STAGE 3: DEBUG - Debug image with tools
+# ============================================================================
+FROM erlang:28.3.1-alpine AS debug
+
+# Install debug tools
+RUN apk add --no-cache \
+    vim nano htop procps lsof \
+    netcat-openbsd strace tcpdump \
+    bind-tools tini
+
+COPY --from=builder /build/_build/prod/rel/erlmcp /opt/erlmcp
+
+USER erlmcp
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["/opt/erlmcp/bin/erlmcp", "foreground"]
+```
+
+**Build Command:**
+
+```bash
+docker build --target debug -t erlmcp:3.0.0-debug .
+```
+
+---
+
+## Docker Compose Setup
+
+### Development Environment
+
+Quick start for local development:
+
+```bash
+# Start development environment
+docker compose --profile dev up -d
 
 # View logs
-docker-compose logs -f erlmcp
+docker compose --profile dev logs -f erlmcp-dev
+
+# Stop environment
+docker compose --profile dev down
 ```
 
-## Configuration
-
-### Environment Variables
-
-Create `docker.env` with the following configuration:
-
-```env
-# Cluster Configuration
-ERLMCP_CLUSTER_NAME=erlmcp-cluster
-ERLMCP_NODE_NAME=erlmcp@docker
-ERLMCP_COOKIE=my-secret-cookie
-
-# Database Configuration
-ERLMCP_DB_HOST=postgres
-ERLMCP_DB_PORT=5432
-ERLMCP_DB_NAME=erlmcp
-ERLMCP_DB_USER=erlmcp
-ERLMCP_DB_PASSWORD=your-password
-
-# Redis Configuration
-ERLMCP_REDIS_HOST=redis
-ERLMCP_REDIS_PORT=6379
-ERLMCP_REDIS_PASSWORD=your-redis-password
-
-# Security
-ERLMCP_AUTH_SECRET=your-auth-secret
-ERLMCP_JWT_SECRET=your-jwt-secret
-
-# Performance
-ERLMCP_MAX_CONNECTIONS=10000
-ERLMCP_MAX_SESSIONS=5000
-ERLMCP_WORKERS=4
-
-# Monitoring
-ERLMCP_METRICS_ENABLED=true
-ERLMCP_TRACING_ENABLED=true
-```
-
-### Docker Compose Configuration
-
-`docker-compose.yml`:
+**Configuration:**
 
 ```yaml
-version: '3.8'
+services:
+  erlmcp-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: debug
+    container_name: erlmcp-dev
+    hostname: erlmcp-dev
+    networks:
+      - erlmcp-network
+    ports:
+      - "8081:8080"
+      - "9110:9100"
+    environment:
+      - ERLMCP_ENV=development
+      - ERLMCP_LOG_LEVEL=debug
+    volumes:
+      - .:/workspace
+      - erlang-cache:/root/.cache
+    working_dir: /workspace
+    command: /bin/sh
+    stdin_open: true
+    tty: true
+    profiles:
+      - dev
+```
 
+### Production Environment
+
+Secure production deployment with Docker secrets:
+
+```bash
+# Create secrets directory
+mkdir -p docker-secrets
+
+# Generate secrets
+openssl rand -base64 32 > docker-secrets/erlang.cookie
+openssl rand -base64 32 > docker-secrets/postgres-password
+openssl rand -base64 32 > docker-secrets/redis-password
+
+# Start production stack
+docker compose -f docker-compose.prod.yml up -d
+
+# Check health
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs erlmcp
+```
+
+---
+
+## Service Definitions
+
+### Main Application Service
+
+```yaml
 services:
   erlmcp:
     build:
-      context: ../../..
-      dockerfile: docs/enterprise-suite/deployment/docker/Dockerfile
-    container_name: erlmcp-v3
-    hostname: erlmcp-node-1
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILD_DATE: ${BUILD_DATE}
+        VCS_REF: ${VCS_REF}
+        VERSION: ${VERSION:-3.0.0}
+    image: erlmcp:3.0.0
+    container_name: erlmcp
+    hostname: erlmcp
+    restart: unless-stopped
+
+    # Port mappings
     ports:
-      - "8080:8080"   # HTTP
-      - "8443:8443"   # HTTPS
-      - "9090:9090"   # Metrics
+      - "${ERLMCP_PORT:-8080}:8080"     # HTTP API
+      - "${ERL_DIST_PORT:-9100}:9100"   # EPMD-less distribution
+      - "${METRICS_PORT:-9100}:9100"    # Prometheus metrics
+      - "${HEALTH_PORT:-9090}:9090"     # Health checks
+
+    # Environment configuration
     environment:
-      - ERLMCP_CLUSTER_NAME=erlmcp-cluster
-      - ERLMCP_NODE_NAME=erlmcp@docker
-      - ERLMCP_COOKIE=${ERLMCP_COOKIE}
-      - ERLMCP_DB_HOST=${ERLMCP_DB_HOST}
-      - ERLMCP_DB_PORT=${ERLMCP_DB_PORT}
-      - ERLMCP_DB_NAME=${ERLMCP_DB_NAME}
-      - ERLCP_DB_USER=${ERLMCP_DB_USER}
-      - ERLCP_DB_PASSWORD=${ERLMCP_DB_PASSWORD}
-      - ERLMCP_REDIS_HOST=${ERLMCP_REDIS_HOST}
-      - ERLMCP_REDIS_PORT=${ERLMCP_REDIS_PORT}
-      - ERLMCP_REDIS_PASSWORD=${ERLMCP_REDIS_PASSWORD}
-      - ERLMCP_AUTH_SECRET=${ERLMCP_AUTH_SECRET}
-      - ERLMCP_JWT_SECRET=${ERLMCP_JWT_SECRET}
-      - ERLMCP_MAX_CONNECTIONS=${ERLMCP_MAX_CONNECTIONS}
-      - ERLMCP_MAX_SESSIONS=${ERLMCP_MAX_SESSIONS}
-      - ERLMCP_WORKERS=${ERLMCP_WORKERS}
-      - ERLMCP_METRICS_ENABLED=${ERLMCP_METRICS_ENABLED}
-      - ERLMCP_TRACING_ENABLED=${ERLMCP_TRACING_ENABLED}
-    volumes:
-      - ./config:/app/config
-      - ./logs:/app/logs
-      - ./certs:/app/certs
+      - ERLMCP_ENV=${ERLMCP_ENV:-production}
+      - ERLMCP_NODE_NAME=${ERLMCP_NODE_NAME:-erlmcp@erlmcp}
+      - ERLANG_COOKIE=${ERLANG_COOKIE}
+      - ERL_AFLAGS=-proto_dist inet_tls
+      - ERL_DIST_PORT=${ERL_DIST_PORT:-9100}
+      - ERLANG_DISTRIBUTION_PORT_RANGE=9100-9200
+      - ERL_MAX_PORTS=65536
+      - ERL_MAX_ETS_TABLES=50000
+
+    # Dependencies
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+    # Networks
     networks:
       - erlmcp-network
-    restart: unless-stopped
+
+    # Security
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:docker-default
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+          pids: 4096
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+
+    # Health check (3-level verification)
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/v3/health"]
-      interval: 30s
+      test: [CMD, /opt/erlmcp/bin/healthcheck.sh]
+      interval: 15s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 45s
 
+    # Logging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+```
+
+### Database Service (PostgreSQL)
+
+```yaml
   postgres:
-    image: postgres:15
+    image: postgres:16-alpine
     container_name: erlmcp-postgres
-    environment:
-      POSTGRES_DB: ${ERLMCP_DB_NAME}
-      POSTGRES_USER: ${ERLMCP_DB_USER}
-      POSTGRES_PASSWORD: ${ERLMCP_DB_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    hostname: postgres
+    restart: unless-stopped
+
     ports:
-      - "5432:5432"
+      - "${DB_PORT:-5432}:5432"
+
+    environment:
+      - POSTGRES_DB=${DB_NAME:-erlmcp}
+      - POSTGRES_USER=${DB_USER:-erlmcp}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password
+      - POSTGRES_INITDB_ARGS=--encoding=UTF8 --locale=C
+      - PGDATA=/var/lib/postgresql/data/pgdata
+
+    secrets:
+      - postgres-password
+
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./config/docker/postgres-init:/docker-entrypoint-initdb.d:ro
+
     networks:
       - erlmcp-network
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${ERLMCP_DB_USER} -d ${ERLMCP_DB_NAME}"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
 
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ${DB_USER:-erlmcp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+```
+
+### Cache Service (Redis)
+
+```yaml
   redis:
     image: redis:7-alpine
     container_name: erlmcp-redis
-    command: redis-server --requirepass ${ERLMCP_REDIS_PASSWORD}
-    volumes:
-      - redis_data:/data
+    hostname: redis
+    restart: unless-stopped
+
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+
+    secrets:
+      - redis-password
+
+    volumes:
+      - redis-data:/data
+
     networks:
       - erlmcp-network
+
+    command: >
+      redis-server
+      --requirepass $(cat /run/secrets/redis-password)
+      --appendonly yes
+      --maxmemory 2gb
+      --maxmemory-policy allkeys-lru
+
     healthcheck:
-      test: ["CMD", "redis-cli", "auth", "${ERLMCP_REDIS_PASSWORD}", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+```
 
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: erlmcp-prometheus
-    ports:
-      - "9091:9090"
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
-    networks:
-      - erlmcp-network
+---
 
-  grafana:
-    image: grafana/grafana:latest
-    container_name: erlmcp-grafana
-    ports:
-      - "3000:3000"
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin123
-      GF_USERS_ALLOW_SIGN_UP: false
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
-      - ./grafana/datasources:/etc/grafana/provisioning/datasources
-    networks:
-      - erlmcp-network
+## Volume Management
 
+### Volume Strategy
+
+**Principles:**
+- **Explicit volumes only**: No implicit host mounts
+- **Read-only mounts**: Source code and config are read-only in production
+- **Persistent data**: Named volumes for data that must survive container restarts
+- **Ephemeral data**: tmpfs for temporary data
+
+### Volume Definitions
+
+```yaml
 volumes:
-  postgres_data:
-  redis_data:
-  prometheus_data:
-  grafana_data:
+  # Application data (persistent)
+  erlmcp-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/erlmcp
+
+  # Application logs (persistent, monitored)
+  erlmcp-logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /var/log/erlmcp
+
+  # Build cache (persistent, speeds up rebuilds)
+  erlmcp-build-cache:
+    driver: local
+
+  # Hex package cache (persistent)
+  hex-cache:
+    driver: local
+
+  # Dialyzer PLT cache (persistent)
+  erlmcp-dialyzer-plt:
+    driver: local
+
+  # Database data (persistent, backed up)
+  postgres-data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /data/postgres
+
+  # Redis data (persistent)
+  redis-data:
+    driver: local
+
+  # Prometheus metrics (persistent)
+  prometheus-data:
+    driver: local
+
+  # Grafana dashboards (persistent)
+  grafana-data:
+    driver: local
+```
+
+### Volume Mounts
+
+```yaml
+services:
+  erlmcp:
+    volumes:
+      # Configuration (read-only for security)
+      - ./config/sys.config:/opt/erlmcp/etc/sys.config:ro
+      - ./vm.args:/opt/erlmcp/releases/3.0.0/vm.args:ro
+
+      # Data (read-write, persistent)
+      - erlmcp-data:/var/lib/erlmcp:rw
+
+      # Logs (read-write, monitored)
+      - erlmcp-logs:/var/log/erlmcp:rw
+
+      # Secrets (read-only)
+      - ./certs:/opt/erlmcp/certs:ro
+```
+
+### Backup Strategy
+
+```bash
+# Backup volumes
+docker run --rm \
+  -v erlmcp-data:/data:ro \
+  -v $(pwd)/backups:/backup \
+  alpine tar czf /backup/erlmcp-data-$(date +%Y%m%d).tar.gz -C /data .
+
+# Restore volumes
+docker run --rm \
+  -v erlmcp-data:/data:rw \
+  -v $(pwd)/backups:/backup:ro \
+  alpine tar xzf /backup/erlmcp-data-20260206.tar.gz -C /data
+
+# Database backup
+docker compose exec postgres pg_dump -U erlmcp erlmcp > backup_$(date +%Y%m%d).sql
+
+# Database restore
+docker compose exec -T postgres psql -U erlmcp erlmcp < backup_20260206.sql
+```
+
+---
+
+## Networking Configuration
+
+### Network Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                 External Network                     │
+│                  (Internet)                          │
+└────────────────────┬────────────────────────────────┘
+                     │
+            ┌────────▼────────┐
+            │   Load Balancer │
+            │    (Traefik)    │
+            └────────┬────────┘
+                     │
+        ┌────────────┼────────────┐
+        │     erlmcp-network      │
+        │    (Bridge/Overlay)     │
+        │                         │
+        │  ┌──────────────────┐  │
+        │  │  erlmcp (nodes)  │  │
+        │  └─────────┬────────┘  │
+        │            │            │
+        │  ┌─────────▼────────┐  │
+        │  │  postgres/redis  │  │
+        │  └──────────────────┘  │
+        └─────────────────────────┘
+                     │
+        ┌────────────▼────────────┐
+        │  monitoring-network     │
+        │  (Isolated Overlay)     │
+        │                         │
+        │  ┌──────────────────┐  │
+        │  │ Prometheus       │  │
+        │  │ Grafana          │  │
+        │  │ OpenTelemetry    │  │
+        │  └──────────────────┘  │
+        └─────────────────────────┘
+```
+
+### Network Definitions
+
+```yaml
+networks:
+  # Application network (bridge for single-host, overlay for swarm)
+  erlmcp-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+          gateway: 172.25.0.1
+    driver_opts:
+      com.docker.network.bridge.name: erlmcp0
+      com.docker.network.bridge.enable_icc: "true"
+      com.docker.network.bridge.enable_ip_masquerade: "true"
+
+  # Monitoring network (isolated)
+  monitoring-network:
+    driver: bridge
+    internal: false
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+```
+
+### Overlay Network (Docker Swarm)
+
+```yaml
+networks:
+  erlmcp-overlay:
+    driver: overlay
+    attachable: true
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/24
+          gateway: 172.20.0.1
+    driver_opts:
+      encrypted: "true"
+```
+
+### Port Mapping Strategy
+
+| Port | Service | Protocol | Purpose |
+|------|---------|----------|---------|
+| 8080 | erlmcp | HTTP | JSON-RPC API |
+| 8443 | erlmcp | HTTPS | TLS JSON-RPC API |
+| 9090 | erlmcp | HTTP | Health checks |
+| 9100 | erlmcp | TCP | Prometheus metrics + EPMD-less distribution |
+| 9100-9200 | erlmcp | TCP | Distributed Erlang port range |
+| 5432 | postgres | TCP | PostgreSQL |
+| 6379 | redis | TCP | Redis |
+| 3000 | grafana | HTTP | Dashboards |
+| 9090 | prometheus | HTTP | Metrics |
+| 4317 | otel-collector | gRPC | OTLP telemetry |
+
+### EPMD-less Clustering
+
+erlmcp uses EPMD-less clustering for production deployments:
+
+```yaml
+environment:
+  # EPMD-less configuration
+  - ERL_AFLAGS=-proto_dist inet_tls
+  - ERL_DIST_PORT=9100
+  - ERLANG_DISTRIBUTION_PORT_RANGE=9100-9200
+```
+
+**Benefits:**
+- No EPMD daemon required
+- Fixed port range for firewall rules
+- TLS-encrypted distribution
+- Docker overlay network compatible
+
+---
+
+## Security Best Practices
+
+### Zero-Trust Security Model
+
+**Principles:**
+- Least privilege containers
+- No privileged containers
+- Explicit volumes only
+- Secrets externalization
+- Auditability mandatory
+- Defense in depth
+
+### Docker Secrets
+
+**NEVER hardcode secrets in docker-compose.yml or Dockerfiles.**
+
+```bash
+# Create secrets
+mkdir -p docker-secrets
+openssl rand -base64 32 > docker-secrets/erlang.cookie
+openssl rand -base64 32 > docker-secrets/postgres-password
+openssl rand -base64 32 > docker-secrets/redis-password
+chmod 600 docker-secrets/*
+```
+
+**Usage in docker-compose.yml:**
+
+```yaml
+secrets:
+  erlang-cookie:
+    file: ./docker-secrets/erlang.cookie
+  postgres-password:
+    file: ./docker-secrets/postgres-password
+  redis-password:
+    file: ./docker-secrets/redis-password
+
+services:
+  erlmcp:
+    secrets:
+      - erlang-cookie
+      - postgres-password
+      - redis-password
+    environment:
+      - ERLANG_COOKIE_FILE=/run/secrets/erlang-cookie
+```
+
+### Container Hardening
+
+```yaml
+services:
+  erlmcp:
+    # Run as non-root user
+    user: erlmcp
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:docker-default
+      - seccomp:default
+
+    # Read-only root filesystem
+    read_only: true
+
+    # Temporary filesystems
+    tmpfs:
+      - /tmp:mode=1777,size=100m
+      - /var/tmp:mode=1777,size=100m
+
+    # Drop all capabilities, add only required
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - CHOWN
+      - SETUID
+      - SETGID
+
+    # Resource limits (prevent DoS)
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+          pids: 4096
+```
+
+### Network Security
+
+```yaml
+services:
+  erlmcp:
+    networks:
+      - erlmcp-network
+    # No host network mode
+    # No privileged mode
+    # Isolated from host
 
 networks:
   erlmcp-network:
     driver: bridge
+    # Enable network isolation
+    internal: false
+    # Enable encryption for overlay
+    driver_opts:
+      encrypted: "true"
 ```
 
-### Dockerfile
+### Image Security
 
-`Dockerfile`:
+```bash
+# Scan images for vulnerabilities
+docker scan erlmcp:3.0.0
 
-```dockerfile
-# Stage 1: Build stage
-FROM erlang:28.3.1-alpine as builder
+# Use specific tags (never :latest in production)
+docker build -t erlmcp:3.0.0 .
 
-# Install dependencies
-RUN apk add --no-cache \
-    build-base \
-    git \
-    curl \
-    openssl \
-    ncurses-dev \
-    zlib-dev
+# Sign images
+docker trust sign erlmcp:3.0.0
 
-# Install OTP
-RUN curl -sSL https://github.com/erlang/otp/archive/OTP-28.3.1.tar.gz | tar -xzf - \
-    && cd otp-OTP-28.3.1 \
-    && ./otp_build autoconf \
-    && ./configure \
-        --enable-smp-support \
-        --enable-threads \
-        --enable-smp-support \
-        --enable-dirty-schedulers \
-        --disable-hipe \
-        --enable-pcre2 \
-    && make -j$(nproc) \
-    && make install \
-    && cd .. \
-    && rm -rf otp-OTP-28.3.1
-
-# Install rebar3
-RUN curl -sSL https://github.com/erlang/rebar3/releases/download/3.22.1/rebar3 > /usr/local/bin/rebar3 \
-    && chmod +x /usr/local/bin/rebar3
-
-# Copy application code
-WORKDIR /app
-COPY . .
-
-# Build the application
-RUN rebar3 compile
-
-# Stage 2: Runtime stage
-FROM erlang:28.3.1-alpine
-
-# Install runtime dependencies
-RUN apk add --no-cache \
-    openssl \
-    curl \
-    bash \
-    tini
-
-# Create app user
-RUN addgroup -g 1000 erlmcp && \
-    adduser -u 1000 -G erlmcp -s /bin/bash -D erlmcp
-
-# Copy built application
-COPY --from=builder /app /app
-RUN chown -R erlmcp:erlmcp /app
-
-# Set working directory
-WORKDIR /app
-
-# Create necessary directories
-RUN mkdir -p /app/logs /app/config /app/certs
-
-# Switch to app user
-USER erlmcp
-
-# Expose ports
-EXPOSE 8080 8443 9090
-
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8080/v3/health || exit 1
-
-# Start the application
-ENTRYPOINT ["tini", "--"]
-CMD ["./scripts/start.sh"]
+# Verify signatures
+docker trust inspect --pretty erlmcp:3.0.0
 ```
 
-## Production Deployment
-
-### 1. SSL Configuration
-
-Create `certs/` directory and place your certificates:
-
-```
-certs/
-├── server.crt
-├── server.key
-└── ca.crt
-```
-
-### 2. Configuration File
-
-Create `config/prod.config`:
-
-```erlang
-{
-    erlmcp,
-    [
-        % Cluster configuration
-        {cluster_name, "erlmcp-cluster"},
-        {node_name, "erlmcp@prod-node-1"},
-        {cookie, "prod-secret-cookie"},
-
-        % Database
-        {db_host, "postgres"},
-        {db_port, 5432},
-        {db_name, "erlmcp_prod"},
-        {db_user, "erlmcp"},
-        {db_password, "prod-password"},
-        {db_pool_size, 20},
-
-        % Redis
-        {redis_host, "redis"},
-        {redis_port, 6379},
-        {redis_password, "prod-redis-password"},
-        {redis_pool_size, 10},
-
-        % Security
-        {auth_secret, "prod-auth-secret"},
-        {jwt_secret, "prod-jwt-secret"},
-
-        % Performance
-        {max_connections, 10000},
-        {max_sessions, 5000},
-        {workers, 4},
-
-        % Monitoring
-        {metrics_enabled, true},
-        {tracing_enabled, true},
-
-        % SSL
-        {ssl, true},
-        {ssl_port, 8443},
-        {ssl_certfile, "/app/certs/server.crt"},
-        {ssl_keyfile, "/app/certs/server.key"},
-        {ssl_cafile, "/app/certs/ca.crt"},
-        {ssl_versions, [tlsv1.2, tlsv1.3]},
-
-        % Logging
-        {log_level, info},
-        {log_dir, "/app/logs"},
-
-        % Backup
-        {backup_enabled, true},
-        {backup_schedule, "0 2 * * *"},
-        {backup_retention, 30}
-    ]
-}.
-```
-
-### 3. Production Docker Compose
+### TLS Configuration
 
 ```yaml
-version: '3.8'
+services:
+  erlmcp:
+    environment:
+      - ERLMCP_TLS_ENABLED=true
+      - ERLMCP_TLS_CERT_FILE=/run/secrets/tls-cert
+      - ERLMCP_TLS_KEY_FILE=/run/secrets/tls-key
+      - ERLMCP_TLS_CA_FILE=/run/secrets/tls-ca
+    secrets:
+      - tls-cert
+      - tls-key
+      - tls-ca
+```
 
+---
+
+## Production Deployment Patterns
+
+### Blue-Green Deployment
+
+```bash
+# Deploy green (new version)
+docker compose -f docker-compose.prod.yml up -d erlmcp-green
+
+# Wait for health check
+docker compose -f docker-compose.prod.yml ps erlmcp-green
+
+# Switch traffic to green
+docker compose -f docker-compose.prod.yml exec traefik \
+  update-config --service erlmcp --target erlmcp-green
+
+# Stop blue (old version)
+docker compose -f docker-compose.prod.yml stop erlmcp-blue
+```
+
+### Rolling Updates (Docker Swarm)
+
+```yaml
+services:
+  erlmcp:
+    deploy:
+      replicas: 5
+      update_config:
+        parallelism: 1          # Update 1 at a time
+        delay: 30s              # Wait 30s between updates
+        failure_action: rollback
+        monitor: 120s
+        max_failure_ratio: 0.2
+      rollback_config:
+        parallelism: 1
+        delay: 30s
+```
+
+**Deploy:**
+
+```bash
+docker stack deploy -c docker-compose.swarm.yml erlmcp
+```
+
+### Canary Deployment
+
+```yaml
+services:
+  erlmcp-stable:
+    image: erlmcp:3.0.0
+    deploy:
+      replicas: 9
+      labels:
+        - "traefik.http.services.erlmcp.loadbalancer.server.weight=90"
+
+  erlmcp-canary:
+    image: erlmcp:3.1.0
+    deploy:
+      replicas: 1
+      labels:
+        - "traefik.http.services.erlmcp.loadbalancer.server.weight=10"
+```
+
+### High Availability
+
+```yaml
 services:
   erlmcp:
-    build:
-      context: ../../..
-      dockerfile: Dockerfile.prod
-    container_name: erlmcp-v3-prod
-    hostname: erlmcp-prod-1
-    ports:
-      - "443:8443"   # HTTPS only
-      - "9090:9090"   # Metrics
-    environment:
-      - ERLMCP_ENV=production
-      - ERLMCP_DB_HOST=${ERLMCP_DB_HOST}
-      - ERLMCP_DB_PORT=${ERLMCP_DB_PORT}
-      - ERLMCP_DB_NAME=${ERLMCP_DB_NAME}
-      - ERLMCP_DB_USER=${ERLMCP_DB_USER}
-      - ERLMCP_DB_PASSWORD=${ERLMCP_DB_PASSWORD}
-      - ERLMCP_REDIS_HOST=${ERLMCP_REDIS_HOST}
-      - ERLMCP_REDIS_PORT=${ERLMCP_REDIS_PORT}
-      - ERLMCP_REDIS_PASSWORD=${ERLMCP_REDIS_PASSWORD}
-      - ERLMCP_AUTH_SECRET=${ERLMCP_AUTH_SECRET}
-      - ERLMCP_JWT_SECRET=${ERLMCP_JWT_SECRET}
-    volumes:
-      - ./config/prod.config:/app/config/prod.config
-      - /app/logs:/app/logs
-      - /app/certs:/app/certs
-      - /app/backups:/app/backups
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - erlmcp-prod-network
-    restart: unless-stopped
     deploy:
-      resources:
-        limits:
-          cpus: '4.0'
-          memory: 8G
-        reservations:
-          cpus: '2.0'
-          memory: 4G
-    healthcheck:
-      test: ["CMD", "curl", "-f", "https://localhost:8443/v3/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # Additional services for production...
+      mode: replicated
+      replicas: 5
+      placement:
+        constraints:
+          - node.role == worker
+        preferences:
+          - spread: node.labels.zone
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 5
+        window: 120s
 ```
 
-## Scaling and High Availability
+---
 
-### Horizontal Scaling
+## Quality Gates
 
-For high availability, deploy multiple erlmcp nodes:
+### Compilation Gate
+
+```bash
+# Run compilation in Docker
+docker compose run --rm erlmcp-build make compile
+
+# Expected output: All apps compiled successfully
+# Exit code: 0 (success)
+```
+
+**Service definition:**
+
+```yaml
+erlmcp-build:
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: builder
+  image: erlmcp:3.0.0-build
+  container_name: erlmcp-build
+  environment:
+    - ERL_COMPILER_OPTIONS=deterministic
+    - REBAR_NO_USER_CONFIG=true
+  volumes:
+    - .:/workspace:cached
+    - erlmcp-build-cache:/workspace/_build
+  working_dir: /workspace
+  command: ["make", "compile"]
+```
+
+### Unit Test Gate
+
+```bash
+# Run EUnit tests in Docker
+docker compose run --rm erlmcp-unit make eunit
+
+# Expected output: All tests passed
+# Exit code: 0 (success)
+```
+
+### Integration Test Gate
+
+```bash
+# Run Common Test in Docker
+docker compose run --rm erlmcp-ct make ct
+
+# Expected output: All suites passed
+# Exit code: 0 (success)
+```
+
+### Static Analysis Gate
+
+```bash
+# Run Dialyzer in Docker
+docker compose run --rm erlmcp-check make dialyzer
+
+# Run Xref in Docker
+docker compose run --rm erlmcp-check make xref
+
+# Expected output: No warnings
+# Exit code: 0 (success)
+```
+
+### Coverage Gate
+
+```bash
+# Run coverage analysis in Docker
+docker compose run --rm erlmcp-check make coverage
+
+# Expected output: Coverage ≥ 80%
+# Exit code: 0 (success)
+```
+
+### Performance Gate
+
+```bash
+# Run benchmarks in Docker
+docker compose run --rm erlmcp-bench make benchmark
+
+# Expected output: Regression < 10%
+# Exit code: 0 (success)
+```
+
+---
+
+## Cluster Deployment
+
+### EPMD-less Clustering
+
+erlmcp uses EPMD-less clustering for Docker/Kubernetes compatibility.
+
+**Architecture:**
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│ erlmcp-node1 │────▶│ erlmcp-node2 │────▶│ erlmcp-node3 │
+│   :9100      │     │   :9100      │     │   :9100      │
+└──────────────┘     └──────────────┘     └──────────────┘
+       │                    │                    │
+       └────────────────────┴────────────────────┘
+              Distributed Erlang (TLS)
+                Port Range: 9100-9200
+```
+
+**Configuration:**
 
 ```yaml
 services:
-  erlmcp-1:
-    build:
-      context: ../../..
-      dockerfile: Dockerfile.prod
-    hostname: erlmcp-prod-1
+  erlmcp-node1:
+    image: erlmcp:3.0.0
+    hostname: erlmcp-node1
     environment:
-      - ERLMCP_CLUSTER_NAME=erlmcp-cluster
-      - ERLMCP_NODE_NAME=erlmcp@erlmcp-prod-1
-      - ERLMCP_PEER_NODES=erlmcp-prod-2:erlmcp-prod-3
+      - ERLMCP_NODE_NAME=erlmcp@erlmcp-node1
+      - ERLANG_COOKIE=${ERLANG_COOKIE}
+      - ERL_AFLAGS=-proto_dist inet_tls
+      - ERL_DIST_PORT=9100
+      - ERLANG_DISTRIBUTION_PORT_RANGE=9100-9200
+    networks:
+      - erlmcp-cluster
 
-  erlmcp-2:
-    build:
-      context: ../../..
-      dockerfile: Dockerfile.prod
-    hostname: erlmcp-prod-2
+  erlmcp-node2:
+    image: erlmcp:3.0.0
+    hostname: erlmcp-node2
     environment:
-      - ERLMCP_CLUSTER_NAME=erlmcp-cluster
-      - ERLMCP_NODE_NAME=erlmcp@erlmcp-prod-2
-      - ERLMCP_PEER_NODES=erlmcp-prod-1:erlmcp-prod-3
+      - ERLMCP_NODE_NAME=erlmcp@erlmcp-node2
+      - ERLANG_COOKIE=${ERLANG_COOKIE}
+      - ERL_AFLAGS=-proto_dist inet_tls
+      - ERL_DIST_PORT=9100
+      - ERLANG_DISTRIBUTION_PORT_RANGE=9100-9200
+    networks:
+      - erlmcp-cluster
 
-  erlmcp-3:
-    build:
-      context: ../../..
-      dockerfile: Dockerfile.prod
-    hostname: erlmcp-prod-3
+  erlmcp-node3:
+    image: erlmcp:3.0.0
+    hostname: erlmcp-node3
     environment:
-      - ERLMCP_CLUSTER_NAME=erlmcp-cluster
-      - ERLMCP_NODE_NAME=erlmcp@erlmcp-prod-3
-      - ERLMCP_PEER_NODES=erlmcp-prod-1:erlmcp-prod-2
+      - ERLMCP_NODE_NAME=erlmcp@erlmcp-node3
+      - ERLANG_COOKIE=${ERLANG_COOKIE}
+      - ERL_AFLAGS=-proto_dist inet_tls
+      - ERL_DIST_PORT=9100
+      - ERLANG_DISTRIBUTION_PORT_RANGE=9100-9200
+    networks:
+      - erlmcp-cluster
+
+networks:
+  erlmcp-cluster:
+    driver: overlay
+    attachable: true
 ```
 
-### Load Balancing
+**Start cluster:**
 
-Use Nginx as a load balancer:
-
-```nginx
-upstream erlmcp_backend {
-    server erlmcp-prod-1:8443;
-    server erlmcp-prod-2:8443;
-    server erlmcp-prod-3:8443;
-}
-
-server {
-    listen 80;
-    server_name api.erlmcp.com;
-
-    location / {
-        return 301 https://$host$request_uri;
-    }
-}
-
-server {
-    listen 443 ssl http2;
-    server_name api.erlmcp.com;
-
-    ssl_certificate /etc/nginx/ssl/server.crt;
-    ssl_certificate_key /etc/nginx/ssl/server.key;
-
-    location /v3/ {
-        proxy_pass https://erlmcp_backend/v3/;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Health checks
-        proxy_connect_timeout 5s;
-        proxy_read_timeout 30s;
-        proxy_send_timeout 30s;
-
-        # Rate limiting
-        limit_req zone=erlmcp_zone burst=20 nodelay;
-    }
-}
+```bash
+docker compose -f docker-compose.cluster.yml up -d
 ```
 
-## Monitoring and Logging
+**Verify cluster:**
 
-### Prometheus Configuration
+```bash
+# Check node connectivity
+docker compose -f docker-compose.cluster.yml exec erlmcp-node1 \
+  /opt/erlmcp/bin/erlmcp eval 'nodes().'
 
-`prometheus.yml`:
+# Expected output: ['erlmcp@erlmcp-node2', 'erlmcp@erlmcp-node3']
+```
+
+---
+
+## Monitoring and Observability
+
+### OpenTelemetry Integration
 
 ```yaml
-global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
-
-scrape_configs:
-  - job_name: 'erlmcp'
-    static_configs:
-      - targets: ['erlmcp:9090']
-    scrape_interval: 15s
-    metrics_path: /metrics
-
-  - job_name: 'prometheus'
-    static_configs:
-      - targets: ['localhost:9090']
-
-  - job_name: 'postgres'
-    static_configs:
-      - targets: ['postgres:5432']
-
-  - job_name: 'redis'
-    static_configs:
-      - targets: ['redis:6379']
+services:
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0
+    container_name: erlmcp-otel
+    ports:
+      - "4317:4317"  # OTLP gRPC
+      - "4318:4318"  # OTLP HTTP
+    volumes:
+      - ./config/docker/otel-collector.yaml:/etc/otel-collector/config.yaml:ro
+    networks:
+      - erlmcp-network
+    command: ["--config=/etc/otel-collector/config.yaml"]
 ```
 
-### Logging Configuration
+### Prometheus
 
-Create `config/logging.config`:
-
-```erlang
-{
-    logger,
-    [
-        {handler, default, logger_console_hander,
-            {logger_formatter,
-                #{single_line => false,
-                  time_design => {utc, ISO8601},
-                  legacy_header => true}},
-            #{level => info}},
-        {handler, file, logger_stdlib_hander,
-            {logger_disk_log_hander,
-                #{file => "/app/logs/erlmcp.log",
-                  type => wrap,
-                  max_no_files => 10,
-                  max_no_bytes => 100000000,
-                  compress => true}},
-            #{level => info}},
-        {handler, error_file, logger_stdlib_hander,
-            {logger_disk_log_hander,
-                #{file => "/app/logs/error.log",
-                  type => wrap,
-                  max_no_files => 5,
-                  max_no_bytes => 50000000,
-                  compress => true}},
-            #{level => error}}
-    ]
-}.
+```yaml
+services:
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: erlmcp-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+    networks:
+      - erlmcp-network
 ```
 
-## Backup and Recovery
+### Grafana
 
-### Database Backup
+```yaml
+services:
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: erlmcp-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD_FILE=/run/secrets/grafana-password
+      - GF_USERS_ALLOW_SIGN_UP=false
+    secrets:
+      - grafana-password
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/docker/grafana:/etc/grafana/provisioning:ro
+    networks:
+      - erlmcp-network
+    depends_on:
+      - prometheus
+```
+
+**Start monitoring stack:**
 
 ```bash
-# Create daily backup
-docker exec erlmcp-postgres pg_dump -U erlmcp erlmcp > backup_$(date +%Y%m%d).sql
-
-# Restore from backup
-docker exec -i erlmcp-postgres psql -U erlmcp erlmcp < backup_20240101.sql
+docker compose --profile monitoring up -d
 ```
 
-### Application Backup
+**Access dashboards:**
 
-```bash
-# Backup configuration and logs
-docker exec erlmcp-v3 tar -czf /app/backups/app_$(date +%Y%m%d).tar.gz \
-    /app/config /app/logs
+- Grafana: http://localhost:3000
+- Prometheus: http://localhost:9090
+- Jaeger: http://localhost:16686
 
-# Restore backup
-docker cp backup_20240101.tar.gz erlmcp-v3:/app/
-docker exec erlmcp-v3 tar -xzf /app/backups/app_20240101.tar.gz
-```
+---
 
 ## Troubleshooting
 
-### Common Issues
-
-#### 1. Container Won't Start
+### Container Won't Start
 
 ```bash
 # Check logs
-docker logs erlmcp-v3
+docker compose logs erlmcp
 
 # Check resource usage
-docker stats erlmcp-v3
+docker compose stats erlmcp
 
 # Enter container for debugging
-docker exec -it erlmcp-v3 bash
+docker compose exec erlmcp /bin/sh
+
+# Check health status
+docker compose ps erlmcp
 ```
 
-#### 2. Database Connection Issues
+### Database Connection Issues
 
 ```bash
 # Test database connection
-docker exec erlmcp-postgres psql -U erlmcp -c "\dt"
+docker compose exec postgres psql -U erlmcp -c "\dt"
 
-# Check container status
-docker-compose ps postgres
+# Check database health
+docker compose ps postgres
+
+# View database logs
+docker compose logs postgres
 ```
 
-#### 3. Memory Issues
+### Memory Issues
 
 ```bash
 # Monitor memory usage
-docker stats --no-stream erlmcp-v3
+docker compose stats --no-stream erlmcp
 
-# Check Erlang memory
-docker exec erlmcp-v3 erl -eval "erlang:memory()." -s init stop
+# Check Erlang memory (via Docker)
+docker compose exec erlmcp /opt/erlmcp/bin/erlmcp eval 'erlang:memory().'
 ```
 
-### Performance Tuning
+### Networking Issues
 
 ```bash
-# Adjust worker count based on available CPUs
-ERLMCP_WORKERS=4
+# Check network connectivity
+docker compose exec erlmcp ping postgres
 
-# Increase database pool size
-ERLMCP_DB_POOL_SIZE=20
+# Inspect network
+docker network inspect erlmcp_erlmcp-network
 
-# Tune JVM options
-JAVA_OPTS="-Xms512m -Xmx2g"
+# Check DNS resolution
+docker compose exec erlmcp nslookup postgres
 ```
 
-## Security Best Practices
-
-### 1. Container Security
-
-- Use non-root user
-- Scan images for vulnerabilities
-- Rotate secrets regularly
-- Enable read-only filesystem
-
-```dockerfile
-USER erlmcp
-
-# Create read-only mount points
-VOLUME ["/app/config", "/app/logs"]
-```
-
-### 2. Network Security
-
-- Use private networks
-- Enable encryption
-- Implement firewalls
-- Monitor network traffic
-
-### 3. Secret Management
+### Performance Issues
 
 ```bash
-# Use Docker secrets for production
-echo "your-password" | docker secret create db_password -
+# Check resource limits
+docker compose config | grep -A 5 resources
 
-# Reference in docker-compose
-environment:
-  - ERLMCP_DB_PASSWORD_FILE=/run/secrets/db_password
+# Monitor CPU usage
+docker compose stats erlmcp
+
+# Check I/O
+docker compose exec erlmcp iostat -x 1
 ```
 
-## Maintenance
-
-### Regular Maintenance Tasks
+### Quality Gate Failures
 
 ```bash
-# Update containers
-docker-compose pull
-docker-compose up -d --force-recreate
+# Compilation failure
+docker compose run --rm erlmcp-build make compile
+# Fix: Check error messages, verify dependencies
 
-# Clean up unused resources
-docker system prune -f
+# Test failure
+docker compose run --rm erlmcp-ct make ct
+# Fix: Check test logs in _build/test/logs/
 
-# Rotate logs
-docker exec erlmcp-v3 find /app/logs -name "*.log" -mtime +30 -delete
+# Coverage failure
+docker compose run --rm erlmcp-check make coverage
+# Fix: Add tests to reach 80% coverage
+
+# Dialyzer warnings
+docker compose run --rm erlmcp-check make dialyzer
+# Fix: Address type warnings in code
 ```
 
-### Health Checks
+---
 
-```bash
-# Monitor system health
-curl -f http://localhost:8080/v3/health
+## References
 
-# Check metrics
-curl http://localhost:9090/metrics
+### Documentation
 
-# Verify database
-docker exec erlmcp-postgres pg_isready -U erlmcp
-```
+- [Dockerfile Best Practices](https://docs.docker.com/develop/develop-images/dockerfile_best-practices/)
+- [Docker Compose Specification](https://docs.docker.com/compose/compose-file/)
+- [Docker Security](https://docs.docker.com/engine/security/)
+- [Erlang/OTP Distribution](https://www.erlang.org/doc/reference_manual/distributed.html)
 
-## Support
+### Related Guides
 
-For enterprise support, contact:
-- **Email**: enterprise-support@erlmcp.com
-- **Portal**: https://enterprise.erlmcp.com
-- **Documentation**: https://docs.erlmcp.com/v3
+- [Kubernetes Deployment Guide](../kubernetes/README.md)
+- [Security Guide](../../security/README.md)
+- [Observability Guide](../../observability/README.md)
+- [Development Guide](../../../development/README.md)
+
+---
+
+## License
+
+Copyright 2026 erlmcp contributors.
+
+Licensed under the Apache License, Version 2.0.
+
+---
+
+**CODE LIKE A AGI Joe Armstrong.**
+
+**"Make it work, make it right, make it fast."**
+
+**DOCKER-ONLY. NO EXCEPTIONS.**
