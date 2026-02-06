@@ -1,0 +1,177 @@
+# ============================================================================
+# Complete Deployment Configuration Example
+# Copy to terraform.tfvars and customize for your environment
+# ============================================================================
+
+# ============================================================================
+# Project Configuration
+# ============================================================================
+project_id        = "your-gcp-project-id"
+region            = "us-central1"
+secondary_region  = "us-east1"
+environment       = "production"
+image_tag         = "v3.0.0"
+
+# ============================================================================
+# Network Configuration
+# ============================================================================
+network_name          = "erlmcp-vpc"
+primary_subnet_cidr   = "10.0.0.0/24"
+secondary_subnet_cidr = "10.10.0.0/24"
+gke_pods_cidr        = "10.1.0.0/16"
+gke_services_cidr    = "10.2.0.0/16"
+
+# SSH access - Empty for IAP tunnel only (recommended)
+ssh_source_ranges = []
+
+# ============================================================================
+# Security Configuration
+# ============================================================================
+allow_public_access        = false  # Set to true for public internet access
+enable_tls                 = true
+enable_cloud_armor         = true
+rate_limit_threshold       = 1000  # requests per minute
+enable_binary_authorization = true
+
+# ============================================================================
+# GKE Configuration
+# ============================================================================
+cluster_name_prefix      = "erlmcp-cluster"
+kubernetes_version       = "1.30"
+release_channel          = "REGULAR"
+gke_private_endpoint     = true
+gke_master_cidr          = "172.16.0.0/28"
+gke_master_global_access = false
+
+# Node pools
+gke_machine_type  = "n2-standard-4"
+gke_disk_size_gb  = 100
+gke_min_nodes     = 3
+gke_max_nodes     = 10
+
+# Spot nodes for cost optimization
+enable_spot_nodes       = true
+gke_spot_machine_type   = "n2-standard-2"
+gke_spot_min_nodes      = 0
+gke_spot_max_nodes      = 5
+
+# Deployment
+deploy_erlmcp_to_gke = true
+kubernetes_namespace = "erlmcp"
+
+# ============================================================================
+# Cloud Run Configuration
+# ============================================================================
+cloud_run_service_prefix = "erlmcp-service"
+cloud_run_cpu            = "2"
+cloud_run_memory         = "2Gi"
+cloud_run_cpu_idle       = true
+cloud_run_timeout        = 300
+
+# Scaling
+cloud_run_min_instances  = 1
+cloud_run_max_instances  = 100
+cloud_run_max_concurrency = 80
+
+# Networking
+cloud_run_vpc_egress     = "private-ranges-only"
+cloud_run_session_affinity = true
+cloud_run_custom_domain  = ""  # e.g., "api.erlmcp.example.com"
+
+# IAM
+cloud_run_invoker_accounts = []
+
+# ============================================================================
+# Compute Engine Configuration
+# ============================================================================
+gce_instance_prefix = "erlmcp-vm"
+gce_zone            = "us-central1-a"
+gce_instance_count  = 2
+gce_machine_type    = "n2-standard-4"
+gce_disk_type       = "pd-ssd"
+gce_disk_size_gb    = 100
+
+gce_http_source_ranges = [
+  "10.0.0.0/8"  # Internal only
+]
+
+# ============================================================================
+# Global Load Balancer Configuration
+# ============================================================================
+create_global_load_balancer = true
+load_balancer_domain        = "erlmcp.example.com"
+
+# SSL certificates - Create these first via:
+# gcloud compute ssl-certificates create erlmcp-cert \
+#   --domains=erlmcp.example.com \
+#   --global
+ssl_certificate_ids = [
+  # "projects/your-project/global/sslCertificates/erlmcp-cert"
+]
+
+# ============================================================================
+# Cloud SQL Configuration
+# ============================================================================
+enable_cloud_sql            = true
+cloud_sql_database_version  = "POSTGRES_15"
+cloud_sql_tier              = "db-custom-2-7680"
+cloud_sql_availability_type = "REGIONAL"
+cloud_sql_disk_size_gb      = 100
+
+# ============================================================================
+# Observability Configuration
+# ============================================================================
+
+# Notification channels for alerts
+notification_channels = [
+  {
+    type         = "email"
+    display_name = "SRE Team"
+    labels = {
+      email_address = "sre@example.com"
+    }
+  },
+  {
+    type         = "slack"
+    display_name = "Slack Alerts"
+    labels = {
+      channel_name = "#erlmcp-alerts"
+      url          = "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    }
+  }
+]
+
+# Uptime monitoring
+create_uptime_check = true
+uptime_check_host   = ""  # Uses Cloud Run URL if empty
+
+# Service Level Objectives
+create_slos           = true
+slo_availability_goal = 0.999  # 99.9% uptime
+slo_latency_threshold = 500    # milliseconds
+slo_latency_goal      = 0.95   # 95% of requests under threshold
+
+# Alert thresholds
+alert_error_rate_threshold = 0.05   # 5%
+alert_latency_threshold    = 1000   # milliseconds
+alert_memory_threshold     = 0.9    # 90%
+alert_cpu_threshold        = 0.8    # 80%
+
+# Dashboards
+enable_cost_dashboard = true
+
+# Logging
+enable_log_export           = true
+log_export_bucket           = "erlmcp-logs-your-project"
+enable_log_bigquery_export  = true
+log_bigquery_dataset        = "erlmcp_logs"
+
+# Tracing
+trace_sampling_rate = 0.1  # 10% sampling
+log_level           = "info"
+
+# ============================================================================
+# Billing Configuration
+# ============================================================================
+enable_budget_alerts  = true
+monthly_budget_amount = 5000  # USD

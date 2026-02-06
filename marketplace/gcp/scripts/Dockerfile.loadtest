@@ -1,0 +1,60 @@
+#!/usr/bin/env dockerfile
+# ============================================================================
+# erlmcp Load Test Container - Docker-Only Constitution
+# ============================================================================
+# Purpose: Containerized load testing environment for erlmcp
+# Tools: hey, ab, curl, jq for comprehensive load testing
+# Usage: docker build -f Dockerfile.loadtest -t erlmcp-loadtest .
+#        docker run --rm --network host erlmcp-loadtest --profile stress
+# ============================================================================
+
+FROM alpine:3.19
+
+LABEL maintainer="erlmcp contributors"
+LABEL description="erlmcp Load Testing Environment"
+LABEL version="3.0.0"
+
+# Install load testing tools and utilities
+RUN apk add --no-cache \
+    bash \
+    curl \
+    jq \
+    apache2-utils \
+    ca-certificates \
+    wget \
+    && update-ca-certificates
+
+# Install hey (modern HTTP load generator)
+RUN wget -q https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64 \
+    -O /usr/local/bin/hey \
+    && chmod +x /usr/local/bin/hey
+
+# Optional: Install wrk (another modern load testing tool)
+RUN apk add --no-cache --virtual .build-deps \
+    gcc \
+    make \
+    musl-dev \
+    openssl-dev \
+    git \
+    && git clone https://github.com/wg/wrk.git /tmp/wrk \
+    && cd /tmp/wrk \
+    && make -j$(nproc) \
+    && cp wrk /usr/local/bin/ \
+    && cd / \
+    && rm -rf /tmp/wrk \
+    && apk del .build-deps
+
+# Create working directory
+WORKDIR /workspace
+
+# Copy load test script
+COPY marketplace/gcp/scripts/load-test.sh /usr/local/bin/load-test
+RUN chmod +x /usr/local/bin/load-test
+
+# Create results directory
+RUN mkdir -p /results
+ENV RESULTS_DIR=/results
+
+# Default entrypoint
+ENTRYPOINT ["/usr/local/bin/load-test"]
+CMD ["--help"]

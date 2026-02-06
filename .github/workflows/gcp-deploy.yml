@@ -380,12 +380,66 @@ jobs:
 
           echo "uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
 
-      - name: Generate SBOM
+      - name: Generate SBOM (SPDX)
         uses: anchore/sbom-action@v0
         with:
           image: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp@${{ steps.build.outputs.digest }}
           format: spdx-json
           output-file: sbom-spdx.json
+
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom-cyclonedx.json
+
+      - name: Attest SBOM with Cosign
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          IMAGE_DIGEST="${{ steps.build.outputs.digest }}"
+          IMAGE_URI="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp@${IMAGE_DIGEST}"
+
+          # Attest CycloneDX SBOM
+          cosign attest --yes --type cyclonedx \
+            --predicate sbom-cyclonedx.json \
+            "${IMAGE_URI}"
+
+          # Attest SPDX SBOM
+          cosign attest --yes --type spdx \
+            --predicate sbom-spdx.json \
+            "${IMAGE_URI}"
+
+          echo "SBOM attestations attached to image"
+
+      - name: Verify attestations
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          IMAGE_DIGEST="${{ steps.build.outputs.digest }}"
+          IMAGE_URI="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp@${IMAGE_DIGEST}"
+
+          echo "Verifying image signature..."
+          cosign verify \
+            --certificate-identity-regexp=".*" \
+            --certificate-oidc-issuer-regexp=".*" \
+            "${IMAGE_URI}"
+
+          echo "Verifying SBOM attestations..."
+          cosign verify-attestation \
+            --certificate-identity-regexp=".*" \
+            --certificate-oidc-issuer-regexp=".*" \
+            --type cyclonedx \
+            "${IMAGE_URI}"
+
+          cosign verify-attestation \
+            --certificate-identity-regexp=".*" \
+            --certificate-oidc-issuer-regexp=".*" \
+            --type spdx \
+            "${IMAGE_URI}"
+
+          echo "All attestations verified successfully"
 
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@master
@@ -393,6 +447,8 @@ jobs:
           image-ref: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp@${{ steps.build.outputs.digest }}
           format: 'sarif'
           output: 'trivy-results.sarif'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
 
       - name: Upload Trivy SARIF
         uses: github/codeql-action/upload-sarif@v3
@@ -407,6 +463,7 @@ jobs:
           name: build-artifacts-${{ github.run_id }}
           path: |
             sbom-spdx.json
+            sbom-cyclonedx.json
             trivy-results.sarif
           retention-days: 30
 
@@ -495,7 +552,8 @@ jobs:
 
           ### Security
           - Image signed with Cosign
-          - SBOM generated (SPDX format)
+          - SBOM generated (SPDX + CycloneDX formats)
+          - SBOM attestations verified with Cosign
           - Vulnerability scan completed
           - SLSA attestations attached
 

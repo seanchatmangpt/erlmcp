@@ -318,14 +318,15 @@ steps:
     args:
       - '-c'
       - |
+        set -e
         echo "Checking Binary Authorization policies..."
-        gcloud container binauthz policy export > /workspace/binauthz-policy.yaml || echo "No Binary Authorization policy configured"
+        gcloud container binauthz policy export > /workspace/binauthz-policy.yaml
 
-        # Verify attestations
+        # Verify attestations - FAIL HARD if unsigned
         cosign verify \
           --certificate-identity-regexp=".*" \
           --certificate-oidc-issuer-regexp=".*" \
-          ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPO}/erlmcp@$(cat /workspace/image-digest.txt | cut -d'@' -f2) || true
+          ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPO}/erlmcp@$(cat /workspace/image-digest.txt | cut -d'@' -f2)
     id: 'verify-policies'
     waitFor: ['attest-sbom']
 

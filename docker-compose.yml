@@ -884,6 +884,75 @@ services:
     profiles:
       - monitoring
 
+  # ============================================================================
+  # LOAD TESTING SERVICE - Docker-Only Constitution Compliant
+  # ============================================================================
+  # Purpose: Load testing erlmcp services using hey/ab
+  # Tools: hey (HTTP load generator), ab (Apache Bench), curl, jq
+  # Usage: docker compose run --rm erlmcp-loadtest --profile stress
+  # ============================================================================
+  erlmcp-loadtest:
+    build:
+      context: .
+      dockerfile: marketplace/gcp/scripts/Dockerfile.loadtest
+    image: erlmcp:3.0.0-loadtest
+    container_name: erlmcp-loadtest
+    hostname: loadtest
+    networks:
+      - erlmcp-network
+    environment:
+      # Target configuration
+      TARGET_URL: ${LOADTEST_TARGET_URL:-http://erlmcp:8080}
+      TARGET_HOST: ${LOADTEST_TARGET_HOST:-erlmcp}
+      TARGET_PORT: ${LOADTEST_TARGET_PORT:-8080}
+
+      # Test profile
+      PROFILE: ${LOADTEST_PROFILE:-baseline}
+
+      # Test parameters
+      DURATION: ${LOADTEST_DURATION:-60}
+      REQUESTS: ${LOADTEST_REQUESTS:-10000}
+      CONCURRENCY: ${LOADTEST_CONCURRENCY:-50}
+      RPS: ${LOADTEST_RPS:-0}
+      TIMEOUT: ${LOADTEST_TIMEOUT:-30}
+
+      # Quality thresholds
+      MAX_ERROR_RATE: ${LOADTEST_MAX_ERROR_RATE:-0.01}
+      MAX_P95_LATENCY: ${LOADTEST_MAX_P95_LATENCY:-1000}
+      MAX_P99_LATENCY: ${LOADTEST_MAX_P99_LATENCY:-5000}
+      MIN_RPS: ${LOADTEST_MIN_RPS:-100}
+
+      # GCP deployment targets
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-}
+      GCP_INSTANCE_NAME: ${GCP_INSTANCE_NAME:-erlmcp-marketplace-test}
+      GCP_ZONE: ${GCP_ZONE:-us-central1-a}
+
+      # Results directory
+      RESULTS_DIR: /results
+    volumes:
+      # Results output
+      - ./marketplace/gcp/test-evidence/load-test:/results
+      # GCP credentials (optional, for GCP deployment testing)
+      - ${HOME}/.config/gcloud:/root/.config/gcloud:ro
+    deploy:
+      resources:
+        limits:
+          cpus: '${LOADTEST_CPU_LIMIT:-2.0}'
+          memory: '${LOADTEST_MEMORY_LIMIT:-2G}'
+          pids: ${LOADTEST_PIDS_LIMIT:-4096}
+        reservations:
+          cpus: '${LOADTEST_CPU_RESERVATION:-1.0}'
+          memory: '${LOADTEST_MEMORY_RESERVATION:-1G}'
+      restart_policy:
+        condition: on-failure
+        max_attempts: 1
+    depends_on:
+      erlmcp:
+        condition: service_healthy
+    profiles:
+      - loadtest
+      - testing
+
 networks:
   erlmcp-network:
     driver: bridge
