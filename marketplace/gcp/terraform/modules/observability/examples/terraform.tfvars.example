@@ -1,0 +1,137 @@
+# ============================================================================
+# GCP Observability Module - Example Configuration
+# Copy this file to terraform.tfvars and customize for your environment
+# ============================================================================
+
+# Project Configuration
+project_id   = "my-gcp-project-id"
+environment  = "production"  # production, staging, or development
+service_name = "erlmcp-service"
+team_label   = "platform"
+
+# ============================================================================
+# Notification Channels
+# ============================================================================
+notification_channels = {
+  email = {
+    enabled = true
+    address = "ops-team@example.com"
+  }
+
+  pagerduty = {
+    enabled     = true
+    service_key = "YOUR_PAGERDUTY_SERVICE_KEY"
+    auth_token  = "YOUR_PAGERDUTY_INTEGRATION_KEY"
+  }
+
+  slack = {
+    enabled      = true
+    channel_name = "#alerts-production"
+    auth_token   = "YOUR_SLACK_BOT_TOKEN"
+  }
+
+  webhook = {
+    enabled    = false
+    url        = ""
+    auth_token = ""
+  }
+}
+
+# ============================================================================
+# SLO Configuration
+# ============================================================================
+create_slos              = true
+enable_slo_alerts        = true
+slo_availability_goal    = 0.999  # 99.9% availability (8.64 hours downtime/month)
+slo_latency_goal         = 0.95   # 95% of requests below latency threshold
+slo_latency_threshold_ms = 500    # 500 milliseconds
+slo_rolling_period_days  = 30     # 30-day rolling window
+
+# ============================================================================
+# Uptime Check Configuration
+# ============================================================================
+create_uptime_check         = true
+uptime_check_path           = "/health"
+uptime_check_port           = 8080
+uptime_check_method         = "GET"
+uptime_check_use_ssl        = false
+uptime_check_validate_ssl   = false
+uptime_check_host           = "erlmcp.example.com"
+uptime_check_timeout        = "10s"
+uptime_check_period         = "60s"
+uptime_check_regions        = ["USA", "EUROPE", "ASIA_PACIFIC"]
+uptime_check_content_matcher = "OK"
+
+# ============================================================================
+# Alert Policy Configuration
+# ============================================================================
+
+# Error Rate Alert
+enable_error_rate_alert           = true
+error_rate_alert_threshold        = 10      # errors per second
+error_rate_alert_duration         = "300s"  # 5 minutes
+error_rate_alert_alignment_period = "60s"
+
+# Latency Alert
+enable_latency_alert           = true
+latency_alert_threshold        = 1.0    # 1 second (P95)
+latency_alert_duration         = "300s"
+latency_alert_alignment_period = "60s"
+
+# Memory Alert
+enable_memory_alert           = true
+memory_alert_threshold        = 2147483648  # 2GB in bytes
+memory_alert_duration         = "300s"
+memory_alert_alignment_period = "60s"
+
+# CPU Alert
+enable_cpu_alert           = true
+cpu_alert_threshold        = 0.80  # 80%
+cpu_alert_duration         = "300s"
+cpu_alert_alignment_period = "60s"
+
+# Health Check Alert
+enable_health_check_alert = true
+
+# Process Count Alert
+enable_process_count_alert           = true
+process_count_alert_threshold        = 100   # minimum process count
+process_count_alert_duration         = "300s"
+process_count_alert_alignment_period = "60s"
+
+# ============================================================================
+# Dashboard Configuration
+# ============================================================================
+create_performance_dashboard = true
+create_erlang_dashboard      = true
+create_security_dashboard    = true
+create_slo_dashboard         = true
+
+# ============================================================================
+# Log Export Configuration
+# ============================================================================
+
+# BigQuery Export
+log_export_bigquery_enabled     = true
+log_export_bigquery_destination = "bigquery.googleapis.com/projects/my-gcp-project-id/datasets/erlmcp_logs"
+
+# Cloud Storage Export
+log_export_storage_enabled     = true
+log_export_storage_destination = "storage.googleapis.com/my-erlmcp-logs-bucket"
+
+# Pub/Sub Export (for real-time error processing)
+log_export_pubsub_enabled = false
+log_export_pubsub_topic   = ""
+
+# Log Filter (optional - defaults to erlmcp application logs)
+log_export_filter = ""
+
+# ============================================================================
+# Log Exclusion Configuration (Cost Optimization)
+# ============================================================================
+exclude_health_check_logs   = true
+exclude_successful_get_logs = true
+
+# Custom filters for exclusions
+health_check_log_filter = "resource.type=\"http_load_balancer\" httpRequest.requestUrl=~\"/health\""
+successful_get_log_filter = "httpRequest.requestMethod=\"GET\" httpRequest.status<400"

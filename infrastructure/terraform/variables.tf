@@ -199,18 +199,21 @@ variable "jwt_secret" {
   description = "JWT secret key"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "oauth_client_id" {
   description = "OAuth client ID"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "oauth_client_secret" {
   description = "OAuth client secret"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "enable_encryption" {
@@ -223,6 +226,7 @@ variable "encryption_key" {
   description = "Encryption key for data at rest"
   type        = string
   sensitive   = true
+  default     = ""
 }
 
 variable "enable_compliance" {

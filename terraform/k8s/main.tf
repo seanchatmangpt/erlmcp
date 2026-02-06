@@ -2,18 +2,31 @@
 # Main configuration for production deployment
 
 terraform {
+  required_version = ">= 1.9.0"
+
+  # Backend configuration for remote state management
+  # Uncomment and configure for production use
+  # backend "s3" {
+  #   bucket         = "erlmcp-terraform-state"
+  #   key            = "kubernetes/terraform.tfstate"
+  #   region         = "us-east-1"
+  #   encrypt        = true
+  #   dynamodb_table = "erlmcp-terraform-locks"
+  #   kms_key_id     = "alias/terraform-state-key"
+  # }
+
   required_providers {
     kubernetes = {
       source  = "hashicorp/kubernetes"
-      version = "~> 2.10"
+      version = "~> 2.35"
     }
     helm = {
       source  = "hashicorp/helm"
-      version = "~> 2.6"
+      version = "~> 2.16"
     }
     random = {
       source  = "hashicorp/random"
-      version = "~> 3.5"
+      version = "~> 3.6"
     }
     tls = {
       source  = "hashicorp/tls"
@@ -21,7 +34,7 @@ terraform {
     }
     time = {
       source  = "hashicorp/time"
-      version = "~> 0.9"
+      version = "~> 0.12"
     }
   }
 }
@@ -347,30 +360,35 @@ resource "kubernetes_pod_disruption_budget" "erlmcp" {
   }
 }
 
-# Monitor resources
-resource "kubernetes_service_monitor" "erlmcp" {
-  metadata {
-    name      = "erlmcp"
-    namespace = kubernetes_namespace.erlmcp.metadata.0.name
-    labels = {
-      "app.kubernetes.io/name" = "erlmcp"
-      "release"               = "prometheus"
-    }
-  }
-
-  spec {
-    selector {
-      match_labels = {
-        "app.kubernetes.io/name" = "erlmcp"
-      }
-    }
-
-    endpoints {
-      port     = "metrics"
-      interval = "30s"
-    }
-  }
-}
+# Service Monitor for Prometheus (commented out - requires Prometheus CRD)
+# Uncomment if Prometheus Operator is installed
+# resource "kubernetes_manifest" "service_monitor_erlmcp" {
+#   manifest = {
+#     apiVersion = "monitoring.coreos.com/v1"
+#     kind       = "ServiceMonitor"
+#     metadata = {
+#       name      = "erlmcp"
+#       namespace = kubernetes_namespace.erlmcp.metadata[0].name
+#       labels = {
+#         "app.kubernetes.io/name" = "erlmcp"
+#         "release"                = "prometheus"
+#       }
+#     }
+#     spec = {
+#       selector = {
+#         matchLabels = {
+#           "app.kubernetes.io/name" = "erlmcp"
+#         }
+#       }
+#       endpoints = [
+#         {
+#           port     = "metrics"
+#           interval = "30s"
+#         }
+#       ]
+#     }
+#   }
+# }
 
 # Outputs
 output "namespace" {

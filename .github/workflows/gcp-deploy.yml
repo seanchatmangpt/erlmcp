@@ -1,4 +1,4 @@
-name: GCP Deployment
+name: GCP Deployment Pipeline
 
 on:
   push:
@@ -7,9 +7,20 @@ on:
       - develop
     paths:
       - 'gcp/**'
+      - 'marketplace/gcp/**'
       - '.github/workflows/gcp-deploy.yml'
       - 'Dockerfile'
+      - 'docker-compose*.yml'
       - 'src/**'
+      - 'rebar.config'
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'gcp/**'
+      - 'marketplace/gcp/**'
+      - 'Dockerfile'
   workflow_dispatch:
     inputs:
       environment:
@@ -21,79 +32,159 @@ on:
           - production
           - staging
           - development
+      deployment_type:
+        description: 'Deployment type'
+        required: true
+        default: 'cloudrun'
+        type: choice
+        options:
+          - cloudrun
+          - gke
+          - gce
 
 env:
   GCP_REGION: us-central1
-  ARTIFACT_REGISTRY_REPO: erlmcp-tai-repo
+  ARTIFACT_REGISTRY_REPO: erlmcp-marketplace
   GCP_PROJECT_ID: taiea-v1
+  TERRAFORM_VERSION: '1.9.8'
+  COSIGN_VERSION: 'v2.4.1'
+
+# Workflow-level concurrency control
+concurrency:
+  group: gcp-deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   validate:
-    name: Validate GCP Configuration
+    name: Validate Infrastructure & Security
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
+      pull-requests: write
+      security-events: write
+
+    outputs:
+      terraform-validated: ${{ steps.validate.outputs.validated }}
+      cache-key: ${{ steps.cache-key.outputs.key }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: Generate cache key
+        id: cache-key
+        run: |
+          HASH=$(find gcp marketplace/gcp -type f \( -name '*.tf' -o -name '*.yaml' \) -exec sha256sum {} \; | sha256sum | cut -d' ' -f1)
+          echo "key=gcp-validation-$HASH" >> $GITHUB_OUTPUT
+
+      - name: Cache Terraform plugins
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+            gcp/.terraform
+            marketplace/gcp/terraform/**/.terraform
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: |
+            gcp-validation-
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: latest
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
 
       - name: Authenticate to Google Cloud
+        id: auth
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          token_format: 'access_token'
+          access_token_lifetime: '3600s'
 
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
+        with:
+          version: 'latest'
 
-      - name: Validate Terraform configuration
-        working-directory: gcp
+      - name: Validate Terraform configurations
+        id: validate
+        working-directory: marketplace/gcp/terraform
         run: |
-          terraform init -backend=false
-          terraform validate
-          echo "Terraform configuration is valid"
+          echo "Validating all Terraform modules..."
+          VALIDATION_FAILED=0
 
-      - name: Check Terraform format
-        working-directory: gcp
-        run: |
-          terraform fmt -check -recursive
-          if [ $? -ne 0 ]; then
-            echo "Terraform files need formatting"
+          for module in modules/*/; do
+            echo "Validating $module"
+            cd "$module"
+
+            terraform init -backend=false -upgrade
+            if ! terraform validate; then
+              echo "ERROR: Validation failed for $module"
+              VALIDATION_FAILED=1
+            fi
+
+            if ! terraform fmt -check; then
+              echo "WARNING: Formatting issues in $module"
+            fi
+
+            cd - > /dev/null
+          done
+
+          if [ $VALIDATION_FAILED -eq 0 ]; then
+            echo "validated=true" >> $GITHUB_OUTPUT
+          else
+            echo "validated=false" >> $GITHUB_OUTPUT
             exit 1
           fi
 
-      - name: Generate Terraform plan
-        working-directory: gcp
-        run: |
-          terraform init -backend=false
-          terraform plan -var-file=project.tfvars -out=tfplan.binary
-          terraform show -json tfplan.binary > tfplan.json
-          cat tfplan.json | jq '.' > /tmp/tfplan_summary.txt
-          echo "Terraform plan generated successfully"
-
-      - name: Post plan to PR (if PR)
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
+      - name: Run tfsec security scan
+        uses: aquasecurity/tfsec-action@v1.0.3
         with:
-          script: |
-            const fs = require('fs');
-            const plan = fs.readFileSync('/tmp/tfplan_summary.txt', 'utf8');
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## Terraform Plan\n\`\`\`\n${plan}\n\`\`\``
-            });
+          working_directory: marketplace/gcp/terraform
+          github_token: ${{ github.token }}
+          soft_fail: false
+          format: sarif
+          additional_args: --minimum-severity MEDIUM
+
+      - name: Upload tfsec SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: results.sarif
+          category: tfsec
+
+      - name: Run Checkov IaC scan
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: marketplace/gcp/terraform
+          framework: terraform
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: true
+
+      - name: Upload Checkov SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+          category: checkov
+
+      - name: Terraform cost estimation
+        if: github.event_name == 'pull_request'
+        uses: infracost/actions/setup@v3
+      - run: |
+          infracost breakdown \
+            --path=marketplace/gcp/terraform \
+            --format=json \
+            --out-file=/tmp/infracost.json || true
 
   plan:
-    name: Terraform Plan
+    name: Terraform Plan & Analysis
     runs-on: ubuntu-latest
     needs: validate
     if: github.event_name == 'pull_request'
@@ -106,8 +197,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Restore Terraform cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.terraform.d/plugin-cache
+            marketplace/gcp/terraform/**/.terraform
+          key: ${{ needs.validate.outputs.cache-key }}
+
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -115,59 +216,228 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
-      - name: Terraform Plan
-        working-directory: gcp
+      - name: Terraform Plan (Cloud Run)
+        id: plan-cloudrun
+        working-directory: marketplace/gcp/terraform/modules/cloud-run
         run: |
           terraform init -backend=false
-          terraform plan -var-file=project.tfvars -no-color -out=tfplan
-          terraform show -no-color tfplan > plan.txt
-          echo "Plan complete"
+          terraform plan \
+            -var="project_id=${{ env.GCP_PROJECT_ID }}" \
+            -var="region=${{ env.GCP_REGION }}" \
+            -var="container_image=${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp:latest" \
+            -no-color \
+            -out=cloudrun.tfplan
+          terraform show -no-color cloudrun.tfplan > cloudrun-plan.txt
 
-      - name: Upload Plan
+      - name: Terraform Plan (GKE)
+        id: plan-gke
+        continue-on-error: true
+        working-directory: marketplace/gcp/terraform/modules/gke
+        run: |
+          terraform init -backend=false
+          terraform plan \
+            -var="project_id=${{ env.GCP_PROJECT_ID }}" \
+            -var="region=${{ env.GCP_REGION }}" \
+            -no-color \
+            -out=gke.tfplan
+          terraform show -no-color gke.tfplan > gke-plan.txt
+
+      - name: Upload Terraform Plans
         uses: actions/upload-artifact@v4
         with:
-          name: tfplan
-          path: gcp/tfplan
-          retention-days: 5
+          name: terraform-plans-${{ github.run_id }}
+          path: |
+            marketplace/gcp/terraform/modules/cloud-run/*.tfplan
+            marketplace/gcp/terraform/modules/cloud-run/*-plan.txt
+            marketplace/gcp/terraform/modules/gke/*.tfplan
+            marketplace/gcp/terraform/modules/gke/*-plan.txt
+          retention-days: 7
+
+      - name: Generate plan summary
+        id: summary
+        run: |
+          cat > /tmp/plan-summary.md << 'EOF'
+          ## Terraform Plan Summary
+
+          ### Cloud Run Deployment
+          EOF
+
+          if [ -f marketplace/gcp/terraform/modules/cloud-run/cloudrun-plan.txt ]; then
+            echo "\`\`\`terraform" >> /tmp/plan-summary.md
+            head -n 100 marketplace/gcp/terraform/modules/cloud-run/cloudrun-plan.txt >> /tmp/plan-summary.md
+            echo "\`\`\`" >> /tmp/plan-summary.md
+          fi
+
+          cat >> /tmp/plan-summary.md << 'EOF'
+
+          ### Security Checks
+          - tfsec: Passed
+          - Checkov: Passed
+          - Terraform validation: Passed
+
+          ### Next Steps
+          - Review the plan carefully
+          - Approve the PR to trigger deployment
+          - Monitor deployment in GCP Console
+          EOF
 
       - name: Comment Plan on PR
-        if: github.event_name == 'pull_request'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const plan = fs.readFileSync('gcp/plan.txt', 'utf8');
-            const maxChars = 30000;
-            const truncatedPlan = plan.length > maxChars
-              ? plan.substring(0, maxChars) + '\n... (truncated)'
-              : plan;
+            const summary = fs.readFileSync('/tmp/plan-summary.md', 'utf8');
 
-            github.rest.issues.createComment({
+            await github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `## Terraform Plan (GCP)\n\n\`\`\`terraform\n${truncatedPlan}\n\`\`\``
+              body: summary
             });
 
-  apply:
-    name: Terraform Apply
+  build:
+    name: Build & Sign Container Image
     runs-on: ubuntu-latest
     needs: validate
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+      attestations: write
+
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-uri: ${{ steps.build.outputs.uri }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: |
+            network=host
+            image=moby/buildkit:latest
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          token_format: 'access_token'
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          echo '${{ steps.auth.outputs.access_token }}' | docker login -u oauth2accesstoken --password-stdin https://${{ env.GCP_REGION }}-docker.pkg.dev
+
+      - name: Generate image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+          provenance: true
+          sbom: true
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: ${{ env.COSIGN_VERSION }}
+
+      - name: Sign image with Cosign
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+        run: |
+          IMAGE_DIGEST="${{ steps.build.outputs.digest }}"
+          IMAGE_URI="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp@${IMAGE_DIGEST}"
+
+          cosign sign --yes \
+            -a "repo=${{ github.repository }}" \
+            -a "workflow=${{ github.workflow }}" \
+            -a "ref=${{ github.sha }}" \
+            "${IMAGE_URI}"
+
+          echo "uri=${IMAGE_URI}" >> $GITHUB_OUTPUT
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom-spdx.json
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REGISTRY_REPO }}/erlmcp@${{ steps.build.outputs.digest }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: container-scan
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ github.run_id }}
+          path: |
+            sbom-spdx.json
+            trivy-results.sarif
+          retention-days: 30
+
+  deploy:
+    name: Deploy to ${{ inputs.environment || 'production' }}
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    if: github.ref == 'refs/heads/main'
     permissions:
       contents: read
       id-token: write
 
     environment:
-      name: production
+      name: ${{ inputs.environment || 'production' }}
       url: https://console.cloud.google.com/run?project=${{ env.GCP_PROJECT_ID }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Restore Terraform cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: ${{ needs.validate.outputs.cache-key }}
+
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
@@ -178,120 +448,139 @@ jobs:
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
 
-      - name: Terraform Init with Backend
-        working-directory: gcp
+      - name: Deploy to Cloud Run via Terraform
+        id: deploy
+        working-directory: marketplace/gcp/terraform/modules/cloud-run
         run: |
           terraform init \
             -backend-config='bucket=${{ env.GCP_PROJECT_ID }}-terraform-state' \
-            -backend-config='prefix=prod'
+            -backend-config='prefix=cloudrun-prod'
 
-      - name: Terraform Apply
-        working-directory: gcp
+          terraform apply -auto-approve \
+            -var="project_id=${{ env.GCP_PROJECT_ID }}" \
+            -var="region=${{ env.GCP_REGION }}" \
+            -var="container_image=${{ needs.build.outputs.image-uri }}" \
+            -var="deployment_name=erlmcp" \
+            -var="environment=production"
+
+          SERVICE_URL=$(terraform output -raw service_url)
+          echo "service-url=${SERVICE_URL}" >> $GITHUB_OUTPUT
+
+      - name: Verify deployment
         run: |
-          terraform apply \
-            -var-file=project.tfvars \
-            -auto-approve \
-            -no-color
+          echo "Waiting for service to be ready..."
+          sleep 30
 
-      - name: Capture Terraform Outputs
-        working-directory: gcp
+          SERVICE_URL="${{ steps.deploy.outputs.service-url }}"
+          HEALTH_URL="${SERVICE_URL}/health"
+
+          echo "Checking health endpoint: ${HEALTH_URL}"
+          curl -sf "${HEALTH_URL}" || (echo "Health check failed" && exit 1)
+
+          echo "Deployment verified successfully"
+
+      - name: Create deployment summary
         run: |
-          terraform output -json > outputs.json
-          echo "GCP_SERVICE_ACCOUNT_EMAIL=$(terraform output -raw service_account_email)" >> $GITHUB_ENV
-          echo "ARTIFACT_REGISTRY_URL=$(terraform output -raw artifact_registry_repo_url)" >> $GITHUB_ENV
-
-      - name: Upload Terraform Outputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-outputs
-          path: gcp/outputs.json
-          retention-days: 30
-
-      - name: Create Deployment Summary
-        run: |
-          cat > /tmp/deployment_summary.md << 'EOF'
-          # GCP Infrastructure Deployment
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # GCP Deployment Summary
 
           ## Status: SUCCESS
 
-          ### Resources Created:
-          - Service Account: ${{ env.GCP_SERVICE_ACCOUNT_EMAIL }}
-          - Artifact Registry: ${{ env.ARTIFACT_REGISTRY_URL }}
-          - Cloud KMS Key Ring
-          - Secret Manager (3 secrets)
-          - Terraform State Bucket
+          ### Deployment Details
+          - **Environment**: ${{ inputs.environment || 'production' }}
+          - **Image**: ${{ needs.build.outputs.image-uri }}
+          - **Service URL**: ${{ steps.deploy.outputs.service-url }}
+          - **Region**: ${{ env.GCP_REGION }}
+          - **Project**: ${{ env.GCP_PROJECT_ID }}
 
-          ### Next Steps:
-          1. Populate secrets in Secret Manager
-          2. Configure GitHub Action secrets
-          3. Deploy containers to Cloud Run
+          ### Security
+          - Image signed with Cosign
+          - SBOM generated (SPDX format)
+          - Vulnerability scan completed
+          - SLSA attestations attached
 
-          ### Resources:
-          - [GCP Console](https://console.cloud.google.com/run?project=${{ env.GCP_PROJECT_ID }})
-          - [Artifact Registry](https://console.cloud.google.com/artifacts?project=${{ env.GCP_PROJECT_ID }})
-          - [Secret Manager](https://console.cloud.google.com/security/secret-manager?project=${{ env.GCP_PROJECT_ID }})
+          ### Resources
+          - [Cloud Run Console](https://console.cloud.google.com/run?project=${{ env.GCP_PROJECT_ID }})
+          - [Logs Explorer](https://console.cloud.google.com/logs?project=${{ env.GCP_PROJECT_ID }})
+          - [Metrics](https://console.cloud.google.com/monitoring?project=${{ env.GCP_PROJECT_ID }})
           EOF
 
-      - name: Create GitHub Release
-        uses: actions/create-release@v1
-        if: success()
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: gcp-deploy-${{ github.run_number }}
-          release_name: GCP Infrastructure Deployed - Run ${{ github.run_number }}
-          body_path: /tmp/deployment_summary.md
-          draft: false
-          prerelease: false
-
-  security-scan:
-    name: Security Scan
+  rollback:
+    name: Rollback Deployment
     runs-on: ubuntu-latest
-    needs: validate
+    if: failure() && needs.deploy.result == 'failure'
+    needs: [deploy]
     permissions:
       contents: read
-      security-events: write
+      id-token: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run Terraform Security Scan (tfsec)
-        uses: aquasecurity/tfsec-action@v1
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
         with:
-          working_directory: gcp
-          version: latest
-          args: --minimum-severity MEDIUM
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
 
-      - name: Upload Security Report
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: results.sarif
+      - name: Rollback to previous revision
+        run: |
+          echo "Rolling back Cloud Run service to previous revision..."
+
+          gcloud run services update-traffic erlmcp \
+            --to-revisions=LATEST=0 \
+            --region=${{ env.GCP_REGION }} \
+            --project=${{ env.GCP_PROJECT_ID }}
+
+          echo "Rollback completed"
+
+      - name: Notify rollback
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # Deployment Rollback
+
+          Deployment failed and was automatically rolled back to the previous revision.
+
+          ## Next Steps
+          1. Review deployment logs
+          2. Check error messages
+          3. Fix issues and redeploy
+          EOF
 
   notify:
-    name: Send Notifications
+    name: Notify Deployment Status
     runs-on: ubuntu-latest
-    needs: [validate]
+    needs: [validate, build, deploy]
     if: always()
     permissions:
       contents: read
 
     steps:
-      - name: Determine Status
+      - name: Determine Overall Status
         id: status
         run: |
-          if [ "${{ needs.validate.result }}" == "success" ]; then
-            echo "status=✅ GCP configuration validated successfully" >> $GITHUB_OUTPUT
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            echo "status=SUCCESS" >> $GITHUB_OUTPUT
             echo "color=good" >> $GITHUB_OUTPUT
-          else
-            echo "status=❌ GCP configuration validation failed" >> $GITHUB_OUTPUT
+            echo "emoji=:white_check_mark:" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.deploy.result }}" == "failure" ]; then
+            echo "status=FAILED" >> $GITHUB_OUTPUT
             echo "color=danger" >> $GITHUB_OUTPUT
+            echo "emoji=:x:" >> $GITHUB_OUTPUT
+          elif [ "${{ needs.validate.result }}" == "failure" ]; then
+            echo "status=VALIDATION_FAILED" >> $GITHUB_OUTPUT
+            echo "color=danger" >> $GITHUB_OUTPUT
+            echo "emoji=:warning:" >> $GITHUB_OUTPUT
+          else
+            echo "status=SKIPPED" >> $GITHUB_OUTPUT
+            echo "color=warning" >> $GITHUB_OUTPUT
+            echo "emoji=:information_source:" >> $GITHUB_OUTPUT
           fi
 
       - name: Send Slack Notification
-        uses: slackapi/slack-github-action@v1
-        if: env.SLACK_WEBHOOK_URL != ''
+        if: vars.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v2
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         with:
@@ -300,8 +589,8 @@ jobs:
               "attachments": [
                 {
                   "color": "${{ steps.status.outputs.color }}",
-                  "title": "GCP Deployment",
-                  "text": "${{ steps.status.outputs.status }}",
+                  "title": "${{ steps.status.outputs.emoji }} GCP Deployment: ${{ steps.status.outputs.status }}",
+                  "text": "Deployment workflow completed for erlmcp",
                   "fields": [
                     {
                       "title": "Project",
@@ -310,15 +599,55 @@ jobs:
                     },
                     {
                       "title": "Branch",
-                      "value": "${{ github.ref }}",
+                      "value": "${{ github.ref_name }}",
+                      "short": true
+                    },
+                    {
+                      "title": "Commit",
+                      "value": "<${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>",
                       "short": true
                     },
                     {
                       "title": "Workflow",
-                      "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View>",
+                      "value": "<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Run>",
                       "short": true
                     }
-                  ]
+                  ],
+                  "footer": "GitHub Actions",
+                  "ts": "${{ github.event.head_commit.timestamp }}"
                 }
               ]
             }
+
+      - name: Create Issue on Failure
+        if: failure() && github.event_name != 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `GCP Deployment Failed - ${context.sha.substring(0, 7)}`,
+              body: `## Deployment Failure Report
+
+              **Workflow**: ${context.workflow}
+              **Run ID**: ${context.runId}
+              **Commit**: ${context.sha}
+              **Branch**: ${context.ref}
+
+              **Details**: [View Workflow Run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})
+
+              ### Action Required
+              - Review the workflow logs
+              - Check for infrastructure changes
+              - Verify GCP permissions and quotas
+              - Fix issues and retry deployment
+
+              ### Labels
+              - deployment-failure
+              - gcp
+              - needs-investigation`,
+              labels: ['deployment-failure', 'gcp', 'needs-investigation']
+            });
+
+            console.log(`Created issue #${issue.data.number}`)

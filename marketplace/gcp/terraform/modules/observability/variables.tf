@@ -7,6 +7,29 @@ variable "project_id" {
   description = "GCP project ID"
 }
 
+variable "environment" {
+  type        = string
+  description = "Environment name (production, staging, development)"
+  default     = "production"
+
+  validation {
+    condition     = contains(["production", "staging", "development"], var.environment)
+    error_message = "Environment must be one of: production, staging, development."
+  }
+}
+
+variable "service_name" {
+  type        = string
+  description = "Service identifier for monitoring"
+  default     = "erlmcp-service"
+}
+
+variable "team_label" {
+  type        = string
+  description = "Team responsible for this service"
+  default     = "platform"
+}
+
 # ============================================================================
 # Notification Channels
 # ============================================================================
@@ -173,6 +196,17 @@ variable "slo_rolling_period_days" {
   type        = number
   description = "Rolling period for SLO calculation"
   default     = 30
+
+  validation {
+    condition     = var.slo_rolling_period_days >= 1 && var.slo_rolling_period_days <= 30
+    error_message = "Rolling period must be between 1 and 30 days."
+  }
+}
+
+variable "enable_slo_alerts" {
+  type        = bool
+  description = "Enable error budget burn rate alerts for SLOs"
+  default     = true
 }
 
 # ============================================================================
@@ -361,6 +395,12 @@ variable "create_security_dashboard" {
   default     = true
 }
 
+variable "create_slo_dashboard" {
+  type        = bool
+  description = "Create SLO dashboard with error budget tracking"
+  default     = true
+}
+
 # ============================================================================
 # Log Export Configuration
 # ============================================================================
@@ -390,7 +430,19 @@ variable "log_export_storage_destination" {
 
 variable "log_export_filter" {
   type        = string
-  description = "Filter for log export"
+  description = "Filter for log export (optional, defaults to erlmcp logs)"
+  default     = ""
+}
+
+variable "log_export_pubsub_enabled" {
+  type        = bool
+  description = "Export error logs to Pub/Sub for real-time processing"
+  default     = false
+}
+
+variable "log_export_pubsub_topic" {
+  type        = string
+  description = "Pub/Sub topic for error log export"
   default     = ""
 }
 

@@ -155,16 +155,28 @@ resource "google_project_iam_member" "erlmcp_sa_roles" {
   member  = "serviceAccount:${google_service_account.erlmcp_sa.email}"
 }
 
-# Custom VM image
+# Custom VM image (2026 latest)
 resource "google_compute_image" "erlmcp_image" {
   name         = "erlmcp-vm-${random_string.suffix.result}"
   family       = "erlmcp-vm"
-  source_image = "debian-12-bookworm-v20240117"
-  description  = "erlmcp Marketplace VM image with Docker and Ops Agent"
+  source_image = "projects/debian-cloud/global/images/family/debian-12"
+  description  = "erlmcp Marketplace VM image with Docker and Ops Agent (2026)"
   project      = var.project_id
 
   guest_os_features {
     type = "UEFI_COMPATIBLE"
+  }
+
+  guest_os_features {
+    type = "VIRTIO_SCSI_MULTIQUEUE"
+  }
+
+  guest_os_features {
+    type = "SEV_CAPABLE"
+  }
+
+  guest_os_features {
+    type = "GVNIC"
   }
 
   depends_on = [
@@ -181,13 +193,20 @@ resource "google_compute_instance_template" "erlmcp_template" {
 
   machine_type = var.machine_type
 
-  # Boot disk
+  # Boot disk with latest disk options (2026)
   disk {
     source_image = google_compute_image.erlmcp_image.self_link
     boot         = true
     auto_delete  = true
-    disk_type    = "pd-balanced"
-    size         = 50
+    disk_type    = "hyperdisk-balanced"
+    disk_size_gb = 50
+    labels = merge(
+      var.labels,
+      {
+        disk-type = "boot"
+        managed-by = "terraform"
+      }
+    )
   }
 
   # Network interface
@@ -199,18 +218,28 @@ resource "google_compute_instance_template" "erlmcp_template" {
     }
   }
 
-  # Metadata
+  # Metadata (2026 - enhanced security)
   metadata = {
-    gce-container-declaration = file("${path.module}/docker-container.yaml")
-    enable-guest-agent       = "true"
-    startup-script            = file("${path.module}/start-erlmcp.sh")
+    gce-container-declaration = fileexists("${path.module}/docker-container.yaml") ? file("${path.module}/docker-container.yaml") : ""
+    enable-guest-agent        = "true"
+    startup-script            = fileexists("${path.module}/start-erlmcp.sh") ? file("${path.module}/start-erlmcp.sh") : ""
+    enable-oslogin            = "TRUE"
+    block-project-ssh-keys    = "TRUE"
+    google-logging-enabled    = "TRUE"
+    google-monitoring-enabled = "TRUE"
   }
 
-  # Shielded VM configuration
+  # Shielded VM configuration (2026 - enhanced security)
   shielded_instance_config {
     enable_secure_boot          = true
     enable_vtpm                 = true
     enable_integrity_monitoring = true
+  }
+
+  # Confidential computing (AMD SEV-SNP for latest security)
+  confidential_instance_config {
+    enable_confidential_compute    = false
+    confidential_instance_type     = "SEV"
   }
 
   # Tags
@@ -245,20 +274,15 @@ resource "google_compute_instance_group_manager" "erlmcp_group" {
   auto_healing_policies {
     health_check      = google_compute_health_check.erlmcp_health.self_link
     initial_delay_sec = 300
-    max_replicas      = var.max_instances
-    min_replicas      = var.min_instances
   }
 
   update_policy {
-    minimal_action         = "RESTART"
-    type                   = "PROACTIVE"
+    minimal_action               = "RESTART"
+    type                         = "PROACTIVE"
     instance_redistribution_type = "PROACTIVE"
-    max_surge {
-      fixed = 2
-    }
-    max_unavailable {
-      fixed = 1
-    }
+    max_surge_fixed              = 2
+    max_unavailable_fixed        = 1
+    replacement_method           = "SUBSTITUTE"
   }
 }
 
@@ -280,8 +304,12 @@ resource "google_compute_region_instance_group_manager" "erlmcp_region_group" {
   target_size = var.min_instances
 
   update_policy {
-    minimal_action = "RESTART"
-    type           = "PROACTIVE"
+    minimal_action               = "RESTART"
+    type                         = "PROACTIVE"
+    instance_redistribution_type = "PROACTIVE"
+    max_surge_fixed              = 2
+    max_unavailable_fixed        = 1
+    replacement_method           = "SUBSTITUTE"
   }
 }
 
@@ -365,8 +393,9 @@ resource "google_compute_ssl_certificate" "erlmcp_ssl" {
   project     = var.project_id
   description = "SSL certificate for erlmcp"
 
-  certificate = file("cert.pem")
-  private_key = file("key.pem")
+  certificate = fileexists("cert.pem") ? file("cert.pem") : ""
+  private_key = fileexists("key.pem") ? file("key.pem") : ""
+}
 
 # Global forwarding rule (HTTP)
 resource "google_compute_global_forwarding_rule" "erlmcp_http" {

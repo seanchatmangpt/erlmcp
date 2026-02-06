@@ -1,5 +1,7 @@
-# erlmcp Cloud Run Deployment Example
-# This example shows how to deploy erlmcp on Google Cloud Run
+# ============================================================================
+# erlmcp Cloud Run Gen2 Deployment Example
+# Serverless deployment with VPC networking and enterprise features
+# ============================================================================
 
 terraform {
   required_version = ">= 1.5.0"
@@ -7,11 +9,11 @@ terraform {
   required_providers {
     google = {
       source  = "hashicorp/google"
-      version = "~> 5.0"
+      version = ">= 5.40.0"
     }
     random = {
       source  = "hashicorp/random"
-      version = "~> 3.5"
+      version = "~> 3.6"
     }
   }
 }
@@ -22,187 +24,271 @@ provider "google" {
   region  = var.region
 }
 
-# Use the Cloud Run module
-module "erlmcp_cloudrun" {
-  source               = "../../modules/cloud-run"
-  project_id           = var.project_id
-  region               = var.region
-  service_name         = var.service_name
-  container_image      = var.container_image
-  secrets              = var.secrets
-  environment_variables = var.environment_variables
-  cpu                  = var.cpu
-  memory               = var.memory
-  max_instances        = var.max_instances
-  min_instances        = var.min_instances
-  concurrency         = var.concurrency
-  timeout              = var.timeout
-  enable_traffic_splitting = var.enable_traffic_splitting
-  traffic_split_percent   = var.traffic_split_percent
-  ingress_settings   = var.ingress_settings
-  service_account_email = var.service_account_email
-  labels              = var.labels
-  annotations         = var.annotations
-  domain_mapping      = var.domain_mapping
-}
+# ============================================================================
+# Variables
+# ============================================================================
 
-# Variables for this deployment
 variable "project_id" {
   type        = string
-  description = "The GCP project ID"
+  description = "GCP project ID"
 }
 
 variable "region" {
   type        = string
   default     = "us-central1"
-  description = "The region to deploy Cloud Run service in"
+  description = "GCP region for Cloud Run deployment"
 }
 
 variable "service_name" {
   type        = string
   default     = "erlmcp"
-  description = "Name of the Cloud Run service"
+  description = "Cloud Run service name"
 }
 
 variable "container_image" {
   type        = string
-  description = "Container image to deploy (must be in Artifact Registry)"
+  description = "Container image (e.g., 'us-central1-docker.pkg.dev/PROJECT/erlmcp/erlmcp:3.0.0')"
 }
 
-variable "secrets" {
-  type        = map(string)
-  default     = {
-    "ERLMCP_ERLANG_COOKIE" = "erlmcp-erlang-cookie"
-    "ERLMCP_DATABASE_URL" = "erlmcp-database-url"
-    "ERLMCP_JWT_SECRET" = "erlmcp-jwt-secret"
-  }
-  description = "Map of secret names to Cloud Run secret environment variables"
+variable "environment" {
+  type        = string
+  default     = "production"
+  description = "Deployment environment"
 }
 
-variable "environment_variables" {
-  type        = map(string)
-  default     = {
-    "GOOGLE_CLOUD_PROJECT" = var.project_id
-    "ENVIRONMENT" = "production"
-    "LOG_LEVEL" = "info"
-    "ENABLE_METRICS" = "true"
-    "ENABLE_TRACING" = "true"
-  }
-  description = "Environment variables to set on the Cloud Run service"
+variable "enable_vpc_networking" {
+  type        = bool
+  default     = false
+  description = "Enable VPC networking with VPC connector"
 }
 
-variable "cpu" {
-  type        = number
-  default     = 1
-  description = "CPU allocation for the Cloud Run service"
-}
-
-variable "memory" {
-  type        = number
-  default     = 512
-  description = "Memory allocation in MiB for the Cloud Run service"
-}
-
-variable "max_instances" {
-  type        = number
-  default     = 100
-  description = "Maximum number of instances"
+variable "vpc_connector_name" {
+  type        = string
+  default     = ""
+  description = "VPC Serverless Connector name (if enable_vpc_networking = true)"
 }
 
 variable "min_instances" {
   type        = number
-  default     = 0
-  description = "Minimum number of instances"
+  default     = 1
+  description = "Minimum instances (0 = scale to zero, 1+ = warm start)"
 }
 
-variable "concurrency" {
+variable "max_instances" {
   type        = number
-  default     = 80
-  description = "Concurrency level per instance"
+  default     = 10
+  description = "Maximum instances"
 }
 
-variable "timeout" {
-  type        = number
-  default     = 300
-  description = "Request timeout in seconds"
+variable "cpu" {
+  type        = string
+  default     = "1"
+  description = "CPU allocation (0.08, 1, 2, 4, 6, 8)"
 }
 
-variable "enable_traffic_splitting" {
+variable "memory" {
+  type        = string
+  default     = "512Mi"
+  description = "Memory allocation"
+}
+
+variable "allow_public_access" {
   type        = bool
   default     = false
-  description = "Enable traffic splitting for blue-green deployments"
+  description = "Allow public unauthenticated access (WARNING: security risk)"
 }
 
-variable "traffic_split_percent" {
-  type        = number
-  default     = 100
-  description = "Traffic percentage for current revision (when splitting enabled)"
-}
+# ============================================================================
+# Cloud Run Gen2 Module
+# ============================================================================
 
-variable "ingress_settings" {
-  type        = string
-  default     = "ALL"
-  description = "Ingress settings: 'ALL', 'INTERNAL', 'INTERNAL_AND Cloud_LB'"
-}
+module "erlmcp_cloudrun" {
+  source = "../modules/cloud-run"
 
-variable "service_account_email" {
-  type        = string
-  default     = ""
-  description = "Service account for Cloud Run service"
-}
+  # Project and region
+  project_id = var.project_id
+  region     = var.region
 
-variable "labels" {
-  type        = map(string)
-  default     = {
-    app = "erlmcp"
-    type = "marketplace"
+  # Service configuration
+  service_name = var.service_name
+
+  # Container image (parse from full path or construct)
+  image_repository = split("/", var.container_image)[0]
+  image_name       = join("/", slice(split("/", var.container_image), 2, length(split("/", var.container_image)) - 1))
+  image_tag        = split(":", var.container_image)[1]
+
+  # Resources (Gen2 features)
+  cpu               = var.cpu
+  memory            = var.memory
+  cpu_idle          = true
+  startup_cpu_boost = true
+  timeout           = 300
+
+  # Scaling
+  min_instances                    = var.min_instances
+  max_instances                    = var.max_instances
+  max_instance_request_concurrency = 80
+
+  # Networking (VPC connector for private resources)
+  ingress_setting   = var.allow_public_access ? "INGRESS_TRAFFIC_ALL" : "INGRESS_TRAFFIC_INTERNAL_LOAD_BALANCER"
+  vpc_connector_name = var.enable_vpc_networking ? var.vpc_connector_name : ""
+  vpc_egress        = "PRIVATE_RANGES_ONLY"
+
+  # Health checks
+  health_check_path = "/health"
+
+  # Startup probe (faster cold starts)
+  startup_probe_initial_delay   = 0
+  startup_probe_timeout         = 3
+  startup_probe_period          = 10
+  startup_probe_failure_threshold = 3
+
+  # Liveness probe
+  liveness_probe_initial_delay   = 30
+  liveness_probe_timeout         = 5
+  liveness_probe_period          = 10
+  liveness_probe_failure_threshold = 3
+
+  # Environment variables
+  container_env = [
+    { name = "ERLMCP_ENV", value = var.environment },
+    { name = "ERLMCP_VERSION", value = split(":", var.container_image)[1] },
+    { name = "ERL_AFLAGS", value = "-proto_dist inet_tls" },
+    { name = "ERL_DIST_PORT", value = "9100" },
+    { name = "ERLMCP_TRANSPORT", value = "stdio" },
+    { name = "LOG_LEVEL", value = "info" },
+    { name = "ENABLE_METRICS", value = "true" },
+    { name = "ENABLE_TRACING", value = "true" }
+  ]
+
+  # Secret environment variables (from Secret Manager)
+  container_secrets = [
+    { name = "ERLANG_COOKIE", secret_name = "erlmcp-erlang-cookie", secret_version = "latest" },
+    { name = "DB_PASSWORD", secret_name = "erlmcp-db-password", secret_version = "latest" },
+    { name = "REDIS_PASSWORD", secret_name = "erlmcp-redis-password", secret_version = "latest" }
+  ]
+
+  # Secret volumes (TLS certificates)
+  secret_volumes = []
+
+  # IAM configuration (zero-trust by default)
+  create_service_account = true
+  service_account_roles = [
+    "roles/secretmanager.secretAccessor",
+    "roles/logging.logWriter",
+    "roles/monitoring.metricWriter",
+    "roles/cloudtrace.agent",
+    "roles/cloudprofiler.agent"
+  ]
+  allow_public_access = var.allow_public_access
+
+  # Security (Gen2 execution environment)
+  execution_environment      = "EXECUTION_ENVIRONMENT_GEN2"
+  binary_authorization_policy = ""
+  encryption_key             = ""
+  session_affinity           = false
+
+  # Labels
+  labels = {
+    app          = "erlmcp"
+    environment  = var.environment
+    managed-by   = "terraform"
+    deployment   = "cloud-run-gen2"
+    version      = split(":", var.container_image)[1]
   }
-  description = "Labels to apply to the service"
-}
 
-variable "annotations" {
-  type        = map(string)
-  default     = {
-    "marketplace.cloud.google.com/deployment-type" = "cloudrun"
+  # Annotations
+  annotations = {
+    "marketplace.cloud.google.com/deployment-type" = "cloudrun-gen2"
   }
-  description = "Additional annotations for the Cloud Run service"
 }
 
-variable "domain_mapping" {
-  type        = string
-  default     = ""
-  description = "Custom domain mapping (e.g., 'erlmcp.example.com')"
-}
-
+# ============================================================================
 # Outputs
-output "service_url" {
-  value = module.erlmcp_cloudrun.service_url
-}
+# ============================================================================
 
 output "service_name" {
-  value = module.erlmcp_cloudrun.service_name
+  description = "Cloud Run service name"
+  value       = module.erlmcp_cloudrun.service_name
+}
+
+output "service_url" {
+  description = "Cloud Run service URL"
+  value       = module.erlmcp_cloudrun.service_url
+}
+
+output "service_id" {
+  description = "Cloud Run service ID"
+  value       = module.erlmcp_cloudrun.service_id
 }
 
 output "location" {
-  value = module.erlmcp_cloudrun.location
+  description = "Service location"
+  value       = module.erlmcp_cloudrun.location
 }
 
-output "service_account" {
-  value = module.erlmcp_cloudrun.service_account
+output "service_account_email" {
+  description = "Service account email"
+  value       = module.erlmcp_cloudrun.service_account_email
 }
 
-output "domain_url" {
-  value = module.erlmcp_cloudrun.domain_url
+output "health_check_url" {
+  description = "Health check URL"
+  value       = module.erlmcp_cloudrun.health_check_url
 }
 
-output "secrets" {
-  value = module.erlmcp_cloudrun.secrets
+output "container_image" {
+  description = "Deployed container image"
+  value       = module.erlmcp_cloudrun.container_image
 }
 
-output "revision" {
-  value = module.erlmcp_cloudrun.revision
+output "revision_name" {
+  description = "Latest ready revision"
+  value       = module.erlmcp_cloudrun.latest_ready_revision
 }
 
-output "ingress" {
-  value = module.erlmcp_cloudrun.ingress
+output "execution_environment" {
+  description = "Execution environment (Gen2)"
+  value       = module.erlmcp_cloudrun.execution_environment
 }
+
+output "is_gen2" {
+  description = "Using Gen2 execution environment"
+  value       = module.erlmcp_cloudrun.is_gen2
+}
+
+output "deployment_metadata" {
+  description = "Deployment metadata for CI/CD"
+  value       = module.erlmcp_cloudrun.deployment_metadata
+}
+
+# ============================================================================
+# Usage Instructions
+# ============================================================================
+
+# To deploy this configuration:
+#
+# 1. Initialize Terraform:
+#    docker compose run erlmcp-build terraform -chdir=/workspace/marketplace/gcp/terraform/examples init
+#
+# 2. Plan the deployment:
+#    docker compose run erlmcp-build terraform -chdir=/workspace/marketplace/gcp/terraform/examples plan \
+#      -var="project_id=YOUR_PROJECT_ID" \
+#      -var="container_image=us-central1-docker.pkg.dev/YOUR_PROJECT/erlmcp/erlmcp:3.0.0"
+#
+# 3. Apply the deployment:
+#    docker compose run erlmcp-build terraform -chdir=/workspace/marketplace/gcp/terraform/examples apply \
+#      -var="project_id=YOUR_PROJECT_ID" \
+#      -var="container_image=us-central1-docker.pkg.dev/YOUR_PROJECT/erlmcp/erlmcp:3.0.0"
+#
+# 4. With VPC networking:
+#    docker compose run erlmcp-build terraform -chdir=/workspace/marketplace/gcp/terraform/examples apply \
+#      -var="project_id=YOUR_PROJECT_ID" \
+#      -var="container_image=us-central1-docker.pkg.dev/YOUR_PROJECT/erlmcp/erlmcp:3.0.0" \
+#      -var="enable_vpc_networking=true" \
+#      -var="vpc_connector_name=erlmcp-vpc-connector"
+#
+# 5. Destroy the deployment:
+#    docker compose run erlmcp-build terraform -chdir=/workspace/marketplace/gcp/terraform/examples destroy \
+#      -var="project_id=YOUR_PROJECT_ID" \
+#      -var="container_image=us-central1-docker.pkg.dev/YOUR_PROJECT/erlmcp/erlmcp:3.0.0"

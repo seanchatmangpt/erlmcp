@@ -1,26 +1,63 @@
-# EKS Cluster
+# EKS Cluster with enhanced configuration
 resource "aws_eks_cluster" "cluster" {
   name     = local.cluster_identifier
   role_arn = aws_iam_role.eks_cluster.arn
+  version  = var.eks_version
 
   vpc_config {
-    subnet_ids         = aws_subnet.private[*].id
-    security_group_ids = [aws_security_group.cluster.id]
+    subnet_ids              = aws_subnet.private[*].id
+    security_group_ids      = [aws_security_group.cluster.id]
+    endpoint_private_access = true
+    endpoint_public_access  = true
+    public_access_cidrs     = var.cluster_endpoint_public_access_cidrs
   }
 
   kubernetes_network_config {
-    endpoint_private_access = false
-    endpoint_public_access  = true
+    service_ipv4_cidr = var.cluster_service_ipv4_cidr
+    ip_family         = "ipv4"
   }
 
-  enabled_cluster_log_types = ["api", "audit"]
+  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+
+  encryption_config {
+    provider {
+      key_arn = aws_kms_key.eks.arn
+    }
+    resources = ["secrets"]
+  }
 
   depends_on = [
     aws_iam_role_policy_attachment.cluster_AmazonEKSClusterPolicy,
-    aws_iam_role_policy_attachment.cluster_AmazonEKSVPCResourceController
+    aws_iam_role_policy_attachment.cluster_AmazonEKSVPCResourceController,
+    aws_cloudwatch_log_group.eks_cluster
   ]
 
   tags = local.tags
+}
+
+# CloudWatch log group for EKS cluster logs
+resource "aws_cloudwatch_log_group" "eks_cluster" {
+  name              = "/aws/eks/${local.cluster_identifier}/cluster"
+  retention_in_days = 30
+  kms_key_id        = aws_kms_key.eks.arn
+
+  tags = local.tags
+}
+
+# KMS key for EKS encryption
+resource "aws_kms_key" "eks" {
+  description             = "EKS cluster encryption key for ${local.cluster_identifier}"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+
+  tags = merge(local.tags, {
+    Name = "${local.cluster_identifier}-eks-key"
+  })
+}
+
+resource "aws_kms_alias" "eks" {
+  name          = "alias/${local.cluster_identifier}-eks"
+  target_key_id = aws_kms_key.eks.key_id
 }
 
 # EKS Cluster IAM Policy Attachment
@@ -44,10 +81,9 @@ resource "aws_eks_node_group" "nodes" {
 
   update_config {
     max_unavailable = var.max_unavailable
-    max Surge       = var.max_surge
   }
 
-  launch_type = "ON_DEMAND"
+  capacity_type = "ON_DEMAND"
 
   instance_types = [var.instance_type]
 
@@ -61,49 +97,37 @@ resource "aws_eks_node_group" "nodes" {
   ]
 }
 
-# Node group autoscaling
-resource "aws_autoscaling_group" "nodes" {
-  name                 = "${var.environment}-eks-node-group"
-  desired_capacity     = var.desired_nodes
-  max_size             = var.max_nodes
-  min_size             = var.min_nodes
-  vpc_zone_identifier  = aws_subnet.private[*].id
-  target_group_arns    = [aws_lb_target_group.main[0].arn]
-
-  launch_template {
-    id      = aws_launch_template.nodes.id
-    version = "$Latest"
-  }
-
-  tag {
-    key                 = "Name"
-    value               = "erlmcp-${var.environment}-node"
-    propagate_at_launch = true
-  }
-
-  tag {
-    key                 = "kubernetes.io/cluster/${local.cluster_identifier}"
-    value               = "owned"
-    propagate_at_launch = true
-  }
-
-  lifecycle {
-    ignore_changes = [load_balancers, target_group_arns]
-  }
-}
-
-# Launch template for nodes
+# Launch template for custom node configurations (if needed)
 resource "aws_launch_template" "nodes" {
-  name_prefix   = "erlmcp-${var.environment}-node"
+  name_prefix   = "erlmcp-${var.environment}-node-"
   image_id      = data.aws_ami.eks_node.id
   instance_type = var.instance_type
-  key_name      = "erlmcp-${var.environment}-key"
 
-  network_interfaces {
-    associate_public_ip_address = false
-    delete_on_termination       = true
-    security_groups             = [aws_security_group.nodes.id]
-    subnet_id                   = aws_subnet.private[0].id
+  vpc_security_group_ids = [aws_security_group.nodes.id]
+
+  block_device_mappings {
+    device_name = "/dev/xvda"
+
+    ebs {
+      volume_size           = 100
+      volume_type           = "gp3"
+      iops                  = 3000
+      throughput            = 125
+      encrypted             = true
+      kms_key_id            = aws_kms_key.eks.arn
+      delete_on_termination = true
+    }
+  }
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
+  }
+
+  monitoring {
+    enabled = true
   }
 
   tag_specifications {
@@ -113,14 +137,23 @@ resource "aws_launch_template" "nodes" {
     })
   }
 
-  user_data = base64encode(<<-EOT
-    #!/bin/bash
-    set -ex
-    /etc/eks/bootstrap.sh ${local.cluster_identifier} \
-      --b64-cluster-ca ${aws_eks_cluster.cluster.certificate_authority[0].data} \
-      --apiserver-endpoint ${aws_eks_cluster.cluster.endpoint} \
-      --kubelet-extra-args '--node-ip=$(curl http://169.254.169.254/latest/meta-data/local-ipv4)'
-  EOT)
+  tag_specifications {
+    resource_type = "volume"
+    tags = merge(local.tags, {
+      Name = "erlmcp-${var.environment}-node-volume"
+    })
+  }
+
+  user_data = base64encode(templatefile("${path.module}/user_data/bootstrap.sh.tpl", {
+    cluster_name        = local.cluster_identifier
+    cluster_endpoint    = aws_eks_cluster.cluster.endpoint
+    cluster_ca_data     = aws_eks_cluster.cluster.certificate_authority[0].data
+    bootstrap_extra_args = "--use-max-pods false --kubelet-extra-args '--max-pods=110'"
+  }))
+
+  lifecycle {
+    create_before_destroy = true
+  }
 
   depends_on = [aws_eks_cluster.cluster]
 }

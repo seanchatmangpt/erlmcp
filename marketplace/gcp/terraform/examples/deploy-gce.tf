@@ -68,8 +68,14 @@ variable "instance_name" {
 
 variable "machine_type" {
   type        = string
-  default     = "e2-standard-4"
-  description = "Machine type for VM instances"
+  default     = "n2-standard-4"
+  description = <<-EOT
+    Machine type for VM instances (2026):
+    - n2-standard-4: Intel balanced (recommended)
+    - n2d-standard-4: AMD balanced
+    - c3-standard-4: 4th gen Intel compute-optimized
+    - e2-standard-4: Cost-optimized
+  EOT
 }
 
 variable "min_instances" {

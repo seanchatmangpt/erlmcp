@@ -11,7 +11,7 @@ locals {
   }
 
   # S3 bucket names
-  s3_bucket_name = "erlmcp-${var.environment}-artifacts-${random.string.result}"
+  s3_bucket_name = "erlmcp-${var.environment}-artifacts-${random_string.suffix.result}"
 
   # EKS cluster name
   cluster_identifier = "${var.cluster_name}-${var.environment}"
@@ -67,12 +67,10 @@ locals {
 
   # Load balancer configuration
   load_balancer_config = {
-    name              = "alb-${var.environment}"
-    internal          = false
+    name               = "erlmcp-${var.environment}-alb"
+    internal           = false
     load_balancer_type = "application"
-    ip_address_type   = "ipv4"
-    security_groups   = [aws_security_group.alb[0].id]
-    subnets          = aws_subnet.private[*].id
+    ip_address_type    = "ipv4"
   }
 
   # Helm configuration

@@ -224,3 +224,60 @@ variable "affinity" {
   default = null
   description = "Pod affinity and anti-affinity rules"
 }
+
+# EKS Cluster Configuration
+variable "eks_version" {
+  type        = string
+  default     = "1.31"
+  description = "EKS Kubernetes version"
+  validation {
+    condition     = can(regex("^1\\.(2[7-9]|3[0-9])$", var.eks_version))
+    error_message = "EKS version must be 1.27 or higher"
+  }
+}
+
+variable "create_eks_cluster" {
+  type        = bool
+  default     = true
+  description = "Whether to create the EKS cluster"
+}
+
+variable "cluster_endpoint_public_access_cidrs" {
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+  description = "List of CIDR blocks that can access the cluster endpoint publicly"
+}
+
+variable "cluster_service_ipv4_cidr" {
+  type        = string
+  default     = "172.20.0.0/16"
+  description = "The CIDR block to assign Kubernetes service IP addresses from"
+  validation {
+    condition     = can(cidrhost(var.cluster_service_ipv4_cidr, 0))
+    error_message = "Must be a valid IPv4 CIDR block"
+  }
+}
+
+# VPC Endpoint Configuration
+variable "enable_vpc_endpoints" {
+  type        = bool
+  default     = true
+  description = "Enable VPC endpoints for AWS services"
+}
+
+# KMS Configuration
+variable "enable_kms_encryption" {
+  type        = bool
+  default     = true
+  description = "Enable KMS encryption for EKS secrets and S3 buckets"
+}
+
+variable "kms_key_deletion_window" {
+  type        = number
+  default     = 30
+  description = "KMS key deletion window in days"
+  validation {
+    condition     = var.kms_key_deletion_window >= 7 && var.kms_key_deletion_window <= 30
+    error_message = "KMS key deletion window must be between 7 and 30 days"
+  }
+}

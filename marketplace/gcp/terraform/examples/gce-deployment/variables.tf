@@ -33,26 +33,42 @@ variable "instance_count" {
 
 variable "machine_type" {
   type        = string
-  description = "Machine type"
-  default     = "e2-medium"
+  description = <<-EOT
+    Machine type (2026 options):
+    - n2-standard-4: Balanced performance (recommended)
+    - n2d-standard-4: AMD-based balanced
+    - c3-standard-4: Latest Intel compute-optimized
+    - e2-standard-4: Cost-optimized
+  EOT
+  default     = "n2-standard-4"
 }
 
 variable "source_image" {
   type        = string
-  description = "Source image (custom erlmcp image or Ubuntu)"
-  default     = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+  description = "Source image (custom erlmcp image or Ubuntu 24.04 LTS)"
+  default     = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64"
 }
 
 variable "disk_type" {
   type        = string
-  description = "Disk type"
-  default     = "pd-balanced"
+  description = <<-EOT
+    Disk type (2026 options):
+    - hyperdisk-balanced: Next-gen balanced (recommended)
+    - pd-balanced: Standard balanced
+    - pd-ssd: High performance SSD
+  EOT
+  default     = "hyperdisk-balanced"
 }
 
 variable "disk_size_gb" {
   type        = number
-  description = "Disk size in GB"
-  default     = 20
+  description = "Boot disk size in GB"
+  default     = 50
+
+  validation {
+    condition     = var.disk_size_gb >= 20
+    error_message = "Disk size must be at least 20 GB."
+  }
 }
 
 # ============================================================================

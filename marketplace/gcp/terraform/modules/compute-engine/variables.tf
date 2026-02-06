@@ -41,24 +41,54 @@ variable "instance_count" {
 # ============================================================================
 variable "machine_type" {
   type        = string
-  description = "Machine type (e.g., e2-medium, e2-standard-2, n2-standard-4)"
-  default     = "e2-medium"
+  description = <<-EOT
+    Machine type for the instance. Latest options (2026):
+    - E2 (cost-optimized): e2-micro, e2-small, e2-medium, e2-standard-2/4/8/16/32
+    - N2 (balanced): n2-standard-2/4/8/16/32/48/64/80/96/128, n2-highmem-*, n2-highcpu-*
+    - N2D (AMD balanced): n2d-standard-2/4/8/16/32/48/64/80/96/128/224
+    - C2 (compute-optimized Intel): c2-standard-4/8/16/30/60
+    - C2D (compute-optimized AMD): c2d-standard-2/4/8/16/32/56/112
+    - C3 (4th gen Intel): c3-standard-4/8/22/44/88/176, c3-highcpu-*, c3-highmem-*
+    - T2D (cost-optimized AMD): t2d-standard-1/2/4/8/16/32/48/60
+    - T2A (Arm-based): t2a-standard-1/2/4/8/16/32/48
+    - M3 (memory-optimized): m3-megamem-64/128, m3-ultramem-32/64/128
+  EOT
+  default     = "n2-standard-4"
 }
 
 variable "source_image" {
   type        = string
-  description = "Source image for boot disk (custom erlmcp image or Ubuntu)"
-  default     = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2204-lts"
+  description = <<-EOT
+    Source image for boot disk. Options:
+    - Ubuntu: projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64 (latest LTS)
+    - Debian: projects/debian-cloud/global/images/family/debian-12
+    - Rocky Linux: projects/rocky-linux-cloud/global/images/family/rocky-linux-9
+    - Container-Optimized OS: projects/cos-cloud/global/images/family/cos-stable
+    - Custom: Your custom erlmcp image
+  EOT
+  default     = "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64"
 }
 
 variable "disk_type" {
   type        = string
-  description = "Disk type (pd-standard, pd-balanced, pd-ssd)"
-  default     = "pd-balanced"
+  description = <<-EOT
+    Disk type for boot disk. Options (2026):
+    - pd-standard: Standard persistent disk (HDD)
+    - pd-balanced: Balanced persistent disk (SSD) - good price/performance
+    - pd-ssd: SSD persistent disk - high performance
+    - pd-extreme: Extreme persistent disk - highest IOPS (requires special machine types)
+    - hyperdisk-balanced: Hyperdisk Balanced - next-gen balanced performance
+    - hyperdisk-throughput: Hyperdisk Throughput - optimized for high throughput
+    - hyperdisk-extreme: Hyperdisk Extreme - highest performance and flexibility
+  EOT
+  default     = "hyperdisk-balanced"
 
   validation {
-    condition     = contains(["pd-standard", "pd-balanced", "pd-ssd", "pd-extreme"], var.disk_type)
-    error_message = "Disk type must be pd-standard, pd-balanced, pd-ssd, or pd-extreme."
+    condition = contains([
+      "pd-standard", "pd-balanced", "pd-ssd", "pd-extreme",
+      "hyperdisk-balanced", "hyperdisk-throughput", "hyperdisk-extreme"
+    ], var.disk_type)
+    error_message = "Disk type must be one of: pd-standard, pd-balanced, pd-ssd, pd-extreme, hyperdisk-balanced, hyperdisk-throughput, hyperdisk-extreme."
   }
 }
 
@@ -373,10 +403,15 @@ variable "minimal_action" {
   default     = "REFRESH"
 }
 
-variable "most_disruptive_action" {
+variable "replacement_method" {
   type        = string
-  description = "Most disruptive action for updates"
-  default     = "REPLACE"
+  description = "Replacement method for instance group updates (RECREATE, SUBSTITUTE)"
+  default     = "SUBSTITUTE"
+
+  validation {
+    condition     = contains(["RECREATE", "SUBSTITUTE"], var.replacement_method)
+    error_message = "Replacement method must be RECREATE or SUBSTITUTE."
+  }
 }
 
 variable "max_surge" {
@@ -393,8 +428,207 @@ variable "max_unavailable" {
 
 variable "min_ready_sec" {
   type        = number
-  description = "Minimum ready seconds"
+  description = "Minimum seconds before instance is ready"
   default     = 60
+}
+
+# ============================================================================
+# Advanced Compute Configuration (2026)
+# ============================================================================
+variable "min_cpu_platform" {
+  type        = string
+  description = <<-EOT
+    Minimum CPU platform. Options:
+    - Intel Cascade Lake
+    - Intel Ice Lake
+    - Intel Sapphire Rapids (4th Gen)
+    - AMD Milan
+    - AMD Genoa (4th Gen)
+    - Ampere Altra (Arm)
+  EOT
+  default     = ""
+}
+
+variable "enable_display" {
+  type        = bool
+  description = "Enable virtual display (for GPU workloads)"
+  default     = false
+}
+
+variable "guest_accelerators" {
+  type = list(object({
+    type  = string
+    count = number
+  }))
+  description = <<-EOT
+    GPU accelerators to attach. Types:
+    - nvidia-tesla-t4: T4 GPUs (general purpose)
+    - nvidia-tesla-v100: V100 GPUs (training/inference)
+    - nvidia-tesla-a100: A100 GPUs (latest, highest performance)
+    - nvidia-l4: L4 GPUs (cost-effective inference)
+    - nvidia-a100-80gb: A100 80GB (large models)
+  EOT
+  default     = []
+}
+
+variable "local_ssds" {
+  type = list(object({
+    device_name = string
+    interface   = string
+  }))
+  description = <<-EOT
+    Local SSD disks to attach. Interface options:
+    - NVME: NVMe interface (higher performance)
+    - SCSI: SCSI interface
+    Each local SSD is 375 GB. Max 24 per instance.
+  EOT
+  default     = []
+}
+
+variable "advanced_machine_features" {
+  type = object({
+    enable_nested_virtualization = bool
+    threads_per_core             = number
+    visible_core_count           = number
+  })
+  description = <<-EOT
+    Advanced machine features:
+    - enable_nested_virtualization: Enable nested virtualization
+    - threads_per_core: Threads per physical core (1 or 2)
+    - visible_core_count: Number of physical cores to expose
+  EOT
+  default = {
+    enable_nested_virtualization = false
+    threads_per_core             = 2
+    visible_core_count           = 0
+  }
+}
+
+variable "reservation_affinity" {
+  type = object({
+    type = string
+    specific_reservations = list(object({
+      key    = string
+      values = list(string)
+    }))
+  })
+  description = <<-EOT
+    Reservation affinity configuration:
+    - type: ANY_RESERVATION, SPECIFIC_RESERVATION, NO_RESERVATION
+    - specific_reservations: List of specific reservations
+  EOT
+  default = {
+    type                  = "ANY_RESERVATION"
+    specific_reservations = []
+  }
+}
+
+# ============================================================================
+# Enhanced Security Configuration (2026)
+# ============================================================================
+variable "enable_os_login" {
+  type        = bool
+  description = "Enable OS Login for SSH key management via IAM"
+  default     = true
+}
+
+variable "block_project_ssh_keys" {
+  type        = bool
+  description = "Block project-wide SSH keys (security best practice)"
+  default     = true
+}
+
+variable "enable_confidential_compute_sev_snp" {
+  type        = bool
+  description = "Enable Confidential VM with AMD SEV-SNP (latest generation)"
+  default     = false
+}
+
+variable "can_ip_forward" {
+  type        = bool
+  description = "Allow instance to forward IP packets"
+  default     = false
+}
+
+variable "network_performance_config" {
+  type = object({
+    total_egress_bandwidth_tier = string
+  })
+  description = <<-EOT
+    Network performance configuration:
+    - total_egress_bandwidth_tier: TIER_1 (highest), DEFAULT
+  EOT
+  default = {
+    total_egress_bandwidth_tier = "DEFAULT"
+  }
+}
+
+# ============================================================================
+# Snapshot and Backup Configuration
+# ============================================================================
+variable "enable_snapshot_schedule" {
+  type        = bool
+  description = "Create and attach snapshot schedule policy"
+  default     = false
+}
+
+variable "snapshot_schedule_name" {
+  type        = string
+  description = "Name for snapshot schedule policy"
+  default     = "daily-snapshot"
+}
+
+variable "snapshot_retention_days" {
+  type        = number
+  description = "Days to retain snapshots"
+  default     = 14
+
+  validation {
+    condition     = var.snapshot_retention_days >= 1 && var.snapshot_retention_days <= 65535
+    error_message = "Snapshot retention must be between 1 and 65535 days."
+  }
+}
+
+variable "snapshot_start_time" {
+  type        = string
+  description = "Snapshot start time in UTC (HH:MM format)"
+  default     = "03:00"
+
+  validation {
+    condition     = can(regex("^([0-1][0-9]|2[0-3]):[0-5][0-9]$", var.snapshot_start_time))
+    error_message = "Snapshot start time must be in HH:MM format."
+  }
+}
+
+# ============================================================================
+# Instance Schedule Configuration
+# ============================================================================
+variable "instance_schedule" {
+  type = object({
+    enabled      = bool
+    start_time   = string
+    stop_time    = string
+    timezone     = string
+  })
+  description = <<-EOT
+    Instance schedule for cost optimization:
+    - enabled: Enable instance scheduling
+    - start_time: Time to start instances (HH:MM)
+    - stop_time: Time to stop instances (HH:MM)
+    - timezone: Timezone (e.g., America/New_York, UTC)
+  EOT
+  default = {
+    enabled    = false
+    start_time = "09:00"
+    stop_time  = "18:00"
+    timezone   = "UTC"
+  }
+}
+
+variable "static_nat_ip_address" {
+  type        = string
+  description = "Static NAT IP address (leave empty for ephemeral)"
+  default     = ""
 }
 
 # ============================================================================

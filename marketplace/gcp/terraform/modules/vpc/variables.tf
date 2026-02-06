@@ -305,3 +305,216 @@ variable "enable_deny_all" {
   description = "Create explicit deny-all firewall rule"
   default     = false
 }
+
+# ============================================================================
+# VPC Peering Configuration
+# ============================================================================
+variable "enable_peering" {
+  type        = bool
+  description = "Enable VPC peering"
+  default     = false
+}
+
+variable "peering_config" {
+  type = list(object({
+    name                                = string
+    peer_network                        = string
+    export_custom_routes                = bool
+    import_custom_routes                = bool
+    export_subnet_routes_with_public_ip = bool
+    import_subnet_routes_with_public_ip = bool
+  }))
+  description = "VPC peering configurations"
+  default     = []
+}
+
+# ============================================================================
+# Private Service Access Configuration
+# ============================================================================
+variable "enable_private_service_access" {
+  type        = bool
+  description = "Enable private service access for managed services (Cloud SQL, Memorystore)"
+  default     = false
+}
+
+variable "private_service_cidr_prefix" {
+  type        = number
+  description = "Prefix length for private service access IP range"
+  default     = 16
+
+  validation {
+    condition     = var.private_service_cidr_prefix >= 8 && var.private_service_cidr_prefix <= 24
+    error_message = "Prefix length must be between 8 and 24."
+  }
+}
+
+# ============================================================================
+# Private Service Connect Configuration
+# ============================================================================
+variable "enable_psc_endpoints" {
+  type        = bool
+  description = "Enable Private Service Connect endpoints"
+  default     = false
+}
+
+variable "psc_endpoints" {
+  type = list(object({
+    name           = string
+    region         = string
+    ip_address     = string
+    target_service = string
+  }))
+  description = "Private Service Connect endpoint configurations"
+  default     = []
+}
+
+# ============================================================================
+# DNS Policy Configuration
+# ============================================================================
+variable "enable_dns_policies" {
+  type        = bool
+  description = "Enable DNS policies for the VPC"
+  default     = false
+}
+
+variable "dns_enable_inbound_forwarding" {
+  type        = bool
+  description = "Enable inbound DNS forwarding"
+  default     = false
+}
+
+variable "dns_enable_logging" {
+  type        = bool
+  description = "Enable DNS query logging"
+  default     = true
+}
+
+variable "dns_alternative_name_servers" {
+  type = list(object({
+    ipv4_address    = string
+    forwarding_path = string
+  }))
+  description = "Alternative DNS name servers"
+  default     = []
+}
+
+# ============================================================================
+# Cloud Armor Configuration
+# ============================================================================
+variable "enable_cloud_armor" {
+  type        = bool
+  description = "Enable Cloud Armor security policy"
+  default     = false
+}
+
+variable "cloud_armor_rate_limit_threshold" {
+  type        = number
+  description = "Rate limit threshold (requests per interval). Set to 0 to disable rate limiting."
+  default     = 1000
+
+  validation {
+    condition     = var.cloud_armor_rate_limit_threshold >= 0
+    error_message = "Rate limit threshold must be non-negative."
+  }
+}
+
+variable "cloud_armor_rate_limit_interval" {
+  type        = number
+  description = "Rate limit interval in seconds"
+  default     = 60
+
+  validation {
+    condition     = contains([60, 120, 180, 240, 300], var.cloud_armor_rate_limit_interval)
+    error_message = "Rate limit interval must be 60, 120, 180, 240, or 300 seconds."
+  }
+}
+
+variable "cloud_armor_ban_duration" {
+  type        = number
+  description = "Ban duration in seconds for rate limited IPs"
+  default     = 600
+
+  validation {
+    condition     = var.cloud_armor_ban_duration >= 0 && var.cloud_armor_ban_duration <= 86400
+    error_message = "Ban duration must be between 0 and 86400 seconds (24 hours)."
+  }
+}
+
+variable "cloud_armor_blocked_countries" {
+  type        = list(string)
+  description = "List of country codes to block (ISO 3166-1 alpha-2)"
+  default     = []
+
+  validation {
+    condition     = alltrue([for c in var.cloud_armor_blocked_countries : length(c) == 2])
+    error_message = "Country codes must be 2-character ISO 3166-1 alpha-2 codes."
+  }
+}
+
+variable "cloud_armor_enable_owasp_rules" {
+  type        = bool
+  description = "Enable OWASP ModSecurity Core Rule Set protection"
+  default     = false
+}
+
+variable "cloud_armor_enable_adaptive_protection" {
+  type        = bool
+  description = "Enable adaptive protection for DDoS defense"
+  default     = false
+}
+
+# ============================================================================
+# Shared VPC Configuration
+# ============================================================================
+variable "enable_shared_vpc_host" {
+  type        = bool
+  description = "Enable this project as a Shared VPC host"
+  default     = false
+}
+
+variable "shared_vpc_service_projects" {
+  type        = list(string)
+  description = "List of service project IDs to attach to this Shared VPC host"
+  default     = []
+}
+
+# ============================================================================
+# Erlang-Specific Configuration
+# ============================================================================
+variable "enable_erlang_distribution" {
+  type        = bool
+  description = "Enable Erlang distribution protocol firewall rules"
+  default     = true
+}
+
+variable "erlang_distribution_port_range" {
+  type        = list(string)
+  description = "Port range for Erlang distributed communication"
+  default     = ["9000-9999"]
+
+  validation {
+    condition     = alltrue([for r in var.erlang_distribution_port_range : can(regex("^[0-9]+-[0-9]+$", r)) || can(regex("^[0-9]+$", r))])
+    error_message = "Port range must be in format 'start-end' or single port number."
+  }
+}
+
+variable "erlang_node_tags" {
+  type        = list(string)
+  description = "Network tags for Erlang nodes (for firewall targeting)"
+  default     = ["erlang-node", "erlmcp-worker"]
+}
+
+# ============================================================================
+# Flow Logs Export Configuration
+# ============================================================================
+variable "enable_flow_log_export" {
+  type        = bool
+  description = "Export VPC flow logs to Cloud Storage"
+  default     = false
+}
+
+variable "flow_log_bucket_name" {
+  type        = string
+  description = "Cloud Storage bucket name for flow log export"
+  default     = ""
+}

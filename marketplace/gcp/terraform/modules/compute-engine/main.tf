@@ -73,6 +73,8 @@ resource "google_compute_instance" "erlmcp" {
   project      = var.project_id
   zone         = var.zone
   machine_type = var.machine_type
+  min_cpu_platform = var.min_cpu_platform
+  can_ip_forward   = var.can_ip_forward
 
   # Boot disk
   boot_disk {
@@ -134,21 +136,77 @@ resource "google_compute_instance" "erlmcp" {
     enable_integrity_monitoring  = var.enable_integrity_monitoring
   }
 
-  # Confidential computing
+  # Confidential computing (SEV-SNP for latest AMD EPYC processors)
   confidential_instance_config {
-    enable_confidential_compute = var.enable_confidential_compute
+    enable_confidential_compute          = var.enable_confidential_compute
+    confidential_instance_type           = var.enable_confidential_compute_sev_snp ? "SEV_SNP" : "SEV"
+  }
+
+  # Advanced machine features
+  dynamic "advanced_machine_features" {
+    for_each = var.advanced_machine_features.enable_nested_virtualization || var.advanced_machine_features.threads_per_core != 2 || var.advanced_machine_features.visible_core_count != 0 ? [1] : []
+    content {
+      enable_nested_virtualization = var.advanced_machine_features.enable_nested_virtualization
+      threads_per_core             = var.advanced_machine_features.threads_per_core
+      visible_core_count           = var.advanced_machine_features.visible_core_count > 0 ? var.advanced_machine_features.visible_core_count : null
+    }
+  }
+
+  # GPU accelerators
+  dynamic "guest_accelerator" {
+    for_each = var.guest_accelerators
+    content {
+      type  = guest_accelerator.value.type
+      count = guest_accelerator.value.count
+    }
+  }
+
+  # Enable display for GPU workloads
+  enable_display = var.enable_display
+
+  # Local SSD disks
+  dynamic "scratch_disk" {
+    for_each = var.local_ssds
+    content {
+      interface = scratch_disk.value.interface
+    }
+  }
+
+  # Reservation affinity
+  dynamic "reservation_affinity" {
+    for_each = var.reservation_affinity.type != "ANY_RESERVATION" ? [1] : []
+    content {
+      type = var.reservation_affinity.type
+      dynamic "specific_reservation" {
+        for_each = var.reservation_affinity.specific_reservations
+        content {
+          key    = specific_reservation.value.key
+          values = specific_reservation.value.values
+        }
+      }
+    }
+  }
+
+  # Network performance configuration
+  dynamic "network_performance_config" {
+    for_each = var.network_performance_config.total_egress_bandwidth_tier != "DEFAULT" ? [1] : []
+    content {
+      total_egress_bandwidth_tier = var.network_performance_config.total_egress_bandwidth_tier
+    }
   }
 
   # Metadata
   metadata = merge(
     var.metadata,
     {
-      ssh-keys               = var.ssh_keys != "" ? var.ssh_keys : null
-      startup-script         = var.startup_script
-      startup-script-url     = var.startup_script_url
-      shutdown-script        = var.shutdown_script
-      google-logging-enabled = "true"
-      google-monitoring-enabled = "true"
+      ssh-keys                      = var.ssh_keys != "" ? var.ssh_keys : null
+      startup-script                = var.startup_script
+      startup-script-url            = var.startup_script_url
+      shutdown-script               = var.shutdown_script
+      google-logging-enabled        = "true"
+      google-monitoring-enabled     = "true"
+      enable-oslogin                = var.enable_os_login ? "TRUE" : "FALSE"
+      block-project-ssh-keys        = var.block_project_ssh_keys ? "TRUE" : "FALSE"
     }
   )
 
@@ -191,12 +249,7 @@ resource "google_compute_instance" "erlmcp" {
   deletion_protection = var.deletion_protection
 
   # Resource policies
-  dynamic "scheduling" {
-    for_each = var.resource_policy_urls != [] ? [1] : []
-    content {
-      scheduling = var.resource_policy_urls
-    }
-  }
+  resource_policies = var.resource_policy_urls
 
   # depends_on
   depends_on = [
@@ -245,8 +298,9 @@ resource "google_compute_instance_template" "erlmcp" {
     source_image = var.source_image
     auto_delete  = true
     boot         = true
-    disk_disk_size_gb = var.disk_size_gb
+    disk_size_gb = var.disk_size_gb
     disk_type    = var.disk_type
+    labels       = var.disk_labels
   }
 
   # Network configuration
@@ -353,12 +407,12 @@ resource "google_compute_instance_group_manager" "erlmcp" {
 
   # Update policy
   update_policy {
-    type                  = var.update_type
-    minimal_action         = var.minimal_action
-    update_strategy = var.update_strategy
-    max_surge_fixed        = var.max_surge
-    max_unavailable_fixed  = var.max_unavailable
-    min_ready_instances          = var.min_ready_instances
+    type                           = var.update_type
+    minimal_action                  = var.minimal_action
+    max_surge_fixed                 = var.max_surge
+    max_unavailable_fixed           = var.max_unavailable
+    min_ready_sec                   = var.min_ready_sec
+    replacement_method              = var.replacement_method
   }
 
   # All instances config
@@ -456,15 +510,82 @@ resource "google_compute_address" "erlmcp" {
 }
 
 # ============================================================================
-# Startup Script (Secret Injection)
+# Snapshot Schedule Policy (2026)
+# ============================================================================
+resource "google_compute_resource_policy" "snapshot_schedule" {
+  count   = var.enable_snapshot_schedule ? 1 : 0
+  project = var.project_id
+  name    = "${var.instance_name}-${var.snapshot_schedule_name}"
+  region  = var.region
+
+  snapshot_schedule_policy {
+    schedule {
+      daily_schedule {
+        days_in_cycle = 1
+        start_time    = var.snapshot_start_time
+      }
+    }
+
+    retention_policy {
+      max_retention_days    = var.snapshot_retention_days
+      on_source_disk_delete = "KEEP_AUTO_SNAPSHOTS"
+    }
+
+    snapshot_properties {
+      labels = merge(
+        var.labels,
+        {
+          managed-by = "terraform"
+          app        = "erlmcp"
+          type       = "automated-snapshot"
+        }
+      )
+      storage_locations = [var.region]
+      guest_flush       = true
+    }
+  }
+}
+
+# Attach snapshot policy to boot disks
+resource "google_compute_disk_resource_policy_attachment" "snapshot" {
+  count   = var.enable_snapshot_schedule ? var.instance_count : 0
+  project = var.project_id
+  name    = google_compute_resource_policy.snapshot_schedule[0].name
+  disk    = google_compute_instance.erlmcp[count.index].boot_disk[0].source
+  zone    = var.zone
+}
+
+# ============================================================================
+# Instance Schedule Policy (2026) - Start/Stop Automation
+# ============================================================================
+resource "google_compute_resource_policy" "instance_schedule" {
+  count   = var.instance_schedule.enabled ? 1 : 0
+  project = var.project_id
+  name    = "${var.instance_name}-schedule"
+  region  = var.region
+
+  instance_schedule_policy {
+    vm_start_schedule {
+      schedule = "0 ${split(":", var.instance_schedule.start_time)[1]} ${split(":", var.instance_schedule.start_time)[0]} * * *"
+    }
+    vm_stop_schedule {
+      schedule = "0 ${split(":", var.instance_schedule.stop_time)[1]} ${split(":", var.instance_schedule.stop_time)[0]} * * *"
+    }
+    time_zone = var.instance_schedule.timezone
+  }
+}
+
+# ============================================================================
+# Startup Script (Secret Injection) - Optional
 # ============================================================================
 data "template_file" "startup_script" {
+  count    = fileexists("${path.module}/scripts/startup.sh.tpl") ? 1 : 0
   template = file("${path.module}/scripts/startup.sh.tpl")
 
   vars = {
-    PROJECT_ID         = var.project_id
-    SECRET_NAME_PREFIX = "erlmcp"
-    LOG_LEVEL          = var.log_level
+    PROJECT_ID           = var.project_id
+    SECRET_NAME_PREFIX   = "erlmcp"
+    LOG_LEVEL            = var.log_level
     ERLANG_COOKIE_SECRET = "erlmcp-erlang-cookie"
   }
 }
