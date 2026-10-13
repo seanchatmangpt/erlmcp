@@ -442,11 +442,14 @@ connect_to_websocket(ws, Host, Port, Path, _Config) ->
 
 connect_to_websocket(wss, Host, Port, Path, Config) ->
     %% Connect with SSL for WebSocket
-    case ssl:connect(Host, Port, [
-        {verify, verify_none},
-        {server_name_indication, Host},
-        {versions, [tlsv1.2, tlsv1.3]}
-    ], 5000) of
+    case ssl_verify_opts() of
+        {error, cacerts_unavailable} ->
+            {error, cacerts_unavailable};
+        VerifyOpts ->
+            case ssl:connect(Host, Port, VerifyOpts ++ [
+                {server_name_indication, Host},
+                {versions, [tlsv1.2, tlsv1.3]}
+            ], 5000) of
         {ok, Socket} ->
             %% Send WebSocket handshake
             Handshake = build_handshake(Host, Port, Path),
@@ -472,6 +475,24 @@ connect_to_websocket(wss, Host, Port, Path, Config) ->
             end;
         {error, Reason} ->
             {error, Reason}
+    end
+    end.
+
+%% TLS client options requiring a trust anchor (verify_peer), modeled on
+%% erlmcp_mcp_relay:build_ssl_options/2. Uses the OTP trust store (OTP 25+);
+%% refuses rather than downgrading to verify_none.
+-spec ssl_verify_opts() ->
+    [{ssl:tls_client_option(), any()}] | {error, cacerts_unavailable}.
+ssl_verify_opts() ->
+    case public_key:cacerts_get() of
+        {ok, _Cacerts} ->
+            [{verify, verify_peer},
+             {depth, 4},
+             {fail_if_no_peer_cert, true},
+             {customize_hostname_check,
+              [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]}];
+        _Error ->
+            {error, cacerts_unavailable}
     end.
 
 %% Build WebSocket handshake

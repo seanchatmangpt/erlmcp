@@ -402,8 +402,11 @@ connect_to_host(http, Host, Port, _Config) ->
 connect_to_host(https, Host, Port, Config) ->
     %% Connect with SSL
     SSLConfig = maps:get(ssl_options, Config, []),
-    case ssl:connect(Host, Port, [
-        {verify, verify_none},
+    case ssl_verify_opts() of
+    {error, cacerts_unavailable} ->
+        {error, cacerts_unavailable};
+    VerifyOpts ->
+    case ssl:connect(Host, Port, VerifyOpts ++ [
         {server_name_indication, Host},
         {versions, [tlsv1.2, tlsv1.3]},
         {ciphers, ssl:cipher_suites(all, 'tlsv1.2')},
@@ -422,6 +425,24 @@ connect_to_host(https, Host, Port, Config) ->
             end;
         {error, Reason} ->
             {error, Reason}
+    end
+    end.
+
+%% TLS client options requiring a trust anchor (verify_peer), modeled on
+%% erlmcp_mcp_relay:build_ssl_options/2. Uses the OTP trust store (OTP 25+);
+%% refuses rather than downgrading to verify_none.
+-spec ssl_verify_opts() ->
+    [{ssl:tls_client_option(), any()}] | {error, cacerts_unavailable}.
+ssl_verify_opts() ->
+    case public_key:cacerts_get() of
+        {ok, _Cacerts} ->
+            [{verify, verify_peer},
+             {depth, 4},
+             {fail_if_no_peer_cert, true},
+             {customize_hostname_check,
+              [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]}];
+        _Error ->
+            {error, cacerts_unavailable}
     end.
 
 %% Build HTTP request

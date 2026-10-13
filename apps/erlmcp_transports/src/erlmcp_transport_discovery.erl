@@ -758,14 +758,17 @@ k8s_token() ->
     end.
 
 %% @doc Perform an HTTP(S) call to the Kubernetes API server.
-%%      Uses httpc with SSL peer verification disabled for simplicity
-%%      (production deployments should supply the cluster CA).
+%%      Uses TLS peer verification against the in-cluster service-account CA
+%%      when present, otherwise the OS trust store. Refuses to connect with
+%%      verification disabled (modeled on erlmcp_mcp_relay:build_ssl_options/2).
 -spec k8s_httpc(atom(), string(), iodata()) ->
     {ok, non_neg_integer(), binary()} | {error, term()}.
 k8s_httpc(Method, URL, Body) ->
     _ = inets:start(),   %% idempotent
     _ = ssl:start(),     %% idempotent
-    SSLOpts = [{verify, verify_none}],
+    case k8s_ssl_opts() of
+        {error, Reason} -> {error, Reason};
+        SSLOpts ->
     HttpOpts = [{timeout, 5000}, {ssl, SSLOpts}],
     Opts = [{body_format, binary}],
     Token = k8s_token(),
@@ -782,6 +785,32 @@ k8s_httpc(Method, URL, Body) ->
     case httpc:request(Method, Request, HttpOpts, Opts) of
         {ok, {{_, Code, _}, _, RespBody}} -> {ok, Code, RespBody};
         {error, Reason}                   -> {error, Reason}
+    end
+    end.
+
+%% @doc TLS options for the Kubernetes API server: verify_peer against the
+%%      in-cluster service-account CA when available, else the OS trust store.
+%%      Refuses ({error, cacerts_unavailable}) rather than verify_none.
+-spec k8s_ssl_opts() -> [proplists:property()] | {error, cacerts_unavailable}.
+k8s_ssl_opts() ->
+    CaFile = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt",
+    case file:read_file_info(CaFile) of
+        {ok, _} ->
+            [{verify, verify_peer},
+             {cacertfile, CaFile},
+             {depth, 4},
+             {customize_hostname_check,
+              [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]}];
+        _ ->
+            case public_key:cacerts_get() of
+                {ok, _Cacerts} ->
+                    [{verify, verify_peer},
+                     {depth, 4},
+                     {customize_hostname_check,
+                      [{match_fun, public_key:pkix_verify_hostname_match_fun(https)}]}];
+                _Error ->
+                    {error, cacerts_unavailable}
+            end
     end.
 
 %% @doc Register an endpoint into the Kubernetes Endpoints resource via PATCH.
