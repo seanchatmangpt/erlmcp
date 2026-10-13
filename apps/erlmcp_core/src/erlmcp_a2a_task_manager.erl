@@ -133,7 +133,11 @@
     subscription_table :: ets:tid(),
     push_config_table :: ets:tid(),
     task_count = 0 :: non_neg_integer(),
-    push_notification_handler :: fun((task_id(), term()) -> ok) | undefined
+    push_notification_handler :: fun((task_id(), term()) -> ok) | undefined,
+    %% Optional durable backing (default undefined = off, byte-identical
+    %% to the pre-dets behavior)
+    dets_path :: file:filename_all() | undefined,
+    dets_store :: erlmcp_a2a_task_store_dets:store() | undefined
 }).
 
 %%====================================================================
@@ -380,9 +384,12 @@ init(Opts) ->
     process_flag(trap_exit, true),
 
     PushHandler = maps:get(push_notification_handler, Opts, undefined),
+    DetsPath = maps:get(dets_path, Opts,
+                        application:get_env(erlmcp_core, a2a_task_dets_path, undefined)),
 
     State = #state{
-        push_notification_handler = PushHandler
+        push_notification_handler = PushHandler,
+        dets_path = DetsPath
     },
 
     logger:info("Starting A2A task manager (async initialization)"),
@@ -428,12 +435,45 @@ handle_continue(initialize_tables, State) ->
         {keypos, 1}
     ]),
 
-    NewState = State#state{
+    NewState0 = State#state{
         task_table = TaskTable,
         context_table = ContextTable,
         subscription_table = SubscriptionTable,
         push_config_table = PushConfigTable
     },
+
+    %% Optional durable backing: open/repair DETS, load-on-start, seed ETS
+    NewState = case State#state.dets_path of
+        undefined ->
+            NewState0;
+        DetsPath ->
+            case erlmcp_a2a_task_store_dets:init(#{dets_path => DetsPath}) of
+                {ok, Store} ->
+                    Loaded = erlmcp_a2a_task_store_dets:load(Store),
+                    Tasks = maps:get(tasks, Loaded),
+                    PushConfigs = maps:get(push_configs, Loaded),
+
+                    %% Re-seed ETS from durable state (restart survival)
+                    ets:insert(TaskTable, [{Id, T} || {Id, T} <- Tasks]),
+                    ets:insert(PushConfigTable,
+                               [{TaskId, C} || {TaskId, _ConfigId, C} <- PushConfigs]),
+
+                    RestoredTaskCount = State#state.task_count + length(Tasks),
+                    logger:info("A2A task manager restored ~b tasks and ~b push configs "
+                                "from ~ts",
+                                [length(Tasks), length(PushConfigs), DetsPath]),
+                    NewState0#state{
+                      dets_store = Store,
+                      task_count = RestoredTaskCount
+                     };
+                {error, Reason} ->
+                    %% Store init never crashes on corruption, but if it
+                    %% somehow fails, degrade to in-memory only.
+                    logger:error("A2A task manager: durable store init failed (~0p); "
+                                 "continuing in-memory only", [Reason]),
+                    NewState0
+            end
+    end,
 
     logger:info("A2A task manager initialized"),
     {noreply, NewState};
@@ -470,6 +510,9 @@ handle_call({create_task, ContextId, Message, Opts}, _From, State) ->
 
             %% Update context index
             true = ets:insert(State#state.context_table, {ContextId, TaskId}),
+
+            %% Write-through to durable store (no-op when off)
+            ok = maybe_persist_task(State, TaskId),
 
             NewState = State#state{task_count = State#state.task_count + 1},
 
@@ -510,6 +553,7 @@ handle_call({cancel_task, TaskId, Message}, _From, State) ->
                     },
                     UpdatedTask = Task#a2a_task{status = NewStatus},
                     ets:insert(State#state.task_table, {TaskId, UpdatedTask}),
+                    ok = maybe_persist_task(State, TaskId),
                     notify_subscribers(State, TaskId, {status_update, UpdatedTask}),
                     {reply, {ok, UpdatedTask}, State};
                 false ->
@@ -529,6 +573,7 @@ handle_call({update_task_status, TaskId, NewStatus, _Opts}, _From, State) ->
                 ok ->
                     UpdatedTask = Task#a2a_task{status = NewStatus},
                     ets:insert(State#state.task_table, {TaskId, UpdatedTask}),
+                    ok = maybe_persist_task(State, TaskId),
                     notify_subscribers(State, TaskId, {status_update, UpdatedTask}),
                     maybe_trigger_push(State, TaskId, {status_update, NewStatus}),
                     {reply, {ok, UpdatedTask}, State};
@@ -561,6 +606,7 @@ handle_call({delete_context, ContextId}, _From, State) ->
     %% Delete all tasks in context
     lists:foreach(
         fun(TaskId) ->
+            ok = maybe_delete_task(State, TaskId),
             ets:delete(State#state.task_table, TaskId),
             ets:delete(State#state.subscription_table, TaskId),
             ets:delete(State#state.push_config_table, TaskId)
@@ -588,6 +634,7 @@ handle_call({add_message_to_history, TaskId, Message}, _From, State) ->
                     end,
                     UpdatedTask = Task#a2a_task{history = CurrentHistory ++ [Message]},
                     ets:insert(State#state.task_table, {TaskId, UpdatedTask}),
+                    ok = maybe_persist_task(State, TaskId),
                     {reply, ok, State};
                 {error, Reason} ->
                     {reply, {error, {invalid_message, Reason}}, State}
@@ -620,6 +667,7 @@ handle_call({clear_task_history, TaskId}, _From, State) ->
         [{TaskId, Task}] ->
             UpdatedTask = Task#a2a_task{history = []},
             ets:insert(State#state.task_table, {TaskId, UpdatedTask}),
+            ok = maybe_persist_task(State, TaskId),
             {reply, ok, State};
         [] ->
             {reply, {error, not_found}, State}
@@ -635,6 +683,7 @@ handle_call({add_artifact, TaskId, Artifact}, _From, State) ->
             end,
             UpdatedTask = Task#a2a_task{artifacts = CurrentArtifacts ++ [Artifact]},
             ets:insert(State#state.task_table, {TaskId, UpdatedTask}),
+            ok = maybe_persist_task(State, TaskId),
             notify_subscribers(State, TaskId, {artifact_update, Artifact, false}),
             maybe_trigger_push(State, TaskId, {artifact_update, Artifact}),
             {reply, ok, State};
@@ -649,6 +698,7 @@ handle_call({append_artifact, TaskId, ArtifactId, Parts}, _From, State) ->
             case find_and_update_artifact(Task, ArtifactId, Parts) of
                 {ok, UpdatedTask, UpdatedArtifact} ->
                     ets:insert(State#state.task_table, {TaskId, UpdatedTask}),
+                    ok = maybe_persist_task(State, TaskId),
                     notify_subscribers(State, TaskId, {artifact_update, UpdatedArtifact, true}),
                     {reply, ok, State};
                 {error, artifact_not_found} ->
@@ -714,6 +764,8 @@ handle_call({register_push_config, TaskId, Config}, _From, State) ->
     case ets:lookup(State#state.task_table, TaskId) of
         [{TaskId, _Task}] ->
             ets:insert(State#state.push_config_table, {TaskId, Config}),
+            ok = maybe_persist_push_config(State, TaskId,
+                                           Config#a2a_task_push_notification_config.id),
             {reply, ok, State};
         [] ->
             {reply, {error, not_found}, State}
@@ -725,7 +777,9 @@ handle_call({unregister_push_config, TaskId, ConfigId}, _From, State) ->
     lists:foreach(
         fun({TId, Config}) ->
             case Config#a2a_task_push_notification_config.id of
-                ConfigId -> ets:delete_object(State#state.push_config_table, {TId, Config});
+                ConfigId ->
+                    ok = maybe_delete_push_config(State, TaskId, ConfigId),
+                    ets:delete_object(State#state.push_config_table, {TId, Config});
                 _ -> ok
             end
         end,
@@ -780,7 +834,8 @@ handle_info(_Info, State) ->
 
 -spec terminate(term(), #state{}) -> ok.
 terminate(_Reason, State) ->
-    %% Clean up ETS tables
+    %% Flush + close durable store, then clean up ETS tables
+    catch erlmcp_a2a_task_store_dets:close(State#state.dets_store),
     catch ets:delete(State#state.task_table),
     catch ets:delete(State#state.context_table),
     catch ets:delete(State#state.subscription_table),
@@ -800,6 +855,52 @@ code_change(_OldVsn, State, _Extra) ->
 generate_task_id() ->
     Rand = crypto:strong_rand_bytes(16),
     binary:encode_hex(Rand).
+
+%% @private Write-through a task to the durable store (no-op when off)
+-spec maybe_persist_task(#state{}, task_id()) -> ok.
+maybe_persist_task(#state{dets_store = undefined}, _TaskId) ->
+    ok;
+maybe_persist_task(#state{dets_store = Store, task_table = Tab}, TaskId) ->
+    case ets:lookup(Tab, TaskId) of
+        [{TaskId, Task}] -> erlmcp_a2a_task_store_dets:put_task(TaskId, Task, Store);
+        [] -> ok
+    end.
+
+%% @private Write-through a push config to the durable store (no-op when off)
+-spec maybe_persist_push_config(#state{}, task_id(), binary()) -> ok.
+maybe_persist_push_config(#state{dets_store = undefined}, _TaskId, _ConfigId) ->
+    ok;
+maybe_persist_push_config(#state{dets_store = Store, push_config_table = Tab},
+                          TaskId, ConfigId) ->
+    Configs = [C || {_TId, C} <- ets:lookup(Tab, TaskId),
+                    C#a2a_task_push_notification_config.id =:= ConfigId],
+    lists:foreach(fun(C) ->
+                      erlmcp_a2a_task_store_dets:put_push_config(TaskId, ConfigId, C, Store)
+                  end,
+                  Configs),
+    ok.
+
+%% @private Delete a task (and its push configs) from the durable store
+-spec maybe_delete_task(#state{}, task_id()) -> ok.
+maybe_delete_task(#state{dets_store = undefined}, _TaskId) ->
+    ok;
+maybe_delete_task(#state{dets_store = Store, push_config_table = Tab}, TaskId) ->
+    erlmcp_a2a_task_store_dets:delete_task(TaskId, Store),
+    ConfigIds = [C#a2a_task_push_notification_config.id
+                 || {_TId, C} <- ets:lookup(Tab, TaskId)],
+    lists:foreach(fun(CId) ->
+                      erlmcp_a2a_task_store_dets:delete_push_config(TaskId, CId, Store)
+                  end,
+                  ConfigIds),
+    ok.
+
+%% @private Delete a push config from the durable store (no-op when off)
+-spec maybe_delete_push_config(#state{}, task_id(), binary()) -> ok.
+maybe_delete_push_config(#state{dets_store = undefined}, _TaskId, _ConfigId) ->
+    ok;
+maybe_delete_push_config(#state{dets_store = Store}, TaskId, ConfigId) ->
+    erlmcp_a2a_task_store_dets:delete_push_config(TaskId, ConfigId, Store),
+    ok.
 
 %% @private Generate ISO 8601 timestamp
 -spec iso8601_timestamp() -> binary().
