@@ -14,6 +14,13 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_json_fallback).
+-moduledoc """
+JSON fallback implementation (DEPRECATED - native JSON only).
+
+Historically provided fallback support for OTP < 27. Since erlmcp now
+requires OTP 28+, this module is deprecated and all functions use the
+native `json` module directly.
+""" .
 
 %% API
 -export([
@@ -35,12 +42,18 @@
 
 %% @doc Encode data to JSON using native json module
 %% Note: Fallback to jsx is no longer supported (requires OTP 28+)
+-doc "
+Deprecated: use `erlmcp_json_native:encode/1`.
+" .
 -spec encode(json_data()) -> binary().
 encode(Data) ->
     erlmcp_json_native:encode(Data).
 
 %% @doc Decode JSON data using native json module
 %% Note: Fallback to jsx is no longer supported (requires OTP 28+)
+-doc "
+Deprecated: use `erlmcp_json_native:decode/1`.
+" .
 -spec decode(binary()) -> map() | list().
 decode(Binary) ->
     erlmcp_json_native:decode(Binary).
@@ -48,6 +61,9 @@ decode(Binary) ->
 %% @doc Encode data to pretty JSON
 %% Note: Native JSON doesn't support pretty print options directly
 %% For formatted output, use external tooling like jq or post-process
+-doc "
+Deprecated: pretty-encodes via the native `json` module.
+" .
 -spec encode_pretty(json_data()) -> binary().
 encode_pretty(Data) ->
     %% Native json module doesn't have pretty print
@@ -55,6 +71,9 @@ encode_pretty(Data) ->
     erlmcp_json_native:encode(Data).
 
 %% @doc Decode pretty JSON data (same as regular decode)
+-doc "
+Deprecated: pretty-decodes via the native `json` module.
+" .
 -spec decode_pretty(binary()) -> map() | list().
 decode_pretty(Binary) ->
     erlmcp_json_native:decode(Binary).

@@ -2,6 +2,13 @@
 
 -include("erlmcp.hrl").
 
+-compile({nowarn_unused_function, [
+    validate_tool/1,
+    validate_tool_version/1,
+    encode_tool/1,
+    validate_semver/1
+]}).
+
 %% API exports
 -export([ validate_tool_name/1, validate_tool_description/1,
          validate_input_schema/1, validate_tool_metadata/1, decode_tool/1,

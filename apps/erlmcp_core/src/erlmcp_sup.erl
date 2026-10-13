@@ -33,7 +33,7 @@ start_server(ServerId, Config) ->
                     _ = supervisor:terminate_child(erlmcp_server_sup, ServerPid),
                     {error, {registry_failed, Reason}}
             end;
-        {error, Reason} = Error ->
+        {error, _Reason} = Error ->
             Error
     end.
 
@@ -224,6 +224,31 @@ init([]) ->
            restart => permanent,
            shutdown => infinity,
            type => supervisor,
-           modules => [erlmcp_observability_sup]}],
+           modules => [erlmcp_observability_sup]},
+         %% ================================================================
+         %% TIER 4: ENTERPRISE FEATURES (Isolated)
+         %% Authentication, distributed registry, security features
+         %% Failure: Does NOT affect core layers, observability may be affected
+         %% Impact: Authentication and distributed operations may fail during recovery
+         %% Recovery: Automatic via one_for_one strategy
+         %% ================================================================
+         #{id => erlmcp_cluster,
+           start => {erlmcp_cluster, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_cluster]},
+         #{id => erlmcp_client_registry,
+           start => {erlmcp_client_registry, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_client_registry]},
+         #{id => erlmcp_auth,
+           start => {erlmcp_auth, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_auth]}],
 
     {ok, {SupFlags, ChildSpecs}}.

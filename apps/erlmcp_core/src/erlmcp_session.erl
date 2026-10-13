@@ -5,7 +5,8 @@
 %% API exports
 -export([new/0, new/1, get_session_id/1, set_metadata/3, get_metadata/2, get_created_at/1,
          list_sessions/0, create/1, create/2, retrieve/1, update/2, delete/1, set_ttl/2,
-         cleanup_expired/0, get_backend/0]).
+         cleanup_expired/0, get_backend/0,
+         set_primary/2]).
 
 %% Types
 -type session_id() :: binary().
@@ -139,6 +140,15 @@ cleanup_expired() ->
         _Pid ->
             erlmcp_session_manager:cleanup_expired()
     end.
+
+%% @doc Record that NewPrimary is now the primary node for SessionId.
+%% Stores the primary_node key in the session's metadata so other
+%% components can discover the authoritative node after a failover.
+-spec set_primary(session_id(), node()) -> ok | {error, term()}.
+set_primary(SessionId, NewPrimary) ->
+    update(SessionId, fun(Session = #{metadata := Meta}) ->
+        Session#{metadata => maps:put(primary_node, NewPrimary, Meta)}
+    end).
 
 %% @doc Get the configured backend type
 -spec get_backend() -> {ok, backend()} | {error, term()}.

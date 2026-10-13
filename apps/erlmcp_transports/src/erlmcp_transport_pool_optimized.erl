@@ -72,7 +72,14 @@
          waiting_queue :: queue:queue({pid(), reference()}),
          resize_timer :: reference() | undefined,
          metrics :: pool_metrics(),
-         stats :: pool_stats()}).
+         stats :: pool_stats(),
+         latency_histogram :: histogram(),
+         metrics_timer :: reference() | undefined}).
+
+-record(histogram,
+        {buckets :: [{number(), non_neg_integer()}],
+         count = 0 :: non_neg_integer(),
+         sum = 0 :: number()}).
 
 -record(pool_metrics,
         {total_acquired :: non_neg_integer(),
@@ -96,6 +103,8 @@
 
 -type pool_stats() :: #pool_stats{}.
 
+-type histogram() :: #histogram{}.
+
 -define(DEFAULT_CONFIG, #pool_config{
     max_connections = 50,
     min_connections = 5,
@@ -108,6 +117,9 @@
     max_resize_attempts = 3,
     metrics_enabled = true
 }).
+
+%% Histogram buckets for latency tracking (in milliseconds)
+-define(LATENCY_BUCKETS, [1, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000]).
 
 -define(DEFAULT_POOL_ID, default).
 -define(CHECKOUT_TIMEOUT, 5000).
@@ -194,7 +206,9 @@ init({PoolId, Config}) ->
         pending_connections = 0,
         waiting_queue = queue:new(),
         metrics = initial_metrics(),
-        stats = initial_stats(Min, Max)
+        stats = initial_stats(Min, Max),
+        latency_histogram = init_histogram(),
+        metrics_timer = undefined
     },
 
     %% Start pre-warming if enabled
@@ -218,14 +232,24 @@ init({PoolId, Config}) ->
     {ok, FinalState}.
 
 handle_call({acquire, FromPid}, From, State) ->
+    %% Record start time for latency tracking
+    StartTime = erlang:system_time(nanosecond),
+
     %% Fast path: try to get immediately available connection
     case try_immediate_acquire(FromPid, State) of
         {ok, Connection, NewState} ->
+            %% Record latency
+            LatencyMs = (erlang:system_time(nanosecond) - StartTime) / 1000000,
+            NewHistogram = record_latency(NewState#pool_state.latency_histogram, LatencyMs),
+            UpdatedMetrics = update_acquire_metrics(State#pool_state.metrics, StartTime),
+
             gen_server:reply(From, {ok, Connection}),
-            {noreply, NewState};
+            {noreply, NewState#pool_state{latency_histogram = NewHistogram,
+                                          metrics = UpdatedMetrics}};
         {wait, NewState} ->
-            %% Add to waiting queue
-            {noreply, add_to_waiting_queue(From, NewState)}
+            %% Add to waiting queue with start time
+            NewStateWithTime = NewState#pool_state{metrics_timer = erlang:monotonic_time(millisecond)},
+            {noreply, add_to_waiting_queue(From, NewStateWithTime)}
     end;
 
 handle_call({get_stats}, _From, State) ->
@@ -715,8 +739,9 @@ start_maintenance(State) ->
     State#pool_state{resize_timer = Ref}.
 
 start_metrics_collection(State) ->
-    %% Stub: metrics collection not yet implemented
-    State.
+    %% Start periodic metrics collection
+    TimerRef = erlang:send_after(?METRICS_SAMPLE_INTERVAL, self(), collect_metrics),
+    State#pool_state{metrics_timer = TimerRef}.
 
 handle_health_check_timeout(State) ->
     %% Stub: health check timeout handling not yet implemented
@@ -900,10 +925,22 @@ calculate_usage_rate(State) ->
     end.
 
 collect_and_store_metrics(State) ->
-    %% Stub: metrics collection not yet fully implemented
-    _CurrentTime = erlang:system_time(millisecond),
-    %% TODO: Schedule next metrics collection when metrics_timer field is added to pool_state
-    State.
+    CurrentTime = erlang:system_time(millisecond),
+
+    %% Log histogram statistics
+    Histogram = State#pool_state.latency_histogram,
+    LatencyStats = calculate_histogram_stats(Histogram),
+
+    logger:debug("Pool ~p metrics: latency p50=~pms p95=~pms p99=~pms count=~p",
+                [State#pool_state.pool_id,
+                 maps:get(<<"p50">>, LatencyStats, 0),
+                 maps:get(<<"p95">>, LatencyStats, 0),
+                 maps:get(<<"p99">>, LatencyStats, 0),
+                 Histogram#histogram.count]),
+
+    %% Reschedule next metrics collection
+    NewTimer = erlang:send_after(?METRICS_SAMPLE_INTERVAL, self(), collect_metrics),
+    State#pool_state{metrics_timer = NewTimer}.
 
 shutdown_all_connections(State) ->
     %% Shutdown all connections in available pool
@@ -931,3 +968,85 @@ shutdown_connections_in_queue(Queue) ->
         {empty, _} ->
             ok
     end.
+
+%%%===================================================================
+%%% Histogram Functions
+%%%===================================================================
+
+%% @doc Initialize a new histogram with default buckets
+-spec init_histogram() -> histogram().
+init_histogram() ->
+    #histogram{
+        buckets = [{Bucket, 0} || Bucket <- ?LATENCY_BUCKETS],
+        count = 0,
+        sum = 0
+    }.
+
+%% @doc Record a latency value in the histogram
+-spec record_latency(histogram(), number()) -> histogram().
+record_latency(Histogram, Value) ->
+    %% Update bucket counts
+    NewBuckets = lists:map(fun({Bucket, Count}) ->
+        case Value =< Bucket of
+            true -> {Bucket, Count + 1};
+            false -> {Bucket, Count}
+        end
+    end, Histogram#histogram.buckets),
+
+    #histogram{
+        buckets = NewBuckets,
+        count = Histogram#histogram.count + 1,
+        sum = Histogram#histogram.sum + Value
+    }.
+
+%% @doc Calculate histogram statistics (percentiles)
+-spec calculate_histogram_stats(histogram()) -> map().
+calculate_histogram_stats(#histogram{buckets = Buckets, count = Count, sum = Sum}) ->
+    case Count > 0 of
+        true ->
+            %% Calculate percentiles
+            P50 = find_percentile(Buckets, Count, 0.50),
+            P95 = find_percentile(Buckets, Count, 0.95),
+            P99 = find_percentile(Buckets, Count, 0.99),
+            Avg = Sum / Count,
+
+            #{
+                <<"p50">> => P50,
+                <<"p95">> => P95,
+                <<"p99">> => P99,
+                <<"avg">> => Avg,
+                <<"count">> => Count,
+                <<"sum">> => Sum
+            };
+        false ->
+            #{
+                <<"p50">> => 0,
+                <<"p95">> => 0,
+                <<"p99">> => 0,
+                <<"avg">> => 0,
+                <<"count">> => 0,
+                <<"sum">> => 0
+            }
+    end.
+
+%% @doc Find the value at a given percentile
+-spec find_percentile([{number(), non_neg_integer()}], non_neg_integer(), float()) -> number().
+find_percentile(Buckets, TotalCount, Percentile) ->
+    Threshold = TotalCount * Percentile,
+
+    %% Find the first bucket where cumulative count >= threshold
+    find_percentile_bucket(Buckets, Threshold, 0).
+
+find_percentile_bucket([], _Threshold, _Acc) ->
+    0;
+find_percentile_bucket([{Bucket, Count} | Rest], Threshold, Acc) ->
+    NewAcc = Acc + Count,
+    case NewAcc >= Threshold of
+        true -> Bucket;
+        false -> find_percentile_bucket(Rest, Threshold, NewAcc)
+    end.
+
+%% @doc Reset histogram (clear all recorded values)
+-spec reset_histogram(histogram()) -> histogram().
+reset_histogram(_Histogram) ->
+    init_histogram().

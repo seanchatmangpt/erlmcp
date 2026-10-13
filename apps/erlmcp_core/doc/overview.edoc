@@ -1,0 +1,272 @@
+@header ErlMCP - Model Context Protocol SDK for Erlang/OTP
+
+@doc Overview
+
+ErlMCP is an enterprise-grade implementation of the Model Context Protocol (MCP)
+for Erlang/OTP 27+. It provides a complete SDK for building MCP servers and clients
+with support for multiple transports, comprehensive observability, and production-ready
+features.
+
+@section Version
+
+Current version: 3.0.0
+
+@section Features
+
+<h3>Core Features</h3>
+<ul>
+  <li>Complete MCP 2025-11-25 specification implementation</li>
+  <li>JSON-RPC 2.0 protocol support</li>
+  <li>Multiple transport implementations (stdio, TCP, HTTP, WebSocket, SSE)</li>
+  <li>Resource and tool management</li>
+  <li>Prompt template system</li>
+  <li>Progress token support for long-running operations</li>
+</ul>
+
+<h3>Enterprise Features</h3>
+<ul>
+  <li>Distributed registry with cluster support</li>
+  <li>Session management with multiple backends (ETS, DETS, Mnesia)</li>
+  <li>Circuit breaker for fault tolerance</li>
+  <li>Rate limiting and connection throttling</li>
+  <li>Comprehensive observability (metrics, tracing, logging)</li>
+  <li>Health monitoring and readiness checks</li>
+  <li>Graceful shutdown and failover</li>
+</ul>
+
+<h3>Observability</h3>
+<ul>
+  <li>OpenTelemetry integration</li>
+  <li>Prometheus metrics export</li>
+  <li>Distributed tracing</li>
+  <li>Structured logging</li>
+  <li>Performance monitoring</li>
+  <li>Chaos engineering tools</li>
+</ul>
+
+@section Architecture
+
+ErlMCP is organized as an OTP umbrella application with the following apps:
+
+<h3>erlmcp_core</h3>
+Core functionality including:
+<ul>
+  <li>{@link erlmcp} - Public API</li>
+  <li>{@link erlmcp_session} - Session management</li>
+  <li>{@link erlmcp_config} - Configuration management</li>
+  <li>{@link erlmcp_json} - JSON encoding/decoding</li>
+  <li>{@link erlmcp_mcp_types} - Nominal type definitions</li>
+  <li>{@link erlmcp_registry_dist} - Distributed registry</li>
+  <li>{@link erlmcp_plugin} - Plugin system</li>
+</ul>
+
+<h3>erlmcp_transports</h3>
+Transport layer implementations:
+<ul>
+  <li>{@link erlmcp_transport_behavior} - Transport behavior specification</li>
+  <li>{@link erlmcp_transport_stdio} - Standard I/O transport</li>
+  <li>{@link erlmcp_transport_tcp} - TCP transport</li>
+  <li>{@link erlmcp_transport_http} - HTTP transport</li>
+  <li>{@link erlmcp_transport_ws} - WebSocket transport</li>
+  <li>{@link erlmcp_transport_sse} - Server-Sent Events transport</li>
+  <li>{@link erlmcp_connection_pool} - Connection pooling</li>
+</ul>
+
+<h3>erlmcp_observability</h3>
+Observability and monitoring:
+<ul>
+  <li>{@link erlmcp_metrics} - Metrics collection</li>
+  <li>{@link erlmcp_tracing} - Distributed tracing</li>
+  <li>{@link erlmcp_health_monitor} - Health checks</li>
+  <li>{@link erlmcp_otel} - OpenTelemetry integration</li>
+  <li>{@link erlmcp_chaos} - Chaos engineering</li>
+</ul>
+
+<h3>erlmcp_validation</h3>
+Protocol validation and compliance:
+<ul>
+  <li>{@link erlmcp_protocol_validator} - MCP protocol validation</li>
+  <li>{@link erlmcp_security_validator} - Security validation</li>
+  <li>{@link erlmcp_compliance_framework} - Compliance checking</li>
+</ul>
+
+@section Quick Start
+
+<h3>Starting a Server</h3>
+
+```erlang
+% Start the application
+application:ensure_all_started(erlmcp_core).
+
+% Create a simple server
+{ok, _Pid} = erlmcp:start_server(my_server, #{
+    capabilities => #{
+        tools => true,
+        resources => true,
+        prompts => true
+    }
+}).
+
+% Add a tool
+erlmcp:add_tool(my_server, <<"echo">>, fun(Args) ->
+    #{message => maps:get(<<"text">>, Args, <<"hello">>)}
+end).
+```
+
+<h3>Using Transports</h3>
+
+```erlang
+% Start a stdio transport
+{ok, _TransportPid} = erlmcp:start_transport(
+    my_stdio,
+    stdio,
+    #{owner => self()}
+).
+
+% Bind transport to server
+erlmcp:bind_transport_to_server(my_stdio, my_server).
+```
+
+<h3>Session Management</h3>
+
+```erlang
+% Create a session
+{ok, SessionId} = erlmcp_session:create(#{
+    user_id => <<"user123">>
+}).
+
+% Retrieve session
+{ok, Session} = erlmcp_session:retrieve(SessionId).
+
+% Update session
+erlmcp_session:update(SessionId, fun(S) ->
+    maps:put(last_seen, erlang:system_time(millisecond), S)
+end).
+```
+
+@section Configuration
+
+Configuration is managed through {@link erlmcp_config} and can be set via:
+<ul>
+  <li>Application environment variables</li>
+  <li>sys.config files</li>
+  <li>Runtime updates via erlmcp_config:set/2</li>
+</ul>
+
+<h3>Key Configuration Options</h3>
+<dl>
+  <dt>max_message_size</dt>
+  <dd>Maximum message size in bytes (default: 10485760)</dd>
+
+  <dt>request_timeout</dt>
+  <dd>Request timeout in milliseconds (default: 30000)</dd>
+
+  <dt>max_connections</dt>
+  <dd>Maximum concurrent connections (default: 10000)</dd>
+
+  <dt>session_backend</dt>
+  <dd>Session storage backend (ets|dets|mnesia, default: ets)</dd>
+
+  <dt>rate_limit_enabled</dt>
+  <dd>Enable rate limiting (default: true)</dd>
+
+  <dt>circuit_breaker_enabled</dt>
+  <dd>Enable circuit breaker (default: true)</dd>
+</dl>
+
+@section Observability
+
+<h3>Metrics</h3>
+
+```erlang
+% Get performance summary
+Summary = erlmcp_metrics:get_performance_summary().
+
+% Record custom metric
+erlmcp_metrics:record_server_operation(
+    my_server,
+    <<"custom_operation">>,
+    Duration,
+    #{}
+).
+```
+
+<h3>Tracing</h3>
+
+```erlang
+% Start a span
+SpanCtx = erlmcp_tracing:start_span(<<"my_operation">>).
+
+% Add attributes
+erlmcp_tracing:set_attributes(SpanCtx, #{<<"key">> => <<"value">>}).
+
+% End span
+erlmcp_tracing:end_span(SpanCtx).
+```
+
+<h3>Health Checks</h3>
+
+```erlang
+% Run health check
+{Status, Info} = erlmcp:health().
+
+% Get system status
+StatusMap = erlmcp:status().
+```
+
+@section Error Handling
+
+ErlMCP uses standard Erlang/OTP error handling patterns:
+<ul>
+  <li>Functions return <code>{ok, Result}</code> or <code>{error, Reason}</code></li>
+  <li>gen_server calls may exit on errors</li>
+  <li>Circuit breaker opens on repeated failures</li>
+  <li>Errors are logged with appropriate severity</li>
+</ul>
+
+@section Performance
+
+<h3>Benchmarks</h3>
+<ul>
+  <li>Throughput: 10K+ requests/second per node</li>
+  <li>Latency: p50 < 1ms, p99 < 10ms</li>
+  <li>Memory: ~100MB base, scales with connections</li>
+</ul>
+
+<h3>Optimization Tips</h3>
+<ul>
+  <li>Use persistent_term for hot configuration</li>
+  <li>Enable read_concurrency for ETS tables</li>
+  <li>Use connection pooling for HTTP clients</li>
+  <li>Enable compression for large messages</li>
+</ul>
+
+@section Security
+
+<h3>Best Practices</h3>
+<ul>
+  <li>Validate all input with {@link erlmcp_protocol_validator}</li>
+  <li>Use rate limiting to prevent abuse</li>
+  <li>Enable TLS for network transports</li>
+  <li>Sanitize error messages before sending to clients</li>
+  <li>Use the security validator {@link erlmcp_security_validator}</li>
+</ul>
+
+@section See Also
+
+<ul>
+  <li><a href="https://modelcontextprotocol.io">MCP Specification</a></li>
+  <li>{@link erlmcp} - Main API module</li>
+  <li>{@link erlmcp_transport_behavior} - Transport interface</li>
+  <li>{@link erlmcp_protocol_validator} - Protocol validation</li>
+</ul>
+
+@section License
+
+Apache License 2.0
+
+@section Authors
+
+ErlMCP Core Team
+
+@copyright 2025 ErlMCP Contributors

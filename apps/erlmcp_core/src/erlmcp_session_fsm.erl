@@ -260,7 +260,7 @@ handle_event({call, From}, {remove_connection, ConnId}, State, Data) when State 
             {keep_state, NewData, [{reply, From, ok}]}
     end;
 %% Handle connection process death
-handle_event(info, {'DOWN', MonRef, process, ConnPid, Reason}, State, Data) when State =/= closed ->
+handle_event(info, {'DOWN', _MonRef, process, ConnPid, Reason}, State, Data) when State =/= closed ->
     %% Find and remove the dead connection
     ConnId = find_connection_id(ConnPid, Data#data.connections),
     logger:info("Session ~p connection ~p terminated: ~p", [Data#data.session_id, ConnId, Reason]),

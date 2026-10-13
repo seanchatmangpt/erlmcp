@@ -782,45 +782,151 @@ init_external_cache(Config) ->
     end.
 
 -spec connect_external_cache(module(), map()) -> {ok, term()} | {error, term()}.
-connect_external_cache(_Module, _Config) ->
-    %% Placeholder: would call Module:connect(Config)
-    %% Example: eredis:start_link(Host, Port)
-    {error, not_implemented}.
+connect_external_cache(eredis, Config) ->
+    %% Connect to Redis using eredis
+    Host = maps:get(host, Config, "localhost"),
+    Port = maps:get(port, Config, 6379),
+    Database = maps:get(database, Config, 0),
+    Password = maps:get(password, Config, undefined),
+
+    try
+        %% Start eredis client (single connection for simplicity)
+        %% In production, use eredis:start_link/5 with connection pool
+        case eredis:start_link(Host, Port, Database, Password) of
+            {ok, Pid} when is_pid(Pid) ->
+                ?LOG_INFO("Connected to Redis at ~s:~p", [Host, Port]),
+                {ok, Pid};
+            {error, Reason} ->
+                {error, {redis_connection_failed, Reason}}
+        end
+    catch
+        Type:Error:Stack ->
+            ?LOG_ERROR("Redis connection error: ~p:~p ~p", [Type, Error, Stack]),
+            {error, {redis_exception, Error}}
+    end;
+
+connect_external_cache(memcached, _Config) ->
+    %% Placeholder for Memcached support
+    %% Would use a Memcached client library
+    {error, memcached_not_implemented};
+
+connect_external_cache(Module, _Config) ->
+    {error, {unsupported_cache_module, Module}}.
 
 -spec close_external_cache(module() | undefined, term()) -> ok.
 close_external_cache(undefined, _Conn) ->
     ok;
+close_external_cache(eredis, Conn) when is_pid(Conn) ->
+    try
+        eredis:stop(Conn),
+        ?LOG_INFO("Closed Redis connection"),
+        ok
+    catch
+        _:_ ->
+            ok
+    end;
 close_external_cache(_Module, _Conn) ->
-    %% Placeholder: would call Module:close(Conn)
     ok.
 
 -spec get_from_l3(cache_key(), state()) -> {ok, cache_value(), state()} | {error, not_found}.
 get_from_l3(_Key, #state{l3_enabled = false} = _State) ->
     {error, not_found};
+get_from_l3(Key, #state{l3_module = eredis, l3_conn = Conn} = State) when is_pid(Conn) ->
+    try
+        case eredis:q(Conn, ["GET", key_to_binary(Key)]) of
+            {ok, [undefined]} ->
+                {error, not_found};
+            {ok, [Value]} when is_binary(Value) ->
+                %% Deserialize value
+                try
+                    Deserialized = binary_to_term(Value),
+                    {ok, Deserialized, State}
+                catch
+                    _:_ ->
+                        ?LOG_ERROR("Failed to deserialize L3 cache value for key ~p", [Key]),
+                        {error, not_found}
+                end;
+            {error, Reason} ->
+                ?LOG_ERROR("Redis GET error for key ~p: ~p", [Key, Reason]),
+                {error, not_found}
+        end
+    catch
+        _:_ ->
+            {error, not_found}
+    end;
 get_from_l3(_Key, _State) ->
-    %% Placeholder: would call L3Module:get(L3Conn, Key)
     {error, not_found}.
 
 -spec put_entry_in_l3(#cache_entry{}, state()) -> state().
 put_entry_in_l3(_Entry, #state{l3_enabled = false} = State) ->
     State;
+put_entry_in_l3(#cache_entry{key = Key, value = Value, expires_at = ExpiresAt},
+                #state{l3_module = eredis, l3_conn = Conn} = State) when is_pid(Conn) ->
+    try
+        %% Serialize value
+        Serialized = term_to_binary(Value),
+
+        %% Calculate TTL in seconds
+        TTL = case ExpiresAt of
+            infinity ->
+                0;  % No expiration
+            ExpMicroseconds ->
+                Now = erlang:monotonic_time(microsecond),
+                TTLSeconds = max(0, (ExpMicroseconds - Now) div 1_000_000),
+                TTLSeconds
+        end,
+
+        %% Set with TTL
+        case TTL of
+            0 ->
+                eredis:q(Conn, ["SET", key_to_binary(Key), Serialized]);
+            _ ->
+                eredis:q(Conn, ["SETEX", key_to_binary(Key), TTL, Serialized])
+        end,
+
+        State
+    catch
+        Type:Error:Stack ->
+            ?LOG_ERROR("Failed to write to L3 cache for key ~p: ~p:~p ~p",
+                      [Key, Type, Error, Stack]),
+            State
+    end;
 put_entry_in_l3(_Entry, State) ->
-    %% Placeholder: would call L3Module:set(L3Conn, Key, Value, TTL)
     State.
 
 -spec delete_from_l3(cache_key(), state()) -> state().
 delete_from_l3(_Key, #state{l3_enabled = false} = State) ->
     State;
+delete_from_l3(Key, #state{l3_module = eredis, l3_conn = Conn} = State) when is_pid(Conn) ->
+    try
+        eredis:q(Conn, ["DEL", key_to_binary(Key)]),
+        State
+    catch
+        _:_ ->
+            State
+    end;
 delete_from_l3(_Key, State) ->
-    %% Placeholder: would call L3Module:del(L3Conn, Key)
     State.
 
 -spec clear_l3(state()) -> ok.
 clear_l3(#state{l3_enabled = false}) ->
     ok;
+clear_l3(#state{l3_module = eredis, l3_conn = Conn}) when is_pid(Conn) ->
+    try
+        eredis:q(Conn, ["FLUSHDB"]),
+        ok
+    catch
+        _:_ ->
+            ok
+    end;
 clear_l3(_State) ->
-    %% Placeholder: would call L3Module:flushdb(L3Conn)
     ok.
+
+%% @private Convert cache key to binary
+key_to_binary(Key) when is_binary(Key) -> Key;
+key_to_binary(Key) when is_atom(Key) -> atom_to_binary(Key);
+key_to_binary(Key) when is_list(Key) -> list_to_binary(Key);
+key_to_binary(Key) -> term_to_binary(Key).
 
 %%====================================================================
 %% Internal functions - Helpers

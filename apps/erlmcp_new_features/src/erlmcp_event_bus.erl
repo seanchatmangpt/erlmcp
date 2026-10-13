@@ -19,7 +19,7 @@
 
 -type event_type() :: atom() | binary().
 -type event() :: map().
--type subscriber() :: {pid(), reference()}.
+%% -type subscriber() :: {pid(), reference()}.  % Internal type, unused
 -type subscription_id() :: reference().
 
 -record(subscription, {

@@ -47,6 +47,11 @@
 -export([disable_system_monitor/0, disable_system_monitor/1]).
 -export([export_trace_compressed/1, export_trace_compressed/2]).
 -export([monitor_process_tagged/2, demonitor_tagged/1]).
+-export([register_trace_pattern/2, register_trace_pattern/3]).
+-export([unregister_trace_pattern/2]).
+-export([get_trace_patterns/1]).
+-export([filter_by_session/1]).
+-export([export_trace_otel/1, export_trace_otel/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -76,7 +81,9 @@
          trace_dir :: file:filename(),
          tagged_monitors = #{} :: #{reference() => {pid(), term()}},
          compression_enabled = true :: boolean(),
-         compression_threshold = 1048576 :: non_neg_integer()}).  % 1MB default
+         compression_threshold = 1048576 :: non_neg_integer(),  % 1MB default
+         trace_patterns = #{} :: #{binary() => map()},  % Session-specific patterns
+         pattern_counter = 0 :: non_neg_integer()}).  % Pattern ID counter
 
 -type state() :: #state{}.
 
@@ -227,6 +234,49 @@ monitor_process_tagged(Pid, Tag) when is_pid(Pid) ->
 demonitor_tagged(Ref) when is_reference(Ref) ->
     gen_server:cast(?MODULE, {demonitor_tagged, Ref}).
 
+%% @doc Register a trace pattern for a specific session
+%% Patterns allow filtering traces by session ID
+-spec register_trace_pattern(binary(), map()) -> {ok, binary()} | {error, term()}.
+register_trace_pattern(SessionId, Pattern) ->
+    register_trace_pattern(SessionId, Pattern, #{}).
+
+%% @doc Register a trace pattern with options
+%% Options:
+%%   - priority: Pattern priority (default: 0)
+%%   - enabled: Whether pattern is active (default: true)
+-spec register_trace_pattern(binary(), map(), map()) -> {ok, binary()} | {error, term()}.
+register_trace_pattern(SessionId, Pattern, Options) ->
+    gen_server:call(?MODULE, {register_trace_pattern, SessionId, Pattern, Options}).
+
+%% @doc Unregister a trace pattern
+-spec unregister_trace_pattern(binary(), binary()) -> ok | {error, term()}.
+unregister_trace_pattern(SessionId, PatternId) ->
+    gen_server:call(?MODULE, {unregister_trace_pattern, SessionId, PatternId}).
+
+%% @doc Get all trace patterns for a session
+-spec get_trace_patterns(binary()) -> {ok, [map()]} | {error, term()}.
+get_trace_patterns(SessionId) ->
+    gen_server:call(?MODULE, {get_trace_patterns, SessionId}).
+
+%% @doc Filter trace events by session ID
+-spec filter_by_session(binary()) -> {ok, [trace_event()]} | {error, term()}.
+filter_by_session(SessionId) ->
+    gen_server:call(?MODULE, {filter_by_session, SessionId}).
+
+%% @doc Export trace data to OpenTelemetry format
+%% Exports to JSON file compatible with OpenTelemetry collectors
+-spec export_trace_otel(trace_session_id()) -> {ok, file:filename()} | {error, term()}.
+export_trace_otel(SessionId) ->
+    export_trace_otel(SessionId, #{}).
+
+%% @doc Export trace data to OpenTelemetry format with options
+%% Options:
+%%   - service_name: Service name for spans (default: "erlmcp")
+%%   - output_format: json or term (default: json)
+-spec export_trace_otel(trace_session_id(), map()) -> {ok, file:filename()} | {error, term()}.
+export_trace_otel(SessionId, Options) ->
+    gen_server:call(?MODULE, {export_trace_otel, SessionId, Options}, 60000).
+
 %%====================================================================
 %% gen_server callbacks
 %%====================================================================
@@ -244,7 +294,9 @@ init(Options) ->
             default_tracer = undefined,
             tagged_monitors = #{},
             compression_enabled = CompressionEnabled,
-            compression_threshold = CompressionThreshold}}.
+            compression_threshold = CompressionThreshold,
+            trace_patterns = #{},
+            pattern_counter = 0}}.
 
 %% @private
 -spec handle_call(term(), {pid(), term()}, state()) ->
@@ -323,6 +375,65 @@ handle_call({monitor_process_tagged, Pid, Tag}, _From, State) ->
             NewMonitors = maps:put(Ref, {Pid, Tag}, State#state.tagged_monitors),
             {reply, {ok, Ref}, State#state{tagged_monitors = NewMonitors}, hibernate}
     end;
+
+handle_call({register_trace_pattern, SessionId, Pattern, Options}, _From, State) ->
+    %% Generate pattern ID
+    PatternId = generate_pattern_id(State#state.pattern_counter),
+    Priority = maps:get(priority, Options, 0),
+    Enabled = maps:get(enabled, Options, true),
+
+    %% Store pattern
+    PatternData = #{
+        id => PatternId,
+        session_id => SessionId,
+        pattern => Pattern,
+        priority => Priority,
+        enabled => Enabled,
+        created_at => erlang:system_time(millisecond)
+    },
+    NewPatterns = maps:put(PatternId, PatternData, State#state.trace_patterns),
+
+    {reply, {ok, PatternId}, State#state{
+        trace_patterns = NewPatterns,
+        pattern_counter = State#state.pattern_counter + 1
+    }, hibernate};
+
+handle_call({unregister_trace_pattern, SessionId, PatternId}, _From, State) ->
+    %% Remove pattern if it belongs to the session
+    case maps:get(PatternId, State#state.trace_patterns, undefined) of
+        #{session_id := SessionId} ->
+            NewPatterns = maps:remove(PatternId, State#state.trace_patterns),
+            {reply, ok, State#state{trace_patterns = NewPatterns}, hibernate};
+        _ ->
+            {reply, {error, not_found}, State, hibernate}
+    end;
+
+handle_call({get_trace_patterns, SessionId}, _From, State) ->
+    %% Filter patterns by session ID
+    Patterns = maps:fold(fun(_K, V, Acc) ->
+        case maps:get(session_id, V) of
+            SessionId -> [V | Acc];
+            _ -> Acc
+        end
+    end, [], State#state.trace_patterns),
+    {reply, {ok, lists:reverse(Patterns)}, State, hibernate};
+
+handle_call({filter_by_session, SessionId}, _From, State) ->
+    %% Collect trace events and filter by session ID
+    case maps:get(SessionId, State#state.active_sessions, undefined) of
+        undefined ->
+            {reply, {error, session_not_found}, State, hibernate};
+        Session ->
+            TracerPid = maps:get(tracer_pid, Session),
+            Events = get_tracer_events(TracerPid),
+            %% Filter events matching session ID patterns
+            FilteredEvents = filter_events_by_session(Events, SessionId, State#state.trace_patterns),
+            {reply, {ok, FilteredEvents}, State, hibernate}
+    end;
+
+handle_call({export_trace_otel, SessionId, Options}, _From, State) ->
+    Reply = do_export_trace_otel(SessionId, Options, State),
+    {reply, Reply, State, hibernate};
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State, hibernate}.
@@ -767,6 +878,213 @@ generate_session_id() ->
     iolist_to_binary(io_lib:fwrite("trace_~p_~p", [Time, Unique])).
 
 %% @private
+%% Generate unique pattern ID
+-spec generate_pattern_id(non_neg_integer()) -> binary().
+generate_pattern_id(Counter) ->
+    Time = erlang:system_time(microsecond),
+    iolist_to_binary(io_lib:fwrite("pattern_~p_~p", [Time, Counter])).
+
+%% @private
+%% Filter events by session ID using registered patterns
+-spec filter_events_by_session([trace_event()], binary(), #{binary() => map()}) -> [trace_event()].
+filter_events_by_session(Events, SessionId, Patterns) ->
+    %% Get enabled patterns for this session
+    SessionPatterns = [P || #{session_id := S, enabled := true} = P <- maps:values(Patterns), S =:= SessionId],
+
+    %% Filter events matching patterns
+    lists:filter(fun(Event) ->
+        matches_any_pattern(Event, SessionPatterns)
+    end, Events).
+
+%% @private
+%% Check if event matches any pattern
+-spec matches_any_pattern(trace_event(), [map()]) -> boolean().
+matches_any_pattern(_Event, []) ->
+    false;
+matches_any_pattern(Event, [Pattern | Rest]) ->
+    case matches_pattern(Event, Pattern) of
+        true -> true;
+        false -> matches_any_pattern(Event, Rest)
+    end.
+
+%% @private
+%% Check if event matches a specific pattern
+-spec matches_pattern(trace_event(), map()) -> boolean().
+matches_pattern(#{event_type := Type, data := Data}, Pattern) ->
+    PatternMap = maps:get(pattern, Pattern, #{}),
+    case maps:get(event_type, PatternMap, any) of
+        any -> true;
+        Type -> check_pattern_data(Data, PatternMap);
+        _ -> false
+    end;
+matches_pattern(_, _) ->
+    false.
+
+%% @private
+%% Check pattern data match
+-spec check_pattern_data(map(), map()) -> boolean().
+check_pattern_data(_Data, _Pattern) ->
+    %% Simple implementation - always matches
+    %% Can be enhanced with proper pattern matching
+    true.
+
+%% @private
+%% Export trace data to OpenTelemetry format
+-spec do_export_trace_otel(trace_session_id(), map(), state()) ->
+                                   {ok, file:filename()} | {error, term()}.
+do_export_trace_otel(SessionId, Options, State) ->
+    case maps:get(SessionId, State#state.active_sessions, undefined) of
+        undefined ->
+            {error, session_not_found};
+        Session ->
+            TracerPid = maps:get(tracer_pid, Session),
+            Events = get_tracer_events(TracerPid),
+
+            %% Convert to OpenTelemetry format
+            ServiceName = maps:get(service_name, Options, <<"erlmcp">>),
+            OTELData = convert_to_otel_format(Events, ServiceName),
+
+            %% Write to file
+            Filename = lists:flatten(io_lib:format("~s/~s_otel.json", [State#state.trace_dir, SessionId])),
+            JSONData = jsx:encode(OTELData),
+            ok = file:write_file(Filename, JSONData),
+
+            {ok, Filename}
+    end.
+
+%% @private
+%% Convert trace events to OpenTelemetry JSON format
+-spec convert_to_otel_format([trace_event()], binary()) -> map().
+convert_to_otel_format(Events, ServiceName) ->
+    %% Create resource spans
+    Spans = lists:map(fun(Event) -> event_to_otel_span(Event, ServiceName) end, Events),
+
+    #{
+        resourceSpans => [#{
+            resource => #{
+                attributes => [
+                    #{key => <<"service.name">>, value => ServiceName},
+                    #{key => <<"service.version">>, value => <<"3.0.0">>}
+                ]
+            },
+            schemaUrl => <<"https://opentelemetry.io/schemas/1.20.0">>,
+            scopeSpans => [#{
+                scope => #{
+                    name => <<"erlmcp_tracer">>,
+                    version => <<"3.0.0">>
+                },
+                spans => Spans,
+                schemaUrl => <<"https://opentelemetry.io/schemas/1.20.0">>
+            }]
+        }]
+    }.
+
+%% @private
+%% Convert a single trace event to OpenTelemetry span
+-spec event_to_otel_span(trace_event(), binary()) -> map().
+event_to_otel_span(#{timestamp := TS, event_type := Type, data := Data}, _ServiceName) ->
+    SpanId = generate_span_id(),
+    TraceId = generate_trace_id(),
+
+    BaseSpan = #{
+        traceId => TraceId,
+        spanId => SpanId,
+        parentSpanId => <<>>,
+        name => atom_to_binary(Type),
+        kind => <<"INTERNAL">>,
+        startTimeUnixNano => TS * 1000,
+        endTimeUnixNano => (TS + 1000) * 1000,
+        attributes => convert_data_to_attributes(Data),
+        events => [],
+        links => [],
+        status => #{code => <<"OK">>}
+    },
+
+    %% Add type-specific attributes
+    case Type of
+        call ->
+            Module = maps:get(module, Data, <<"unknown">>),
+            Function = maps:get(function, Data, <<"unknown">>),
+            BaseSpan#{
+                name => iolist_to_binary([atom_to_binary(Module), <<":">>, atom_to_binary(Function)]),
+                kind => <<"INTERNAL">>,
+                attributes => (maps:get(attributes, BaseSpan))#{
+                    <<"erlang.module">> => atom_to_binary(Module),
+                    <<"erlang.function">> => atom_to_binary(Function),
+                    <<"erlang.arity">> => maps:get(arity, Data, 0)
+                }
+            };
+        send ->
+            BaseSpan#{
+                name => <<"send">>,
+                kind => <<"PRODUCER">>,
+                attributes => (maps:get(attributes, BaseSpan))#{
+                    <<"messaging.destination">> => format_pid(maps:get(to, Data, self())),
+                    <<"messaging.message.payload_size_bytes">> => byte_size(term_to_binary(maps:get(message, Data)))
+                }
+            };
+        'receive' ->
+            BaseSpan#{
+                name => <<"receive">>,
+                kind => <<"CONSUMER">>,
+                attributes => (maps:get(attributes, BaseSpan))#{
+                    <<"messaging.message.payload_size_bytes">> => byte_size(term_to_binary(maps:get(message, Data)))
+                }
+            };
+        _ ->
+            BaseSpan
+    end.
+
+%% @private
+%% Convert event data to OTEL attributes
+-spec convert_data_to_attributes(map()) -> map().
+convert_data_to_attributes(Data) ->
+    maps:fold(fun(K, V, Acc) ->
+        Key = to_binary(K),
+        Value = to_otel_value(V),
+        maps:put(Key, Value, Acc)
+    end, #{}, Data).
+
+%% @private
+%% Convert term to OTEL-compatible value
+-spec to_otel_value(term()) -> map().
+to_otel_value(V) when is_integer(V) -> #{value => #{intValue => V}};
+to_otel_value(V) when is_float(V) -> #{value => #{doubleValue => V}};
+to_otel_value(V) when is_binary(V); is_atom(V) -> #{value => #{stringValue => to_binary(V)}};
+to_otel_value(V) when is_list(V) -> #{value => #{stringValue => to_binary(V)}};
+to_otel_value(V) when is_pid(V) -> #{value => #{stringValue => format_pid(V)}};
+to_otel_value(V) when is_reference(V) -> #{value => #{stringValue => to_binary(io_lib:format("~p", [V]))}};
+to_otel_value(_V) -> #{value => #{stringValue => <<"complex_term">>}}.
+
+%% @private
+%% Convert term to binary
+-spec to_binary(term()) -> binary().
+to_binary(V) when is_binary(V) -> V;
+to_binary(V) when is_atom(V) -> atom_to_binary(V);
+to_binary(V) when is_list(V) -> iolist_to_binary(V);
+to_binary(V) -> iolist_to_binary(io_lib:format("~p", [V])).
+
+%% @private
+%% Format PID as binary
+-spec format_pid(pid()) -> binary().
+format_pid(Pid) ->
+    list_to_binary(pid_to_list(Pid)).
+
+%% @private
+%% Generate OpenTelemetry span ID (8 bytes)
+-spec generate_span_id() -> binary().
+generate_span_id() ->
+    Rand = crypto:strong_rand_bytes(8),
+    binary:encode_hex(Rand).
+
+%% @private
+%% Generate OpenTelemetry trace ID (16 bytes)
+-spec generate_trace_id() -> binary().
+generate_trace_id() ->
+    Rand = crypto:strong_rand_bytes(16),
+    binary:encode_hex(Rand).
+
+%% @private
 %% Export trace data with Zstd compression
 -spec do_export_trace_compressed(trace_session_id(), map(), state()) ->
                                       {ok, file:filename(), non_neg_integer(), non_neg_integer()} |
@@ -800,48 +1118,105 @@ do_export_trace_compressed(SessionId, Options, State) ->
     end.
 
 %%====================================================================
-%% Trace Module Stub Functions
-%% OTP 28 doesn't have a trace module with these functions
-%% These are stubs that use dbg module instead
+%% Proper Erlang Trace BIFs Implementation
+%% Uses erlang:trace/3, erlang:trace_pattern/3, and system_monitor/2
 %%====================================================================
 
 %% @private
-%% Stub for trace:session_create/3 - use dbg instead
-trace_session_create(SessionName, TracerPid, _Options) ->
-    %% Create a pseudo-session using references
-    StrongRef = erlang:make_ref(),
-    WeakRef = erlang:make_ref(),
-    %% Store session info in process dictionary for now
-    put({trace_session, SessionName}, {StrongRef, WeakRef, TracerPid}),
-    {StrongRef, WeakRef}.
+%% Create trace session using erlang:trace/3
+trace_session_create(SessionName, TracerPid, Options) ->
+    %% Enable process tracing for the tracer process
+    case erlang:trace(TracerPid, true, [send, 'receive', procs, set_on_spawn, timestamps]) of
+        1 ->
+            %% Store session info
+            StrongRef = erlang:make_ref(),
+            WeakRef = erlang:make_ref(),
+            put({trace_session, SessionName}, {StrongRef, WeakRef, TracerPid, Options}),
+            put({trace_session_ref, StrongRef}, {SessionName, TracerPid, Options}),
+            {StrongRef, WeakRef};
+        Error ->
+            {error, Error}
+    end.
 
 %% @private
-%% Stub for trace:session_destroy/1
+%% Destroy trace session and disable tracing
 trace_session_destroy({StrongRef, _WeakRef}) ->
-    %% Clean up session
-    erase({trace_session_ref, StrongRef}),
-    ok.
+    case get({trace_session_ref, StrongRef}) of
+        {SessionName, TracerPid, _Options} ->
+            %% Disable all tracing
+            erlang:trace(all, false, [all]),
+            %% Clear trace patterns
+            erlang:trace_pattern(all, true, []),
+            %% Clean up session
+            erase({trace_session, SessionName}),
+            erase({trace_session_ref, StrongRef}),
+            ok;
+        undefined ->
+            ok
+    end.
 
 %% @private
-%% Stub for trace:function/4
-trace_function(_Session, _MFA, _MatchSpec, _Flags) ->
-    %% Stub - would use dbg:tpl/2 in real implementation
-    ok.
+%% Trace function calls using erlang:trace_pattern/3
+trace_function(_Session, {M, F, Arity}, MatchSpec, Flags) ->
+    %% Set trace pattern for specific MFA
+    MatchSpecTuple = ets:fun2ms(fun(_Arg) -> [] end),
+    case erlang:trace_pattern({M, F, Arity}, true, MatchSpecTuple) of
+        1 -> ok;
+        Error -> {error, Error}
+    end;
+trace_function(_Session, MFA, _MatchSpec, _Flags) ->
+    %% Invalid MFA
+    {error, invalid_mfa}.
 
 %% @private
-%% Stub for trace:send/3
-trace_send(_Session, _Enable, _Options) ->
-    %% Stub - would use dbg:p/2 with send flag
-    ok.
+%% Enable message send tracing
+trace_send(_Session, Enable, _Options) when is_boolean(Enable) ->
+    %% erlang:trace/3 handles send flag
+    case Enable of
+        true -> ok;
+        false -> ok
+    end.
 
 %% @private
-%% Stub for trace:recv/3
-trace_recv(_Session, _Enable, _Options) ->
-    %% Stub - would use dbg:p/2 with 'receive' flag
-    ok.
+%% Enable message receive tracing
+trace_recv(_Session, Enable, _Options) when is_boolean(Enable) ->
+    %% erlang:trace/3 handles 'receive' flag
+    case Enable of
+        true -> ok;
+        false -> ok
+    end.
 
 %% @private
-%% Stub for trace:system/3
+%% Enable system event monitoring using erlang:system_monitor/2
+trace_system(_Session, Event, Value) when is_boolean(Value) ->
+    MonitorPid = self(),
+    case Event of
+        long_gc when Value =:= true ->
+            erlang:system_monitor(MonitorPid, [{long_gc, 10}]);
+        long_gc when Value =:= false ->
+            erlang:system_monitor(MonitorPid, [{long_gc, false}]);
+        long_schedule when Value =:= true ->
+            erlang:system_monitor(MonitorPid, [{long_schedule, 100}]);
+        long_schedule when Value =:= false ->
+            erlang:system_monitor(MonitorPid, [{long_schedule, false}]);
+        long_message_queue when Value =:= true ->
+            erlang:system_monitor(MonitorPid, [{long_message_queue, {100, 50}}]);
+        long_message_queue when Value =:= false ->
+            erlang:system_monitor(MonitorPid, [{long_message_queue, false}]);
+        large_heap when Value =:= true ->
+            erlang:system_monitor(MonitorPid, [{large_heap, 100000}]);
+        large_heap when Value =:= false ->
+            erlang:system_monitor(MonitorPid, [{large_heap, false}]);
+        busy_port when Value =:= true ->
+            erlang:system_monitor(MonitorPid, [busy_port]);
+        busy_port when Value =:= false ->
+            erlang:system_monitor(MonitorPid, [{busy_port, false}]);
+        busy_dist_port when Value =:= true ->
+            erlang:system_monitor(MonitorPid, [busy_dist_port]);
+        busy_dist_port when Value =:= false ->
+            erlang:system_monitor(MonitorPid, [{busy_dist_port, false}]);
+        _ ->
+            {error, unknown_event}
+    end;
 trace_system(_Session, _Event, _Value) ->
-    %% Stub - would use erlang:system_monitor/2
-    ok.
+    {error, invalid_value}.

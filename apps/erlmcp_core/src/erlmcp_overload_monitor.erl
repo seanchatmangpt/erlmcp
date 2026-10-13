@@ -310,7 +310,7 @@ check_thresholds(#{status := Status,
                    depth := Depth,
                    limit := Limit,
                    utilization := Util} =
-                     QueueInfo,
+                     _QueueInfo,
                  Timestamp) ->
     Level =
         case Status of

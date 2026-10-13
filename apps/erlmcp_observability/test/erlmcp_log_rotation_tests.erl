@@ -180,12 +180,12 @@ rotate_now_test_() ->
                      timer:sleep(100),
 
                      % Verify files were rotated
-                     ?assertMatch({ok, Files}, file:list_dir(TestLogDir)),
+                     {ok, DirFiles} = file:list_dir(TestLogDir),
                      % Should have rotated files with timestamps
                      ?assert(lists:any(fun(F) ->
                          string:find(F, ".log") =/= F andalso
                          string:find(F, "test1") =/= F
-                     end, Files))
+                     end, DirFiles))
                  end)
          ]
      end}.

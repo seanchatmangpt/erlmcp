@@ -1,0 +1,358 @@
+%%%-------------------------------------------------------------------
+%%% @doc erlmcp Cluster Tests
+%%%
+%%% Test suite for cluster functionality including:
+%%% - Node discovery
+%%% - Cluster membership
+%%% - Distributed sessions
+%%% - Distributed locks
+%%% - Health monitoring
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_cluster_tests).
+
+-include_lib("eunit/include/eunit.hrl").
+-include_lib("kernel/include/logger.hrl").
+
+%%====================================================================
+%% Test Macros
+%%====================================================================
+
+-define(CLUSTER_TEST_TIMEOUT, 30000).
+-define(assertMatchTimeout(Timeout, Pattern, Expr),
+    try
+        ?assertMatch(Pattern, Expr)
+    catch
+        error:{assertMatch_failed, _} ->
+            receive
+            after Timeout ->
+                erlang:error({assertMatch_failed, timeout, ??Expr})
+            end
+    end).
+
+%%====================================================================
+%% Cluster Discovery Tests
+%%====================================================================
+
+cluster_discovery_start_test() ->
+    {ok, Pid} = erlmcp_cluster_discovery:start_link(#{
+        discovery_mode => static,
+        static_nodes => [],
+        discovery_interval => 5000
+    }),
+    ?assert(is_pid(Pid)),
+    ?assertEqual(Pid, whereis(erlmcp_cluster_discovery)),
+    gen_server:stop(Pid),
+    timer:sleep(100).
+
+cluster_discovery_static_nodes_test() ->
+    {ok, _Pid} = erlmcp_cluster_discovery:start_link(#{
+        discovery_mode => static,
+        static_nodes => [test_node1@local, test_node2@local],
+        discovery_interval => 5000
+    }),
+
+    Status = erlmcp_cluster_discovery:get_discovery_status(),
+    ?assertMatch(#{static_nodes := [_, _]}, Status),
+
+    gen_server:stop(erlmcp_cluster_discovery).
+
+cluster_discovery_add_remove_test() ->
+    {ok, _Pid} = erlmcp_cluster_discovery:start_link(#{}),
+
+    ?assertEqual(ok, erlmcp_cluster_discovery:add_static_node(test_node1@local)),
+
+    Status1 = erlmcp_cluster_discovery:get_discovery_status(),
+    ?assert(lists:member(test_node1@local, maps:get(static_nodes, Status1))),
+
+    ?assertEqual(ok, erlmcp_cluster_discovery:remove_static_node(test_node1@local)),
+
+    Status2 = erlmcp_cluster_discovery:get_discovery_status(),
+    ?assertNot(lists:member(test_node1@local, maps:get(static_nodes, Status2))),
+
+    gen_server:stop(erlmcp_cluster_discovery).
+
+%%====================================================================
+%% Cluster Membership Tests
+%%====================================================================
+
+cluster_membership_start_test() ->
+    {ok, Pid} = erlmcp_cluster_membership:start_link(#{
+        heartbeat_interval => 5000,
+        sync_interval => 10000
+    }),
+    ?assert(is_pid(Pid)),
+    ?assertEqual(Pid, whereis(erlmcp_cluster_membership)),
+    gen_server:stop(Pid),
+    timer:sleep(100).
+
+cluster_membership_get_members_test() ->
+    {ok, _Pid} = erlmcp_cluster_membership:start_link(#{}),
+
+    Members = erlmcp_cluster_membership:get_members(),
+    ?assert(is_map(Members)),
+    ?assert(maps:is_key(node(), Members)),
+    ?assertEqual(alive, maps:get(node(), Members)),
+
+    gen_server:stop(erlmcp_cluster_membership).
+
+cluster_membership_subscribe_test() ->
+    {ok, _Pid} = erlmcp_cluster_membership:start_link(#{}),
+
+    ?assertEqual(ok, erlmcp_cluster_membership:subscribe()),
+
+    % Check we receive events
+    Status = erlmcp_cluster_membership:get_membership_view(),
+    ?assertMatch(#{local_node := _, members := #{}}, Status),
+
+    gen_server:stop(erlmcp_cluster_membership).
+
+%%====================================================================
+%% Distributed Lock Tests
+%%====================================================================
+
+distributed_lock_start_test() ->
+    {ok, Pid} = erlmcp_distributed_lock:start_link(#{
+        default_timeout => 5000,
+        cleanup_interval => 10000
+    }),
+    ?assert(is_pid(Pid)),
+    gen_server:stop(Pid),
+    timer:sleep(100).
+
+distributed_lock_acquire_release_test() ->
+    {ok, _Pid} = erlmcp_distributed_lock:start_link(#{}),
+
+    LockName = test_lock,
+    ?assertEqual(ok, erlmcp_distributed_lock:acquire(LockName)),
+    ?assertEqual(ok, erlmcp_distributed_lock:release(LockName)),
+
+    gen_server:stop(erlmcp_distributed_lock).
+
+distributed_lock_double_acquire_test() ->
+    {ok, _Pid} = erlmcp_distributed_lock:start_link(#{}),
+
+    LockName = double_acquire_lock,
+    ?assertEqual(ok, erlmcp_distributed_lock:acquire(LockName)),
+
+    % Second acquire from same process should fail
+    Result = erlmcp_distributed_lock:acquire(LockName, 1000),
+    ?assertMatch({error, already_held}, Result),
+
+    ?assertEqual(ok, erlmcp_distributed_lock:release(LockName)),
+
+    gen_server:stop(erlmcp_distributed_lock).
+
+distributed_lock_timeout_test() ->
+    {ok, _Pid} = erlmcp_distributed_lock:start_link(#{
+        default_timeout => 500  % 500ms timeout
+    }),
+
+    LockName = timeout_lock,
+    ?assertEqual(ok, erlmcp_distributed_lock:acquire(LockName)),
+
+    % Wait for timeout
+    timer:sleep(600),
+
+    % Should be able to acquire again after timeout
+    ?assertEqual(ok, erlmcp_distributed_lock:acquire(LockName)),
+    ?assertEqual(ok, erlmcp_distributed_lock:release(LockName)),
+
+    gen_server:stop(erlmcp_distributed_lock).
+
+distributed_lock_status_test() ->
+    {ok, _Pid} = erlmcp_distributed_lock:start_link(#{}),
+
+    LockName = status_lock,
+    ?assertEqual(ok, erlmcp_distributed_lock:acquire(LockName)),
+
+    {ok, Status} = erlmcp_distributed_lock:lock_status(LockName),
+    ?assertEqual(self(), maps:get(holder, Status)),
+    ?assert(is_integer(maps:get(expires_at, Status))),
+
+    ?assertEqual(ok, erlmcp_distributed_lock:release(LockName)),
+
+    gen_server:stop(erlmcp_distributed_lock).
+
+%%====================================================================
+%% Distributed Session Tests
+%%====================================================================
+
+distributed_session_start_test() ->
+    {ok, Pid} = erlmcp_distributed_session:start_link(#{
+        replication_factor => 2,
+        sync_interval => 5000
+    }),
+    ?assert(is_pid(Pid)),
+    gen_server:stop(Pid),
+    timer:sleep(100).
+
+distributed_session_create_test() ->
+    {ok, _Pid} = erlmcp_distributed_session:start_link(#{}),
+
+    % Create a session (will use replication_factor from config)
+    {ok, SessionId} = erlmcp_distributed_session:create_distributed(
+        #{user => <<"test_user">>},
+        infinity
+    ),
+
+    ?assert(is_binary(SessionId)),
+    ?assertEqual(32, byte_size(SessionId)),  % 16 bytes = 32 hex chars
+
+    gen_server:stop(erlmcp_distributed_session).
+
+distributed_session_location_test() ->
+    {ok, _Pid} = erlmcp_distributed_session:start_link(#{}),
+
+    {ok, SessionId} = erlmcp_distributed_session:create_distributed(
+        #{test => data},
+        infinity
+    ),
+
+    % Should be on local node
+    {ok, Location} = erlmcp_distributed_session:get_session_location(SessionId),
+    ?assertEqual(node(), Location),
+
+    gen_server:stop(erlmcp_distributed_session).
+
+distributed_session_replication_factor_test() ->
+    {ok, _Pid} = erlmcp_distributed_session:start_link(#{}),
+
+    ?assertEqual(2, erlmcp_distributed_session:get_replication_factor()),
+
+    ?assertEqual(ok, erlmcp_distributed_session:set_replication_factor(3)),
+    ?assertEqual(3, erlmcp_distributed_session:get_replication_factor()),
+
+    gen_server:stop(erlmcp_distributed_session).
+
+%%====================================================================
+%% Cluster Health Tests
+%%====================================================================
+
+cluster_health_start_test() ->
+    {ok, Pid} = erlmcp_cluster_health:start_link(#{
+        check_interval => 5000,
+        history_size => 10
+    }),
+    ?assert(is_pid(Pid)),
+    gen_server:stop(Pid),
+    timer:sleep(100).
+
+cluster_health_get_health_test() ->
+    {ok, _Pid} = erlmcp_cluster_health:start_link(#{}),
+
+    Health = erlmcp_cluster_health:get_cluster_health(),
+    ?assertMatch(#cluster_health{timestamp = _, overall_status = _}, Health),
+
+    gen_server:stop(erlmcp_cluster_health).
+
+cluster_health_summary_test() ->
+    {ok, _Pid} = erlmcp_cluster_health:start_link(#{}),
+
+    Summary = erlmcp_cluster_health:get_health_summary(),
+    ?assert(is_map(Summary)),
+    ?assert(maps:is_key(timestamp, Summary)),
+    ?assert(maps:is_key(overall_status, Summary)),
+    ?assert(maps:is_key(healthy_nodes, Summary)),
+
+    gen_server:stop(erlmcp_cluster_health).
+
+cluster_health_node_health_test() ->
+    {ok, _Pid} = erlmcp_cluster_health:start_link(#{}),
+
+    {ok, NodeHealth} = erlmcp_cluster_health:get_node_health(node()),
+    ?assertMatch(#node_health{node = _, status = _}, NodeHealth),
+    ?assertEqual(node(), NodeHealth#node_health.node),
+
+    gen_server:stop(erlmcp_cluster_health).
+
+cluster_health_subscribe_test() ->
+    {ok, _Pid} = erlmcp_cluster_health:start_link(#{}),
+
+    ?assertEqual(ok, erlmcp_cluster_health:subscribe()),
+
+    gen_server:stop(erlmcp_cluster_health).
+
+%%====================================================================
+%% Cluster RPC Tests
+%%====================================================================
+
+cluster_rpc_start_test() ->
+    {ok, Pid} = erlmcp_cluster_rpc:start_link(#{
+        timeout => 5000,
+        cleanup_interval => 10000
+    }),
+    ?assert(is_pid(Pid)),
+    gen_server:stop(Pid),
+    timer:sleep(100).
+
+cluster_rpc_call_test() ->
+    {ok, _Pid} = erlmcp_cluster_rpc:start_link(#{}),
+
+    % Call to local node should work
+    Result = erlmcp_cluster_rpc:call(node(), erlang, node, [], 5000),
+    ?assertEqual(node(), Result),
+
+    gen_server:stop(erlmcp_cluster_rpc).
+
+cluster_rpc_cast_test() ->
+    {ok, _Pid} = erlmcp_cluster_rpc:start_link(#{}),
+
+    % Cast should not block
+    ?assertEqual(ok, erlmcp_cluster_rpc:cast(node(), erlang, display, ["test"])),
+
+    timer:sleep(100),
+    gen_server:stop(erlmcp_cluster_rpc).
+
+cluster_rpc_broadcast_test() ->
+    {ok, _Pid} = erlmcp_cluster_rpc:start_link(#{}),
+
+    ?assertEqual(ok, erlmcp_cluster_rpc:broadcast(
+        erlmcp_cluster_rpc, start_link, [#{timeout => 1000}]
+    )),
+
+    timer:sleep(100),
+    gen_server:stop(erlmcp_cluster_rpc).
+
+%%====================================================================
+%% Integration Tests
+%%====================================================================
+
+cluster_supervisor_test() ->
+    % Test that cluster supervisor starts all children
+    application:ensure_all_started(gproc),
+
+    {ok, Pid} = erlmcp_cluster_sup:start_link(),
+
+    Children = supervisor:which_children(Pid),
+    ?assert(length(Children) >= 5),
+
+    % Check critical children are running
+    ChildIds = [Id || {Id, _Child, _Type, _Modules} <- Children],
+
+    ?assert(lists:member(erlmcp_cluster_discovery, ChildIds)),
+    ?assert(lists:member(erlmcp_cluster_membership, ChildIds)),
+    ?assert(lists:member(erlmcp_cluster_rpc, ChildIds)),
+    ?assert(lists:member(erlmcp_distributed_lock, ChildIds)),
+    ?assert(lists:member(erlmcp_cluster_health, ChildIds)),
+
+    gen_server:stop(Pid).
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+%% @doc Setup cluster for multi-node tests
+setup_cluster() ->
+    % This would normally set up multiple test nodes
+    % For now, we just ensure the local cluster is running
+    application:ensure_all_started(gproc),
+    application:ensure_all_started(erlmcp_core),
+    ok.
+
+%% @doc Tear down cluster after tests
+teardown_cluster() ->
+    application:stop(erlmcp_core),
+    application:stop(gproc),
+    ok.

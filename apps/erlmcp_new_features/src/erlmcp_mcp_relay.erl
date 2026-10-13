@@ -33,7 +33,24 @@
          get_backend_status/1,
          set_backend_enabled/2,
          authenticate_request/2,
-         authorize_request/3]).
+         authorize_request/3,
+         get_security_context/0,
+         build_ssl_options/2]).
+
+%% TLS 1.3-first secure defaults (modeled on erlmcp_tls_validation).
+-define(SSL_VERSIONS, ['tlsv1.3', 'tlsv1.2']).
+-define(SSL_CIPHERS,
+        ["TLS_AES_256_GCM_SHA384",
+         "TLS_AES_128_GCM_SHA256",
+         "TLS_CHACHA20_POLY1305_SHA256",
+         "ECDHE-RSA-AES256-GCM-SHA384",
+         "ECDHE-RSA-AES128-GCM-SHA256",
+         "ECDHE-RSA-CHACHA20-POLY1305",
+         "ECDHE-ECDSA-AES256-GCM-SHA384",
+         "ECDHE-ECDSA-AES128-GCM-SHA256",
+         "ECDHE-ECDSA-CHACHA20-POLY1305"]).
+-define(SSL_VERIFY, verify_peer).
+-define(SSL_VERIFY_DEPTH, 5).
 
 %% gen_server callbacks
 -export([init/1,
@@ -183,7 +200,8 @@ init(Options) ->
         enable_zero_trust => proplists:get_value(enable_zero_trust, Options, true),
         require_auth => proplists:get_value(require_auth, Options, true),
         audit_enabled => proplists:get_value(audit_enabled, Options, true),
-        ssl_verify => proplists:get_value(ssl_verify, Options, verify_none)
+        ssl_verify => proplists:get_value(ssl_verify, Options, ?SSL_VERIFY),
+        ssl_cacertfile => proplists:get_value(ssl_cacertfile, Options, undefined)
     },
 
     logger:info("Initializing MCP Relay with timeout ~p, security: ~p",
@@ -332,6 +350,9 @@ handle_call({set_backend_enabled, BackendId, Enabled}, _From, State) ->
             {reply, {error, Reason}, State}
     end;
 
+handle_call(get_security_context, _From, State) ->
+    {reply, State#state.security_context, State};
+
 handle_call(_Request, _From, State) ->
     audit_event(unknown_request, {received}, State),
     {reply, {error, unknown_request}, State}.
@@ -391,86 +412,8 @@ authenticate_and_authorize(Request, _State, _CorrelationId) ->
             {error, Reason}
     end.
 
-%% @doc Extract authentication information from request.
-%% @deprecated This function is currently unused and reserved for future implementation.
--spec extract_auth_info(request()) -> {ok, binary()} | {error, term()}.
-_extract_auth_info(Request) ->
-    %% This function is currently unused but kept for future implementation
-    case maps:get(<<"auth">>, Request, undefined) of
-        undefined ->
-            case maps:get(<<"token">>, Request, undefined) of
-                undefined ->
-                    {error, missing_authentication};
-                Token when is_binary(Token) ->
-                    {ok, Token};
-                _ ->
-                    {error, invalid_token_format}
-            end;
-        Auth when is_binary(Auth) ->
-            {ok, Auth};
-        _ ->
-            {error, invalid_auth_format}
-    end.
-
-%% @doc Validate authentication token.
-%% @deprecated This function is currently unused and reserved for future implementation.
--spec validate_token(binary(), state()) -> {ok, binary()} | {error, term()}.
-_validate_token(Token, _State) ->
-    %% This function is currently unused but kept for future implementation
-    %% Simple token validation - in production, use proper JWT validation
-    case binary:length(Token) >= 32 of
-        true ->
-            %% Check if token exists in permissions
-            case maps:find(Token, _State#state.permissions) of
-                {ok, Permission} ->
-                    %% Check if token is expired
-                    case maps:get(<<"expires_at">>, Permission, undefined) of
-                        undefined ->
-                            {ok, maps:get(<<"subject">>, Permission)};
-                        ExpiresAt when is_integer(ExpiresAt) ->
-                            case erlang:system_time(millisecond) < ExpiresAt of
-                                true ->
-                                    {ok, maps:get(<<"subject">>, Permission)};
-                                false ->
-                                    {error, token_expired}
-                            end
-                    end;
-                error ->
-                    {error, invalid_token}
-            end;
-        false ->
-            {error, invalid_token}
-    end.
-
-%% @doc Check if subject has required permissions.
-%% @deprecated This function is currently unused and reserved for future implementation.
--spec check_permissions(binary(), binary(), state()) -> {ok, binary()} | {error, term()}.
-_check_permissions(Subject, Resource, _State) ->
-    %% This function is currently unused but kept for future implementation
-    %% Find permissions for subject
-    case maps:get(Subject, _State#state.permissions, undefined) of
-        undefined ->
-            {error, no_permissions_for_subject};
-        Permission ->
-            Capabilities = maps:get(<<"capabilities">>, Permission, []),
-            %% Check if any capability grants access to the resource
-            case check_capabilities(Capabilities, Resource) of
-                true ->
-                    {ok, Subject};
-                false ->
-                    {error, insufficient_permissions}
-            end
-    end.
-
-%% @doc Check capabilities against resource.
-%% @deprecated This function is currently unused and reserved for future implementation.
--spec check_capabilities([capability()], binary()) -> boolean().
-_check_capabilities(Capabilities, Resource) ->
-    %% This function is currently unused but kept for future implementation
-    lists:any(fun(Capability) ->
-        maps:get(<<"resource">>, Capability) == Resource orelse
-        string:prefix(Resource, <<"/api/*">>)
-    end, Capabilities).
+%% Authentication functions removed - now handled by erlmcp_security_manager
+%% Use erlmcp_security_manager:authenticate_request/2 instead
 
 %% @doc Authenticate request permission.
 -spec authenticate_request_permission(state(), binary(), binary(), map()) -> ok | {error, term()}.
@@ -611,26 +554,28 @@ send_request(Url, Request, Timeout) ->
                 Header = [{<<"Content-Type">>, <<"application/json">>} | SecurityHeaders],
                 Body = jsone:encode(Request),
 
-                %% SSL configuration
+                %% SSL configuration (verify_peer + TLS 1.3-first, modeled
+                %% on erlmcp_tls_validation defaults)
                 SecurityContext = get_security_context(),
-                SSLConfig = [
-                    {verify, maps:get(ssl_verify, SecurityContext, verify_none)},
-                    {server_name_indication, {fail, []}}
-                ],
+                case build_ssl_options(Url, SecurityContext) of
+                    {ok, SSLConfig} ->
+                        Options = [{timeout, Timeout}, {body_format, binary}, {ssl, SSLConfig}],
 
-                Options = [{timeout, Timeout}, {body_format, binary}, {ssl, SSLConfig}],
-
-                case httpc:request(post, {binary_to_list(Url), Header, <<"application/json">>, Body},
-                                  [], Options) of
-                    {ok, {{_, 200, _}, _Headers, ResponseBody}} ->
-                        Response = jsone:decode(ResponseBody),
-                        {ok, Response};
-                    {ok, {{_, StatusCode, _}, _, ResponseBody}} when StatusCode >= 400 ->
-                        logger:error("Backend error ~p: ~p", [StatusCode, ResponseBody]),
-                        {error, {http_error, StatusCode}};
-                    {error, Reason} ->
-                        logger:error("Backend request failed: ~p", [Reason]),
-                        {error, {request_failed, Reason}}
+                        case httpc:request(post, {binary_to_list(Url), Header, <<"application/json">>, Body},
+                                          [], Options) of
+                            {ok, {{_, 200, _}, _Headers, ResponseBody}} ->
+                                Response = jsone:decode(ResponseBody),
+                                {ok, Response};
+                            {ok, {{_, StatusCode, _}, _, ResponseBody}} when StatusCode >= 400 ->
+                                logger:error("Backend error ~p: ~p", [StatusCode, ResponseBody]),
+                                {error, {http_error, StatusCode}};
+                            {error, Reason} ->
+                                logger:error("Backend request failed: ~p", [Reason]),
+                                {error, {request_failed, Reason}}
+                        end;
+                    {error, SslReason} ->
+                        logger:error("SSL configuration refused: ~p", [SslReason]),
+                        {error, {ssl_refused, SslReason}}
                 end;
             {error, Reason} ->
                 {error, {invalid_url, Reason}}
@@ -666,11 +611,68 @@ validate_url(Url) ->
 get_client_ip() ->
     <<"0.0.0.0">>.
 
-%% @private Get security context (mock implementation).
+%% @doc Get the relay's security context (state-based, real gen_server read).
 -spec get_security_context() -> map().
 get_security_context() ->
-    #{
-        ssl_verify => verify_none,
-        session_timeout => 300000,
-        max_connections => 100
-    }.
+    gen_server:call(?MODULE, get_security_context).
+
+%% @doc Build SSL client options for a backend URL from the security context.
+%% Defaults to verify_peer with TLS 1.3-first strong ciphers (modeled on
+%% erlmcp_tls_validation). Uses the OTP trust store unless ssl_cacertfile is
+%% configured. Refuses verify_peer without any available trust anchor.
+-spec build_ssl_options(binary(), map()) ->
+    {ok, [ssl:tls_client_option()]} | {error, cacerts_unavailable}.
+build_ssl_options(Url, SecurityContext) ->
+    Verify = maps:get(ssl_verify, SecurityContext, ?SSL_VERIFY),
+    Base = [
+        {verify, Verify},
+        {depth, ?SSL_VERIFY_DEPTH},
+        {versions, ?SSL_VERSIONS},
+        {ciphers, ?SSL_CIPHERS}
+    ],
+    Opts0 =
+        case maps:get(ssl_cacertfile, SecurityContext, undefined) of
+            undefined ->
+                %% OTP 25+: OS trust store
+                case public_key:cacerts_get() of
+                    {ok, _Cacerts} ->
+                        Base;
+                    _Error ->
+                        {error, cacerts_unavailable}
+                end;
+            CaFile ->
+                [{cacertfile, CaFile} | Base]
+        end,
+    case Opts0 of
+        {error, Reason} ->
+            {error, Reason};
+        OptList ->
+            Opts1 =
+                case sni_from_url(Url) of
+                    {ok, Host} ->
+                        [{server_name_indication, Host} | OptList];
+                    disable ->
+                        [{server_name_indication, disable} | OptList]
+                end,
+            {ok, Opts1}
+    end.
+
+%% @private Extract SNI hostname from an http(s) URL; disable for IP hosts.
+-spec sni_from_url(binary()) -> {ok, string()} | disable.
+sni_from_url(Url) when is_binary(Url) ->
+    Parsed = uri_string:normalize(Url, [return_map]),
+    Host = maps:get(host, Parsed, <<>>),
+    case Host =:= <<>> orelse is_ipaddress_host(Host) of
+        true -> disable;
+        false -> {ok, binary_to_list(Host)}
+    end;
+sni_from_url(_) ->
+    disable.
+
+%% @private Detect literal IPv4/IPv6 hosts (SNI must be disabled for IPs).
+-spec is_ipaddress_host(binary() | string()) -> boolean().
+is_ipaddress_host(Host) ->
+    case inet:parse_address(binary_to_list(Host)) of
+        {ok, _} -> true;
+        {error, _} -> false
+    end.

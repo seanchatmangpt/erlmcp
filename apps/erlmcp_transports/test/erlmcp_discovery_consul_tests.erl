@@ -145,8 +145,11 @@ consul_headers_with_token_test() ->
     ?assertEqual(2, length(Headers)),
     ?assertMatch({<<"x-consul-token">>, Token}, lists:keyfind(<<"x-consul-token">>, 1, Headers)).
 
-%% @doc Test gun application startup
+%% @doc Test gun application startup (idempotent)
 ensure_gun_started_test() ->
+    %% Ensure gun's own dependency cowlib is available before testing.
+    application:ensure_all_started(cowlib),
     application:stop(gun),
     ?assertEqual(ok, erlmcp_transport_discovery:ensure_gun_started()),
+    %% Second call must also return ok (idempotent).
     ?assertEqual(ok, erlmcp_transport_discovery:ensure_gun_started()).

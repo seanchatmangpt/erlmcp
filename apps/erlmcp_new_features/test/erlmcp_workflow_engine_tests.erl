@@ -364,5 +364,5 @@ concurrent_executions_test() ->
 
         %% Verify: All executions started
         ?assertEqual(10, length(Results)),
-        ?assertEqual(10, length([R || {ok, _} <- Results]))
+        ?assertEqual(10, length([ok || {ok, _} <- Results]))
     end}.

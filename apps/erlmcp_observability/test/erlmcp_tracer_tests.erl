@@ -278,12 +278,12 @@ trace_visualization() ->
 
 %% @private
 %% Mock server for testing
-erlmcp_mock_server:start_link() ->
+mock_server_start_link() ->
     {ok, Pid} = gen_server:start_link(?MODULE, mock_server, []),
     {ok, Pid}.
 
 %% @private
-erlmcp_mock_client:start_link(Server) ->
+mock_client_start_link(Server) ->
     {ok, Pid} = gen_server:start_link(?MODULE, {mock_client, Server}, []),
     {ok, Pid}.
 

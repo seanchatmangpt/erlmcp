@@ -61,7 +61,7 @@ check(Options) ->
             {error, io_lib:format("Registry check failed: ~p:~p", [Error, Reason]), #{error => {Error, Reason}}}
     end.
 
-get_registry_info(Options) ->
+get_registry_info(_Options) ->
     % Get registered services
     RegisteredServices = get_registered_services(),
 

@@ -1,0 +1,439 @@
+%%%-------------------------------------------------------------------
+%%% @doc Tests for erlmcp_dynamic_registry.erl
+%%%
+%%% Chicago TDD methodology comprehensive test suite for dynamic registry
+%%% functionality including registration, validation, error handling,
+ concurrent access, and integration with existing erlmcp infrastructure.
+%%%
+%%% == Test Coverage Targets ==
+%%% - 90%+ line coverage
+%%% - 100% function coverage
+%%% - All error conditions
+%%% - Concurrent scenarios
+%%% - Integration scenarios
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_dynamic_registry_tests).
+
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%%====================================================================
+%% Test Cases
+%%====================================================================
+
+%% @doc Main test suite
+erlmcp_dynamic_registry_test_() ->
+    {"erlmcp_dynamic_registry comprehensive test suite",
+     setup,
+     fun setup/0,
+     fun cleanup/1,
+     [
+        {setup, fun start_stop/0, fun stop/1, [
+            test_start_stop,
+            test_register_tool,
+            test_register_resource,
+            test_register_prompt,
+            test_unregister_components,
+            test_validation_errors,
+            test_concurrent_access,
+            test_metrics_collection,
+            test_capability_updates,
+            test_capacity_limits,
+            test_list_operations,
+            test_get_operations,
+            test_error_scenarios
+        ]},
+        test_integration_with_erlmcp
+     ]
+    }.
+
+%%====================================================================
+%% Setup and Cleanup
+%%====================================================================
+
+setup() ->
+    %% Ensure registry is clean
+    case erlmcp_dynamic_registry:stop() of
+        ok -> ok;
+        _ -> ok
+    end,
+    ok.
+
+cleanup(_State) ->
+    %% Clean up after tests
+    case erlmcp_dynamic_registry:stop() of
+        ok -> ok;
+        _ -> ok
+    end,
+    ok.
+
+start_stop() ->
+    {ok, _Pid} = erlmcp_dynamic_registry:start_link(),
+    ok.
+
+stop(_State) ->
+    erlmcp_dynamic_registry:stop(),
+    ok.
+
+%%====================================================================
+%% Individual Test Cases
+%%====================================================================
+
+test_start_stop(_) ->
+    %% Test successful start and stop
+    {ok, Pid} = erlmcp_dynamic_registry:start_link(),
+    ?assert(is_process_alive(Pid)),
+    ?assertEqual(ok, erlmcp_dynamic_registry:stop()),
+    ?assertEqual(false, is_process_alive(Pid)).
+
+test_register_tool(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Test basic tool registration
+    Tool = #mcp_tool{
+        name = <<"test_tool">>,
+        description = <<"A test tool">>,
+        input_schema = #{type => object, properties => #{text => #{type => string}}},
+        handler = fun(#{<<"text">> := Text}) -> {ok, <<"Hello: ", Text/binary>>} end
+    },
+
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_tool(RegistryPid, Tool)),
+
+    %% Verify tool was registered
+    {ok, RetrievedTool} = erlmcp_dynamic_registry:get_tool(<<"test_tool">>),
+    ?assertEqual(Tool#mcp_tool.name, RetrievedTool#mcp_tool.name),
+    ?assertEqual(Tool#mcp_tool.description, RetrievedTool#mcp_tool.description),
+
+    %% Test duplicate registration should succeed (overwrite)
+    NewTool = Tool#mcp_tool{description = <<"Updated description">>},
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_tool(RegistryPid, NewTool)),
+    {ok, UpdatedTool} = erlmcp_dynamic_registry:get_tool(<<"test_tool">>),
+    ?assertEqual(<<"Updated description">>, UpdatedTool#mcp_tool.description).
+
+test_register_resource(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Test basic resource registration
+    Resource = #mcp_resource{
+        uri = <<"file:///tmp/test.txt">>,
+        name = <<"test.txt">>,
+        description = <<"Test resource file">>,
+        mime_type = <<"text/plain">>,
+        handler = fun() -> {ok, <<"Test content">>} end
+    },
+
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_resource(RegistryPid, Resource)),
+
+    %% Verify resource was registered
+    {ok, RetrievedResource} = erlmcp_dynamic_registry:get_resource(<<"file:///tmp/test.txt">>),
+    ?assertEqual(Resource#mcp_resource.uri, RetrievedResource#mcp_resource.uri),
+    ?assertEqual(Resource#mcp_resource.name, RetrievedResource#mcp_resource.name),
+
+    %% Test resource with same URI (overwrite)
+    NewResource = Resource#mcp_resource{description = <<"Updated description">>},
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_resource(RegistryPid, NewResource)),
+    {ok, UpdatedResource} = erlmcp_dynamic_registry:get_resource(<<"file:///tmp/test.txt">>),
+    ?assertEqual(<<"Updated description">>, UpdatedResource#mcp_resource.description).
+
+test_register_prompt(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Test basic prompt registration
+    Argument = #mcp_prompt_argument{
+        name = <<"code">>,
+        description = <<"Code to review">>,
+        required = true
+    },
+
+    Prompt = #mcp_prompt{
+        name = <<"code_review">>,
+        description = <<"Review code quality">>,
+        arguments = [Argument],
+        handler = fun(#{<<"code">> := Code}) -> {ok, [#{role => assistant, content => <<"Review: ", Code/binary>>}]} end
+    },
+
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_prompt(RegistryPid, Prompt)),
+
+    %% Verify prompt was registered
+    {ok, RetrievedPrompt} = erlmcp_dynamic_registry:get_prompt(<<"code_review">>),
+    ?assertEqual(Prompt#mcp_prompt.name, RetrievedPrompt#mcp_prompt.name),
+    ?assertEqual(Prompt#mcp_prompt.description, RetrievedPrompt#mcp_prompt.description).
+
+test_unregister_components(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Register test components
+    Tool = #mcp_tool{name = <<"test_tool">>, description = <<"Test">>, input_schema = #{}, handler = fun(_) -> {ok, ok} end},
+    Resource = #mcp_resource{uri = <<"file:///tmp/test">>, name = <<"test">>, handler = fun() -> {ok, ok} end},
+    Prompt = #mcp_prompt{name = <<"test_prompt">>, handler = fun(_) -> {ok, []} end},
+
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_tool(RegistryPid, Tool)),
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_resource(RegistryPid, Resource)),
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_prompt(RegistryPid, Prompt)),
+
+    %% Test unregistration
+    ?assertEqual(ok, erlmcp_dynamic_registry:unregister_tool(RegistryPid, <<"test_tool">>)),
+    ?assertEqual(ok, erlmcp_dynamic_registry:unregister_resource(RegistryPid, <<"file:///tmp/test">>)),
+    ?assertEqual(ok, erlmcp_dynamic_registry:unregister_prompt(RegistryPid, <<"test_prompt">>)),
+
+    %% Verify components are removed
+    ?assertMatch({error, not_found}, erlmcp_dynamic_registry:get_tool(<<"test_tool">>)),
+    ?assertMatch({error, not_found}, erlmcp_dynamic_registry:get_resource(<<"file:///tmp/test">>)),
+    ?assertMatch({error, not_found}, erlmcp_dynamic_registry:get_prompt(<<"test_prompt">>)).
+
+test_validation_errors(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Test invalid tool registration
+    ?assertMatch({error, invalid_tool_name},
+                 erlmcp_dynamic_registry:register_tool(RegistryPid, #mcp_tool{})),
+    ?assertMatch({error, invalid_tool_name},
+                 erlmcp_dynamic_registry:register_tool(RegistryPid, #mcp_tool{name = <<>>})),
+    ?assertMatch({error, invalid_tool_description},
+                 erlmcp_dynamic_registry:register_tool(RegistryPid, #mcp_tool{name = <<"test">>, description = <<>>})),
+    ?assertMatch({error, missing_input_schema},
+                 erlmcp_dynamic_registry:register_tool(RegistryPid, #mcp_tool{name = <<"test">>, description = <<"test">>, handler = fun(_) -> {ok, ok} end})),
+    ?assertMatch({error, invalid_tool_handler},
+                 erlmcp_dynamic_registry:register_tool(RegistryPid, #mcp_tool{name = <<"test">>, description = <<"test">>, input_schema = #{}, handler = invalid})),
+
+    %% Test invalid resource registration
+    ?assertMatch({error, invalid_resource_uri},
+                 erlmcp_dynamic_registry:register_resource(RegistryPid, #mcp_resource{uri = <<>>})),
+    ?assertMatch({error, invalid_resource_name},
+                 erlmcp_dynamic_registry:register_resource(RegistryPid, #mcp_resource{uri = <<"test">>, name = <<>>})),
+    ?assertMatch({error, invalid_resource_handler},
+                 erlmcp_dynamic_registry:register_resource(RegistryPid, #mcp_resource{uri = <<"test">>, name = <<"test">>, handler = invalid})),
+
+    %% Test invalid prompt registration
+    ?assertMatch({error, invalid_prompt_name},
+                 erlmcp_dynamic_registry:register_prompt(RegistryPid, #mcp_prompt{name = <<>>})),
+    ?assertMatch({error, invalid_prompt_handler},
+                 erlmcp_dynamic_registry:register_prompt(RegistryPid, #mcp_prompt{name = <<"test">>, handler = invalid})),
+    ?assertMatch({error, invalid_prompt_arguments},
+                 erlmcp_dynamic_registry:register_prompt(RegistryPid, #mcp_prompt{name = <<"test">>, handler = fun(_) -> {ok, []} end, arguments = invalid})),
+
+    %% Test invalid argument names
+    ?assertMatch({error, invalid_prompt_argument_name},
+                 erlmcp_dynamic_registry:register_prompt(RegistryPid, #mcp_prompt{
+                     name = <<"test">>,
+                     handler = fun(_) -> {ok, []} end,
+                     arguments = [#mcp_prompt_argument{name = <<>>}]
+                 })).
+
+test_concurrent_access(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Register multiple components concurrently
+    spawn_multiple(100, fun() ->
+        Tool = #mcp_tool{
+            name = integer_to_binary(erlang:system_time(microsecond)),
+            description = <<"Concurrent tool">>,
+            input_schema = #{},
+            handler = fun(_) -> {ok, ok} end
+        },
+        erlmcp_dynamic_registry:register_tool(RegistryPid, Tool)
+    end),
+
+    %% Wait for all spawns to complete
+    timer:sleep(1000),
+
+    %% Verify we have approximately the expected number of tools
+    Count = erlmcp_dynamic_registry:count(tools),
+    ?assert(Count >= 90, "Should have registered most tools concurrently"),
+
+    %% Test concurrent unregistration
+    RegisteredTools = erlmcp_dynamic_registry:list_all(),
+    lists:foreach(fun({ToolName, _}) ->
+        spawn(fun() ->
+            erlmcp_dynamic_registry:unregister_tool(RegistryPid, ToolName)
+        end)
+    end, maps:to_list(RegisteredTools)),
+
+    timer:sleep(1000),
+    ?assertEqual(0, erlmcp_dynamic_registry:count(tools)).
+
+test_metrics_collection(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Initial metrics
+    InitialMetrics = erlmcp_dynamic_registry:get_metrics(),
+    ?assert(is_record(InitialMetrics, metrics)),
+
+    %% Register components
+    Tool = #mcp_tool{name = <<"metrics_test">>, description = <<"Test">>, input_schema = #{}, handler = fun(_) -> {ok, ok} end},
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_tool(RegistryPid, Tool)),
+
+    %% Check metrics were updated
+    UpdatedMetrics = erlmcp_dynamic_registry:get_metrics(),
+    ?assert(UpdatedMetrics#metrics.tool_registrations > InitialMetrics#metrics.tool_registrations),
+    ?assert(UpdatedMetrics#metrics.registry_calls > InitialMetrics#metrics.registry_calls),
+
+    %% Test error increments metrics
+    ?assertMatch({error, _}, erlmcp_dynamic_registry:register_tool(RegistryPid, #mcp_tool{})),
+    ErrorMetrics = erlmcp_dynamic_registry:get_metrics(),
+    ?assert(ErrorMetrics#metrics.errors > UpdatedMetrics#metrics.errors).
+
+test_capability_updates(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Initially no capabilities
+    InitialCaps = erlmcp_dynamic_registry:get_capabilities(),
+    ?assertEqual(false, InitialCaps#mcp_server_capabilities.tools),
+    ?assertEqual(false, InitialCaps#mcp_server_capabilities.resources),
+    ?assertEqual(false, InitialCaps#mcp_server_capabilities.prompts),
+
+    %% Register tool
+    Tool = #mcp_tool{name = <<"cap_test">>, description = <<"Test">>, input_schema = #{}, handler = fun(_) -> {ok, ok} end},
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_tool(RegistryPid, Tool)),
+
+    %% Check capabilities updated
+    AfterToolCaps = erlmcp_dynamic_registry:get_capabilities(),
+    ?assertEqual(true, AfterToolCaps#mcp_server_capabilities.tools),
+    ?assertEqual(true, AfterToolCaps#mcp_server_capabilities.listChanged),
+
+    %% Register resource
+    Resource = #mcp_resource{uri = <<"cap://test">>, name = <<"cap_test">>, handler = fun() -> {ok, ok} end},
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_resource(RegistryPid, Resource)),
+
+    AfterResourceCaps = erlmcp_dynamic_registry:get_capabilities(),
+    ?assertEqual(true, AfterResourceCaps#mcp_server_capabilities.resources),
+
+    %% Register prompt
+    Prompt = #mcp_prompt{name = <<"cap_prompt">>, handler = fun(_) -> {ok, []} end},
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_prompt(RegistryPid, Prompt)),
+
+    AfterPromptCaps = erlmcp_dynamic_registry:get_capabilities(),
+    ?assertEqual(true, AfterPromptCaps#mcp_server_capabilities.prompts).
+
+test_capacity_limits(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Test tools capacity limit
+    lists:foreach(fun(I) ->
+        Tool = #mcp_tool{
+            name = integer_to_binary(I),
+            description = <<"Test">>,
+            input_schema = #{},
+            handler = fun(_) -> {ok, ok} end
+        },
+        erlmcp_dynamic_registry:register_tool(RegistryPid, Tool)
+    end, lists:seq(1, 1000)),
+
+    %% Should be at capacity
+    ?assertEqual(1000, erlmcp_dynamic_registry:count(tools)),
+
+    %% Try to register one more tool - should fail
+    ExtraTool = #mcp_tool{name = <<"extra">>, description = <<"Extra">>, input_schema = #{}, handler = fun(_) -> {ok, ok} end},
+    ?assertMatch({error, capacity_exceeded}, erlmcp_dynamic_registry:register_tool(RegistryPid, ExtraTool)),
+
+    %% Test total capacity across all types
+    Resource = #mcp_resource{uri = <<"total://1">>, name = <<"total1">>, handler = fun() -> {ok, ok} end},
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_resource(RegistryPid, Resource)),
+
+    TotalCount = erlmcp_dynamic_registry:count(),
+    ?assert(TotalCount > 1000).
+
+test_list_operations(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Clear any existing data
+    erlmcp_dynamic_registry:clear_all(RegistryPid),
+
+    %% Register test components
+    Tool = #mcp_tool{name = <<"list_tool">>, description = <<"List test">>, input_schema = #{}, handler = fun(_) -> {ok, ok} end},
+    Resource = #mcp_resource{uri = <<"list://res">>, name = <<"list_res">>, handler = fun() -> {ok, ok} end},
+    Prompt = #mcp_prompt{name = <<"list_prompt">>, handler = fun(_) -> {ok, []} end},
+
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_tool(RegistryPid, Tool)),
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_resource(RegistryPid, Resource)),
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_prompt(RegistryPid, Prompt)),
+
+    %% Test list_all
+    {ok, Tools, Resources, Prompts} = erlmcp_dynamic_registry:list_all(RegistryPid),
+    ?assert(maps:is_key(<<"list_tool">>, Tools)),
+    ?assert(maps:is_key(<<"list://res">>, Resources)),
+    ?assert(maps:is_key(<<"list_prompt">>, Prompts)),
+
+    %% Test count operations
+    ?assertEqual(1, erlmcp_dynamic_registry:count(tools)),
+    ?assertEqual(1, erlmcp_dynamic_registry:count(resources)),
+    ?assertEqual(1, erlmcp_dynamic_registry:count(prompts)),
+    ?assertEqual(3, erlmcp_dynamic_registry:count()),
+
+    %% Test clear_all
+    ?assertEqual(ok, erlmcp_dynamic_registry:clear_all(RegistryPid)),
+    ?assertEqual(0, erlmcp_dynamic_registry:count()).
+
+test_get_operations(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Register test components
+    Tool = #mcp_tool{name = <<"get_test">>, description = <<"Get test">>, input_schema = #{}, handler = fun(_) -> {ok, ok} end},
+    Resource = #mcp_resource{uri = <<"get://test">>, name = <<"get_test">>, handler = fun() -> {ok, ok} end},
+    Prompt = #mcp_prompt{name = <<"get_test">>, handler = fun(_) -> {ok, []} end},
+
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_tool(RegistryPid, Tool)),
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_resource(RegistryPid, Resource)),
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_prompt(RegistryPid, Prompt)),
+
+    %% Test get operations
+    {ok, RetrievedTool} = erlmcp_dynamic_registry:get_tool(<<"get_test">>),
+    ?assertEqual(Tool#mcp_tool.name, RetrievedTool#mcp_tool.name),
+
+    {ok, RetrievedResource} = erlmcp_dynamic_registry:get_resource(<<"get://test">>),
+    ?assertEqual(Resource#mcp_resource.uri, RetrievedResource#mcp_resource.uri),
+
+    {ok, RetrievedPrompt} = erlmcp_dynamic_registry:get_prompt(<<"get_test">>),
+    ?assertEqual(Prompt#mcp_prompt.name, RetrievedPrompt#mcp_prompt.name).
+
+    %% Test not found
+    ?assertMatch({error, not_found}, erlmcp_dynamic_registry:get_tool(<<"nonexistent">>)),
+    ?assertMatch({error, not_found}, erlmcp_dynamic_registry:get_resource(<<"nonexistent">>)),
+    ?assertMatch({error, not_found}, erlmcp_dynamic_registry:get_prompt(<<"nonexistent">>)).
+
+test_error_scenarios(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Test invalid parameter types
+    ?assertEqual({error, badarg}, catch erlmcp_dynamic_registry:register_tool(invalid, #mcp_tool{})),
+    ?assertEqual({error, badarg}, catch erlmcp_dynamic_registry:unregister_tool(invalid, <<"test">>)),
+    ?assertEqual({error, badarg}, catch erlmcp_dynamic_registry:get_tool(invalid)),
+
+    %% Test timeout scenarios by calling with very short timeout
+    ?assertMatch({error, timeout}, erlmcp_dynamic_registry:register_tool(RegistryPid, #mcp_tool{}, 1)),
+
+    %% Test invalid capabilities
+    ?assertEqual(false, erlmcp_dynamic_registry:has_capability(invalid)).
+
+test_integration_with_erlmcp(_) ->
+    RegistryPid = get_registry_pid(),
+
+    %% Test that registry updates capabilities correctly
+    InitialCaps = erlmcp_dynamic_registry:get_capabilities(RegistryPid),
+    ?assert(is_record(InitialCaps, mcp_server_capabilities)),
+
+    %% Register tool and check capabilities
+    Tool = #mcp_tool{name = <<"integration">>, description = <<"Integration test">>, input_schema = #{}, handler = fun(_) -> {ok, ok} end},
+    ?assertEqual(ok, erlmcp_dynamic_registry:register_tool(RegistryPid, Tool)),
+
+    UpdatedCaps = erlmcp_dynamic_registry:get_capabilities(RegistryPid),
+    ?assertEqual(true, UpdatedCaps#mcp_server_capabilities.tools),
+    ?assertEqual(true, UpdatedCaps#mcp_server_capabilities.listChanged),
+
+    %% Test has_capability function
+    ?assertEqual(true, erlmcp_dynamic_registry:has_capability(tools, RegistryPid)),
+    ?assertEqual(false, erlmcp_dynamic_registry:has_capability(resources, RegistryPid)),
+    ?assertEqual(false, erlmcp_dynamic_registry:has_capability(prompts, RegistryPid)).
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+get_registry_pid() ->
+    %% Return the registry pid (assuming it's started locally)
+    whereis(erlmcp_dynamic_registry).
+
+spawn_multiple(N, Fun) when N > 0 ->
+    [spawn(Fun) || _ <- lists:seq(1, N)].

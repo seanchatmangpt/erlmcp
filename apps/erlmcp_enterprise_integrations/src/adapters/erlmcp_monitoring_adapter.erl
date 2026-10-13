@@ -227,10 +227,10 @@ send_splunk_metric(MetricName, MetricType, Data, State) ->
     Headers = splunk_headers(State),
     Event = splunk_metric_event(MetricName, MetricType, Data),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Event)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Event)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {metric_failed, Code}};
@@ -243,10 +243,10 @@ send_splunk_log(LogCategory, LogData, Context, State) ->
     Headers = splunk_headers(State),
     Event = splunk_log_event(LogCategory, LogData, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Event)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Event)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {log_failed, Code}};
@@ -264,10 +264,10 @@ query_splunk_metrics(Query, Context, State) ->
     Headers = splunk_headers(State),
     SearchQuery = splunk_search_query(Query, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(SearchQuery)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(SearchQuery)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            JobResponse = jsx:decode(ResponseBody, [{labels, binary}]),
+            JobResponse = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             JobId = proplists:get_value(<<"sid">>, JobResponse),
             wait_for_splunk_results(JobId, State);
         {ok, {{_, Code, _}, _, _}} ->
@@ -281,10 +281,10 @@ setup_splunk_alert(AlertName, AlertRule, Context, State) ->
     Headers = splunk_headers(State),
     AlertConfig = splunk_alert_config(AlertName, AlertRule, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(AlertConfig)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(AlertConfig)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"name">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {alert_setup_failed, Code}};
@@ -301,7 +301,7 @@ get_splunk_dashboard(DashboardName, Context, State) ->
     case httpc:request(get, {Endpoint, Headers},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, jsx:decode(ResponseBody, [{labels, binary}]};
+            {ok, erlmcp_json:decode(ResponseBody, [{labels, binary}]};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {dashboard_not_found, Code}};
         {error, Reason} ->
@@ -314,7 +314,7 @@ send_datadog_metric(MetricName, MetricType, Data, State) ->
     Headers = datadog_headers(State),
     Series = datadog_metric_series(MetricName, MetricType, Data),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Series)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Series)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 202, _}, _, ResponseBody}} ->
             {ok, <<"metrics_sent">>};
@@ -329,7 +329,7 @@ send_datadog_log(LogCategory, LogData, Context, State) ->
     Headers = datadog_headers(State),
     Log = datadog_log_entry(LogCategory, LogData, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Log)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Log)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 202, _}, _, ResponseBody}} ->
             {ok, <<"logs_sent">>};
@@ -344,7 +344,7 @@ send_datadog_trace(TraceName, TraceData, Context, State) ->
     Headers = datadog_headers(State),
     Traces = datadog_traces(TraceName, TraceData, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Traces)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Traces)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 202, _}, _, ResponseBody}} ->
             {ok, <<"traces_sent">>};
@@ -362,7 +362,7 @@ query_datadog_metrics(Query, Context, State) ->
     case httpc:request(get, {Endpoint, Headers ++ QueryParams},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"series">>, Response, [])};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {query_failed, Code}};
@@ -375,10 +375,10 @@ setup_datadog_alert(AlertName, AlertRule, Context, State) ->
     Headers = datadog_headers(State),
     Alert = datadog_alert_config(AlertName, AlertRule, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Alert)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Alert)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {alert_setup_failed, Code}};
@@ -393,7 +393,7 @@ get_datadog_dashboard(DashboardName, Context, State) ->
     case httpc:request(get, {Endpoint, Headers},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, jsx:decode(ResponseBody, [{labels, binary}]};
+            {ok, erlmcp_json:decode(ResponseBody, [{labels, binary}]};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {dashboard_not_found, Code}};
         {error, Reason} ->
@@ -419,10 +419,10 @@ send_newrelic_event(EventType, EventData, State) ->
     Headers = newrelic_headers(State),
     Event = newrelic_event(EventType, EventData),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Event)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Event)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 202, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"success">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {event_failed, Code}};
@@ -438,10 +438,10 @@ query_newrelic_metrics(Query, Context, State) ->
     Headers = newrelic_headers(State),
     NRQL = maps:get(query, Query),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(#{<<"nrql">> => NRQL})},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(#{<<"nrql">> => NRQL})},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"results">>, Response, [])};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {query_failed, Code}};
@@ -454,10 +454,10 @@ setup_newrelic_alert(AlertName, AlertRule, Context, State) ->
     Headers = newrelic_headers(State),
     Alert = newrelic_alert_config(AlertName, AlertRule, Context, State),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Alert)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Alert)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {alert_setup_failed, Code}};
@@ -472,7 +472,7 @@ get_newrelic_dashboard(DashboardName, Context, State) ->
     case httpc:request(get, {Endpoint, Headers},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, jsx:decode(ResponseBody, [{labels, binary}]};
+            {ok, erlmcp_json:decode(ResponseBody, [{labels, binary}]};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {dashboard_not_found, Code}};
         {error, Reason} ->
@@ -562,7 +562,7 @@ datadog_log_entry(LogCategory, LogData, Context) ->
         <<"ddsource">> => <<"erlmcp">>,
         <<"ddtags">> => <<"category:" ++ binary_to_list(LogCategory)>>,
         <<"hostname">> => list_to_binary(atom_to_list(node())),
-        <<"message">> => jsx:encode(LogData),
+        <<"message">> => erlmcp_json:encode(LogData),
         <<"context">> => Context
     }.
 
@@ -608,7 +608,7 @@ newrelic_log_event(LogCategory, LogData, Context) =>
         <<"eventType">> => <<"Log">>,
         <<"category">> => LogCategory,
         <<"timestamp">> => erlang:system_time(millisecond),
-        <<"message">> => jsx:encode(LogData),
+        <<"message">> => erlmcp_json:encode(LogData),
         <<"context">> => Context,
         <<"hostname">> => list_to_binary(atom_to_list(node()))
     }.
@@ -650,7 +650,7 @@ wait_for_splunk_results(JobId, State) ->
     case httpc:request(get, {Endpoint, Headers},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, jsx:decode(ResponseBody, [{labels, binary}]};
+            {ok, erlmcp_json:decode(ResponseBody, [{labels, binary}]};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {query_failed, Code}};
         {error, Reason} ->

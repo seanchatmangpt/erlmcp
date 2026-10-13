@@ -64,7 +64,9 @@ encode_error_response(Id, Code, Message) when is_integer(Code), is_binary(Messag
 encode_error_response(Id, Code, Message, Data) when is_integer(Code), is_binary(Message) ->
     %% Validate error code - use internal error if invalid
     FinalCode =
-        case validate_error_code(Code) of
+        maybe
+            validate_error_code(Code)
+        else
             true ->
                 Code;
             false ->
@@ -116,11 +118,11 @@ decode_batch(Json) when is_binary(Json) ->
             parse_batch(Data);
         Data when is_map(Data) ->
             %% Single request, wrap in list
-            case erlmcp_message_parser:parse_json_rpc(Data) of
-                {ok, Message} ->
-                    {ok, [Message]};
-                Error ->
-                    Error
+            maybe
+                erlmcp_message_parser:parse_json_rpc(Data)
+            else
+                {ok, Message} -> {ok, [Message]};
+                Error -> Error
             end;
         _ ->
             {error, {invalid_json, not_array_or_object}}
@@ -911,15 +913,16 @@ parse_batch([]) ->
     %% Empty batch is invalid per JSON-RPC 2.0 spec
     {error, {invalid_request, empty_batch}};
 parse_batch(Requests) when is_list(Requests) ->
-    %% Validate version field for all requests first
-    case validate_batch_version(Requests) of
+    %% Validate version field for all requests first, then process each request
+    maybe
+        validate_batch_version(Requests)
+    else
         ok ->
-            %% Process each request in the batch
-            case parse_batch_requests(Requests, []) of
-                {ok, Messages} ->
-                    {ok, Messages};
-                Error ->
-                    Error
+            maybe
+                parse_batch_requests(Requests, [])
+            else
+                {ok, Messages} -> {ok, Messages};
+                {error, Reason} -> {error, Reason}
             end;
         {error, Reason} ->
             {error, Reason}
@@ -1138,11 +1141,11 @@ validate_utf8_fallback(_) ->
 %% Returns {ok, ValidatedTerm} or {error, {invalid_utf8, Path}}
 -spec ensure_utf8_encoding(term()) -> {ok, term()} | {error, {invalid_utf8, string()}}.
 ensure_utf8_encoding(Term) when is_binary(Term) ->
-    case validate_utf8(Term) of
-        true ->
-            {ok, Term};
-        false ->
-            {error, {invalid_utf8, "binary contains invalid UTF-8 sequences"}}
+    maybe
+        validate_utf8(Term)
+    else
+        true -> {ok, Term};
+        _ -> {error, {invalid_utf8, "binary contains invalid UTF-8 sequences"}}
     end;
 ensure_utf8_encoding(Map) when is_map(Map) ->
     ensure_utf8_map(Map, #{}, []);
@@ -1163,13 +1166,15 @@ ensure_utf8_map(Map, _Acc, _Path) when map_size(Map) =:= 0 ->
 ensure_utf8_map(Map, Acc, Path) ->
     maps:fold(fun(K, V, {ok, AccIn}) ->
         PathK = [binary_to_list(K) | Path],
-        case ensure_utf8_encoding(K) of
+        maybe
+            ensure_utf8_encoding(K)
+        else
             {ok, _} ->
-                case ensure_utf8_encoding(V) of
-                    {ok, _} ->
-                        {ok, maps:put(K, V, AccIn)};
-                    {error, _} = Error ->
-                        Error
+                maybe
+                    ensure_utf8_encoding(V)
+                else
+                    {ok, _} -> {ok, maps:put(K, V, AccIn)};
+                    {error, _} = Error -> Error
                 end;
             {error, _} = Error ->
                 Error
@@ -1212,13 +1217,15 @@ ensure_utf8_tuple(Tuple, Index, Size) ->
 -spec encode_request_utf8(json_rpc_id(), binary(), json_rpc_params()) ->
     {ok, binary()} | {error, {invalid_utf8, string()}}.
 encode_request_utf8(Id, Method, Params) ->
-    case ensure_utf8_encoding(Method) of
+    maybe
+        ensure_utf8_encoding(Method)
+    else
         {ok, _} ->
-            case ensure_utf8_encoding(Params) of
-                {ok, _} ->
-                    {ok, encode_request(Id, Method, Params)};
-                {error, _} = Error ->
-                    Error
+            maybe
+                ensure_utf8_encoding(Params)
+            else
+                {ok, _} -> {ok, encode_request(Id, Method, Params)};
+                {error, _} = Error -> Error
             end;
         {error, _} = Error ->
             Error
@@ -1228,11 +1235,11 @@ encode_request_utf8(Id, Method, Params) ->
 -spec encode_response_utf8(json_rpc_id(), term()) ->
     {ok, binary()} | {error, {invalid_utf8, string()}}.
 encode_response_utf8(Id, Result) ->
-    case ensure_utf8_encoding(Result) of
-        {ok, _} ->
-            {ok, encode_response(Id, Result)};
-        {error, _} = Error ->
-            Error
+    maybe
+        ensure_utf8_encoding(Result)
+    else
+        {ok, _} -> {ok, encode_response(Id, Result)};
+        {error, _} = Error -> Error
     end.
 
 %% Parsing functions moved to erlmcp_message_parser.erl for hot path optimization

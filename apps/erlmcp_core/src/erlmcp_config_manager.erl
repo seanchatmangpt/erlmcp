@@ -62,9 +62,9 @@
 %% Type definitions
 -type config_key() :: binary() | atom() | string().
 -type config_value() :: term().
--type config_change() :: {added, config_key(), config_value()} |
-                          {updated, config_key(), config_value(), config_value()} |
-                          {deleted, config_key(), config_value()}.
+%% -opaque config_change() :: {added, config_key(), config_value()} |
+%%                            {updated, config_key(), config_value(), config_value()} |
+%%                            {deleted, config_key(), config_value()}.
 -type config_path() :: [binary() | atom()].
 
 %%====================================================================

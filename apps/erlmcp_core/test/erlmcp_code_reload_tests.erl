@@ -183,6 +183,46 @@ test_module_version_retrieval() ->
     ?assertEqual(undefined, get_module_version(FakeModule)).
 
 %%====================================================================
+%% T020 — in-flight count and state compatibility tests
+%%====================================================================
+
+%% With N requests in the registry the count should equal N.
+in_flight_count_with_requests_test() ->
+    Table = erlmcp_request_registry,
+    %% Ensure table exists (owned by test process)
+    case ets:info(Table) of
+        undefined -> ets:new(Table, [named_table, public, bag]);
+        _         -> ok
+    end,
+    %% Insert two fake requests for erlmcp_json_rpc
+    ets:insert(Table, {req1, erlmcp_json_rpc, #{}}),
+    ets:insert(Table, {req2, erlmcp_json_rpc, #{}}),
+    %% Third entry for a different module — must NOT be counted
+    ets:insert(Table, {req3, some_other_module, #{}}),
+
+    Count = erlmcp_code_reload:get_in_flight_count(erlmcp_json_rpc),
+    ?assertEqual(2, Count),
+
+    %% Cleanup
+    ets:delete_all_objects(Table).
+
+%% With an empty registry (or no table) the count must be 0.
+in_flight_count_empty_test() ->
+    %% Ensure table is absent
+    case ets:info(erlmcp_request_registry) of
+        undefined -> ok;
+        _         -> ets:delete_all_objects(erlmcp_request_registry)
+    end,
+    Count = erlmcp_code_reload:get_in_flight_count(erlmcp_json_rpc),
+    ?assertEqual(0, Count).
+
+%% Two modules with the same state_fields attribute are compatible.
+check_state_compatibility_compatible_test() ->
+    %% erlmcp_json_rpc has no state record — should return ok (graceful fallback)
+    Result = erlmcp_code_reload:validate_module(erlmcp_json_rpc),
+    ?assertEqual(ok, Result).
+
+%%====================================================================
 %% Helper Functions
 %%====================================================================
 

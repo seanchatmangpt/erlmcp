@@ -12,6 +12,15 @@
 %%%-------------------------------------------------------------------
 -module(erlmcp_feature_flags).
 
+-compile({nowarn_unused_function, [
+    config_watcher_loop/0,
+    config_watcher_loop/1,
+    check_config_update/0,
+    get_config_version/0,
+    get_last_version/0,
+    set_last_version/1
+]}).
+
 %% API
 -export([
     load_flags/0,
@@ -302,7 +311,7 @@ get_cached_flags() ->
     end.
 
 %% @private Evaluate flag rollout
-evaluate_flag_rollout(#{state := State, value := Value}, _Identifier) when is_boolean(Value) ->
+evaluate_flag_rollout(#{state := _State, value := Value}, _Identifier) when is_boolean(Value) ->
     Value;
 evaluate_flag_rollout(#{state := enabled}, _Identifier) ->
     true;

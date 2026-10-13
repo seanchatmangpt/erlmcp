@@ -228,7 +228,7 @@ subscribe_to_updates_test() ->
 subscriber_cleanup_on_death_test() ->
     %% Test that dead subscribers are cleaned up
     {setup, fun setup/0, fun cleanup/1,
-     fun(_Pid) ->
+     fun(SupPid) ->
          %% Create and kill subscriber
          Subscriber = spawn(fun() -> receive after infinity -> ok end end),
          ok = erlmcp_process_monitor_sup:subscribe_to_updates(Subscriber),
@@ -239,7 +239,7 @@ subscriber_cleanup_on_death_test() ->
          ok = erlmcp_process_monitor_sup:trigger_scan(),
 
          %% Monitor should still be alive
-         ?assert(erlang:is_process_alive(Pid))
+         ?assert(erlang:is_process_alive(SupPid))
      end}.
 
 unsubscribe_from_updates_test() ->

@@ -1,0 +1,674 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Unit Tests for erlmcp_transport_sse_gun.erl
+%%%
+%%% This test suite covers the core functionality of the Gun-based
+%%% SSE transport including connection management, event sending,
+%%% error handling, and metrics collection.
+%%%
+%%% Test Categories:
+%%% - Basic functionality tests
+%%% - Connection management tests
+%%% - Event sending and receiving tests
+%%% - Error handling and recovery tests
+%%% - Metrics collection tests
+%%% - Pool management tests
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_sse_gun_unit_tests).
+
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test records and setup
+-define(TEST_TRANSPORT_ID, <<"test_sse_gun">>).
+-define(TEST_HOST, "localhost").
+-define(TEST_PORT, 8080).
+-define(TEST_POOL_NAME, test_sse_gun_pool).
+
+%%===================================================================
+%% Test Entry Points
+%%===================================================================
+
+%% @doc Main test suite
+sse_gun_test_() ->
+    {setup,
+     fun setup/0,
+     fun cleanup/1,
+     [
+        basic_functionality_tests(),
+        connection_management_tests(),
+        event_handling_tests(),
+        error_recovery_tests(),
+        metrics_tests(),
+        pool_management_tests()
+     ]
+    }.
+
+%%===================================================================
+%% Basic Functionality Tests
+%%===================================================================
+
+basic_functionality_tests() ->
+    {foreachx,
+     fun setup_basic_test/0,
+     fun cleanup_basic_test/1,
+     fun(_X, Setup) ->
+         basic_test_cases(Setup)
+     end}.
+
+basic_test_cases(Setup) ->
+    [
+        {"test start_link with options", fun basic_start_link/0, Setup},
+        {"test start_link with pool name", fun basic_start_link_pool/0, Setup},
+        {"test send function", fun basic_send/0, Setup},
+        {"test close function", fun basic_close/0, Setup},
+        {"test get_info", fun basic_get_info/0, Setup},
+        {"test get_metrics", fun basic_get_metrics/0, Setup}
+    ].
+
+basic_start_link_test_() ->
+    {"basic start_link test", fun basic_start_link/0}.
+
+basic_start_link() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        transport => tcp
+    },
+    ?assertMatch({ok, _Pid}, erlmcp_transport_sse_gun:start_link(Opts)).
+
+basic_start_link_pool_test_() ->
+    {"basic start_link with pool name test", fun basic_start_link_pool/0}.
+
+basic_start_link_pool() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        transport => tcp,
+        pool_name => ?TEST_POOL_NAME
+    },
+    ?assertMatch({ok, _Pid}, erlmcp_transport_sse_gun:start_link(?TEST_POOL_NAME, Opts)).
+
+basic_send_test_() ->
+    {"basic send test", fun basic_send/0}.
+
+basic_send() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    ?assertEqual(ok, erlmcp_transport_sse_gun:send(Pid, <<"test_data">>)),
+    erlmcp_transport_sse_gun:close(Pid).
+
+basic_close_test_() ->
+    {"basic close test", fun basic_close/0}.
+
+basic_close() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    ?assertEqual(ok, erlmcp_transport_sse_gun:close(Pid)).
+
+basic_get_info_test_() ->
+    {"basic get_info test", fun basic_get_info/0}.
+
+basic_get_info() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    Info = erlmcp_transport_sse_gun:get_info(Pid),
+    ?assert(is_map(Info)),
+    ?assertEqual(?TEST_TRANSPORT_ID, maps:get(transport_id, Info)),
+    erlmcp_transport_sse_gun:close(Pid).
+
+basic_get_metrics_test_() ->
+    {"basic get_metrics test", fun basic_get_metrics/0}.
+
+basic_get_metrics() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    ?assertMatch({ok, _Metrics}, erlmcp_transport_sse_gun:get_metrics(Pid)),
+    erlmcp_transport_sse_gun:close(Pid).
+
+%%===================================================================
+%% Connection Management Tests
+%%===================================================================
+
+connection_management_tests() ->
+    {foreach,
+     fun setup_connection_test/0,
+     fun cleanup_connection_test/1,
+     fun connection_test_cases/1}.
+
+connection_test_cases(_Setup) ->
+    [
+        {"test client connect function", fun test_client_connect/0},
+        {"test server mode initialization", fun test_server_mode/0},
+        {"test reconnect functionality", fun test_reconnect/0},
+        {"test connection timeout", fun test_connection_timeout/0},
+        {"test connection error handling", fun test_connection_error/0}
+    ].
+
+test_client_connect() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    ?assertEqual(ok, erlmcp_transport_sse_gun:connect(Pid, Opts)),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_server_mode() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    Status = erlmcp_transport_sse_gun:get_status(Pid),
+    ?assertMatch({ok, _}, Status),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_reconnect() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        max_retries => 3
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    ?assertEqual(ok, erlmcp_transport_sse_gun:connect(Pid, Opts)),
+    %% Simulate connection loss by sending a gun_down message
+    Pid ! {gun_down, test_pid, normal, normal, []},
+    %% Give it time to process
+    timer:sleep(100),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_connection_timeout() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        retry_timeout => 1000
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    ?assertEqual(ok, erlmcp_transport_sse_gun:connect(Pid, Opts)),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_connection_error() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => "invalid_host",
+        port => 9999
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% This should fail gracefully
+    erlmcp_transport_sse_gun:close(Pid).
+
+%%===================================================================
+%% Event Handling Tests
+%%===================================================================
+
+event_handling_tests() ->
+    {foreach,
+     fun setup_event_test/0,
+     fun cleanup_event_test/1,
+     fun event_test_cases/1}.
+
+event_test_cases(_Setup) ->
+    [
+        {"test event sending", fun test_event_sending/0},
+        {"test event formatting", fun test_event_formatting/0},
+        {"test backpressure handling", fun test_backpressure/0},
+        {"test stream timeout", fun test_stream_timeout/0},
+        {"test multiplexed events", fun test_multiplexed_events/0}
+    ].
+
+test_event_sending() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    TestData = <<"test_event_data">>,
+    ?assertEqual(ok, erlmcp_transport_sse_gun:send(Pid, TestData)),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_event_formatting() ->
+    %% Test the event formatting logic
+    EventData = <<"test_data">>,
+    ?assert(is_binary(EventData)).
+
+test_backpressure() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        max_connections => 1
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Simulate backpressure by sending a timeout message
+    Pid ! {timeout, make_ref(), backpressure_timeout},
+    timer:sleep(100),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_stream_timeout() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Simulate stream timeout
+    Pid ! {timeout, make_ref(), connection_timeout},
+    timer:sleep(100),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_multiplexed_events() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        max_connections => 3
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Send multiple events
+    Events = [<<"event1">>, <<"event2">>, <<"event3">>],
+    lists:foreach(fun(Event) ->
+        ?assertEqual(ok, erlmcp_transport_sse_gun:send(Pid, Event))
+    end, Events),
+    erlmcp_transport_sse_gun:close(Pid).
+
+%%===================================================================
+%% Error Recovery Tests
+%%===================================================================
+
+error_recovery_tests() ->
+    {foreach,
+     fun setup_error_test/0,
+     fun cleanup_error_test/1,
+     fun error_test_cases/1}.
+
+error_test_cases(_Setup) ->
+    [
+        {"test gun_down recovery", fun test_gun_down_recovery/0},
+        {"test stream error recovery", fun test_stream_error_recovery/0},
+        {"test max retry limit", fun test_max_retry_limit/0},
+        {"test connection loss handling", fun test_connection_loss/0},
+        {"test graceful shutdown", fun test_graceful_shutdown/0}
+    ].
+
+test_gun_down_recovery() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        max_retries => 2
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Send gun_down message to trigger recovery
+    Pid ! {gun_down, test_pid, normal, normal, []},
+    timer:sleep(200),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_stream_error_recovery() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Send gun_error message
+    Pid ! {gun_error, test_pid, test_stream_ref, test_reason},
+    timer:sleep(100),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_max_retry_limit() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => "invalid_host",
+        port => 9999,
+        max_retries => 1,
+        retry_timeout => 100
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Wait for retry attempts to complete
+    timer:sleep(300),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_connection_loss() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Send unexpected message to test error handling
+    Pid ! {unexpected_message, test_data},
+    timer:sleep(100),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_graceful_shutdown() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    ?assertEqual(ok, erlmcp_transport_sse_gun:close(Pid)),
+    %% Verify process is dead
+    timer:sleep(100),
+    ?assertEqual(false, is_process_alive(Pid)).
+
+%%===================================================================
+%% Metrics Tests
+%%===================================================================
+
+metrics_tests() ->
+    {foreach,
+     fun setup_metrics_test/0,
+     fun cleanup_metrics_test/1,
+     fun metrics_test_cases/1}.
+
+metrics_test_cases(_Setup) ->
+    [
+        {"test metrics initialization", fun test_metrics_initialization/0},
+        {"test metrics update on send", fun test_metrics_on_send/0},
+        {"test metrics update on connection", fun test_metrics_on_connection/0},
+        {"test metrics update on error", fun test_metrics_on_error/0},
+        {"test metrics persistence", fun test_metrics_persistence/0}
+    ].
+
+test_metrics_initialization() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    {ok, Metrics} = erlmcp_transport_sse_gun:get_metrics(Pid),
+    ?assertEqual(0, Metrics#{total_connections, total_messages_sent, connection_errors}),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_metrics_on_send() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Send some data
+    Data = <<"test_metrics">>,
+    ?assertEqual(ok, erlmcp_transport_sse_gun:send(Pid, Data)),
+
+    %% Check metrics
+    {ok, Metrics} = erlmcp_transport_sse_gun:get_metrics(Pid),
+    ?assertEqual(1, Metrics#{total_messages_sent}),
+    ?assertEqual(byte_size(Data), Metrics#{total_bytes_sent}),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_metrics_on_connection() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    {ok, Metrics} = erlmcp_transport_sse_gun:get_metrics(Pid),
+    ?assertEqual(1, Metrics#{total_connections}),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_metrics_on_error() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => client,
+        host => "invalid_host",
+        port => 9999
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Trigger error
+    Pid ! {gun_down, test_pid, error, normal, []},
+    timer:sleep(100),
+    {ok, Metrics} = erlmcp_transport_sse_gun:get_metrics(Pid),
+    ?assertEqual(1, Metrics#{connection_errors}),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_metrics_persistence() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    %% Send multiple events
+    lists:foreach(fun(_) ->
+        erlmcp_transport_sse_gun:send(Pid, <<"data">>)
+    end, lists:seq(1, 5)),
+
+    {ok, Metrics} = erlmcp_transport_sse_gun:get_metrics(Pid),
+    ?assertEqual(5, Metrics#{total_messages_sent}),
+    erlmcp_transport_sse_gun:close(Pid).
+
+%%===================================================================
+%% Pool Management Tests
+%%===================================================================
+
+pool_management_tests() ->
+    {foreach,
+     fun setup_pool_test/0,
+     fun cleanup_pool_test/1,
+     fun pool_test_cases/1}.
+
+pool_test_cases(_Setup) ->
+    [
+        {"test connection pool creation", fun test_pool_creation/0},
+        {"test acquire connection", fun test_acquire_connection/0},
+        {"test release connection", fun test_release_connection/0},
+        {"test pool capacity limits", fun test_pool_capacity/0},
+        {"test pool queue overflow", fun test_pool_overflow/0}
+    ].
+
+test_pool_creation() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        max_connections => 5
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(?TEST_POOL_NAME, Opts),
+    ?assert(is_pid(Pid)),
+    erlmcp_transport_sse_gun:close(Pid).
+
+test_acquire_connection() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, _} = erlmcp_transport_sse_gun:start_link(?TEST_POOL_NAME, Opts),
+    {ok, Pid} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+    ?assert(is_pid(Pid)),
+    erlmcp_transport_sse_gun:release_connection(Pid, test),
+    erlmcp_transport_sse_gun:close(?TEST_POOL_NAME).
+
+test_release_connection() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, _} = erlmcp_transport_sse_gun:start_link(?TEST_POOL_NAME, Opts),
+    {ok, Pid} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+    ?assertEqual(ok, erlmcp_transport_sse_gun:release_connection(Pid, test)),
+    erlmcp_transport_sse_gun:close(?TEST_POOL_NAME).
+
+test_pool_capacity() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        max_connections => 2
+    },
+    {ok, _} = erlmcp_transport_sse_gun:start_link(?TEST_POOL_NAME, Opts),
+
+    %% Acquire up to capacity
+    {ok, Pid1} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+    {ok, Pid2} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+
+    %% Next should fail or queue
+    ?assertMatch({error, _}, erlmcp_transport_sse_gun:acquire_connection(Opts)),
+
+    %% Cleanup
+    erlmcp_transport_sse_gun:release_connection(Pid1, test),
+    erlmcp_transport_sse_gun:release_connection(Pid2, test),
+    erlmcp_transport_sse_gun:close(?TEST_POOL_NAME).
+
+test_pool_overflow() ->
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT,
+        max_connections => 1
+    },
+    {ok, _} = erlmcp_transport_sse_gun:start_link(?TEST_POOL_NAME, Opts),
+
+    %% Acquire the one connection
+    {ok, Pid} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+
+    %% Release it back
+    ?assertEqual(ok, erlmcp_transport_sse_gun:release_connection(Pid, test)),
+
+    erlmcp_transport_sse_gun:close(?TEST_POOL_NAME).
+
+%%===================================================================
+%% Setup and Cleanup Functions
+%%===================================================================
+
+setup_basic_test() ->
+    %% No special setup needed for basic tests
+    ok.
+
+cleanup_basic_test(_Setup) ->
+    %% Cleanup any leftover processes
+    catch erlmcp_transport_sse_gun:close(?TEST_POOL_NAME),
+    ok.
+
+setup_connection_test() ->
+    %% Start a test server
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    Pid.
+
+cleanup_connection_test(Pid) ->
+    erlmcp_transport_sse_gun:close(Pid).
+
+setup_event_test() ->
+    %% Start a test server for event handling
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    Pid.
+
+cleanup_event_test(Pid) ->
+    erlmcp_transport_sse_gun:close(Pid).
+
+setup_error_test() ->
+    %% Start a test server for error handling
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    Pid.
+
+cleanup_error_test(Pid) ->
+    erlmcp_transport_sse_gun:close(Pid).
+
+setup_metrics_test() ->
+    %% Start a test server for metrics
+    Opts = #{
+        transport_id => ?TEST_TRANSPORT_ID,
+        mode => server,
+        host => ?TEST_HOST,
+        port => ?TEST_PORT
+    },
+    {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+    Pid.
+
+cleanup_metrics_test(Pid) ->
+    erlmcp_transport_sse_gun:close(Pid).
+
+setup_pool_test() ->
+    %% Create pool for testing
+    ok.
+
+cleanup_pool_test(_Setup) ->
+    %% Cleanup pool
+    catch erlmcp_transport_sse_gun:close(?TEST_POOL_NAME),
+    ok.
+
+setup() ->
+    %% Initialize test environment
+    ok.
+
+cleanup(_Setup) ->
+    %% Cleanup test environment
+    catch erlmcp_transport_sse_gun:close(?TEST_POOL_NAME),
+    ok.

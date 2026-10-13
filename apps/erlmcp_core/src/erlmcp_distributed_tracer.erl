@@ -26,6 +26,7 @@
 -module(erlmcp_distributed_tracer).
 
 -behaviour(gen_server).
+-compile({nowarn_unused_function, [handle_incoming_span/1]}).
 
 %% API
 -export([start_link/0,

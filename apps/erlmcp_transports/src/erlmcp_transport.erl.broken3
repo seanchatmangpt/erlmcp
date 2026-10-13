@@ -1,0 +1,841 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% erlmcp_transport: Standard behavior module for MCP transport implementations
+%%%
+%%% This behavior module defines the standard interface that all transport
+%%% implementations must follow to ensure compatibility with the MCP API
+%%% and to enable polymorphic transport usage through the transport registry.
+%%%
+%%% Key Features:
+%%% - Standard transport interface with connect/1, send/2, recv/2, close/1 callbacks
+%%% - Integration with erlmcp's enterprise features (health monitoring, etc.)
+%%% - Support for stdio, tcp, http, ws, sse transports
+%%% - Polymorphic interface via transport registry
+%%% - Armstrong principles: non-blocking operations in init
+%%% - Comprehensive error handling and timeout specifications
+%%%
+%%% Transport Lifecycle:
+%%% 1. Transport selection and initialization
+%%% 2. Connection establishment (for client transports)
+%%% 3. Message sending and receiving
+%%% 4. Connection cleanup and resource release
+%%%
+%%% Error Handling:
+%%% - All callbacks must return {ok, Result} | {error, Reason}
+%%% - Resource cleanup is guaranteed even on errors
+%%% - Timeout specifications ensure system stability
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport).
+
+-behaviour(gen_server).
+
+%% Behavior definition exports
+-export([behaviour_info/1]).
+
+%% Transport behavior callbacks (export for documentation and validation)
+-export([connect/1, send/2, recv/2, close/1, get_info/1]).
+
+%% API exports
+-export([start_link/1, start_link/2, start_transport/1, start_transport/2,
+         validate_transport/1, validate_transport_module/1, get_transport_info/1, stop_transport/1]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+%% Internal exports for transport coordination
+-export([validate_transport_config/1, default_timeout/0, default_max_message_size/0]).
+
+%% Include common definitions
+-include("erlmcp.hrl").
+-include("erlmcp_transport_common.hrl").
+
+%%====================================================================
+%% Type Definitions
+%%====================================================================
+
+%% Transport configuration options
+-type transport_opts() ::
+    #{id => binary() | atom(),
+      type => stdio | tcp | http | ws | sse,
+      owner => pid(),
+      host => inet:hostname() | inet:ip_address(),
+      port => inet:port_number(),
+      url => binary() | string(),
+      connect_timeout => timeout(),
+      send_timeout => timeout(),
+      recv_timeout => timeout(),
+      max_reconnect_attempts => pos_integer() | infinity,
+      max_message_size => pos_integer(),
+      ssl_options => [ssl:tls_client_option()],
+      headers => [{binary() | string(), binary() | string()}],
+      retry_policy => retry_exponential | retry_linear | retry_none,
+      health_check => boolean(),
+      compression => boolean() | gzip | deflate,
+      pool_size => pos_integer(),
+      transport_metrics => boolean(),
+      log_level => debug | info | warning | error,
+      test_mode => boolean()}.
+
+%% Transport state
+-record(state,
+        {transport_id :: binary() | atom() | undefined,
+         transport_type :: stdio | tcp | http | ws | sse,
+         owner :: pid(),
+         owner_monitor :: reference() | undefined,
+         transport_pid :: pid() | undefined,
+         connected = false :: boolean(),
+         config :: transport_opts(),
+         stats = #{} :: map(),
+         start_time :: integer(),
+         last_activity :: integer(),
+         health_check_ref :: reference() | undefined,
+         metrics_timer :: reference() | undefined}).
+
+-type state() :: #state{}.
+
+%% Transport information result
+-type transport_info() ::
+    #{id => binary() | atom(),
+      type => stdio | tcp | http | ws | sse,
+      status => disconnected | connecting | connected | error,
+      transport_pid => pid(),
+      owner => pid(),
+      start_time => integer(),
+      last_activity => integer(),
+      bytes_sent => non_neg_integer(),
+      bytes_received => non_neg_integer(),
+      messages_sent => non_neg_integer(),
+      messages_received => non_neg_integer(),
+      connection_attempts => non_neg_integer(),
+      last_error => term(),
+      uptime => integer()}.
+
+%% Error types
+-type transport_error() ::
+    {connection_failed, term()} |
+    {send_failed, term()} |
+    {receive_failed, term()} |
+    {protocol_error, term()} |
+    {resource_error, term()} |
+    {timeout, term()} |
+    {invalid_config, term()} |
+    {unknown_transport, atom()}.
+
+%%====================================================================
+%% Behaviour Definition
+%%====================================================================
+
+-spec behaviour_info(callbacks | (term())) ->
+                       undefined | [{atom(), arity()}].
+behaviour_info(callbacks) ->
+    %% Define the required callbacks for implementing this behavior
+    [
+        {connect, 1},      % Connect to remote endpoint (client transports only)
+        {send, 2},        % Send data through transport
+        {recv, 2},        % Receive data from transport
+        {close, 1},       % Close transport connection
+        {get_info, 1}     % Get transport status and metrics
+    ];
+behaviour_info(_Other) ->
+    undefined.
+
+%%====================================================================
+%% Behavior Callback Definition (Phase 1 MCP API Compatibility)
+%%====================================================================
+
+%% @doc Transport behavior callbacks definition
+%%
+%% This behavior defines the standard interface for all transport implementations
+%% in erlmcp, ensuring Phase 1 MCP API compatibility.
+%%
+%% ## Required Callbacks:
+%% - `connect/1`: Establish connection to transport endpoint
+%% - `send/2`: Send data through the transport
+%% - `recv/2`: Receive data from the transport
+%% - `close/1`: Close transport connection
+%% - `get_info/1`: Get transport status and metrics
+%%
+%% ## Armstrong Principles:
+%% - No blocking operations in init (non-blocking I/O only)
+%% - Let-it-crash philosophy
+%% - Proper supervision with process-per-connection model
+%% - Request-ID correlation invariant maintained
+%%
+%% ## Transport Types Supported:
+%% - **stdio**: Standard input/output streams
+%% - **tcp**: TCP socket connections
+%% - **http**: HTTP connections
+%% - **ws**: WebSocket connections
+%% - **sse**: Server-Sent Events
+%%
+%% ## Key Structure:
+%% ```erlang
+%% %% Transport behavior definition
+%% -callback connect(Config :: map()) -> {ok, State :: term()} | {error, Reason :: term()}.
+%% -callback send(Message :: binary(), State :: term()) -> {ok, NewState :: term()} | {error, Reason :: term()}.
+%% -callback recv(Timeout :: timeout(), State :: term()) -> {ok, Message :: binary(), NewState :: term()} | {error, Reason :: term()}.
+%% -callback close(State :: term()) -> ok | {error, Reason :: term()}.
+%% ```
+%%
+
+%% @doc Connect to a remote transport endpoint
+%% This callback is required for client transports (tcp, http, ws, sse)
+%% Server transports (stdio) should return {ok, connected}
+%%
+%% @param TransportState The transport state/instance
+%% @return {ok, ConnectedState} | {error, Reason}
+%% @throws never (per Armstrong principles)
+%% @timeout Default timeout: 5000ms
+%%
+%% Example:
+%% ```erlang
+%% connect(#state{config = #{host = "localhost", port = 8080}}) ->
+%%     case gen_tcp:connect("localhost", 8080, [binary, {active, true}], 5000) of
+%%         {ok, Socket} -> {ok, #state{socket = Socket, connected = true}};
+%%         {error, Reason} -> {error, {connection_failed, Reason}}
+%%     end.
+%% ```
+%%
+%% ## Key Structure Implementation:
+%% ```erlang
+%% -callback connect(Config :: map()) -> {ok, State :: term()} | {error, Reason :: term()}.
+%% ```
+
+-spec connect(term()) -> {ok, term()} | {error, transport_error()}.
+
+%% @doc Send data through the transport
+%% This callback must implement the transport-specific sending logic
+%%
+%% @param TransportState The transport state/instance
+%% @param Data The data to send (iodata format)
+%% @return {ok, NewState} | {error, Reason}
+%% @throws never (per Armstrong principles)
+%% @timeout Default timeout: 10000ms
+%%
+%% Example:
+%% ```erlang
+%% send(#state{socket = Socket, connected = true}, Data) ->
+%%     case gen_tcp:send(Socket, [Data, <<"\n">>]) of
+%%         ok -> {ok, State#state{stats = maps:update(bytes_sent, State#state.stats, byte_size(Data))}};
+%%         {error, Reason} -> {error, {send_failed, Reason}}
+%%     end.
+%% ```
+%%
+%% ## Key Structure Implementation:
+%% ```erlang
+%% -callback send(Message :: binary(), State :: term()) -> {ok, NewState :: term()} | {error, Reason :: term()}.
+%% ```
+
+-spec send(term(), iodata()) -> {ok, term()} | {error, transport_error()}.
+
+%% @doc Receive data from the transport
+%% This callback must implement the transport-specific receiving logic
+%%
+%% @param TransportState The transport state/instance
+%% @param Timeout Maximum time to wait for data (infinity for no timeout)
+%% @return {ok, {Data, NewState}} | {error, Reason}
+%% @throws never (per Armstrong principles)
+%% @timeout Specified by caller
+%%
+%% Example:
+%% ```erlang
+%% recv(#state{socket = Socket, connected = true}, Timeout) ->
+%%     receive
+%%         {tcp, Socket, Data} -> {ok, {Data, State#state{stats = maps:update(bytes_received, State#state.stats, byte_size(Data))}}};
+%%         {tcp_closed, Socket} -> {error, {receive_failed, connection_closed}};
+%%         {tcp_error, Socket, Reason} -> {error, {receive_failed, Reason}}
+%%     after Timeout ->
+%%         {error, timeout}
+%%     end.
+%% ```
+%%
+%% ## Key Structure Implementation:
+%% ```erlang
+%% -callback recv(Timeout :: timeout(), State :: term()) -> {ok, Message :: binary(), NewState :: term()} | {error, Reason :: term()}.
+%% ```
+
+-spec recv(term(), timeout()) -> {ok, {iodata(), term()}} | {error, transport_error()}.
+
+%% @doc Close the transport connection
+%% This callback must ensure proper cleanup of all resources
+%%
+%% @param TransportState The transport state/instance
+%% @return ok
+%% @throws never (per Armstrong principles)
+%% @timeout Default timeout: 5000ms
+%%
+%% Example:
+%% ```erlang
+%% close(#state{socket = Socket, metrics_ref = Ref}) ->
+%%     catch gen_tcp:close(Socket),
+%%     catch erlmcp_metrics:unregister(Ref),
+%%     ok.
+%% ```
+%%
+%% ## Key Structure Implementation:
+%% ```erlang
+%% -callback close(State :: term()) -> ok | {error, Reason :: term()}.
+%% ```
+
+-spec close(term()) -> ok.
+
+%% @doc Get comprehensive transport information and statistics
+%% This callback must return detailed information about the transport state
+%%
+%% @param TransportState The transport state/instance
+%% @return {ok, Info} | {error, Reason}
+%% @throws never (per Armstrong principles)
+%% @timeout Default timeout: 1000ms
+%%
+%% Example:
+%% ```erlang
+%% get_info(#state{transport_id = Id, connected = Connected, stats = Stats}) ->
+%%     {ok, #{id => Id, connected => Connected, stats => Stats}}.
+%% ```
+%%
+%% ## Key Structure Implementation:
+%% ```erlang
+%% -callback get_info(State :: term()) -> {ok, transport_info()} | {error, Reason :: term()}.
+%% ```
+
+%%====================================================================
+%% Error Handling and Timeout Specifications
+%%====================================================================
+
+%% @doc Error handling strategies for transport implementations
+%%
+%% ## Error Types:
+%% - `{connection_failed, Reason}` - Connection establishment failed
+%% - `{send_failed, Reason}` - Message sending failed
+%% - `{receive_failed, Reason}` - Message receiving failed
+%% - `{protocol_error, Reason}` - Protocol violation detected
+%% - `{resource_error, Reason}` - Resource exhaustion or failure
+%% - `{timeout, Timeout}` - Operation timed out
+%% - `{invalid_config, Reason}` - Configuration validation failed
+%% - `{unknown_transport, Type}` - Unsupported transport type
+%%
+%% ## Timeout Specifications:
+%% - **Connect**: 5000ms default, configurable via `connect_timeout`
+%% - **Send**: 10000ms default, configurable via `send_timeout`
+%% - **Receive**: 5000ms default, configurable via `recv_timeout`
+%% - **Close**: 5000ms default, configurable via `close_timeout`
+%% - **Info**: 1000ms default, not configurable
+%%
+%% ## Error Handling Best Practices:
+%% 1. Always return specific error atoms with descriptive reasons
+%% 2. Ensure resource cleanup on all error paths
+%% 3. Never crash the transport process on recoverable errors
+%% 4. Log errors for debugging and monitoring
+%% 5. Implement retry policies for transient failures
+%%
+%% ## Armstrong Principles Compliance:
+%% - No blocking operations (non-blocking I/O only)
+%% - Let-it-crash philosophy for irrecoverable errors
+%% - Proper supervision with process-per-connection model
+%% - Request-ID correlation invariant maintained
+%% - No mocking of external dependencies in production
+
+-spec get_info(term()) -> {ok, transport_info()} | {error, transport_error()}.
+
+%%====================================================================
+%% Phase 1 MCP API Compatibility Functions
+%%====================================================================
+
+%% @doc Validate transport module implements required callbacks
+%% @param Module Transport module to validate
+%% @return ok | {error, Reason}
+-spec validate_transport_module(module()) -> ok | {error, term()}.
+validate_transport_module(Module) ->
+    RequiredCallbacks = [connect, send, recv, close, get_info],
+    validate_callbacks(Module, RequiredCallbacks).
+
+%% @doc Validate module has required callbacks
+-spec validate_callbacks(module(), [atom()]) -> ok | {error, term()}.
+validate_callbacks(Module, Callbacks) ->
+    case erlang:function_exported(Module, module_info, 0) of
+        true ->
+            Exports = Module:module_info(exports),
+            check_required_callbacks(Callbacks, Exports, Module);
+        false ->
+            {error, {module_not_loaded, Module}}
+    end.
+
+%% @doc Check if all required callbacks are exported
+-spec check_required_callbacks([atom()], [{atom(), arity()}], module()) -> ok | {error, term()}.
+check_required_callbacks([], _Exports, _Module) ->
+    ok;
+check_required_callbacks([Callback | Rest], Exports, Module) ->
+    case lists:member({Callback, 1}, Exports) of
+        true ->
+            check_required_callbacks(Rest, Exports, Module);
+        false ->
+            {error, {missing_callback, Module, Callback}}
+    end.
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+%% @doc Start a transport process with default options
+%% @param TransportType Type of transport (stdio, tcp, http, ws, sse)
+-spec start_link(transport_type()) -> {ok, pid()} | {error, term()}.
+start_link(TransportType) when is_atom(TransportType) ->
+    start_link(TransportType, #{}).
+
+%% @doc Start a transport process with custom options
+%% @param TransportType Type of transport (stdio, tcp, http, ws, sse)
+%% @param Options Transport configuration options
+-spec start_link(transport_type(), transport_opts()) -> {ok, pid()} | {error, term()}.
+start_link(TransportType, Options) when is_atom(TransportType), is_map(Options) ->
+    %% Add transport type to options
+    FinalOptions = Options#{type => TransportType},
+    gen_server:start_link(?MODULE, [FinalOptions], []).
+
+%% @doc Start transport by configuration (high-level)
+%% @param Config Transport configuration map
+-spec start_transport(transport_opts()) -> {ok, pid()} | {error, term()}.
+start_transport(Config) when is_map(Config) ->
+    TransportType = maps:get(type, Config, stdio),
+    start_link(TransportType, Config).
+
+%% @doc Start transport with owner (high-level)
+%% @param Owner The process that owns this transport
+%% @param Config Transport configuration map
+-spec start_transport(pid(), transport_opts()) -> {ok, pid()} | {error, term()}.
+start_transport(Owner, Config) when is_pid(Owner), is_map(Config) ->
+    FinalConfig = Config#{owner => Owner},
+    start_transport(FinalConfig).
+
+%% @doc Validate transport configuration
+%% @param Config Transport configuration map
+-spec validate_transport(transport_opts()) -> ok | {error, term()}.
+validate_transport(Config) when is_map(Config) ->
+    TransportType = maps:get(type, Config, stdio),
+    validate_transport_config(#{type => TransportType, config => Config}).
+
+%% @doc Get comprehensive transport information
+%% @param TransportPid The transport process pid
+-spec get_transport_info(pid()) -> {ok, transport_info()} | {error, term()}.
+get_transport_info(TransportPid) when is_pid(TransportPid) ->
+    gen_server:call(TransportPid, get_info, 1000).
+
+%% @doc Stop a transport process
+%% @param TransportPid The transport process pid
+-spec stop_transport(pid()) -> ok | {error, term()}.
+stop_transport(TransportPid) when is_pid(TransportPid) ->
+    gen_server:stop(TransportPid, normal, 5000).
+
+%%====================================================================
+%% gen_server Callbacks
+%%====================================================================
+
+%% @doc Initialize transport process
+-spec init([transport_opts()]) -> {ok, state()} | {stop, term()}.
+init([Config]) ->
+    process_flag(trap_exit, true),  %% Ensure proper cleanup
+
+    %% Extract required fields
+    TransportType = maps:get(type, Config, stdio),
+    TransportId = maps:get(id, Config, TransportType),
+    Owner = maps:get(owner, Config, self()),
+
+    %% Validate transport configuration
+    case validate_transport_config(#{type => TransportType, config => Config}) of
+        ok ->
+            %% Monitor the owner process
+            OwnerMonitor = monitor(process, Owner),
+
+            %% Initialize state
+            State = #state{
+                transport_id = TransportId,
+                transport_type = TransportType,
+                owner = Owner,
+                owner_monitor = OwnerMonitor,
+                config = Config,
+                start_time = erlang:system_time(millisecond),
+                last_activity = erlang:system_time(millisecond)
+            },
+
+            %% Initialize transport-specific components
+            case init_transport_components(State) of
+                {ok, NewState} ->
+                    %% Start health monitoring if enabled
+                    FinalState = maybe_start_health_check(NewState),
+                    {ok, FinalState};
+                {error, Reason} ->
+                    {stop, Reason}
+            end;
+        {error, Reason} ->
+            {stop, Reason}
+    end.
+
+%% @doc Handle synchronous calls
+-spec handle_call(term(), {pid(), term()}, state()) ->
+                    {reply, term(), state()} | {reply, term(), state(), hibernate}.
+handle_call(get_info, _From, State) ->
+    %% Get transport information using behavior callback
+    case transport_callback(get_info, State) of
+        {ok, TransportInfo} ->
+            %% Merge with erlmcp-managed state
+            Info = merge_transport_info(TransportInfo, State),
+            {reply, {ok, Info}, State, hibernate};
+        {error, Reason} ->
+            %% Generate error info if callback fails
+            ErrorInfo = generate_error_info(Reason, State),
+            {reply, {ok, ErrorInfo}, State, hibernate}
+    end;
+handle_call(get_state, _From, State) ->
+    {reply, {ok, State}, State, hibernate};
+handle_call({send, Data}, _From, State) ->
+    %% Send data using behavior callback
+    case transport_callback(send, State, Data) of
+        {ok, NewState} ->
+            %% Update activity tracking
+            FinalState = update_activity_state(NewState),
+            {reply, ok, FinalState, hibernate};
+        {error, Reason} ->
+            {reply, {error, Reason}, State, hibernate}
+    end;
+handle_call({recv, Timeout}, _From, State) ->
+    %% Receive data using behavior callback
+    case transport_callback(recv, State, Timeout) of
+        {ok, {Data, NewState}} ->
+            %% Update activity tracking
+            FinalState = update_activity_state(NewState),
+            {reply, {ok, Data}, FinalState, hibernate};
+        {error, Reason} ->
+            {reply, {error, Reason}, State, hibernate}
+    end;
+handle_call({connect, Options}, _From, State) ->
+    %% Connect using behavior callback
+    case transport_callback(connect, State, Options) of
+        {ok, NewState} ->
+            FinalState = NewState#state{connected = true},
+            {reply, ok, FinalState, hibernate};
+        {error, Reason} ->
+            {reply, {error, Reason}, State, hibernate}
+    end;
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State, hibernate}.
+
+%% @doc Handle asynchronous calls
+-spec handle_cast(term(), state()) -> {noreply, state()} | {noreply, state(), hibernate}.
+handle_cast(_Msg, State) ->
+    {noreply, State, hibernate}.
+
+%% @doc Handle info messages
+-spec handle_info(term(), state()) -> {noreply, state()} | {noreply, state(), hibernate} | {stop, term(), state()}.
+handle_info({'DOWN', MonitorRef, process, Owner, Reason}, #state{owner_monitor = MonitorRef, owner = Owner} = State) ->
+    logger:info("Owner process ~p died: ~p", [Owner, Reason]),
+    {stop, {owner_died, Reason}, State};
+handle_info(health_check, State) ->
+    %% Handle health check completion
+    NewState = handle_health_check_result(State),
+    {noreply, maybe_start_health_check(NewState), hibernate};
+handle_info(metrics_collection, State) ->
+    %% Handle metrics collection
+    NewState = collect_and_report_metrics(State),
+    {noreply, NewState, hibernate};
+handle_info(_Info, State) ->
+    %% Hibernate on unknown messages to reduce memory footprint
+    {noreply, State, hibernate}.
+
+%% @doc Cleanup on termination
+-spec terminate(term(), state()) -> ok.
+terminate(Reason, #state{owner_monitor = MonitorRef, transport_pid = TransportPid} = State) ->
+    %% Cancel health monitoring
+    case MonitorRef of
+        undefined -> ok;
+        _ -> erlang:demonitor(MonitorRef, [flush])
+    end,
+
+    %% Stop transport-specific process
+    case TransportPid of
+        undefined -> ok;
+        _ -> exit(TransportPid, shutdown)
+    end,
+
+    %% Ensure transport is properly closed
+    ensure_transport_close(State),
+
+    %% Log termination
+    logger:info("Transport ~p terminating: ~p", [State#state.transport_id, Reason]),
+    ok;
+terminate(_Reason, _State) ->
+    ok.
+
+%% @doc Handle code upgrades
+-spec code_change(term(), state(), term()) -> {ok, state()}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal Functions
+%%====================================================================
+
+%% @doc Initialize transport-specific components
+-spec init_transport_components(state()) -> {ok, state()} | {error, term()}.
+init_transport_components(#state{transport_type = TransportType, config = Config} = State) ->
+    %% Create specific transport process based on type
+    TransportPid = case TransportType of
+        stdio -> start_stdio_transport(State);
+        tcp -> start_tcp_transport(State);
+        http -> start_http_transport(State);
+        ws -> start_ws_transport(State);
+        sse -> start_sse_transport(State)
+    end,
+
+    case TransportPid of
+        {ok, Pid} ->
+            %% Configure timeouts
+            SendTimeout = maps:get(send_timeout, Config, default_timeout()),
+            RecvTimeout = maps:get(recv_timeout, Config, default_timeout()),
+
+            NewState = State#state{
+                transport_pid = Pid,
+                stats = #{send_timeout => SendTimeout, recv_timeout => RecvTimeout}
+            },
+
+            {ok, NewState};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc Create stdio transport process
+-spec start_stdio_transport(state()) -> {ok, pid()} | {error, term()}.
+start_stdio_transport(#state{owner = Owner, config = Config}) ->
+    %% Use existing stdio transport implementation
+    case erlmcp_transport_stdio:start_link(Owner, Config) of
+        {ok, Pid} -> {ok, Pid};
+        {error, Reason} -> {error, {stdio_init_failed, Reason}}
+    end.
+
+%% @doc Create TCP transport process
+-spec start_tcp_transport(state()) -> {ok, pid()} | {error, term()}.
+start_tcp_transport(#state{config = Config}) ->
+    %% Use existing TCP transport implementation
+    case erlmcp_transport_tcp:start_client(Config) of
+        {ok, Pid} -> {ok, Pid};
+        {error, Reason} -> {error, {tcp_init_failed, Reason}}
+    end.
+
+%% @doc Create HTTP transport process
+-spec start_http_transport(state()) -> {ok, pid()} | {error, term()}.
+start_http_transport(#state{config = Config}) ->
+    %% Use existing HTTP transport implementation
+    case erlmcp_transport_http:init(Config) of
+        {ok, Pid} -> {ok, Pid};
+        {error, Reason} -> {error, {http_init_failed, Reason}}
+    end.
+
+%% @doc Create WebSocket transport process
+-spec start_ws_transport(state()) -> {ok, pid()} | {error, term()}.
+start_ws_transport(#state{config = Config}) ->
+    %% Use existing WebSocket transport implementation
+    case erlmcp_transport_ws:init(maps:get(id, Config, <<"ws_transport">>), Config) of
+        {ok, _} ->
+            %% WS returns ok, the actual handler is started by cowboy
+            %% We need to get the handler pid from cowboy or create our own wrapper
+            {ok, self()};  %% Temporary - need proper handler management
+        {error, Reason} -> {error, {ws_init_failed, Reason}}
+    end.
+
+%% @doc Create SSE transport process
+-spec start_sse_transport(state()) -> {ok, pid()} | {error, term()}.
+start_sse_transport(#state{config = Config}) ->
+    %% Use existing SSE transport implementation
+    case erlmcp_transport_sse:start_link(Config) of
+        {ok, Pid} -> {ok, Pid};
+        {error, Reason} -> {error, {sse_init_failed, Reason}}
+    end.
+
+%% @doc Safely call transport behavior callback
+-spec transport_callback(atom(), state(), list()) -> term().
+transport_callback(Callback, State, ExtraArgs) ->
+    %% Get the transport process pid
+    TransportPid = get_transport_pid(State),
+
+    case TransportPid of
+        undefined ->
+            {error, {transport_not_started, TransportPid}};
+        Pid when is_pid(Pid) ->
+            %% Call the behavior callback on the transport process
+            case erlang:is_process_alive(Pid) of
+                true ->
+                    %% Use gen_server:call for synchronous callbacks
+                    Timeout = get_callback_timeout(Callback, State),
+                    gen_server:call(Pid, {callback, Callback, ExtraArgs}, Timeout);
+                false ->
+                    {error, {transport_process_died, Pid}}
+            end
+    end.
+
+%% @doc Get transport process pid from state
+-spec get_transport_pid(state()) -> pid() | undefined.
+get_transport_pid(#state{transport_pid = Pid}) ->
+    Pid.
+
+%% @doc Get appropriate timeout for callback
+-spec get_callback_timeout(atom(), state()) -> timeout().
+get_callback_timeout(send, #state{stats = Stats}) ->
+    maps:get(send_timeout, Stats, default_timeout());
+get_callback_timeout(recv, #state{stats = Stats}) ->
+    maps:get(recv_timeout, Stats, default_timeout());
+get_callback_timeout(connect, _State) ->
+    default_timeout();
+get_callback_timeout(get_info, _State) ->
+    1000;
+get_callback_timeout(_Other, _State) ->
+    default_timeout().
+
+%% @doc Update activity state after successful operation
+-spec update_activity_state(state()) -> state().
+update_activity_state(State) ->
+    Now = erlang:system_time(millisecond),
+    State#state{last_activity = Now, stats = maps:update(last_activity, Now, State#state.stats)}.
+
+%% @doc Merge transport info with erlmcp state
+-spec merge_transport_info(transport_info(), state()) -> transport_info().
+merge_transport_info(TransportInfo, State) ->
+    Uptime = erlang:system_time(millisecond) - State#state.start_time,
+
+    TransportInfo#{
+        owner => State#state.owner,
+        start_time => State#state.start_time,
+        last_activity => State#state.last_activity,
+        uptime => Uptime,
+        transport_pid => State#state.transport_pid
+    }.
+
+%% @doc Generate error info when callback fails
+-spec generate_error_info(term(), state()) -> transport_info().
+generate_error_info(Reason, State) ->
+    #{
+        id => State#state.transport_id,
+        type => State#state.transport_type,
+        status => error,
+        owner => State#state.owner,
+        start_time => State#state.start_time,
+        last_activity => State#state.last_activity,
+        last_error => Reason
+    }.
+
+%% @doc Start health monitoring if enabled
+-spec maybe_start_health_check(state()) -> state().
+maybe_start_health_check(#state{config = Config} = State) ->
+    case maps:get(health_check, Config, false) of
+        true ->
+            HealthCheckRef = erlang:send_after(30000, self(), health_check),  %% 30 seconds
+            State#state{health_check_ref = HealthCheckRef};
+        false ->
+            State
+    end.
+
+%% @doc Handle health check results
+-spec handle_health_check_result(state()) -> state().
+handle_health_check_result(#state{health_check_ref = Ref} = State) ->
+    case Ref of
+        undefined -> State;
+        _ ->
+            %% Schedule next health check
+            erlang:cancel_timer(Ref),
+            NewRef = erlang:send_after(30000, self(), health_check),
+            State#state{health_check_ref = NewRef}
+    end.
+
+%% @doc Collect and report metrics
+-spec collect_and_report_metrics(state()) -> state().
+collect_and_report_metrics(#state{config = Config} = State) ->
+    case maps:get(transport_metrics, Config, false) of
+        true ->
+            %% Schedule next metrics collection
+            NewTimer = erlang:send_after(60000, self(), metrics_collection),  %% 1 minute
+            State#state{metrics_timer = NewTimer};
+        false ->
+            State
+    end.
+
+%% @doc Ensure transport is properly closed during termination
+-spec ensure_transport_close(state()) -> ok.
+ensure_transport_close(#state{transport_pid = TransportPid} = State) ->
+    case TransportPid of
+        undefined ->
+            ok;
+        Pid ->
+            try
+                %% Call close callback on transport process
+                case transport_callback(close, State) of
+                    ok -> ok;
+                    {error, Reason} -> logger:warning("Transport close failed: ~p", [Reason])
+                end,
+                %% Wait for graceful shutdown with timeout
+                _ = wait_for_transport_stop(Pid, 2000),
+                ok
+            catch
+                _:_ ->
+                    logger:warning("Force stopping transport ~p", [Pid]),
+                    exit(Pid, kill),
+                    ok
+            end
+    end.
+
+%% @doc Wait for transport process to stop
+-spec wait_for_transport_stop(pid(), timeout()) -> ok.
+wait_for_transport_stop(Pid, Timeout) ->
+    receive
+        {'DOWN', _, process, Pid, _} -> ok
+    after Timeout ->
+        ok
+    end.
+
+%% @doc Validate transport configuration
+-spec validate_transport_config(map()) -> ok | {error, term()}.
+validate_transport_config(#{type := Type, config := Config}) ->
+    %% Validate transport type
+    case lists:member(Type, [stdio, tcp, http, ws, sse]) of
+        false -> {error, {invalid_transport_type, Type}};
+        true ->
+            %% Validate required fields based on transport type
+            validate_transport_type_config(Type, Config)
+    end.
+
+%% @doc Validate configuration specific to transport type
+-spec validate_transport_type_type(transport_type(), transport_opts()) -> ok | {error, term()}.
+validate_transport_type_config(stdio, _Config) ->
+    %% stdio has no required configuration
+    ok;
+validate_transport_type_config(tcp, Config) ->
+    case {maps:get(host, Config, undefined), maps:get(port, Config, undefined)} of
+        {undefined, undefined} -> {error, {missing_tcp_config, [host, port]}};
+        {undefined, _} -> {error, {missing_tcp_config, [host]}};
+        {_, undefined} -> {error, {missing_tcp_config, [port]}};
+        {_, _} -> ok
+    end;
+validate_transport_type_config(http, Config) ->
+    case maps:get(url, Config, undefined) of
+        undefined -> {error, {missing_http_config, [url]}};
+        _ -> ok
+    end;
+validate_transport_type_config(ws, Config) ->
+    case {maps:get(host, Config, undefined), maps:get(port, Config, undefined)} of
+        {undefined, _} -> {error, {missing_ws_config, [host, port]}};
+        {_, undefined} -> {error, {missing_ws_config, [port]}};
+        {_, _} -> ok
+    end;
+validate_transport_type_config(sse, Config) ->
+    case maps:get(url, Config, undefined) of
+        undefined -> {error, {missing_sse_config, [url]}};
+        _ -> ok
+    end.
+
+%% @doc Default timeout for transport operations
+-spec default_timeout() -> pos_integer().
+default_timeout() ->
+    10000.  %% 10 seconds
+
+%% @doc Default maximum message size
+-spec default_max_message_size() -> pos_integer().
+default_max_message_size() ->
+    16#1000000.  %% 16MB

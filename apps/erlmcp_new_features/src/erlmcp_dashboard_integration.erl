@@ -311,7 +311,7 @@ generate_realtime_metrics(State) ->
         timestamp => timestamp_to_iso8601(erlang:timestamp())
     }.
 
-generate_health_summary(State) ->
+generate_health_summary(_State) ->
     % Generate health summary
     HealthSummary = erlmcp_health_check:health_check(),
 
@@ -321,7 +321,7 @@ generate_health_summary(State) ->
         timestamp => timestamp_to_iso8601(erlang:timestamp())
     }.
 
-start_metrics_collection(State) ->
+start_metrics_collection(_State) ->
     % Start collecting metrics
     erlmcp_observability:counter(<<"dashboard_requests_total">>, #{}),
     ok.
@@ -354,67 +354,63 @@ update_dashboard_data(State) ->
         alerts = NewAlerts
     }.
 
-check_alerts(Metrics, HealthData, Thresholds) ->
+check_alerts(Metrics, _HealthData, Thresholds) ->
     % Check for various alert conditions
-    Alerts = #{},
+    Alerts0 = #{},
 
     % Check CPU usage
-    CpuUsage = get_metric_value(Metrics, "cpu_usage"),
-    if
-        CpuUsage > Thresholds#alert_threshold.cpu_usage ->
-            Alerts#{cpu_alert => #{
+    Alerts1 = case get_metric_value(Metrics, "cpu_usage") of
+        CpuUsage when CpuUsage > Thresholds#alert_threshold.cpu_usage ->
+            Alerts0#{cpu_alert => #{
                 level => warning,
                 message => <<"CPU usage high">>,
                 value => CpuUsage,
                 threshold => Thresholds#alert_threshold.cpu_usage
             }};
-        true ->
-            Alerts
+        _ ->
+            Alerts0
     end,
 
     % Check memory usage
-    MemoryUsage = get_metric_value(Metrics, "memory_usage"),
-    if
-        MemoryUsage > Thresholds#alert_threshold.memory_usage ->
-            Alerts#{memory_alert => #{
+    Alerts2 = case get_metric_value(Metrics, "memory_usage") of
+        MemoryUsage when MemoryUsage > Thresholds#alert_threshold.memory_usage ->
+            Alerts1#{memory_alert => #{
                 level => warning,
                 message => <<"Memory usage high">>,
                 value => MemoryUsage,
                 threshold => Thresholds#alert_threshold.memory_usage
             }};
-        true ->
-            Alerts
+        _ ->
+            Alerts1
     end,
 
     % Check error rate
-    ErrorRate = get_metric_value(Metrics, "error_rate"),
-    if
-        ErrorRate > Thresholds#alert_threshold.error_rate ->
-            Alerts#{error_rate_alert => #{
+    Alerts3 = case get_metric_value(Metrics, "error_rate") of
+        ErrorRate when ErrorRate > Thresholds#alert_threshold.error_rate ->
+            Alerts2#{error_rate_alert => #{
                 level => error,
                 message => <<"Error rate high">>,
                 value => ErrorRate,
                 threshold => Thresholds#alert_threshold.error_rate
             }};
-        true ->
-            Alerts
+        _ ->
+            Alerts2
     end,
 
     % Check response time
-    ResponseTime = get_metric_value(Metrics, "response_time"),
-    if
-        ResponseTime > Thresholds#alert_threshold.response_time ->
-            Alerts#{response_time_alert => #{
+    Alerts4 = case get_metric_value(Metrics, "response_time") of
+        ResponseTime when ResponseTime > Thresholds#alert_threshold.response_time ->
+            Alerts3#{response_time_alert => #{
                 level => warning,
                 message => <<"Response time high">>,
                 value => ResponseTime,
                 threshold => Thresholds#alert_threshold.response_time
             }};
-        true ->
-            Alerts
+        _ ->
+            Alerts3
     end,
 
-    Alerts.
+    Alerts4.
 
 get_metric_value(Metrics, Key) ->
     case maps:get(Key, Metrics, 0) of
@@ -452,7 +448,7 @@ send_websocket_updates(State) ->
     % Send to WebSocket clients
     io:format("WebSocket update: ~s~n", [WebSocketMessage]).
 
-get_system_health(State) ->
+get_system_health(_State) ->
     % Get system health information
     case erlmcp_health_check:health_check() of
         HealthData when is_map(HealthData) ->
@@ -461,7 +457,7 @@ get_system_health(State) ->
             #{status => unknown}
     end.
 
-get_system_metrics(State) ->
+get_system_metrics(_State) ->
     % Get system metrics
     case erlmcp_observability:get_metrics_summary() of
         Metrics when is_map(Metrics) ->
@@ -470,7 +466,7 @@ get_system_metrics(State) ->
             #{}
     end.
 
-get_service_status(State) ->
+get_service_status(_State) ->
     % Get service status information
     #{
         erlmcp_mcp_proxy_relay => get_service_health(erlmcp_mcp_proxy_relay),
@@ -487,7 +483,7 @@ get_service_health(Service) ->
             #{status => unknown}
     end.
 
-get_performance_metrics(State) ->
+get_performance_metrics(_State) ->
     % Get performance metrics
     #{
         cpu => erlang:system_info(process_count),
@@ -495,7 +491,7 @@ get_performance_metrics(State) ->
         uptime => erlang:system_info(uptime) div 1000
     }.
 
-get_connection_metrics(State) ->
+get_connection_metrics(_State) ->
     % Get connection metrics
     case erlmcp_mcp_proxy_relay:get_stats() of
         Stats when is_map(Stats) ->

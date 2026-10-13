@@ -98,7 +98,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-do_create_message(Messages, Params, #state{api_key = undefined}) ->
+do_create_message(_Messages, _Params, #state{api_key = undefined}) ->
     {error, missing_api_key};
 do_create_message(Messages, Params, State) ->
     Model = maps_get(<<"model">>, Params, State#state.model),

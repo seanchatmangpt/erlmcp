@@ -196,7 +196,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Functions
 %%====================================================================
 
-spawn_monitoring_loop(State) ->
+spawn_monitoring_loop(_State) ->
     spawn(fun() ->
         timer:sleep(?RETRY_DELAY),
         gen_server:cast(?MODULE, healing_monitor)
@@ -254,7 +254,7 @@ perform_healing(Node, IssueType, State) ->
             end
     end.
 
-perform_healing_action(Node, IssueType, HealingInfo, State) ->
+perform_healing_action(Node, _IssueType, HealingInfo, _State) ->
     Action = HealingInfo#healing_info.next_action,
 
     case Action of
@@ -381,7 +381,7 @@ get_healing_info(Node, State) ->
         [] -> {error, not_found}
     end.
 
-update_healing_info(Node, HealingInfo) ->
+update_healing_info(_Node, HealingInfo) ->
     true = ets:insert(?TAB, HealingInfo).
 
 determine_first_action(IssueType) ->

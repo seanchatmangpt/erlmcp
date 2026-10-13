@@ -61,7 +61,7 @@ check(Options) ->
             {error, io_lib:format("Supervision check failed: ~p:~p", [Error, Reason]), #{error => {Error, Reason}}}
     end.
 
-get_supervision_info(Options) ->
+get_supervision_info(_Options) ->
     % Get all supervisors
     Supervisors = get_supervisors(),
 
@@ -221,7 +221,7 @@ check_child_processes(#supervision_info{children = Children}) ->
 
 get_problematic_children(Children) ->
     % Check for problematic child processes
-    lists:filter(fun({_Id, Pid, Type, Modules, _}) ->
+    lists:filter(fun({_Id, Pid, Type, _Modules, _}) ->
         case process_info(Pid, [status]) of
             undefined -> true;
             {status, Status} when Status =:= exiting orelse Status =:= suspended ->

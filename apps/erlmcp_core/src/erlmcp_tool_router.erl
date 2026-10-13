@@ -7,14 +7,14 @@
 
 %% API exports
 -export([detect_tool_call/1,
-         detect_tool_call/2,
-         route_to_tool/2,
-         add_pattern/3,
-         remove_pattern/1,
-         list_patterns/0,
-         compile_pattern/1,
-         validate_pattern/1,
-         extract_args/2]).
+        detect_tool_call/2,
+        route_to_tool/2,
+        add_pattern/3,
+        remove_pattern/1,
+        list_patterns/0,
+        compile_pattern/1,
+        validate_pattern/1,
+        extract_args/2]).
 
 %% Type exports
 -export_type([tool_pattern/0,
@@ -48,20 +48,16 @@
 %%====================================================================
 
 %% Calculator pattern: calculate(2 + 2)
--define(CALCULATOR_PATTERN,
-        "calculate\\(\\s*(?<expr>[^)]+)\\s*\\)").
+-define(CALCULATOR_PATTERN, "calculate\\(\\s*(?<expr>[^)]+)\\s*\\)").
 
 %% Search pattern: search for Erlang patterns
--define(SEARCH_PATTERN,
-        "search\\s+for\\s+(?<query>[^.!?]+)[.!?]?").
+-define(SEARCH_PATTERN, "search\\s+for\\s+(?<query>[^.!?]+)[.!?]?").
 
 %% Code execution pattern: execute erlang: io:format("Hello")
--define(CODE_EXEC_PATTERN,
-        "execute\\s+(?<lang>\\w+)\\s*:\\s*(?<code>[^]+?)(?=\\s*(?:execute|search|calculate|$))").
+-define(CODE_EXEC_PATTERN, "execute\\s+(?<lang>\\w+)\\s*:\\s*(?<code>[^]+?)(?=\\s*(?:execute|search|calculate|$))").
 
 %% Generic tool call pattern: tool_name(arg1, arg2)
--define(GENERIC_TOOL_PATTERN,
-        "(?<tool>[a-z_][a-z0-9_]*)\\(\\s*(?<args>[^)]*)\\s*\\)").
+-define(GENERIC_TOOL_PATTERN, "(?<tool>[a-z_][a-z0-9_]*)\\(\\s*(?<args>[^)]*)\\s*\\)").
 
 %%====================================================================
 %% Pattern Registry (ETS table)
@@ -274,23 +270,25 @@ build_capture_map(Names, Values) ->
 %%====================================================================
 
 %% @doc Initialize pattern table (called from application start)
--spec init() -> ok.
-init() ->
-    case ets:whereis(?PATTERN_TABLE) of
-        undefined ->
-            ets:new(?PATTERN_TABLE, [named_table, public, set]),
-            ok;
-        _ ->
-            ok
-    end.
+%% @deprecated Not currently used
+%% -spec init() -> ok.
+%% init() ->
+%%     case ets:whereis(?PATTERN_TABLE) of
+%%         undefined ->
+%%             ets:new(?PATTERN_TABLE, [named_table, public, set]),
+%%             ok;
+%%         _ ->
+%%             ok
+%%     end.
 
 %% @doc Stop pattern table (called from application stop)
--spec stop() -> ok.
-stop() ->
-    case ets:whereis(?PATTERN_TABLE) of
-        undefined ->
-            ok;
-        _ ->
-            ets:delete(?PATTERN_TABLE),
-            ok
-    end.
+%% @deprecated Not currently used
+%% -spec stop() -> ok.
+%% stop() ->
+%%     case ets:whereis(?PATTERN_TABLE) of
+%%         undefined ->
+%%             ok;
+%%         _ ->
+%%             ets:delete(?PATTERN_TABLE),
+%%             ok
+%%     end.

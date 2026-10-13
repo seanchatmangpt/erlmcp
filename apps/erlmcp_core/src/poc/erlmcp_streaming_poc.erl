@@ -22,6 +22,9 @@
 
 -behaviour(gen_server).
 
+%% Types
+-export_type([state/0]).
+
 %% API exports
 -export([start_link/0, start_link/1, stop/1, subscribe/2, unsubscribe/2, execute_tool/3,
          run_demo/0]).
@@ -64,7 +67,7 @@
         {executions = #{} :: #{execution_id() => #execution{}},
          tools = #{} :: #{tool_name() => fun((tool_params()) -> ok)}}).
 
--type state() :: #state{}.
+-type state() :: #state{}.  %% Internal type, needed for gen_server
 
 %%====================================================================
 %% API Functions
@@ -189,8 +192,7 @@ handle_call({subscribe, ExecutionId, SubscriberPid}, _From, State) ->
                     Subscriber = #subscriber{pid = SubscriberPid, monitor_ref = MonitorRef},
                     NewSubscribers = [Subscriber | Execution#execution.subscribers],
                     NewExecution = Execution#execution{subscribers = NewSubscribers},
-                    NewExecutions = maps:put(ExecutionId, NewExecution, State#state.executions),
-                    {reply, ok, State#state{executions = NewExecutions}};
+                    {reply, ok, State#state{executions = maps:put(ExecutionId, NewExecution, State#state.executions)}};
                 _ ->
                     {reply, {error, already_subscribed}, State}
             end
@@ -210,8 +212,7 @@ handle_call({unsubscribe, ExecutionId, SubscriberPid}, _From, State) ->
                                         #subscriber.pid,
                                         Execution#execution.subscribers),
                     NewExecution = Execution#execution{subscribers = NewSubscribers},
-                    NewExecutions = maps:put(ExecutionId, NewExecution, State#state.executions),
-                    {reply, ok, State#state{executions = NewExecutions}}
+                    {reply, ok, State#state{executions = maps:put(ExecutionId, NewExecution, State#state.executions)}}
             end
     end;
 handle_call({execute_tool, ToolName, Params}, _From, State) ->
@@ -222,14 +223,12 @@ handle_call({execute_tool, ToolName, Params}, _From, State) ->
                    tool_name = ToolName,
                    params = Params,
                    start_time = erlang:monotonic_time(microsecond)},
-    NewExecutions = maps:put(ExecutionId, Execution, State#state.executions),
-    NewState = State#state{executions = NewExecutions},
 
     %% Start async tool execution
     Self = self(),
     spawn(fun() -> execute_tool_async(Self, ExecutionId, ToolName, Params) end),
 
-    {reply, {ok, ExecutionId}, NewState};
+    {reply, {ok, ExecutionId}, State#state{executions = maps:put(ExecutionId, Execution, State#state.executions)}};
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
@@ -250,8 +249,7 @@ handle_cast({stream_chunk, ExecutionId, ChunkData}, State) ->
             NewExecution =
                 Execution#execution{subscribers = NewSubscribers,
                                     chunks_sent = Execution#execution.chunks_sent + 1},
-            NewExecutions = maps:put(ExecutionId, NewExecution, State#state.executions),
-            {noreply, State#state{executions = NewExecutions}}
+            {noreply, State#state{executions = maps:put(ExecutionId, NewExecution, State#state.executions)}}
     end;
 handle_cast({stream_complete, ExecutionId}, State) ->
     case maps:get(ExecutionId, State#state.executions, undefined) of
@@ -266,12 +264,10 @@ handle_cast({stream_complete, ExecutionId}, State) ->
 
             %% Mark execution as complete
             NewExecution = Execution#execution{completed = true},
-            NewExecutions = maps:put(ExecutionId, NewExecution, State#state.executions),
-            {noreply, State#state{executions = NewExecutions}}
+            {noreply, State#state{executions = maps:put(ExecutionId, NewExecution, State#state.executions)}}
     end;
 handle_cast({register_tool, ToolName, Handler}, State) ->
-    NewTools = maps:put(ToolName, Handler, State#state.tools),
-    {noreply, State#state{tools = NewTools}};
+    {noreply, State#state{tools = maps:put(ToolName, Handler, State#state.tools)}};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -340,7 +336,7 @@ send_chunk_to_subscriber(Subscriber, ExecutionId, ChunkData, Timestamp) ->
     end.
 
 %% @doc Execute tool asynchronously and stream results
-execute_tool_async(Server, ExecutionId, ToolName, Params) ->
+execute_tool_async(Server, ExecutionId, _ToolName, Params) ->
     %% Demo tool: slow data processor
     NumChunks = maps:get(chunks, Params, 10),
     DelayMs = maps:get(delay_ms, Params, 200),

@@ -1,6 +1,15 @@
 -module(erlmcp_observability).
 -behaviour(gen_server).
 -behaviour(application).
+-compile({nowarn_unused_function, [
+    generate_metrics_summary/1,
+    get_prometheus_metrics/0,
+    get_system_metrics/0,
+    metrics_endpoint/0,
+    websocket_metrics/1,
+    log_request/4,
+    log_error/4
+]}).
 
 %% API
 -export([start_link/0, start/2, stop/1]).

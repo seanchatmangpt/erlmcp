@@ -14,7 +14,7 @@
 -type key() :: term().
 -type value() :: term().
 -type tag() :: term().
--type entry() :: {key(), value(), pid(), reference()}.
+%% -type entry() :: {key(), value(), pid(), reference()}.  % Internal type, unused
 
 -record(state,
         {registry :: #{key() => {value(), pid(), reference()}},

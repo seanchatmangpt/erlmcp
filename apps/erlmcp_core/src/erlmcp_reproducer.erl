@@ -449,7 +449,7 @@ replay_transport(Other) ->
 
 %% @private Replay SSE scenario
 -spec replay_sse(term()) -> term().
-replay_sse([{sse_connect, Opts}]) ->
+replay_sse([{sse_connect, _Opts}]) ->
     %% Simulate SSE connection
     {ok, connected};
 replay_sse([{sse_message, Data}]) when is_map(Data) ->

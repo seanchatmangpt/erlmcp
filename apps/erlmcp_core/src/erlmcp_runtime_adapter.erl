@@ -31,7 +31,7 @@
 %%====================================================================
 
 -spec adapt_to_otp_version(otp_version()) -> ok.
-adapt_to_otp_version(OtpVersion) ->
+adapt_to_otp_version(_OtpVersion) ->
     apply_version_optimizations(),
     configure_resource_pools(),
     configure_timeouts_and_limits(),

@@ -499,7 +499,6 @@ get_patch_priority(#{type := Type, version := Version}) ->
                   optimization_patch -> 3
               end,
     % Lower version gets higher priority
-    Priority * 100 + Version,  % Simplified priority calculation
     Priority * 100 - (element(1, Version) * 10000 + element(2, Version) * 100 + element(3, Version)).
 
 %% Apply node compatibility patches
@@ -580,7 +579,7 @@ apply_feature_translation(Node) ->
 
 %% Get compatibility level from node status
 -spec get_compatibility_level_from_status(node(), term()) -> compatibility_level().
-get_compatibility_level_from_status(Node, Status) ->
+get_compatibility_level_from_status(_Node, Status) ->
     case Status of
         connected -> fully_compatible;
         disconnected -> partially_compatible;

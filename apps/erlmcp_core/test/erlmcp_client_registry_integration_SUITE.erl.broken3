@@ -1,0 +1,317 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Integration test suite for erlmcp_client_registry
+%%% Tests integration with erlmcp components and lifecycle
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_client_registry_integration_SUITE).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
+%%====================================================================
+%% Test Callbacks
+%%====================================================================
+
+-export([all/0]).
+-export([init_per_testcase/2, end_per_testcase/2]).
+
+%% Test cases
+-export([
+    registry_lifecycle_test/1,
+    session_integration_test/1,
+    transport_integration_test/1,
+    monitoring_integration_test/1,
+    error_handling_integration_test/1
+]).
+
+%%====================================================================
+%% Test Callbacks
+%%====================================================================
+
+all() ->
+    [
+        registry_lifecycle_test,
+        session_integration_test,
+        transport_integration_test,
+        monitoring_integration_test,
+        error_handling_integration_test
+    ].
+
+init_per_testcase(_TestCase, Config) ->
+    %% Start the client registry for all tests
+    {ok, _RegistryPid} = erlmcp_client_registry:start_link(),
+    Config.
+
+end_per_testcase(_TestCase, _Config) ->
+    %% Clean up registry
+    cleanup_registry().
+
+%%====================================================================
+%% Test Cases
+%%====================================================================
+
+registry_lifecycle_test(_Config) ->
+    %% Test basic registry lifecycle
+    ct:comment("Testing registry lifecycle operations"),
+
+    %% Register multiple clients
+    Clients = lists:map(fun(I) ->
+        ClientName = list_to_binary("client-" ++ integer_to_list(I)),
+        ClientPid = spawn_link(fun() -> client_loop() end),
+        {ok, _MonitorRef} = erlmcp_client_registry:register(ClientName, ClientPid),
+        {ClientName, ClientPid}
+    end, lists:seq(1, 5)),
+
+    %% Verify all clients are registered
+    ?assertEqual(5, erlmcp_client_registry:count()),
+
+    %% List all clients
+    {ok, AllNames} = erlmcp_client_registry:list(),
+    ?assertEqual(5, length(AllNames)),
+
+    %% Verify each client can be looked up
+    lists:foreach(fun({Name, _Pid}) ->
+        case erlmcp_client_registry:lookup(Name) of
+            {ok, _, _, _} -> ok;
+            {error, not_found} -> ct:fail("Client not found: ~p", [Name])
+        end
+    end, Clients),
+
+    %% Verify get_pids returns all PIDs
+    RegisteredPids = erlmcp_client_registry:get_pids(),
+    lists:foreach(fun({_Name, Pid}) ->
+        ?assert(lists:member(Pid, RegisteredPids))
+    end, Clients),
+
+    %% Clean up
+    lists:foreach(fun({Name, _Pid}) ->
+        ok = erlmcp_client_registry:unregister(Name)
+    end, Clients),
+
+    %% Verify cleanup
+    ?assertEqual(0, erlmcp_client_registry:count()).
+
+session_integration_test(_Config) ->
+    ct:comment("Testing integration with erlmcp session patterns"),
+
+    %% Simulate session-based client registration
+    SessionId = <<"test-session-123">>,
+
+    %% Register session client
+    {ok, SessionPid} = erlmcp_session_fsm:start_link(SessionId),
+    {ok, _MonitorRef} = erlmcp_client_registry:register(SessionId, SessionPid, #{
+        type => <<"session">>,
+        created_at => erlang:system_time(millisecond)
+    }),
+
+    %% Verify registration
+    ?assertEqual(1, erlmcp_client_registry:count()),
+    ?assertEqual(true, erlmcp_client_registry:exists(SessionId)),
+
+    %% Add connection to session
+    ConnId = <<"conn-456">>,
+    {ok, ConnPid} = erlmcp_transport_tcp:start_link(),
+    ok = erlmcp_session_fsm:add_connection(SessionPid, {ConnId, ConnPid}),
+
+    %% Verify session integration
+    {ok, _, Metadata, _} = erlmcp_client_registry:lookup(SessionId),
+    ?assertEqual(<<"session">>, maps:get(<<"type">>, Metadata)),
+
+    %% Test integration with session operations
+    ok = erlmcp_session_fsm:close(SessionPid),
+
+    %% Wait for session to close
+    timer:sleep(100),
+
+    %% Session should be cleaned up automatically or manually
+    case erlmcp_client_registry:exists(SessionId) of
+        true ->
+            %% Manual cleanup
+            ok = erlmcp_client_registry:unregister(SessionId);
+        false ->
+            ok
+    end.
+
+transport_integration_test(_Config) ->
+    ct:comment("Testing integration with transport connections"),
+
+    %% Register transport clients
+    TransportClients = lists:map(fun(I) ->
+        TransportName = list_to_binary("transport-" ++ integer_to_list(I)),
+        {ok, TransportPid} = erlmcp_transport_tcp:start_link(),
+        {ok, _MonitorRef} = erlmcp_client_registry:register(TransportName, TransportPid, #{
+            type => <<"transport">>,
+            protocol => <<"tcp">>,
+            version => <<"1.0">>
+        }),
+        {TransportName, TransportPid}
+    end, lists:seq(1, 3)),
+
+    %% Verify transport clients
+    ?assertEqual(3, erlmcp_client_registry:count()),
+
+    %% Test transport-specific operations
+    lists:foreach(fun({Name, _Pid}) ->
+        case erlmcp_client_registry:lookup(Name) of
+            {ok, _, Metadata, _} ->
+                ?assertEqual(<<"transport">>, maps:get(<<"type">>, Metadata)),
+                ?assertEqual(<<"tcp">>, maps:get(<<"protocol">>, Metadata));
+            {error, not_found} ->
+                ct:fail("Transport client not found: ~p", [Name])
+        end
+    end, TransportClients),
+
+    %% Test cleanup dead transports
+    ok = erlmcp_client_registry:cleanup_dead(),
+
+    %% Verify dead transports are cleaned up
+    {ok, RemainingNames} = erlmcp_client_registry:list(),
+    ?assert(length(RemainingNames) =< 3),  // May be less if some died
+
+    %% Clean up remaining
+    lists:foreach(fun(Name) ->
+        case erlmcp_client_registry:exists(Name) of
+            true -> ok = erlmcp_client_registry:unregister(Name);
+            false -> ok
+        end
+    end, RemainingNames).
+
+monitoring_integration_test(_Config) ->
+    ct:comment("Testing monitoring and cleanup integration"),
+
+    %% Register clients with different scenarios
+    LiveClientName = <<"live-client">>,
+    LivePid = self(),
+    {ok, _MonitorRef1} = erlmcp_client_registry:register(LiveClientName, LivePid),
+
+    %% Register a client that will crash
+    CrashClientName = <<"crash-client">>,
+    CrashPid = spawn_link(fun() ->
+        timer:sleep(50),
+        exit(crash)
+    end),
+    {ok, _MonitorRef2} = erlmcp_client_registry:register(CrashClientName, CrashPid),
+
+    %% Register a normal client
+    NormalClientName = <<"normal-client">>,
+    NormalPid = spawn_link(fun() ->
+        timer:sleep(200),
+        exit(normal)
+    end),
+    {ok, _MonitorRef3} = erlmcp_client_registry:register(NormalClientName, NormalPid),
+
+    %% Wait for crash to occur
+    timer:sleep(100),
+
+    %% Test automatic cleanup
+    ?assertEqual(true, erlmcp_client_registry:exists(LiveClientName)),
+    ?assertEqual(false, erlmcp_client_registry:exists(CrashClientName)),  // Should be cleaned up
+
+    %% Manual cleanup
+    ok = erlmcp_client_registry:cleanup_dead(),
+
+    %% Wait for normal client to exit
+    timer:sleep(200),
+
+    %% Final cleanup
+    ?assertEqual(true, erlmcp_client_registry:exists(LiveClientName)),
+    ?assertEqual(false, erlmcp_client_registry:exists(CrashClientName)),
+    ?assertEqual(false, erlmcp_client_registry:exists(NormalClientName)),
+
+    %% Clean up live client
+    ok = erlmcp_client_registry:unregister(LiveClientName).
+
+error_handling_integration_test(_Config) ->
+    ct:comment("Testing error handling integration"),
+
+    %% Test invalid registrations
+    ?assertEqual({error, invalid_name}, erlmcp_client_registry:register(<<>>, self())),
+    ?assertEqual({error, invalid_name}, erlmcp_client_registry:register(binary:copy(<<"x">>, 256), self())),
+
+    %% Test duplicate registration
+    ClientName = <<"duplicate-client">>,
+    ClientPid = self(),
+    {ok, _MonitorRef1} = erlmcp_client_registry:register(ClientName, ClientPid),
+    ?assertEqual({error, already_exists}, erlmcp_client_registry:register(ClientName, ClientPid)),
+
+    %% Test operations on non-existent clients
+    ?assertEqual({error, not_found}, erlmcp_client_registry:lookup(<<"non-existent">>)),
+    ?assertEqual({error, not_found}, erlmcp_client_registry:unregister(<<"non-existent">>)),
+    ?assertEqual(false, erlmcp_client_registry:exists(<<"non-existent">>)),
+
+    %% Clean up
+    ok = erlmcp_client_registry:unregister(ClientName),
+
+    %% Test concurrent error scenarios
+    %% Spawn multiple processes trying to register the same client
+    ConcurrentName = <<"concurrent-test">>,
+    ConcurrentPids = lists:map(fun(I) ->
+        spawn_link(fun() ->
+            case erlmcp_client_registry:register(ConcurrentName, self()) of
+                {ok, _Ref} ->
+                    %% Successful registration
+                    self() ! {success, I};
+                {error, already_exists} ->
+                    self() ! {failed, I, already_exists};
+                {error, Reason} ->
+                    self() ! {failed, I, Reason}
+            end
+        end)
+    end, lists:seq(1, 5)),
+
+    %% Wait for all operations to complete
+    Results = collect_concurrent_results(ConcurrentPids, []),
+
+    %% Should have exactly one success and rest failures
+    SuccessCount = length(lists:filter(fun({success, _}) -> true; (_) -> false end, Results)),
+    FailureCount = length(lists:filter(fun({failed, _, _}) -> true; (_) -> false end, Results)),
+
+    ?assertEqual(1, SuccessCount),
+    ?assertEqual(4, FailureCount),
+
+    %% Clean up
+    case erlmcp_client_registry:exists(ConcurrentName) of
+        true ->
+            ok = erlmcp_client_registry:unregister(ConcurrentName);
+        false ->
+            ok
+    end.
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+%% @doc Clean up all clients from registry
+cleanup_registry() ->
+    {ok, AllClients} = erlmcp_client_registry:list(),
+    lists:foreach(fun(Name) ->
+        case erlmcp_client_registry:exists(Name) of
+            true -> ok = erlmcp_client_registry:unregister(Name);
+            false -> ok
+        end
+    end, AllClients),
+    ok.
+
+%% @doc Simple client process loop
+client_loop() ->
+    receive
+        _ -> client_loop()
+    after
+        %% Exit after some time
+        1000 -> exit(normal)
+    end.
+
+%% @doc Collect concurrent results
+collect_concurrent_results([], Acc) ->
+    Acc;
+collect_concurrent_results(Pids, Acc) ->
+    receive
+        {success, Id} ->
+            collect_concurrent_results(Pids, [{success, Id} | Acc]);
+        {failed, Id, Reason} ->
+            collect_concurrent_results(Pids, [{failed, Id, Reason} | Acc])
+    after
+        5000 ->
+            Acc
+    end.

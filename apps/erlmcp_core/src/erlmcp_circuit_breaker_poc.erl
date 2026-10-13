@@ -62,9 +62,9 @@ init(Opts) ->
             success_threshold = SuccessThreshold,
             timeout = Timeout}}.
 
-handle_call({call, Fun}, _From, State = #state{circuit_state = open}) ->
+handle_call({call, _Fun}, _From, State = #state{circuit_state = open}) ->
     {reply, {error, circuit_open}, State};
-handle_call({call, Fun}, _From, State = #state{circuit_state = CircuitState}) ->
+handle_call({call, Fun}, _From, State = #state{circuit_state = _CircuitState}) ->
     case catch Fun() of
         {'EXIT', Error} ->
             NewState = handle_failure(State),

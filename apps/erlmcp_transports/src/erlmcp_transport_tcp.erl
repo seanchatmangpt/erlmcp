@@ -13,7 +13,8 @@
 %% Transport API (internal interface)
 -export([transport_init/1, get_max_message_size/0]).
 %% Public API
--export([start_link/1, start_server/1, start_client/1, connect/2]).
+-export([start_link/1, start_server/1, start_client/1, connect/2,
+         acquire_connection/1, release_connection/2, pool_stats/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 %% ranch_protocol callback
@@ -29,7 +30,7 @@
       server_id => atom(),
       transport_id => atom(),
       connect_timeout => timeout(),
-      keepalive => boolean(),
+      keepalive => boolean() | map(),
       nodelay => boolean(),
       buffer_size => pos_integer(),
       num_acceptors => pos_integer(),
@@ -39,9 +40,17 @@
       pool_name => atom(),
       pool_min_size => pos_integer(),
       pool_max_size => pos_integer(),
-      pool_strategy => round_robin | least_loaded | random}.
+      pool_strategy => round_robin | least_loaded | random,
+      pool_overflow => pos_integer(),
+      pool_overflow_ttl => pos_integer()}.
 
     % Pool configuration
+%% Keepalive configuration
+-type keepalive_opts() ::
+    #{enable => boolean(),
+      idle => pos_integer(),
+      interval => pos_integer(),
+      count => pos_integer()}.
 
 %%% State record definition is now in include/erlmcp_transport_tcp.hrl
 
@@ -64,8 +73,14 @@
 -define(DEFAULT_POOL_MIN_SIZE, 10).
 -define(DEFAULT_POOL_MAX_SIZE, 1000).
 -define(DEFAULT_POOL_STRATEGY, round_robin).
+-define(DEFAULT_POOL_OVERFLOW, 10).
+-define(DEFAULT_POOL_OVERFLOW_TTL, 1000). %% 1 second
 %% Connection lease timeout (prevents stuck connections)
 -define(CONNECTION_LEASE_TIMEOUT, 30000). %% 30 seconds max for handler init
+%% Keepalive defaults
+-define(DEFAULT_KEEPALIVE_IDLE, 7200000). %% 2 hours in milliseconds
+-define(DEFAULT_KEEPALIVE_INTERVAL, 75000). %% 75 seconds in milliseconds
+-define(DEFAULT_KEEPALIVE_COUNT, 9).
 
 %%====================================================================
 %% Transport Behavior Implementation
@@ -183,6 +198,43 @@ start_client(Opts) when is_map(Opts) ->
 -spec connect(pid(), transport_opts()) -> ok | {error, term()}.
 connect(Pid, Opts) when is_pid(Pid), is_map(Opts) ->
     gen_server:call(Pid, {connect, Opts}).
+
+%% @doc Acquire a connection from the pool
+-spec acquire_connection(transport_opts()) -> {ok, pid()} | {error, term()}.
+acquire_connection(Opts) when is_map(Opts) ->
+    case maps:get(use_pool, Opts, false) of
+        true ->
+            PoolName = maps:get(pool_name, Opts, erlmcp_tcp_pool),
+            poolboy:checkout(PoolName);
+        false ->
+            %% No pooling, start direct connection
+            start_client(Opts)
+    end.
+
+%% @doc Release a connection back to the pool
+-spec release_connection(pid(), term()) -> ok.
+release_connection(Connection, _Reason) when is_pid(Connection) ->
+    PoolName = erlmcp_tcp_pool,
+    case poolboy:checkin(PoolName, Connection) of
+        ok -> ok;
+        _ -> ok %% Not a pooled connection, ignore
+    end.
+
+%% @doc Get connection pool statistics
+-spec pool_stats() -> {ok, map()} | {error, term()}.
+pool_stats() ->
+    PoolName = erlmcp_tcp_pool,
+    case whereis(PoolName) of
+        undefined ->
+            {error, pool_not_started};
+        _Pid ->
+            {_, Stats} = poolboy:status(PoolName),
+            {ok, #{
+                size => element(1, Stats),
+                overflow => element(2, Stats),
+                workers => element(3, Stats)
+            }}
+    end.
 
 %%====================================================================
 %% ranch_protocol Callback
@@ -678,9 +730,12 @@ build_socket_options(Opts) ->
                     BaseOpts,
                     [{keepalive, keepalive}, {nodelay, nodelay}, {buffer_size, buffer}]),
 
+    %% Add keepalive configuration if specified
+    KeepaliveOpts = build_keepalive_opts(Opts),
+
     %% Ensure we have appropriate buffer sizes
     BufferSize = maps:get(buffer_size, Opts, ?DEFAULT_BUFFER_SIZE),
-    [{recbuf, BufferSize}, {sndbuf, BufferSize} | OptionalOpts].
+    [{recbuf, BufferSize}, {sndbuf, BufferSize} | OptionalOpts] ++ KeepaliveOpts.
 
 %% @doc Build socket options for ranch listener
 build_ranch_socket_options(Opts, Port) ->
@@ -705,7 +760,42 @@ build_ranch_socket_options(Opts, Port) ->
                     BaseOpts,
                     [{keepalive, keepalive}, {nodelay, nodelay}]),
 
-    [{recbuf, BufferSize}, {sndbuf, BufferSize} | OptionalOpts].
+    %% Add keepalive configuration if specified
+    KeepaliveOpts = build_keepalive_opts(Opts),
+
+    [{recbuf, BufferSize}, {sndbuf, BufferSize} | OptionalOpts] ++ KeepaliveOpts.
+
+%% @doc Build OS-level keepalive socket options
+%% Supports boolean enable or detailed keepalive_opts map
+-spec build_keepalive_opts(transport_opts()) -> [gen_tcp:option()].
+build_keepalive_opts(Opts) ->
+    case maps:get(keepalive, Opts, undefined) of
+        undefined ->
+            [];
+        true ->
+            %% Default keepalive enabled
+            [{keepalive, true}];
+        false ->
+            %% Explicitly disabled
+            [{keepalive, false}];
+        KeepaliveMap when is_map(KeepaliveMap) ->
+            %% Detailed keepalive configuration
+            build_keepalive_opts_map(KeepaliveMap)
+    end.
+
+%% @doc Build detailed keepalive options from map
+-spec build_keepalive_opts_map(map()) -> [gen_tcp:option()].
+build_keepalive_opts_map(KeepaliveMap) ->
+    Enable = maps:get(enable, KeepaliveMap, true),
+    Idle = maps:get(idle, KeepaliveMap, ?DEFAULT_KEEPALIVE_IDLE),
+    Interval = maps:get(interval, KeepaliveMap, ?DEFAULT_KEEPALIVE_INTERVAL),
+    Count = maps:get(count, KeepaliveMap, ?DEFAULT_KEEPALIVE_COUNT),
+
+    %% Convert milliseconds to seconds for inet:setopts
+    [{keepalive, Enable},
+     {raw, 6, 4, <<Idle:32/native>>},      % TCP_KEEPIDLE (idle time in seconds)
+     {raw, 6, 5, <<Interval:32/native>>},   % TCP_KEEPINTVL (interval in seconds)
+     {raw, 6, 6, <<Count:32/native>>}].      % TCP_KEEPCNT (probe count)
 
 %%====================================================================
 %% Internal Functions - Connection Management

@@ -28,6 +28,6 @@ execute_with_protection(_ClientId, _Operation, Function, Args, Timeout) ->
     catch
         error:timeout ->
             {error, timeout};
-        Class:Reason ->
+        _Class:Reason ->
             {error, Reason}
     end.

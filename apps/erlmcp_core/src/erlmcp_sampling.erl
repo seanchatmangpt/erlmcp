@@ -58,6 +58,11 @@ start_link() ->
 create_message(Messages, Params) when is_list(Messages), is_map(Params) ->
     gen_server:call(?MODULE, {create_message, Messages, Params}, 30000).
 
+%% @doc Create a message with streaming support
+-spec create_message_stream(sampling_messages(), sampling_params()) -> {ok, pid()} | {error, term()}.
+create_message_stream(Messages, Params) when is_list(Messages), is_map(Params) ->
+    gen_server:call(?MODULE, {create_message_stream, Messages, Params}, 30000).
+
 %% @doc Create a message with custom timeout
 -spec create_message(sampling_messages(), sampling_params(), timeout()) -> sampling_result().
 create_message(Messages, Params, Timeout) when is_list(Messages), is_map(Params) ->
@@ -192,6 +197,27 @@ handle_call({create_message, Messages, Params}, _From, State) ->
     after
         erlmcp_tracing:end_span(SpanCtx)
     end;
+handle_call({create_message_stream, Messages, Params}, _From, State) ->
+    logger:info("Starting streaming message creation"),
+    ProviderModule = State#state.model_provider,
+    case code:ensure_loaded(ProviderModule) of
+        {module, ProviderModule} ->
+            case erlang:function_exported(ProviderModule, create_message_stream, 2) of
+                true ->
+                    case ProviderModule:create_message_stream(Messages, Params) of
+                        {ok, StreamPid} ->
+                            {reply, {ok, StreamPid}, State};
+                        {error, Reason} ->
+                            {reply, {error, Reason}, State}
+                    end;
+                false ->
+                    logger:warning("Provider ~p does not support streaming, falling back to non-streaming", [ProviderModule]),
+                    create_message_fallback(Messages, Params, State)
+            end;
+        {error, LoadReason} ->
+            logger:error("Failed to load model provider ~p: ~p", [ProviderModule, LoadReason]),
+            {reply, {error, invalid_provider}, State}
+    end;
 handle_call({set_model_provider, ProviderModule}, _From, State) when is_atom(ProviderModule) ->
     logger:info("Setting model provider to ~p", [ProviderModule]),
     {reply, ok, State#state{model_provider = ProviderModule}};
@@ -305,3 +331,10 @@ provider_name_to_module(mock) ->
     erlmcp_mock_llm;
 provider_name_to_module(_) ->
     erlmcp_mock_llm.
+
+%% @private Fallback to non-streaming message creation
+-spec create_message_fallback(sampling_messages(), sampling_params(), #state{}) -> sampling_result().
+create_message_fallback(Messages, Params, State) ->
+    MergedParams = merge_params(Params, State#state.default_params),
+    ProviderModule = State#state.model_provider,
+    ProviderModule:create_message(Messages, MergedParams).

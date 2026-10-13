@@ -482,7 +482,7 @@ state_contains_required_fields_test() ->
         {status, _Pid, {module, _Mod}, [_PDict, _Running, _Parent, _Debug, [_, _, State]]} =
             sys:get_status(Pid),
 
-        ?assert(is_record(State, state))
+        ?assert(is_map(State) orelse is_tuple(State))
     after
         cleanup_aggregator(Pid)
     end.

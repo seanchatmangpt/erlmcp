@@ -169,6 +169,88 @@ stop() ->
     gen_server:stop(?MODULE).
 
 %%====================================================================
+%% Enterprise Integration Functions
+%%====================================================================
+
+%% @doc Extract authentication token from request metadata.
+%% Supports extracting from:
+%% - JWT Authorization header (Bearer token)
+%% - API key from headers or query parameters
+%% - OAuth2 access token
+-spec extract_token({pid(), term()}) -> {ok, auth_token()} | {error, term()}.
+extract_token({Pid, _Ref}) ->
+    %% Extract from process dictionary (set by transport layer)
+    case erlang:get(erlmcp_auth_token) of
+        undefined ->
+            %% Try to extract from process metadata
+            case process_info(Pid, dictionary) of
+                undefined -> {error, no_token_found};
+                Dict ->
+                    case proplists:get_value(erlmcp_auth_token, Dict) of
+                        undefined -> {error, no_token_found};
+                        Token -> {ok, Token}
+                    end
+            end;
+        Token -> {ok, Token}
+    end.
+
+%% @doc Simplified authentication wrapper for different auth methods.
+-spec authenticate_simple(auth_method(), map()) -> {ok, session_id()} | {error, term()}.
+authenticate_simple(Method, Credentials) ->
+    case Method of
+        api_key ->
+            case maps:get(api_key, Credentials, undefined) of
+                undefined -> {error, missing_api_key};
+                ApiKey ->
+                    case validate_api_key(ApiKey) of
+                        {ok, UserId} -> create_session(UserId, #{auth_method => api_key});
+                        Error -> Error
+                    end
+            end;
+        jwt ->
+            case maps:get(token, Credentials, undefined) of
+                undefined -> {error, missing_token};
+                Token ->
+                    case validate_jwt(Token) of
+                        {ok, Claims} -> create_session(Claims, #{auth_method => jwt});
+                        Error -> Error
+                    end
+            end;
+        oauth2 ->
+            case maps:get(token, Credentials, undefined) of
+                undefined -> {error, missing_token};
+                Token ->
+                    case validate_oauth2_token(Token) of
+                        {ok, TokenInfo} -> create_session(TokenInfo, #{auth_method => oauth2});
+                        Error -> Error
+                    end
+            end;
+        mtls ->
+            case maps:get(cert_info, Credentials, undefined) of
+                undefined -> {error, missing_cert};
+                CertInfo ->
+                    case validate_mtls(CertInfo) of
+                        {ok, UserId} -> create_session(UserId, #{auth_method => mtls});
+                        Error -> Error
+                    end
+            end
+    end.
+
+%% @doc Check permission for resource action with enhanced error handling.
+-spec check_permission_enhanced(session_id(), resource(), permission()) ->
+    {ok, boolean()} | {error, term()}.
+check_permission_enhanced(SessionId, Resource, Permission) ->
+    try
+        case check_permission(SessionId, Resource, Permission) of
+            ok -> {ok, true};
+            {error, forbidden} -> {ok, false}
+        end
+    catch
+        Class:Reason ->
+            {error, {Class, Reason}}
+    end.
+
+%%====================================================================
 %% gen_server callbacks
 %%====================================================================
 
@@ -318,7 +400,7 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), state()) -> ok.
-terminate(_Reason, State) ->
+terminate(_Reason, _State) ->
     % Cleanup ETS tables (named tables, delete by name)
     ets:delete(auth_sessions),
     ets:delete(auth_api_keys),

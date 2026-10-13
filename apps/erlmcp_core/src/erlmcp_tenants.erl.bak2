@@ -1,0 +1,456 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% erlmcp_tenants - Multi-tenant Management Module
+%%%
+%%% Provides tenant CRUD operations with ETS-backed storage.
+%%% Supports tenant isolation, quotas, and configuration management.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_tenants).
+
+-behaviour(gen_server).
+
+%% API
+-export([start_link/0,
+         list_tenants/0,
+         get_tenant/1,
+         create_tenant/2,
+         create_tenant/3,
+         update_tenant/2,
+         delete_tenant/1,
+         tenant_exists/1,
+         get_tenant_config/1,
+         set_tenant_status/2,
+         get_tenant_stats/1,
+         list_tenant_sessions/1,
+         set_tenant_quota/2]).
+
+%% gen_server callbacks
+-export([init/1,
+         handle_call/3,
+         handle_cast/2,
+         handle_info/2,
+         terminate/2,
+         code_change/3]).
+
+-define(SERVER, ?MODULE).
+-define(TENANTS_TABLE, erlmcp_tenants).
+-define(TENANT_STATS_TABLE, erlmcp_tenant_stats).
+
+-type tenant_id() :: binary().
+-type tenant_name() :: binary().
+-type tenant_status() :: active | suspended | deleted.
+-type tenant_config() :: map().
+
+-record(tenant, {
+    id :: tenant_id(),
+    name :: tenant_name(),
+    status :: tenant_status(),
+    config :: tenant_config(),
+    quota :: map(),
+    created_at :: integer(),
+    updated_at :: integer()
+}).
+
+spec record(tenant_stats, {
+    tenant_id :: tenant_id(),
+    session_count :: non_neg_integer(),
+    request_count :: non_neg_integer(),
+    last_activity :: integer()
+}).
+
+spec record(state, {
+    tenants_table :: ets:tid(),
+    stats_table :: ets:tid()
+}).
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+%% @doc Start the tenant management server
+spec spec start_link() -> {ok, pid()} | {error, term()}.
+start_link() ->
+    gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
+
+%% @doc List all tenants
+spec spec list_tenants() -> {ok, [map()]}.
+list_tenants() ->
+    gen_server:call(?SERVER, list_tenants).
+
+%% @doc Get a tenant by ID
+spec spec get_tenant(tenant_id()) -> {ok, map()} | {error, not_found}.
+get_tenant(TenantId) ->
+    gen_server:call(?SERVER, {get_tenant, TenantId}).
+
+%% @doc Create a new tenant with default config
+spec spec create_tenant(tenant_name(), tenant_config()) -> {ok, tenant_id(), map()} | {error, term()}.
+create_tenant(Name, Config) when is_binary(Name), is_map(Config) ->
+    create_tenant(Name, Config, #{}).
+
+%% @doc Create a new tenant with config and quota
+spec spec create_tenant(tenant_name(), tenant_config(), map()) -> {ok, tenant_id(), map()} | {error, term()}.
+create_tenant(Name, Config, Quota) when is_binary(Name), is_map(Config), is_map(Quota) ->
+    gen_server:call(?SERVER, {create_tenant, Name, Config, Quota}).
+
+%% @doc Update tenant configuration
+spec spec update_tenant(tenant_id(), tenant_config()) -> ok | {error, term()}.
+update_tenant(TenantId, Config) when is_binary(TenantId), is_map(Config) ->
+    gen_server:call(?SERVER, {update_tenant, TenantId, Config}).
+
+%% @doc Delete a tenant (soft delete)
+spec spec delete_tenant(tenant_id()) -> ok | {error, term()}.
+delete_tenant(TenantId) when is_binary(TenantId) ->
+    gen_server:call(?SERVER, {delete_tenant, TenantId}).
+
+%% @doc Check if tenant exists
+spec spec tenant_exists(tenant_id()) -> boolean().
+tenant_exists(TenantId) when is_binary(TenantId) ->
+    case ets:lookup(?TENANTS_TABLE, TenantId) of
+        [#tenant{status = deleted}] -> false;
+        [#tenant{}] -> true;
+        [] -> false
+    end.
+
+%% @doc Get tenant configuration
+spec spec get_tenant_config(tenant_id()) -> {ok, map()} | {error, not_found}.
+get_tenant_config(TenantId) ->
+    case get_tenant(TenantId) of
+        {ok, Tenant} -> {ok, maps:get(config, Tenant)};
+        Error -> Error
+    end.
+
+%% @doc Set tenant status
+spec spec set_tenant_status(tenant_id(), tenant_status()) -> ok | {error, term()}.
+set_tenant_status(TenantId, Status) when is_binary(TenantId) ->
+    gen_server:call(?SERVER, {set_status, TenantId, Status}).
+
+%% @doc Get tenant statistics
+spec spec get_tenant_stats(tenant_id()) -> {ok, map()} | {error, not_found}.
+get_tenant_stats(TenantId) ->
+    gen_server:call(?SERVER, {get_stats, TenantId}).
+
+%% @doc List all sessions for a tenant
+spec spec list_tenant_sessions(tenant_id()) -> {ok, [binary()]} | {error, term()}.
+list_tenant_sessions(TenantId) ->
+    gen_server:call(?SERVER, {list_sessions, TenantId}).
+
+%% @doc Set tenant quota
+spec spec set_tenant_quota(tenant_id(), map()) -> ok | {error, term()}.
+set_tenant_quota(TenantId, Quota) when is_binary(TenantId), is_map(Quota) ->
+    gen_server:call(?SERVER, {set_quota, TenantId, Quota}).
+
+%%====================================================================
+%% gen_server callbacks
+%%====================================================================
+
+init([]) ->
+    %% Create ETS tables for tenant storage
+    TenantsTable = ets:new(?TENANTS_TABLE, [
+        set,
+        protected,
+        {keypos, #tenant.id},
+        {read_concurrency, true}
+    ]),
+    StatsTable = ets:new(?TENANT_STATS_TABLE, [
+        set,
+        protected,
+        {keypos, #tenant_stats.tenant_id},
+        {read_concurrency, true}
+    ]),
+
+    %% Register tables for persistence
+    try
+        %% Try to load from disk if available
+        load_tenants_from_disk(TenantsTable, StatsTable)
+    catch
+        _:_ -> ok
+    end,
+
+    {ok, #state{
+        tenants_table = TenantsTable,
+        stats_table = StatsTable
+    }}.
+
+handle_call(list_tenants, _From, State) ->
+    Tenants = ets:foldl(fun(#tenant{status = deleted}, Acc) -> Acc;
+                           (#tenant{} = T, Acc) ->
+                                [tenant_to_map(T) | Acc]
+                        end, [], State#state.tenants_table),
+    {reply, {ok, lists:sort(fun(A, B) ->
+        maps:get(name, A) =< maps:get(name, B)
+    end, Tenants)}, State};
+
+handle_call({get_tenant, TenantId}, _From, State) ->
+    case ets:lookup(State#state.tenants_table, TenantId) of
+        [#tenant{status = deleted}] ->
+            {reply, {error, not_found}, State};
+        [Tenant] ->
+            {reply, {ok, tenant_to_map(Tenant)}, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({create_tenant, Name, Config, Quota}, _From, State) ->
+    TenantId = generate_tenant_id(Name),
+    Now = erlang:system_time(millisecond),
+
+    case ets:lookup(State#state.tenants_table, TenantId) of
+        [#tenant{status = deleted}] ->
+            %% Recreate deleted tenant
+            Tenant = #tenant{
+                id = TenantId,
+                name = Name,
+                status = active,
+                config = Config,
+                quota = normalize_quota(Quota),
+                created_at = Now,
+                updated_at = Now
+            },
+            ets:insert(State#state.tenants_table, Tenant),
+            init_tenant_stats(State#state.stats_table, TenantId),
+            {reply, {ok, TenantId, tenant_to_map(Tenant)}, State};
+        [] ->
+            Tenant = #tenant{
+                id = TenantId,
+                name = Name,
+                status = active,
+                config = Config,
+                quota = normalize_quota(Quota),
+                created_at = Now,
+                updated_at = Now
+            },
+            ets:insert(State#state.tenants_table, Tenant),
+            init_tenant_stats(State#state.stats_table, TenantId),
+            {reply, {ok, TenantId, tenant_to_map(Tenant)}, State};
+        _ ->
+            {reply, {error, already_exists}, State}
+    end;
+
+handle_call({update_tenant, TenantId, Config}, _From, State) ->
+    case ets:lookup(State#state.tenants_table, TenantId) of
+        [#tenant{status = deleted}] ->
+            {reply, {error, not_found}, State};
+        [Tenant] ->
+            Updated = Tenant#tenant{
+                config = Config,
+                updated_at = erlang:system_time(millisecond)
+            },
+            ets:insert(State#state.tenants_table, Updated),
+            {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({delete_tenant, TenantId}, _From, State) ->
+    case ets:lookup(State#state.tenants_table, TenantId) of
+        [#tenant{status = deleted}] ->
+            {reply, {error, not_found}, State};
+        [Tenant] ->
+            Updated = Tenant#tenant{
+                status = deleted,
+                updated_at = erlang:system_time(millisecond)
+            },
+            ets:insert(State#state.tenants_table, Updated),
+            {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({set_status, TenantId, Status}, _From, State) ->
+    case ets:lookup(State#state.tenants_table, TenantId) of
+        [#tenant{status = deleted}] ->
+            {reply, {error, not_found}, State};
+        [Tenant] ->
+            Updated = Tenant#tenant{
+                status = Status,
+                updated_at = erlang:system_time(millisecond)
+            },
+            ets:insert(State#state.tenants_table, Updated),
+            {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({get_stats, TenantId}, _From, State) ->
+    case ets:lookup(State#state.stats_table, TenantId) of
+        [Stats] ->
+            StatsMap = #{
+                tenant_id => Stats#tenant_stats.tenant_id,
+                session_count => Stats#tenant_stats.session_count,
+                request_count => Stats#tenant_stats.request_count,
+                last_activity => Stats#tenant_stats.last_activity
+            },
+            {reply, {ok, StatsMap}, State};
+        [] ->
+            %% Check if tenant exists
+            case ets:lookup(State#state.tenants_table, TenantId) of
+                [#tenant{status = deleted}] ->
+                    {reply, {error, not_found}, State};
+                [#tenant{}] ->
+                    %% Initialize stats
+                    init_tenant_stats(State#state.stats_table, TenantId),
+                    {reply, {ok, #{
+                        tenant_id => TenantId,
+                        session_count => 0,
+                        request_count => 0,
+                        last_activity => 0
+                    }}, State};
+                [] ->
+                    {reply, {error, not_found}, State}
+            end
+    end;
+
+handle_call({list_sessions, TenantId}, _From, State) ->
+    case ets:lookup(State#state.tenants_table, TenantId) of
+        [#tenant{status = deleted}] ->
+            {reply, {error, not_found}, State};
+        [#tenant{}] ->
+            Sessions = list_sessions_for_tenant(TenantId),
+            {reply, {ok, Sessions}, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end;
+
+handle_call({set_quota, TenantId, Quota}, _From, State) ->
+    case ets:lookup(State#state.tenants_table, TenantId) of
+        [#tenant{status = deleted}] ->
+            {reply, {error, not_found}, State};
+        [Tenant] ->
+            Updated = Tenant#tenant{
+                quota = normalize_quota(Quota),
+                updated_at = erlang:system_time(millisecond)
+            },
+            ets:insert(State#state.tenants_table, Updated),
+            {reply, ok, State};
+        [] ->
+            {reply, {error, not_found}, State}
+    end.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, #state{tenants_table = T, stats_table = S}) ->
+    %% Persist tables to disk
+    catch save_tenants_to_disk(T, S),
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal functions
+%%====================================================================
+
+%% @private Generate unique tenant ID
+generate_tenant_id(Name) ->
+    Base = binary:part(crypto:hash(md5, Name), {0, 8}),
+    <<"tenant_", Base/binary>>.
+
+%% @private Normalize quota map
+normalize_quota(Quota) when map_size(Quota) =:= 0 ->
+    #{max_sessions => 100,
+      max_requests_per_minute => 1000,
+      max_storage_mb => 1024};
+normalize_quota(Quota) ->
+    Default = #{
+        max_sessions => 100,
+        max_requests_per_minute => 1000,
+        max_storage_mb => 1024
+    },
+    maps:merge(Default, Quota).
+
+%% @private Initialize tenant stats
+init_tenant_stats(StatsTable, TenantId) ->
+    Stats = #tenant_stats{
+        tenant_id = TenantId,
+        session_count = 0,
+        request_count = 0,
+        last_activity = erlang:system_time(millisecond)
+    },
+    ets:insert(StatsTable, Stats).
+
+%% @private Convert tenant record to map
+tenant_to_map(#tenant{id = Id, name = Name, status = Status,
+                      config = Config, quota = Quota,
+                      created_at = Created, updated_at = Updated}) ->
+    #{
+        id => Id,
+        name => Name,
+        status => Status,
+        config => Config,
+        quota => Quota,
+        created_at => Created,
+        updated_at => Updated
+    }.
+
+%% @private List all sessions for a tenant
+list_sessions_for_tenant(TenantId) ->
+    %% Use gproc to find sessions tagged with tenant
+    try
+        gproc:select({l, s}, [{
+            {{ '$1', '$2' }, '$3'},
+            [{ '=:=', '$1', {const, session}},
+             { '=:=', '$2', {const, TenantId}}],
+            ['$3']
+        }])
+    catch
+        _:_ -> []
+    end.
+
+%% @private Load tenants from disk
+load_tenants_from_disk(TenantsTable, StatsTable) ->
+    case file:read_file("data/tenants.dets") of
+        {ok, Binary} ->
+            Terms = binary_to_term(Binary),
+            lists:foreach(fun
+                ({tenant, Tenant}) ->
+                    ets:insert(TenantsTable, Tenant);
+                ({stats, Stats}) ->
+                    ets:insert(StatsTable, Stats);
+                (_) -> ok
+            end, Terms);
+        {error, _} -> ok
+    end.
+
+%% @private Save tenants to disk
+save_tenants_to_disk(TenantsTable, StatsTable) ->
+    Tenants = ets:tab2list(TenantsTable),
+    Stats = ets:tab2list(StatsTable),
+
+    Terms = lists:map(fun(T) -> {tenant, T} end, Tenants) ++
+             lists:map(fun(S) -> {stats, S} end, Stats),
+
+    Binary = term_to_binary(Terms, [compressed]),
+    filelib:ensure_dir("data/tenants.dets"),
+    file:write_file("data/tenants.dets", Binary).
+
+%%====================================================================
+%% CLI Integration
+%%====================================================================
+
+%% @doc Format tenant list for CLI output
+%% @deprecated Not currently used
+-spec format_tenants_for_cli([map()]) -> iolist().
+format_tenants_for_cli(Tenants) ->
+    Format = "~-40s ~-10s ~-20s ~-20s~n",
+    Header = io_lib:format(Format, ["ID", "Status", "Created", "Updated"]),
+    Separator = lists:duplicate(90, $-) ++ "~n",
+    Rows = lists:map(fun(T) ->
+        Id = maps:get(id, T),
+        Status = atom_to_list(maps:get(status, T)),
+        Created = format_timestamp(maps:get(created_at, T)),
+        Updated = format_timestamp(maps:get(updated_at, T)),
+        io_lib:format(Format, [Id, Status, Created, Updated])
+    end, Tenants),
+    [Header, Separator, Rows].
+
+%% @private Format timestamp
+%% @deprecated Not currently used
+spec format_timestamp(integer()) -> string().
+format_timestamp(Ms) ->
+    calendar:system_time_to_universal_time(Ms div 1000, millisecond).
