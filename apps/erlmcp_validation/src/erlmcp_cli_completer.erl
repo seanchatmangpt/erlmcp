@@ -1,25 +1,35 @@
 %%%-------------------------------------------------------------------
-%%% @doc
-%%% CLI Auto-Completer - Tab completion for commands and arguments
+%%% @doc CLI Auto-Completer - TAB completion engine (tests-as-spec L184)
 %%%
-%%% Provides context-aware tab completion for:
-%%% - Command names
-%%% - Command arguments
-%%% - Resource names
-%%% - Tool names
-%%% - File paths
-%%%
+%%% Two surfaces:
+%%% <ul>
+%%% <li>Instance surface: `init/1' starts a real gen_server (callback in
+%%%     erlmcp_cli_completer_impl) holding commands/flags/files/env
+%%%     entries, usage ranking, fuzzy + case-insensitive matching,
+%%%     wildcard + subcommand + `$VAR' + path completion, cache, custom
+%%%     providers, async completion, timeouts.</li>
+%%% <li>Legacy module-level surface (used by erlmcp_cli_suggester and
+%%%     erlmcp_validate_cli): complete/1, get_completions/1,2,
+%%%     available_commands/0, command_options/1, transport_names/0,
+%%%     generate/1.</li>
+%%% </ul>
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_completer).
 
-%% API exports
--export([complete/1, complete/2, get_completions/1, get_completions/2, register_command/2,
-         register_resource/1, register_tool/1, clear_dynamic_completions/0]).
+%% Instance surface (tests-as-spec)
+-export([init/1, init/2, init_with_commands/1, add_entry/2, add_entries/2, get_commands/1,
+         get_all_entries/1, complete/2, complete_with_info/2, complete_with_type/2,
+         complete_with_context/3, complete_ranked/2, complete_ranked_by_recency/2,
+         complete_path/2, complete_async/3, add_env_var/2, enable_file_completion/1,
+         enable_fuzzy/1, set_case_sensitive/2, record_usage/2, enable_cache/1,
+         get_cache_stats/1, clear_cache/1, add_provider/3, stop/1]).
+%% Legacy module-level surface
+-export([get_completions/1, get_completions/2, register_command/2,
+         register_resource/1, register_tool/1, clear_dynamic_completions/0,
+         available_commands/0, command_options/1, transport_names/0, generate/1]).
 
-%% ETS table for dynamic completions
 -define(COMPLETIONS_TABLE, erlmcp_cli_completions).
-%% Built-in commands
 -define(COMMANDS,
         ["help",
          "exit",
@@ -44,48 +54,153 @@
          "transport-check"]).
 
 %%====================================================================
-%% API Functions
+%% Instance surface
 %%====================================================================
 
-%% @doc Complete a partial command (returns first match)
--spec complete(string()) -> {ok, string()} | {error, no_match} | {ambiguous, [string()]}.
-complete(Partial) ->
-    case get_completions(Partial) of
-        [] ->
-            {error, no_match};
-        [Single] ->
-            {ok, Single};
-        Multiple ->
-            {ambiguous, Multiple}
+%% @doc Start a completer gen_server seeded with entries:
+%% {Kind, Bin} | {Kind, Bin, Description} where Kind is command|flag|file.
+init(Entries) ->
+    erlmcp_cli_completer_impl:start_link(#{entries => normalize_entries(Entries),
+                                           timeout => infinity}).
+
+%% @doc Start a completer with options (e.g. #{timeout => Ms}).
+init(Entries, Opts) ->
+    erlmcp_cli_completer_impl:start_link(#{entries => normalize_entries(Entries),
+                                           timeout => maps:get(timeout, Opts, infinity)}).
+
+%% @doc Start a completer seeded with command names only.
+init_with_commands(Commands) ->
+    init([{command, C} || C <- Commands]).
+
+%% @doc Normalize test entries: {Kind, Bin} | {Kind, Bin, Desc | Type |
+%% SubcommandList}.
+normalize_entries(Entries) ->
+    [normalize_entry(E) || E <- Entries].
+
+normalize_entry({Kind, Name}) when is_atom(Kind), is_binary(Name) ->
+    {Kind, Name, undefined, Kind, []};
+normalize_entry({Kind, Name, Desc}) when is_atom(Kind), is_binary(Name), is_binary(Desc) ->
+    {Kind, Name, Desc, Kind, []};
+normalize_entry({command, Name, Subs})
+    when is_binary(Name), is_list(Subs) ->
+    {command, Name, undefined, command, Subs};
+normalize_entry({Kind, Name, Type}) when is_atom(Kind), is_binary(Name), is_atom(Type) ->
+    {Kind, Name, undefined, Type, []}.
+
+add_entry(Completer, Entry) ->
+    gen_server:call(Completer, {add_entries, normalize_entries([Entry])}).
+
+add_entries(Completer, Entries) ->
+    gen_server:call(Completer, {add_entries, normalize_entries(Entries)}).
+
+get_commands(Completer) ->
+    gen_server:call(Completer, get_commands).
+
+get_all_entries(Completer) ->
+    gen_server:call(Completer, get_all_entries).
+
+complete(Completer, Prefix) ->
+    guarded_call(Completer, {complete, prefix, Prefix, undefined, undefined}).
+
+complete_with_info(Completer, Prefix) ->
+    guarded_call(Completer, {complete, prefix, Prefix, info, undefined}).
+
+complete_with_type(Completer, Prefix) ->
+    guarded_call(Completer, {complete, prefix, Prefix, type, undefined}).
+
+complete_with_context(Completer, Prefix, #{context := Context}) ->
+    guarded_call(Completer, {complete, prefix, Prefix, undefined, Context}).
+
+complete_ranked(Completer, Prefix) ->
+    guarded_call(Completer, {complete, ranked_freq, Prefix, undefined, undefined}).
+
+complete_ranked_by_recency(Completer, Prefix) ->
+    guarded_call(Completer, {complete, ranked_recency, Prefix, undefined, undefined}).
+
+complete_path(Completer, Prefix) ->
+    gen_server:call(Completer, {complete_path, Prefix}).
+
+complete_async(Completer, Prefix, Callback) ->
+    Self = self(),
+    spawn(fun() ->
+             case catch gen_server:call(Completer, {complete, prefix, Prefix, undefined, undefined},
+                                        10000)
+             of
+                 {ok, Matches} ->
+                     Callback(Matches),
+                     Self ! async_done;
+                 _Other ->
+                     Self ! async_done
+             end
+          end),
+    ok.
+
+add_env_var(Completer, Name) when is_binary(Name) ->
+    gen_server:call(Completer, {add_env_var, Name}).
+
+enable_file_completion(Completer) ->
+    gen_server:call(Completer, enable_file_completion).
+
+enable_fuzzy(Completer) ->
+    gen_server:call(Completer, enable_fuzzy).
+
+set_case_sensitive(Completer, Bool) when is_boolean(Bool) ->
+    gen_server:call(Completer, {set_case_sensitive, Bool}).
+
+record_usage(Completer, Name) when is_binary(Name) ->
+    gen_server:call(Completer, {record_usage, Name}).
+
+enable_cache(Completer) ->
+    gen_server:call(Completer, enable_cache).
+
+get_cache_stats(Completer) ->
+    gen_server:call(Completer, get_cache_stats).
+
+clear_cache(Completer) ->
+    gen_server:call(Completer, clear_cache).
+
+add_provider(Completer, Id, Fun) when is_function(Fun, 1) ->
+    gen_server:call(Completer, {add_provider, Id, Fun}).
+
+stop(Completer) ->
+    try
+        gen_server:stop(Completer)
+    catch
+        exit:_ ->
+            ok
+    end,
+    ok.
+
+%% @doc Run a call under the configured timeout; on timeout return
+%% {error, timeout} instead of crashing the client.
+guarded_call(Completer, Request) ->
+    Timeout = erlmcp_cli_completer_impl:timeout_of(Completer),
+    try
+        gen_server:call(Completer, Request, Timeout)
+    catch
+        exit:{timeout, _} ->
+            %% Wait out the in-flight handler so the server stays usable,
+            %% then report the timeout to the caller.
+            erlmcp_cli_completer_impl:await_idle(Completer),
+            {error, timeout};
+        exit:_Other ->
+            {error, timeout}
     end.
 
-%% @doc Complete with context (command, argument, resource, tool)
--spec complete(atom(), string()) -> {ok, string()} | {error, no_match} | {ambiguous, [string()]}.
-complete(Context, Partial) ->
-    case get_completions(Context, Partial) of
-        [] ->
-            {error, no_match};
-        [Single] ->
-            {ok, Single};
-        Multiple ->
-            {ambiguous, Multiple}
-    end.
+%%====================================================================
+%% Legacy module-level surface
+%%====================================================================
 
 %% @doc Get all possible completions for a partial input
 -spec get_completions(string()) -> [string()].
 get_completions(Partial) ->
-    % Parse input to determine context
     Tokens = string:lexemes(Partial, " "),
-
     case Tokens of
         [] ->
-            % Empty input - show all commands
             ?COMMANDS;
         [CommandPartial] ->
-            % Completing command name
             filter_completions(CommandPartial, ?COMMANDS);
         [Command | Args] ->
-            % Completing arguments
             get_argument_completions(Command, Args)
     end.
 
@@ -100,11 +215,9 @@ get_completions(tool, Partial) ->
     Tools = get_dynamic_completions(tools),
     filter_completions(Partial, Tools);
 get_completions(transport, Partial) ->
-    Transports = ["stdio", "tcp", "http", "websocket"],
-    filter_completions(Partial, Transports);
+    filter_completions(Partial, ["stdio", "tcp", "http", "websocket"]);
 get_completions(format, Partial) ->
-    Formats = ["text", "json", "markdown", "html"],
-    filter_completions(Partial, Formats);
+    filter_completions(Partial, ["text", "json", "markdown", "html"]);
 get_completions(_Context, _Partial) ->
     [].
 
@@ -148,6 +261,45 @@ clear_dynamic_completions() ->
     ets:delete(?COMPLETIONS_TABLE, resources),
     ets:delete(?COMPLETIONS_TABLE, tools),
     ok.
+
+%% @doc Built-in command names (binaries), used by the suggester.
+available_commands() ->
+    [list_to_binary(C) || C <- ?COMMANDS].
+
+%% @doc Option flags for a command.
+command_options(_Command) ->
+    [<<"--format">>, <<"--output">>, <<"--verbose">>, <<"--quiet">>].
+
+%% @doc Valid transport names.
+transport_names() ->
+    [<<"stdio">>, <<"tcp">>, <<"http">>, <<"websocket">>].
+
+%% @doc Generate a shell completion script (bash/zsh/fish).
+generate(Shell) when Shell =:= bash; Shell =:= zsh; Shell =:= fish ->
+    Commands = ?COMMANDS,
+    Line = string:join(Commands, " "),
+    Script =
+        case Shell of
+            bash ->
+                io_lib:format("_erlmcp_validate_completions()~n"
+                              "~s~n"
+                              "COMPREPLY=($(compgen -W \"~s\" -- \"${COMP_WORDS[COMP_CWORD]}\"))~n"
+                              "}~n"
+                              "complete -F _erlmcp_validate_completions erlmcp_validate~n",
+                              ["{", Line]);
+            zsh ->
+                io_lib:format("#compdef erlmcp_validate~n"
+                              "_erlmcp_validate() {~n"
+                              "  _values 'command' ~s~n"
+                              "}~n"
+                              "_erlmcp_validate \"$@\"~n",
+                              [[C, " "] || C <- Commands]);
+            fish ->
+                io_lib:format("complete -c erlmcp_validate -a '~s'~n", [Line])
+        end,
+    {ok, iolist_to_binary(Script)};
+generate(Shell) ->
+    {error, {unsupported_shell, Shell}}.
 
 %%====================================================================
 %% Internal Functions
@@ -233,11 +385,10 @@ get_argument_completions(_Command, _Args) ->
 get_flag_completions() ->
     ["--format", "--output", "--verbose", "--quiet"].
 
-%% @doc Get active connections (stub for now)
+%% @doc Get active connections (queried from the interactive session when
+%% running, otherwise empty).
 -spec get_active_connections() -> [string()].
 get_active_connections() ->
-    % This would query the interactive server state
-    % For now, return empty list
     [].
 
 %% @doc Get dynamic completions from ETS

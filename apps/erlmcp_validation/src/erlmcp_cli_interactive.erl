@@ -1,950 +1,677 @@
 %%%-------------------------------------------------------------------
-%%% @doc
-%%% CLI Interactive Mode - REPL for erlmcp CLI
+%%% @doc Interactive CLI session (tests-as-spec L184)
 %%%
-%%% Provides an interactive Read-Eval-Print-Loop (REPL) for real-time
-%%% interaction with MCP servers. Supports command history, tab completion,
-%%% multi-transport connections, and colored output.
-%%%
-%%% == Features ==
-%%%
-%%% - Interactive command shell
-%%% - Tab completion for commands and arguments
-%%% - Command history with search and replay
-%%% - Multi-connection management
-%%% - Color-coded output
-%%% - Graceful Ctrl+C handling
-%%%
-%%% == Usage ==
-%%%
-%%% ```
-%%% % Start interactive mode
-%%% erlmcp_cli_interactive:start_link(),
-%%%
-%%% % Or start with options
-%%% erlmcp_cli_interactive:start_link(#{prompt => "mcp> "}).
-%%% '''
-%%%
+%%% A real gen_server REPL session: command parsing (quote-aware,
+%%% alias-expanding, flag-parsing), execution (help/version/echo/exit,
+%%% sleep with timeout, && chaining, | piping, & background jobs),
+%%% LIFO history with limit and navigation, env vars with $VAR
+%%% expansion, aliases (with circular detection), prompt
+%%% customization, tab completion and suggestions, ANSI colors,
+%%% signal handling (ctrl_c interrupt, ctrl_d EOF), multi-line
+%%% accumulation.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_cli_interactive).
 
 -behaviour(gen_server).
 
-%% API exports
--export([start_link/0, start_link/1, run/0, run/1, stop/0]).
+%% Session API
+-export([start_link/0, start_link/1, stop/0, stop/1, get_state/1, parse_command/1,
+         execute/2, add_to_history/2, get_history/1, get_history_entry/2, history_prev/1,
+         history_next/1, complete/2, suggest/2, handle_signal/2, add_line/2,
+         get_accumulated_command/1, add_alias/3, set_env/3, get_env/2, expand_vars/2,
+         get_prompt/1, set_prompt/2, format_error/2]).
+%% Legacy API
+-export([run/0, run/1, execute_command/2]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
-%% Internal exports for command execution
--export([execute_command/2]).
 
-%% Default configuration
--define(DEFAULT_PROMPT, "erlmcp> ").
--define(WELCOME_MESSAGE,
-        "Welcome to erlmcp Interactive Mode\n"
-        "Type 'help' for commands, 'exit' or 'quit' to leave\n").
+-define(SERVER, erlmcp_cli_interactive).
+-define(ALIAS_TABLE, erlmcp_cli_interactive_aliases).
+-define(DEFAULT_PROMPT, <<"erlmcp> ">>).
+-define(DEFAULT_HISTORY_LIMIT, 100).
+-define(DEFAULT_TIMEOUT, 30000).
 
-%% State record
--record(state,
-        {prompt = ?DEFAULT_PROMPT :: string(),
-         connections = #{} :: #{string() => pid()},
-         active_connection :: string() | undefined,
-         running = true :: boolean(),
-         history_pid :: pid() | undefined,
-         opts = #{} :: map()}).
+-type state() ::
+    #{history := [binary()],
+      prompt := binary(),
+      env := #{binary() => binary()},
+      aliases := #{binary() => binary()},
+      history_limit := pos_integer(),
+      interrupted := boolean(),
+      accumulated := [binary()],
+      history_cursor := non_neg_integer() | undefined,
+      command_timeout := pos_integer(),
+      ansi_colors := boolean(),
+      next_job := pos_integer()}.
 
-%%====================================================================
-%% API Functions
-%%====================================================================
+%%%===================================================================
+%%% API
+%%%===================================================================
 
-%% @doc Start interactive mode with default options
--spec start_link() -> {ok, pid()} | {error, term()}.
 start_link() ->
     start_link(#{}).
 
-%% @doc Start interactive mode with options
--spec start_link(map()) -> {ok, pid()} | {error, term()}.
-start_link(Opts) ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, Opts, []).
+start_link(Opts) when is_map(Opts) ->
+    %% Single registered session: stop a leaked previous instance so every
+    %% start_link returns a fresh session (tests run sequentially).
+    case whereis(?SERVER) of
+        undefined ->
+            ok;
+        Old ->
+            catch gen_server:stop(Old)
+    end,
+    gen_server:start_link({local, ?SERVER}, ?MODULE, Opts, []).
 
-%% @doc Run interactive mode (blocking)
--spec run() -> ok.
+%% @doc Stop the named session.
+stop() ->
+    case whereis(?SERVER) of
+        undefined ->
+            ok;
+        Pid ->
+            stop(Pid)
+    end.
+
+stop(Pid) when is_pid(Pid) ->
+    try
+        gen_server:stop(Pid)
+    catch
+        exit:_ ->
+            ok
+    end,
+    ok.
+
+get_state(Pid) ->
+    gen_server:call(Pid, get_state).
+
+%% @doc Parse a raw command line: {ok, {Cmd, Args, Flags}} | {error, Reason}.
+parse_command(Input) when is_list(Input) ->
+    parse_command(unicode:characters_to_binary(Input));
+parse_command(Input) when is_binary(Input) ->
+    case validate_input(Input) of
+        ok ->
+            case tokenize(Input) of
+                [] ->
+                    {error, empty_command};
+                Tokens ->
+                    parse_tokens(Tokens)
+            end;
+        {error, _} = Error ->
+            Error
+    end;
+parse_command(_) ->
+    {error, empty_command}.
+
+%% @doc Execute a command line in the session.
+execute(Pid, Command) ->
+    Timeout = maps:get(command_timeout, get_state_raw(Pid), ?DEFAULT_TIMEOUT) + 5000,
+    gen_server:call(Pid, {execute, unicode:characters_to_binary(Command)}, Timeout).
+
+%% @doc Manually add a command to history (newest first).
+add_to_history(Pid, Cmd) ->
+    gen_server:call(Pid, {add_to_history, unicode:characters_to_binary(Cmd)}).
+
+get_history(Pid) ->
+    gen_server:call(Pid, get_history).
+
+%% @doc Nth history entry (0 = newest).
+get_history_entry(Pid, N) when is_integer(N), N >= 0 ->
+    gen_server:call(Pid, {get_history_entry, N}).
+
+%% @doc Navigate to the previous (older) command.
+history_prev(Pid) ->
+    gen_server:call(Pid, history_prev).
+
+%% @doc Navigate to the next (newer) command.
+history_next(Pid) ->
+    gen_server:call(Pid, history_next).
+
+complete(Pid, Prefix) ->
+    gen_server:call(Pid, {complete, unicode:characters_to_binary(Prefix)}).
+
+suggest(Pid, Prefix) ->
+    complete(Pid, Prefix).
+
+%% @doc Handle terminal signals. ctrl_c interrupts; ctrl_d is EOF.
+handle_signal(Pid, ctrl_c) ->
+    gen_server:call(Pid, {signal, ctrl_c});
+handle_signal(Pid, ctrl_d) ->
+    {exit, eof}.
+
+%% @doc Accumulate a multi-line command; a trailing backslash continues.
+add_line(Pid, Line) ->
+    gen_server:call(Pid, {add_line, unicode:characters_to_binary(Line)}).
+
+get_accumulated_command(Pid) ->
+    gen_server:call(Pid, get_accumulated_command).
+
+%% @doc Define an alias (rejects empty names and circular definitions).
+add_alias(Pid, Name, Target) when is_list(Name) orelse is_binary(Name) ->
+    NameBin = unicode:characters_to_binary(Name),
+    case NameBin of
+        <<>> ->
+            {error, invalid_alias_name};
+        _ ->
+            gen_server:call(Pid, {add_alias, NameBin, unicode:characters_to_binary(Target)})
+    end.
+
+set_env(Pid, Key, Value) ->
+    gen_server:call(Pid,
+                    {set_env,
+                     unicode:characters_to_binary(Key),
+                     unicode:characters_to_binary(Value)}).
+
+get_env(Pid, Key) ->
+    gen_server:call(Pid, {get_env, unicode:characters_to_binary(Key)}).
+
+expand_vars(Pid, Input) ->
+    gen_server:call(Pid, {expand_vars, unicode:characters_to_binary(Input)}).
+
+get_prompt(Pid) ->
+    gen_server:call(Pid, get_prompt).
+
+set_prompt(Pid, Prompt) ->
+    gen_server:call(Pid, {set_prompt, unicode:characters_to_binary(Prompt)}).
+
+%% @doc Format an error message; ANSI-wrapped when colors are enabled.
+format_error(Pid, Msg) ->
+    gen_server:call(Pid, {format_error, unicode:characters_to_binary(Msg)}).
+
+%%%===================================================================
+%%% Legacy blocking REPL
+%%%===================================================================
+
 run() ->
     run(#{}).
 
-%% @doc Run interactive mode with options (blocking)
--spec run(map()) -> ok.
 run(Opts) ->
-    case start_link(Opts) of
-        {ok, Pid} ->
-            % Keep running until stopped
-            monitor(process, Pid),
-            receive
-                {'DOWN', _, process, Pid, _} ->
-                    ok
-            end;
-        {error, Reason} ->
-            io:format("Failed to start interactive mode: ~p~n", [Reason]),
-            error
+    {ok, Pid} = start_link(Opts),
+    repl_loop(Pid).
+
+repl_loop(Pid) ->
+    io:format("~s", [get_prompt(Pid)]),
+    case io:get_line("") of
+        eof ->
+            stop(Pid);
+        Line ->
+            case execute(Pid, Line) of
+                {exit, _} ->
+                    stop(Pid);
+                {ok, Output} when is_binary(Output) ->
+                    io:format("~s~n", [Output]),
+                    repl_loop(Pid);
+                {ok, _Other} ->
+                    repl_loop(Pid);
+                {error, Reason} ->
+                    io:format("~s~n", [format_error(Pid, io_lib:format("~p", [Reason]))]),
+                    repl_loop(Pid)
+            end
     end.
 
-%% @doc Stop interactive mode
--spec stop() -> ok.
-stop() ->
-    gen_server:cast(?MODULE, stop).
+%% @doc Legacy execution entry: run a raw command string against a state.
+execute_command(Command, State) when is_map(State) ->
+    {Reply, _NewState} = run_raw(Command, State),
+    Reply;
+execute_command(Command, State) ->
+    {error, {bad_state, Command, State}}.
 
-%%====================================================================
-%% gen_server callbacks
-%%====================================================================
+%%%===================================================================
+%%% gen_server callbacks
+%%%===================================================================
 
-%% @doc Initialize interactive mode
 init(Opts) ->
-    process_flag(trap_exit, true),
-
-    % Start dependencies
-    ensure_dependencies_started(),
-
-    % Start history manager
-    {ok, HistoryPid} = erlmcp_cli_history:start_link(Opts),
-
-    % Set up Ctrl+C handler
-    setup_interrupt_handler(),
-
     State =
-        #state{prompt = maps:get(prompt, Opts, ?DEFAULT_PROMPT),
-               history_pid = HistoryPid,
-               opts = Opts},
-
-    % Print welcome message
-    io:format(?WELCOME_MESSAGE),
-
-    % Start REPL loop asynchronously
-    self() ! run_repl,
-
+        #{history => [],
+          prompt => unicode:characters_to_binary(maps:get(prompt, Opts, ?DEFAULT_PROMPT)),
+          env => #{},
+          aliases => #{},
+          history_limit => maps:get(history_limit, Opts, ?DEFAULT_HISTORY_LIMIT),
+          interrupted => false,
+          accumulated => [],
+          history_cursor => undefined,
+          command_timeout => maps:get(command_timeout, Opts, ?DEFAULT_TIMEOUT),
+          ansi_colors => maps:get(ansi_colors, Opts, false),
+          next_job => 1},
     {ok, State}.
 
-%% @doc Handle synchronous calls
+handle_call(get_state, _From, State) ->
+    {reply, {ok, State}, State};
 handle_call({execute, Command}, _From, State) ->
-    Result = do_execute_command(Command, State),
-    {reply, Result, State};
-handle_call(get_connections, _From, State) ->
-    {reply, maps:keys(State#state.connections), State};
-handle_call({get_connection, Name}, _From, State) ->
-    Reply = maps:get(Name, State#state.connections, undefined),
-    {reply, Reply, State};
+    {Reply, NewState} = run_raw(Command, State),
+    {reply, Reply, NewState};
+handle_call({add_to_history, Cmd}, _From, State) ->
+    {reply, ok, push_history(Cmd, State)};
+handle_call(get_history, _From, State) ->
+    {reply, {ok, maps:get(history, State)}, State};
+handle_call({get_history_entry, N}, _From, State) ->
+    History = maps:get(history, State),
+    Result =
+        try
+            {ok, lists:nth(N + 1, History)}
+        catch
+            error:_ ->
+                {error, no_such_entry}
+        end,
+    case Result of
+        {ok, Cmd} ->
+            {reply, {ok, Cmd}, State};
+        {error, _} ->
+            {reply, {error, no_such_entry}, State}
+    end;
+handle_call(history_prev, _From, State) ->
+    History = maps:get(history, State),
+    Cursor = maps:get(history_cursor, State),
+    Len = length(History),
+    NewCursor =
+        case Cursor of
+            undefined ->
+                1;
+            N when N < Len ->
+                N + 1;
+            N ->
+                N
+        end,
+    case History of
+        [] ->
+            {reply, {error, empty_history}, State};
+        _ ->
+            Cmd = lists:nth(NewCursor, History),
+            {reply, {ok, Cmd}, State#{history_cursor => NewCursor}}
+    end;
+handle_call(history_next, _From, State) ->
+    History = maps:get(history, State),
+    Cursor = maps:get(history_cursor, State),
+    case {History, Cursor} of
+        {[], _} ->
+            {reply, {error, empty_history}, State};
+        {_, undefined} ->
+            {reply, {error, no_position}, State};
+        {_, 1} ->
+            [Newest | _] = History,
+            {reply, {ok, Newest}, State};
+        {_, N} when N > 1 ->
+            Cmd = lists:nth(N - 1, History),
+            {reply, {ok, Cmd}, State#{history_cursor => N - 1}}
+    end;
+handle_call({complete, Prefix}, _From, State) ->
+    Completions = completions_for(Prefix),
+    {reply, {ok, Completions}, State};
+handle_call({signal, ctrl_c}, _From, State) ->
+    {reply, ok, State#{interrupted => true}};
+handle_call({add_line, Line}, _From, State) ->
+    Stripped = strip_continuation(Line),
+    {reply, ok, State#{accumulated => maps:get(accumulated, State) ++ [Stripped]}};
+handle_call(get_accumulated_command, _From, State) ->
+    Joined = join_bins(maps:get(accumulated, State)),
+    {reply, {ok, Joined}, State};
+handle_call({add_alias, Name, Target}, _From, State) ->
+    Aliases = maps:get(aliases, State),
+    case maps:is_key(Target, Aliases) of
+        true ->
+            {reply, {error, circular_alias}, State};
+        false ->
+            persist_alias(Name, Target),
+            {reply, ok, State#{aliases => maps:put(Name, Target, Aliases)}}
+    end;
+handle_call({set_env, Key, Value}, _From, State) ->
+    Env = maps:get(env, State),
+    {reply, ok, State#{env => maps:put(Key, Value, Env)}};
+handle_call({get_env, Key}, _From, State) ->
+    case maps:find(Key, maps:get(env, State)) of
+        {ok, Value} ->
+            {reply, {ok, Value}, State};
+        error ->
+            {reply, {error, not_found}, State}
+    end;
+handle_call({expand_vars, Input}, _From, State) ->
+    {reply, {ok, do_expand_vars(Input, maps:get(env, State))}, State};
+handle_call(get_prompt, _From, State) ->
+    {reply, {ok, maps:get(prompt, State)}, State};
+handle_call({set_prompt, Prompt}, _From, State) ->
+    {reply, ok, State#{prompt => Prompt}};
+handle_call({format_error, Msg}, _From, State) ->
+    case maps:get(ansi_colors, State) of
+        true ->
+            {reply, <<"\e[31m", Msg/binary, "\e[0m">>, State};
+        false ->
+            {reply, Msg, State}
+    end;
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
-%% @doc Handle asynchronous casts
-handle_cast(stop, State) ->
-    {stop, normal, State#state{running = false}};
-handle_cast({add_connection, Name, Pid}, State) ->
-    Connections = maps:put(Name, Pid, State#state.connections),
-    NewState =
-        State#state{connections = Connections,
-                    active_connection =
-                        case State#state.active_connection of
-                            undefined ->
-                                Name;
-                            Active ->
-                                Active
-                        end},
-    {noreply, NewState};
-handle_cast({remove_connection, Name}, State) ->
-    Connections = maps:remove(Name, State#state.connections),
-    NewState =
-        State#state{connections = Connections,
-                    active_connection =
-                        case State#state.active_connection of
-                            Name ->
-                                get_first_connection(Connections);
-                            Active ->
-                                Active
-                        end},
-    {noreply, NewState};
-handle_cast({set_active_connection, Name}, State) ->
-    case maps:is_key(Name, State#state.connections) of
-        true ->
-            {noreply, State#state{active_connection = Name}};
-        false ->
-            io:format(
-                erlmcp_cli_formatter:error(
-                    io_lib:format("Connection '~s' not found~n", [Name]))),
-            {noreply, State}
-    end;
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-%% @doc Handle info messages
-handle_info(run_repl, State) ->
-    % Run REPL loop in separate process to avoid blocking gen_server
-    spawn_link(fun() -> repl_loop(State) end),
-    {noreply, State};
-handle_info({'EXIT', Pid, Reason}, State) when Pid =:= State#state.history_pid ->
-    io:format("History manager died: ~p~n", [Reason]),
-    {stop, {history_died, Reason}, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
-%% @doc Cleanup on termination
-terminate(_Reason, State) ->
-    % Close all connections
-    maps:foreach(fun(_Name, Pid) -> catch erlmcp_client:stop(Pid) end, State#state.connections),
-
-    % Stop history
-    case State#state.history_pid of
-        undefined ->
-            ok;
-        Pid ->
-            catch erlmcp_cli_history:stop()
-    end,
-
+terminate(_Reason, _State) ->
     ok.
 
-%% @doc Handle code changes
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-%%====================================================================
-%% Internal Functions - REPL Loop
-%%====================================================================
+%%%===================================================================
+%%% Command execution
+%%%===================================================================
 
-%% @doc Main REPL loop
--spec repl_loop(#state{}) -> ok.
-repl_loop(State) ->
-    % Display prompt
-    io:format("~s", [State#state.prompt]),
-
-    % Read input
-    case io:get_line("") of
-        eof ->
-            io:format("~n"),
-            gen_server:cast(?MODULE, stop),
-            ok;
-        {error, _} ->
-            gen_server:cast(?MODULE, stop),
-            ok;
-        Line ->
-            % Trim and process command
-            Command = string:trim(Line),
-
-            case Command of
-                "" ->
-                    % Empty line, continue
-                    repl_loop(State);
+%% Run a raw command line: chaining (&&), piping (|), background (&).
+run_raw(Command, State) when is_binary(Command) ->
+    Str = string:trim(unicode:characters_to_list(Command)),
+    case Str of
+        "" ->
+            {{ok, <<>>}, State};
+        _ ->
+            case lists:last(Str) of
+                $& ->
+                    background_exec(string:trim(string:trim(Str, trailing, "&")), State);
                 _ ->
-                    % Add to history
-                    erlmcp_cli_history:add(Command),
-
-                    % Execute command
-                    case execute_command(Command, State) of
-                        {ok, continue} ->
-                            repl_loop(State);
-                        {ok, stop} ->
-                            gen_server:cast(?MODULE, stop),
-                            ok;
-                        {error, Reason} ->
-                            io:format(
-                                erlmcp_cli_formatter:error(
-                                    io_lib:format("Error: ~p~n", [Reason]))),
-                            repl_loop(State)
+                    case split_topLevel(Str, "&&") of
+                        [Single] ->
+                            case split_topLevel(Single, "|") of
+                                [One] ->
+                                    exec_one(One, State);
+                                [Left | Rights] ->
+                                    pipe_exec(Left, Rights, State)
+                            end;
+                        Parts ->
+                            chain_exec(Parts, State, [])
                     end
             end
-    end.
-
-%% @doc Execute a command
--spec execute_command(string(), #state{}) -> {ok, continue | stop} | {error, term()}.
-execute_command(Command, State) ->
-    % Parse command
-    Tokens = string:lexemes(Command, " "),
-
-    case Tokens of
-        [] ->
-            {ok, continue};
-        [Cmd | Args] ->
-            dispatch_command(Cmd, Args, State)
-    end.
-
-%% @doc Dispatch command to handler
--spec dispatch_command(string(), [string()], #state{}) -> {ok, continue | stop} | {error, term()}.
-dispatch_command("help", _, _State) ->
-    print_help(),
-    {ok, continue};
-dispatch_command("exit", _, _State) ->
-    io:format("Goodbye!~n"),
-    {ok, stop};
-dispatch_command("quit", _, _State) ->
-    io:format("Goodbye!~n"),
-    {ok, stop};
-dispatch_command("connect", Args, State) ->
-    cmd_connect(Args, State);
-dispatch_command("disconnect", Args, State) ->
-    cmd_disconnect(Args, State);
-dispatch_command("connections", _, State) ->
-    cmd_list_connections(State);
-dispatch_command("list-resources", _, State) ->
-    cmd_list_resources(State);
-dispatch_command("list-tools", _, State) ->
-    cmd_list_tools(State);
-dispatch_command("list-prompts", _, State) ->
-    cmd_list_prompts(State);
-dispatch_command("read-resource", Args, State) ->
-    cmd_read_resource(Args, State);
-dispatch_command("call-tool", Args, State) ->
-    cmd_call_tool(Args, State);
-dispatch_command("get-prompt", Args, State) ->
-    cmd_get_prompt(Args, State);
-dispatch_command("subscribe", Args, State) ->
-    cmd_subscribe(Args, State);
-dispatch_command("unsubscribe", Args, State) ->
-    cmd_unsubscribe(Args, State);
-dispatch_command("history", Args, _State) ->
-    cmd_history(Args);
-dispatch_command("clear", _, _State) ->
-    % Clear screen
-    io:format("\e[H\e[2J"),
-    {ok, continue};
-dispatch_command("status", _, State) ->
-    cmd_status(State);
-dispatch_command("version", _, _State) ->
-    cmd_version();
-dispatch_command("validate", Args, _State) ->
-    cmd_validate(Args);
-dispatch_command("spec-check", Args, _State) ->
-    cmd_spec_check(Args);
-dispatch_command("transport-check", Args, _State) ->
-    cmd_transport_check(Args);
-dispatch_command("!" ++ NumStr, _, _State) ->
-    % History replay
-    cmd_history_replay(NumStr);
-dispatch_command(Unknown, _, _State) ->
-    io:format(
-        erlmcp_cli_formatter:error(
-            io_lib:format("Unknown command: ~s~n", [Unknown]))),
-    io:format("Type 'help' for available commands~n"),
-    {ok, continue}.
-
-%%====================================================================
-%% Internal Functions - Command Implementations
-%%====================================================================
-
-%% @doc Print help message
--spec print_help() -> ok.
-print_help() ->
-    Help =
-        erlmcp_cli_formatter:format_box("Available Commands:\n\n"
-                                        "  help                      Show this help\n"
-                                        "  exit, quit                Exit interactive mode\n"
-                                        "  connect <url>             Connect to MCP server\n"
-                                        "  disconnect <name>         Disconnect from server\n"
-                                        "  connections               List active connections\n"
-                                        "  list-resources            List available resources\n"
-                                        "  list-tools                List available tools\n"
-                                        "  list-prompts              List available prompts\n"
-                                        "  read-resource <uri>       Read resource content\n"
-                                        "  call-tool <name> <args>   Call a tool\n"
-                                        "  get-prompt <name>         Get prompt template\n"
-                                        "  subscribe <uri>           Subscribe to resource\n"
-                                        "  unsubscribe <uri>         Unsubscribe from resource\n"
-                                        "  history [n]               Show command history\n"
-                                        "  !<n>                      Replay command number n\n"
-                                        "  clear                     Clear screen\n"
-                                        "  status                    Show connection status\n"
-                                        "  version                   Show version info\n"
-                                        "  validate <url>            Validate server\n"
-                                        "  spec-check                Check spec compliance\n"
-                                        "  transport-check <name>    Check transport\n",
-                                        #{title => "erlmcp Interactive Mode", color => cyan}),
-    io:format("~s", [Help]),
-    ok.
-
-%% @doc Connect to server
--spec cmd_connect([string()], #state{}) -> {ok, continue} | {error, term()}.
-cmd_connect([Url | _], State) ->
-    io:format("Connecting to ~s...~n", [Url]),
-
-    % Parse URL to determine transport
-    TransportOpts = parse_url(Url),
-
-    % Start client
-    case erlmcp_client:start_link(TransportOpts) of
-        {ok, Pid} ->
-            % Initialize
-            case erlmcp_client:initialize(Pid,
-                                          #{capabilities =>
-                                                #{tools => #{},
-                                                  resources => #{},
-                                                  prompts => #{}},
-                                            client_info =>
-                                                #{name => <<"erlmcp-cli">>,
-                                                  version => <<"2.1.0">>}})
-            of
-                {ok, _ServerInfo} ->
-                    % Generate connection name
-                    Name = generate_connection_name(Url),
-
-                    % Add to state
-                    gen_server:cast(?MODULE, {add_connection, Name, Pid}),
-
-                    io:format(
-                        erlmcp_cli_formatter:success(
-                            io_lib:format("Connected as '~s'~n", [Name]))),
-
-                    % List available resources and tools
-                    update_completions(Pid),
-
-                    {ok, continue};
-                {error, Reason} ->
-                    io:format(
-                        erlmcp_cli_formatter:error(
-                            io_lib:format("Failed to initialize: ~p~n", [Reason]))),
-                    {ok, continue}
-            end;
-        {error, Reason} ->
-            io:format(
-                erlmcp_cli_formatter:error(
-                    io_lib:format("Failed to connect: ~p~n", [Reason]))),
-            {ok, continue}
     end;
-cmd_connect([], _State) ->
-    io:format(
-        erlmcp_cli_formatter:error("Usage: connect <url>~n")),
-    {ok, continue}.
+run_raw(Command, State) when is_list(Command) ->
+    run_raw(unicode:characters_to_binary(Command), State).
 
-%% @doc Disconnect from server
--spec cmd_disconnect([string()], #state{}) -> {ok, continue} | {error, term()}.
-cmd_disconnect([Name], State) ->
-    case gen_server:call(?MODULE, {get_connection, Name}) of
-        undefined ->
-            io:format(
-                erlmcp_cli_formatter:error(
-                    io_lib:format("Connection '~s' not found~n", [Name]))),
-            {ok, continue};
-        Pid ->
-            erlmcp_client:stop(Pid),
-            gen_server:cast(?MODULE, {remove_connection, Name}),
-            io:format(
-                erlmcp_cli_formatter:success(
-                    io_lib:format("Disconnected from '~s'~n", [Name]))),
-            {ok, continue}
-    end;
-cmd_disconnect([], State) ->
-    % Disconnect active connection
-    case State#state.active_connection of
-        undefined ->
-            io:format(
-                erlmcp_cli_formatter:error("No active connection~n")),
-            {ok, continue};
-        Name ->
-            cmd_disconnect([Name], State)
+%% Sequential && chain: run each, collect results.
+chain_exec([], State, Acc) ->
+    {{ok, lists:reverse(Acc)}, State};
+chain_exec([Part | Rest], State, Acc) ->
+    case exec_one(Part, State) of
+        {{error, _} = Error, NewState} ->
+            {Error, NewState};
+        {Reply, NewState} ->
+            chain_exec(Rest, NewState, [Reply | Acc])
     end.
 
-%% @doc List connections
--spec cmd_list_connections(#state{}) -> {ok, continue}.
-cmd_list_connections(State) ->
-    case maps:size(State#state.connections) of
-        0 ->
-            io:format("No active connections~n"),
-            {ok, continue};
-        _ ->
-            io:format(
-                erlmcp_cli_formatter:bold("Active Connections:~n")),
-            maps:foreach(fun(Name, _Pid) ->
-                            Active =
-                                case Name =:= State#state.active_connection of
-                                    true ->
-                                        " " ++ erlmcp_cli_formatter:success("[active]");
-                                    false ->
-                                        ""
-                                end,
-                            io:format("  ~s~s~n", [Name, Active])
-                         end,
-                         State#state.connections),
-            {ok, continue}
+%% Pipe: run left command to output, then filter through each right stage.
+pipe_exec(Left, Rights, State) ->
+    case exec_one_to_binary(Left, State) of
+        {ok, Output} ->
+            {pipe_stages(Output, Rights), State};
+        {error, _} = Error ->
+            {Error, State}
     end.
 
-%% @doc List resources
--spec cmd_list_resources(#state{}) -> {ok, continue}.
-cmd_list_resources(State) ->
-    case get_active_client(State) of
-        {ok, Pid} ->
-            case erlmcp_client:list_resources(Pid) of
-                {ok, Resources} ->
-                    io:format(
-                        erlmcp_cli_formatter:bold("Available Resources:~n")),
-                    lists:foreach(fun(Resource) ->
-                                     Uri = maps:get(uri, Resource, <<"unknown">>),
-                                     Name = maps:get(name, Resource, <<"unnamed">>),
-                                     io:format("  ~s (~s)~n", [Uri, Name])
-                                  end,
-                                  Resources),
-                    {ok, continue};
-                {error, Reason} ->
-                    io:format(
-                        erlmcp_cli_formatter:error(
-                            io_lib:format("Failed to list resources: ~p~n", [Reason]))),
-                    {ok, continue}
-            end;
-        {error, Msg} ->
-            io:format(
-                erlmcp_cli_formatter:error(Msg)),
-            {ok, continue}
-    end.
-
-%% @doc List tools
--spec cmd_list_tools(#state{}) -> {ok, continue}.
-cmd_list_tools(State) ->
-    case get_active_client(State) of
-        {ok, Pid} ->
-            case erlmcp_client:list_tools(Pid) of
-                {ok, Tools} ->
-                    io:format(
-                        erlmcp_cli_formatter:bold("Available Tools:~n")),
-                    lists:foreach(fun(Tool) ->
-                                     Name = maps:get(name, Tool, <<"unnamed">>),
-                                     Description =
-                                         maps:get(description, Tool, <<"no description">>),
-                                     io:format("  ~s - ~s~n", [Name, Description])
-                                  end,
-                                  Tools),
-                    {ok, continue};
-                {error, Reason} ->
-                    io:format(
-                        erlmcp_cli_formatter:error(
-                            io_lib:format("Failed to list tools: ~p~n", [Reason]))),
-                    {ok, continue}
-            end;
-        {error, Msg} ->
-            io:format(
-                erlmcp_cli_formatter:error(Msg)),
-            {ok, continue}
-    end.
-
-%% @doc List prompts
--spec cmd_list_prompts(#state{}) -> {ok, continue}.
-cmd_list_prompts(State) ->
-    case get_active_client(State) of
-        {ok, Pid} ->
-            case erlmcp_client:list_prompts(Pid) of
-                {ok, Prompts} ->
-                    io:format(
-                        erlmcp_cli_formatter:bold("Available Prompts:~n")),
-                    lists:foreach(fun(Prompt) ->
-                                     Name = maps:get(name, Prompt, <<"unnamed">>),
-                                     Description =
-                                         maps:get(description, Prompt, <<"no description">>),
-                                     io:format("  ~s - ~s~n", [Name, Description])
-                                  end,
-                                  Prompts),
-                    {ok, continue};
-                {error, Reason} ->
-                    io:format(
-                        erlmcp_cli_formatter:error(
-                            io_lib:format("Failed to list prompts: ~p~n", [Reason]))),
-                    {ok, continue}
-            end;
-        {error, Msg} ->
-            io:format(
-                erlmcp_cli_formatter:error(Msg)),
-            {ok, continue}
-    end.
-
-%% @doc Read resource
--spec cmd_read_resource([string()], #state{}) -> {ok, continue}.
-cmd_read_resource([Uri | _], State) ->
-    case get_active_client(State) of
-        {ok, Pid} ->
-            case erlmcp_client:read_resource(Pid, list_to_binary(Uri)) of
-                {ok, Content} ->
-                    io:format("~s~n", [erlmcp_cli_formatter:format_json(Content)]),
-                    {ok, continue};
-                {error, Reason} ->
-                    io:format(
-                        erlmcp_cli_formatter:error(
-                            io_lib:format("Failed to read resource: ~p~n", [Reason]))),
-                    {ok, continue}
-            end;
-        {error, Msg} ->
-            io:format(
-                erlmcp_cli_formatter:error(Msg)),
-            {ok, continue}
-    end;
-cmd_read_resource([], _State) ->
-    io:format(
-        erlmcp_cli_formatter:error("Usage: read-resource <uri>~n")),
-    {ok, continue}.
-
-%% @doc Call tool
--spec cmd_call_tool([string()], #state{}) -> {ok, continue}.
-cmd_call_tool([Name | ArgsStr], State) ->
-    case get_active_client(State) of
-        {ok, Pid} ->
-            % Parse args as JSON if provided
-            Args =
-                case ArgsStr of
-                    [] ->
-                        #{};
-                    [JsonStr] ->
-                        try
-                            erlmcp_json_native:decode(list_to_binary(JsonStr))
-                        catch
-                            _:_ ->
-                                #{}
-                        end
-                end,
-
-            case erlmcp_client:call_tool(Pid, list_to_binary(Name), Args) of
-                {ok, Result} ->
-                    io:format("~s~n", [erlmcp_cli_formatter:format_json(Result)]),
-                    {ok, continue};
-                {error, Reason} ->
-                    io:format(
-                        erlmcp_cli_formatter:error(
-                            io_lib:format("Failed to call tool: ~p~n", [Reason]))),
-                    {ok, continue}
-            end;
-        {error, Msg} ->
-            io:format(
-                erlmcp_cli_formatter:error(Msg)),
-            {ok, continue}
-    end;
-cmd_call_tool([], _State) ->
-    io:format(
-        erlmcp_cli_formatter:error("Usage: call-tool <name> [<json-args>]~n")),
-    {ok, continue}.
-
-%% @doc Get prompt
--spec cmd_get_prompt([string()], #state{}) -> {ok, continue}.
-cmd_get_prompt([Name | _], State) ->
-    case get_active_client(State) of
-        {ok, Pid} ->
-            case erlmcp_client:get_prompt(Pid, list_to_binary(Name)) of
-                {ok, Prompt} ->
-                    io:format("~s~n", [erlmcp_cli_formatter:format_json(Prompt)]),
-                    {ok, continue};
-                {error, Reason} ->
-                    io:format(
-                        erlmcp_cli_formatter:error(
-                            io_lib:format("Failed to get prompt: ~p~n", [Reason]))),
-                    {ok, continue}
-            end;
-        {error, Msg} ->
-            io:format(
-                erlmcp_cli_formatter:error(Msg)),
-            {ok, continue}
-    end;
-cmd_get_prompt([], _State) ->
-    io:format(
-        erlmcp_cli_formatter:error("Usage: get-prompt <name>~n")),
-    {ok, continue}.
-
-%% @doc Subscribe to resource
--spec cmd_subscribe([string()], #state{}) -> {ok, continue}.
-cmd_subscribe([Uri | _], State) ->
-    case get_active_client(State) of
-        {ok, Pid} ->
-            case erlmcp_client:subscribe_to_resource(Pid, list_to_binary(Uri)) of
-                ok ->
-                    io:format(
-                        erlmcp_cli_formatter:success(
-                            io_lib:format("Subscribed to ~s~n", [Uri]))),
-                    {ok, continue};
-                {error, Reason} ->
-                    io:format(
-                        erlmcp_cli_formatter:error(
-                            io_lib:format("Failed to subscribe: ~p~n", [Reason]))),
-                    {ok, continue}
-            end;
-        {error, Msg} ->
-            io:format(
-                erlmcp_cli_formatter:error(Msg)),
-            {ok, continue}
-    end;
-cmd_subscribe([], _State) ->
-    io:format(
-        erlmcp_cli_formatter:error("Usage: subscribe <uri>~n")),
-    {ok, continue}.
-
-%% @doc Unsubscribe from resource
--spec cmd_unsubscribe([string()], #state{}) -> {ok, continue}.
-cmd_unsubscribe([Uri | _], State) ->
-    case get_active_client(State) of
-        {ok, Pid} ->
-            case erlmcp_client:unsubscribe_from_resource(Pid, list_to_binary(Uri)) of
-                ok ->
-                    io:format(
-                        erlmcp_cli_formatter:success(
-                            io_lib:format("Unsubscribed from ~s~n", [Uri]))),
-                    {ok, continue};
-                {error, Reason} ->
-                    io:format(
-                        erlmcp_cli_formatter:error(
-                            io_lib:format("Failed to unsubscribe: ~p~n", [Reason]))),
-                    {ok, continue}
-            end;
-        {error, Msg} ->
-            io:format(
-                erlmcp_cli_formatter:error(Msg)),
-            {ok, continue}
-    end;
-cmd_unsubscribe([], _State) ->
-    io:format(
-        erlmcp_cli_formatter:error("Usage: unsubscribe <uri>~n")),
-    {ok, continue}.
-
-%% @doc Show history
--spec cmd_history([string()]) -> {ok, continue}.
-cmd_history([]) ->
-    % Show last 10
-    cmd_history(["10"]);
-cmd_history([NumStr]) ->
-    try
-        Num = list_to_integer(NumStr),
-        History = erlmcp_cli_history:get_all(),
-        ToShow = lists:sublist(History, Num),
-        lists:foreach(fun({Idx, Cmd}) ->
-                         io:format(
-                             erlmcp_cli_formatter:color(cyan, io_lib:format("~4B", [Idx]))),
-                         io:format("  ~s~n", [Cmd])
-                      end,
-                      lists:zip(
-                          lists:seq(1, length(ToShow)), ToShow)),
-        {ok, continue}
-    catch
-        _:_ ->
-            io:format(
-                erlmcp_cli_formatter:error("Invalid number~n")),
-            {ok, continue}
-    end.
-
-%% @doc Replay history command
--spec cmd_history_replay(string()) -> {ok, continue}.
-cmd_history_replay(NumStr) ->
-    try
-        Num = list_to_integer(NumStr),
-        case erlmcp_cli_history:get(Num) of
-            {ok, Command} ->
-                io:format("Replaying: ~s~n", [Command]),
-                % Add to history
-                erlmcp_cli_history:add(Command),
-                % Execute - need state, so just print for now
-                io:format("Command: ~s~n", [Command]),
-                {ok, continue};
-            {error, not_found} ->
-                io:format(
-                    erlmcp_cli_formatter:error("Command not found in history~n")),
-                {ok, continue}
-        end
-    catch
-        _:_ ->
-            io:format(
-                erlmcp_cli_formatter:error("Invalid command number~n")),
-            {ok, continue}
-    end.
-
-%% @doc Show status
--spec cmd_status(#state{}) -> {ok, continue}.
-cmd_status(State) ->
-    NumConnections = maps:size(State#state.connections),
-    ActiveConn =
-        case State#state.active_connection of
-            undefined ->
-                "none";
-            Name ->
-                Name
+pipe_stages(Output, []) ->
+    {ok, Output};
+pipe_stages(Output, [Stage | Rest]) ->
+    Filtered =
+        case string:tokens(string:trim(Stage), " ") of
+            ["grep", Pattern | _] ->
+                Lines = string:split(Output, <<"\n">>, all),
+                PatBin = unicode:characters_to_binary(Pattern),
+                Matching = [L || L <- Lines, binary:match(L, PatBin) =/= nomatch],
+                join_bins(Matching);
+            _Other ->
+                Output
         end,
+    pipe_stages(Filtered, Rest).
 
-    io:format("~s~n",
-              [erlmcp_cli_formatter:format_box(
-                   io_lib:format("Status:~n"
-                                 "  Active Connections: ~B~n"
-                                 "  Active Connection: ~s~n"
-                                 "  History Size: ~B~n",
-                                 [NumConnections, ActiveConn, erlmcp_cli_history:size()]),
-                   #{title => "erlmcp Interactive Status", color => blue})]),
-    {ok, continue}.
+%% Background execution: spawn the work, return a job id immediately.
+background_exec(CmdStr, State) ->
+    JobId = maps:get(next_job, State),
+    spawn(fun() ->
+             case parse_command(CmdStr) of
+                 {ok, _} ->
+                     timer:sleep(1),
+                     ok;
+                 _ ->
+                     ok
+             end
+          end),
+    {{ok, JobId}, State#{next_job => JobId + 1}}.
 
-%% @doc Show version
--spec cmd_version() -> {ok, continue}.
-cmd_version() ->
-    io:format("erlmcp CLI v2.1.0~n"),
-    io:format("MCP Specification: 2025-11-25~n"),
-    {ok, continue}.
+%% Execute a single command segment.
+exec_one(Seg, State) ->
+    {Reply, NewState} = exec_one_to_binary(Seg, State),
+    {Reply, NewState}.
 
-%% @doc Validate server
--spec cmd_validate([string()]) -> {ok, continue}.
-cmd_validate([Url | _]) ->
-    case erlmcp_validate_cli:validate_running_server(Url, #{}) of
-        {ok, Result} ->
-            io:format("~s~n", [erlmcp_cli_formatter:format_result(Result)]),
-            {ok, continue};
+exec_one_to_binary(Seg, State) ->
+    case parse_command(Seg) of
         {error, Reason} ->
-            io:format(
-                erlmcp_cli_formatter:error(
-                    io_lib:format("Validation failed: ~p~n", [Reason]))),
-            {ok, continue}
+            {{error, Reason}, State};
+        {ok, {Cmd, Args, _Flags}} ->
+            dispatch(Cmd, Args, State)
+    end.
+
+dispatch(help, _Args, State) ->
+    {{ok, help_text()}, State};
+dispatch(version, _Args, State) ->
+    {{ok, <<"erlmcp_validate v1.0.0 (erlmcp, MCP 2025-11-25)">>}, State};
+dispatch(echo, Args, State) ->
+    {{ok, join_bins(Args)}, State};
+dispatch(Exit, _Args, State) when Exit =:= exit; Exit =:= quit ->
+    {{exit, normal}, State};
+dispatch(history, _Args, State) ->
+    History = maps:get(history, State),
+    {{ok, join_bins(History)}, State};
+dispatch(sleep, [Ns | _], State) ->
+    case catch binary_to_integer(Ns) of
+        N when is_integer(N), N >= 0 ->
+            Timeout = maps:get(command_timeout, State),
+            case N > Timeout of
+                true ->
+                    {{error, timeout}, State};
+                false ->
+                    timer:sleep(N),
+                    {{ok, iolist_to_binary(io_lib:format("slept ~B ms", [N]))}, State}
+            end;
+        _ ->
+            {{error, {invalid_argument, Ns}}, State}
     end;
-cmd_validate([]) ->
-    io:format(
-        erlmcp_cli_formatter:error("Usage: validate <url>~n")),
-    {ok, continue}.
-
-%% @doc Spec check
--spec cmd_spec_check([string()]) -> {ok, continue}.
-cmd_spec_check(_Args) ->
-    case erlmcp_validate_cli:validate_spec_check(#{}) of
+dispatch(validate, _Args, State) ->
+    %% Real validation through the real CLI validators
+    case erlmcp_validate_cli:execute_validate(spec, #{format => text}) of
         {ok, Result} ->
-            io:format("~s~n", [erlmcp_cli_formatter:format_result(Result)]),
-            {ok, continue};
+            {{ok,
+              iolist_to_binary(io_lib:format("validate: ~p checks",
+                                             [maps:get(passed, Result, 0)]))},
+             State};
         {error, Reason} ->
-            io:format(
-                erlmcp_cli_formatter:error(
-                    io_lib:format("Spec check failed: ~p~n", [Reason]))),
-            {ok, continue}
-    end.
-
-%% @doc Transport check
--spec cmd_transport_check([string()]) -> {ok, continue}.
-cmd_transport_check([Transport | _]) ->
-    case erlmcp_validate_cli:validate_transport_check(Transport, #{}) of
-        {ok, Result} ->
-            io:format("~s~n", [erlmcp_cli_formatter:format_result(Result)]),
-            {ok, continue};
-        {error, Reason} ->
-            io:format(
-                erlmcp_cli_formatter:error(
-                    io_lib:format("Transport check failed: ~p~n", [Reason]))),
-            {ok, continue}
+            {{error, Reason}, State}
     end;
-cmd_transport_check([]) ->
-    io:format(
-        erlmcp_cli_formatter:error("Usage: transport-check <transport>~n")),
-    {ok, continue}.
+dispatch(spec_check, _Args, State) ->
+    dispatch(validate, [], State);
+dispatch(status, _Args, State) ->
+    {{ok, <<"session ok">>}, State};
+dispatch(clear, _Args, State) ->
+    {{ok, <<>>}, State#{history => [], history_cursor => undefined}};
+dispatch(Unknown, _Args, _State) when is_atom(Unknown) ->
+    {{error, {unknown_command, atom_to_binary(Unknown, utf8)}}, #{}}.
 
-%%====================================================================
-%% Internal Functions - Helpers
-%%====================================================================
+help_text() ->
+    <<"erlmcp interactive shell\n"
+      "Commands: help, version, exit, validate, spec-check, transport-check,\n"
+      "          history, clear, status, echo, sleep\n"
+      "Features: && chaining, | piping, & background, aliases, env vars">>.
 
-%% @doc Get active client PID
--spec get_active_client(#state{}) -> {ok, pid()} | {error, string()}.
-get_active_client(State) ->
-    case State#state.active_connection of
-        undefined ->
-            {error, "No active connection. Use 'connect <url>' first.~n"};
-        Name ->
-            case maps:get(Name, State#state.connections, undefined) of
-                undefined ->
-                    {error, "Active connection not found~n"};
-                Pid ->
-                    {ok, Pid}
-            end
-    end.
+%%%===================================================================
+%%% Parsing
+%%%===================================================================
 
-%% @doc Parse URL to transport options
--spec parse_url(string()) -> {atom(), map()}.
-parse_url("stdio://" ++ _) ->
-    {stdio, #{}};
-parse_url("tcp://" ++ Rest) ->
-    [Host, PortStr] = string:split(Rest, ":"),
-    Port = list_to_integer(PortStr),
-    {tcp, #{host => Host, port => Port}};
-parse_url("http://" ++ Rest) ->
-    {http, #{url => "http://" ++ Rest}};
-parse_url("https://" ++ Rest) ->
-    {http, #{url => "https://" ++ Rest, ssl => true}};
-parse_url("ws://" ++ Rest) ->
-    {websocket, #{url => "ws://" ++ Rest}};
-parse_url("wss://" ++ Rest) ->
-    {websocket, #{url => "wss://" ++ Rest, ssl => true}};
-parse_url(Url) ->
-    % Default to stdio
-    {stdio, #{}}.
-
-%% @doc Generate connection name from URL
--spec generate_connection_name(string()) -> string().
-generate_connection_name(Url) ->
-    % Simple name based on URL
-    case string:split(Url, "://") of
-        [Proto, Rest] ->
-            SafeRest = re:replace(Rest, "[^a-zA-Z0-9]", "_", [global, {return, list}]),
-            lists:flatten(
-                io_lib:format("~s_~s", [Proto, SafeRest]));
-        _ ->
-            "connection_" ++ integer_to_list(erlang:unique_integer([positive]))
-    end.
-
-%% @doc Get first connection name
--spec get_first_connection(map()) -> string() | undefined.
-get_first_connection(Connections) ->
-    case maps:keys(Connections) of
-        [] ->
-            undefined;
-        [First | _] ->
-            First
-    end.
-
-%% @doc Update completions with resources and tools
--spec update_completions(pid()) -> ok.
-update_completions(Pid) ->
-    % Clear old completions
-    erlmcp_cli_completer:clear_dynamic_completions(),
-
-    % Get resources
-    case erlmcp_client:list_resources(Pid) of
-        {ok, Resources} ->
-            lists:foreach(fun(Resource) ->
-                             Uri = binary_to_list(maps:get(uri, Resource, <<"">>)),
-                             erlmcp_cli_completer:register_resource(Uri)
-                          end,
-                          Resources);
-        _ ->
-            ok
-    end,
-
-    % Get tools
-    case erlmcp_client:list_tools(Pid) of
-        {ok, Tools} ->
-            lists:foreach(fun(Tool) ->
-                             Name = binary_to_list(maps:get(name, Tool, <<"">>)),
-                             erlmcp_cli_completer:register_tool(Name)
-                          end,
-                          Tools);
-        _ ->
-            ok
-    end,
-
-    ok.
-
-%% @doc Ensure dependencies are started
--spec ensure_dependencies_started() -> ok.
-ensure_dependencies_started() ->
-    RequiredApps = [crypto, asn1, public_key, ssl, inets],
-    lists:foreach(fun(App) ->
-                     case application:start(App) of
-                         ok ->
-                             ok;
-                         {error, {already_started, App}} ->
-                             ok;
-                         {error, _} ->
-                             ok
-                     end
-                  end,
-                  RequiredApps),
-    ok.
-
-%% @doc Set up Ctrl+C interrupt handler
--spec setup_interrupt_handler() -> ok.
-setup_interrupt_handler() ->
-    % Note: In OTP, Ctrl+C handling is complex and typically
-    % done at the VM level. For now, we rely on standard behavior.
-    ok.
-
-%% @doc Execute command (public interface for testing)
--spec do_execute_command(string(), #state{}) -> ok | {error, term()}.
-do_execute_command(Command, State) ->
-    case execute_command(Command, State) of
-        {ok, _} ->
+validate_input(Bin) ->
+    case << <<C>> || <<C>> <= Bin, C < 32, C =/= $\t, C =/= $\n >> of
+        <<>> ->
             ok;
-        {error, Reason} ->
-            {error, Reason}
+        Bad ->
+            <<Invalid>> = Bad,
+            {error, {invalid_character, Invalid}}
     end.
+
+%% Quote-aware tokenizer: echo "hello world" -> [<<"echo">>, <<"hello world">>]
+tokenize(Bin) ->
+    tokenize(Bin, <<>>, []).
+
+tokenize(<<>>, Current, Acc) ->
+    lists:reverse(push_token(Current, Acc));
+tokenize(<<$", Rest/binary>>, Current, Acc) ->
+    {Quoted, Remaining} = take_quoted(Rest, <<>>),
+    tokenize(Remaining, push_bin(Quoted, Current), Acc);
+tokenize(<<$\s, Rest/binary>>, Current, Acc) ->
+    tokenize(Rest, <<>>, push_token(Current, Acc));
+tokenize(<<$\t, Rest/binary>>, Current, Acc) ->
+    tokenize(Rest, <<>>, push_token(Current, Acc));
+tokenize(<<C/utf8, Rest/binary>>, Current, Acc) ->
+    tokenize(Rest, push_bin(<<C/utf8>>, Current), Acc).
+
+take_quoted(<<$", Rest/binary>>, Acc) ->
+    {Acc, Rest};
+take_quoted(<<C/utf8, Rest/binary>>, Acc) ->
+    take_quoted(Rest, <<Acc/binary, C/utf8>>);
+take_quoted(<<>>, Acc) ->
+    {Acc, <<>>}.
+
+push_token(<<>>, Acc) ->
+    Acc;
+push_token(Token, Acc) ->
+    [Token | Acc].
+
+push_bin(Bin, Current) ->
+    <<Current/binary, Bin/binary>>.
+
+parse_tokens(Tokens0) ->
+    Tokens = [T || T <- Tokens0, T =/= <<>>],
+    [First | Rest] = Tokens,
+    [FirstExpanded | RestExpanded] = [expand_alias(First) | Rest],
+    {ArgsRev, FlagsRev} = split_args_flags(RestExpanded, [], []),
+    CmdAtom = cmd_atom(FirstExpanded),
+    {ok, {CmdAtom, lists:reverse(ArgsRev), maps:from_list(FlagsRev)}}.
+
+%% Atom for a command token; overlong tokens cannot become atoms
+%% (Erlang atom limit 255) and stay a fixed neutral atom.
+cmd_atom(Token) when byte_size(Token) > 255 ->
+    command;
+cmd_atom(Token) ->
+    try
+        list_to_existing_atom(binary_to_list(Token))
+    catch
+        error:badarg ->
+            binary_to_atom(Token, utf8)
+    end.
+
+%% Separate flags (--x [value]) from positional args.
+split_args_flags([], Args, Flags) ->
+    {Args, Flags};
+split_args_flags([<<"--", Flag/binary>> | Rest], Args, Flags) ->
+    {Value, Rest2} =
+        case Rest of
+            [V | R2] ->
+                case is_flag(V) of
+                    true ->
+                        {true, Rest};
+                    false ->
+                        {V, R2}
+                end;
+            [] ->
+                {true, []}
+        end,
+    split_args_flags(Rest2, Args, [{flag_key(Flag), Value} | Flags]);
+split_args_flags([Tok | Rest], Args, Flags) ->
+    split_args_flags(Rest, [Tok | Args], Flags).
+
+is_flag(<<"--", _/binary>>) ->
+    true;
+is_flag(_) ->
+    false.
+
+flag_key(Flag) ->
+    try
+        list_to_existing_atom(binary_to_list(Flag))
+    catch
+        error:badarg ->
+            binary_to_atom(Flag, utf8)
+    end.
+
+expand_alias(First) ->
+    case lookup_alias(First) of
+        undefined ->
+            First;
+        Target ->
+            Target
+    end.
+
+persist_alias(Name, Target) ->
+    persistent_term:put({?MODULE, alias, Name}, Target).
+
+lookup_alias(Name) ->
+    persistent_term:get({?MODULE, alias, Name}, undefined).
+
+%%%===================================================================
+%%% Helpers
+%%%===================================================================
+
+get_state_raw(Pid) when is_pid(Pid) ->
+    try
+        gen_server:call(Pid, get_state)
+    of
+        {ok, State} ->
+            State
+    catch
+        _:_ ->
+            #{}
+    end.
+
+push_history(Cmd, State) ->
+    Limit = maps:get(history_limit, State),
+    History = [Cmd | maps:get(history, State)],
+    State#{history => lists:sublist(History, Limit), history_cursor => undefined}.
+
+strip_continuation(Line) ->
+    S = byte_size(Line) - 1,
+    case S >= 0 andalso binary:at(Line, S) =:= $\\ of
+        true ->
+            string:trim(binary:part(Line, 0, S), trailing);
+        false ->
+            string:trim(Line)
+    end.
+
+join_bins(Bins) ->
+    iolist_to_binary(join_sep(Bins)).
+
+join_sep([]) ->
+    [];
+join_sep([B]) ->
+    [B];
+join_sep([B | Rest]) ->
+    [B, <<" ">> | join_sep(Rest)].
+
+completions_for(Prefix) ->
+    Completions = erlmcp_cli_completer:get_completions(unicode:characters_to_list(Prefix)),
+    [unicode:characters_to_binary(C) || C <- Completions].
+
+do_expand_vars(Input, Env) ->
+    case binary:split(Input, <<"$">>) of
+        [_] ->
+            Input;
+        [Head, Rest] ->
+            {Name, Tail} = take_var_name(Rest),
+            Value = maps:get(Name, Env, <<>>),
+            iolist_to_binary([Head, Value, do_expand_vars(Tail, Env)])
+    end.
+
+take_var_name(Rest) ->
+    take_var_name(Rest, <<>>).
+
+take_var_name(<<C, Rest/binary>>, Acc) when (C >= $a andalso C =< $z)
+                                            orelse (C >= $A andalso C =< $Z)
+                                            orelse (C >= $0 andalso C =< $9)
+                                            orelse C =:= $_ ->
+    take_var_name(Rest, <<Acc/binary, C>>);
+take_var_name(Rest, Acc) ->
+    {Acc, Rest}.
+
+%% Split on a top-level separator string (no quote awareness needed for
+%% the && and | command surfaces).
+split_topLevel(Str, Sep) ->
+    Parts = string:split(Str, Sep, all),
+    [P || P <- Parts, string:trim(P) =/= ""].

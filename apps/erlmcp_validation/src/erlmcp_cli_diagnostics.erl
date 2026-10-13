@@ -15,6 +15,15 @@
 
 -export([diagnose/0, diagnose/1, memory_usage/0, memory_usage/1, system_info/0, process_info/0,
          process_info/1, check_health/0, check_health/1]).
+%% Real OTP-introspection check family (tests-as-spec L184)
+-export([start_link/0, stop/1, check_erlang_version/0, check_otp_version/0, check_memory/0,
+         check_memory/1, check_cpu/0, check_cpu/1, check_disk/0, check_processes/0,
+         check_ports/0, check_ets/0, check_dependencies/0, check_applications/0,
+         check_application/1, check_supervisors/0, check_network/0, health_summary/0,
+         performance_metrics/0]).
+
+-behaviour(gen_server).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 %%====================================================================
 %% Types
@@ -503,3 +512,347 @@ iso8601_timestamp() ->
     {{Year, Month, Day}, {Hour, Min, Sec}} = calendar:universal_time(),
     iolist_to_binary(io_lib:format("~4..0B-~2..0B-~2..0BT~2..0B:~2..0B:~2..0BZ",
                                    [Year, Month, Day, Hour, Min, Sec])).
+
+%%====================================================================
+%% Check family (tests-as-spec L184) — real OTP introspection, no mocks:
+%% erlang:memory, erlang:statistics, erlang:system_info, ets, file/os.
+%%====================================================================
+
+%% @doc Start a diagnostics session (gen_server; holds no mutable state,
+%% exists so callers can hold a live diagnostics handle).
+start_link() ->
+    gen_server:start_link(?MODULE, ok, []).
+
+stop(Pid) when is_pid(Pid) ->
+    catch gen_server:stop(Pid),
+    ok.
+
+init(ok) ->
+    {ok, ok}.
+
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%% @doc Erlang/OTP version, always available in a running node.
+check_erlang_version() ->
+    Version = unicode:characters_to_binary(erlang:system_info(otp_release)),
+    {ok, #{status => pass, version => Version}}.
+
+check_otp_version() ->
+    check_erlang_version().
+
+%% @doc Real VM memory via erlang:memory/1. Opts: #{threshold => Percent}
+%% (used percent at which status becomes warn).
+check_memory() ->
+    check_memory(#{}).
+
+check_memory(Opts) ->
+    Total = erlang:memory(total),
+    Used = erlang:memory(processes) + erlang:memory(system) - erlang:memory(ets),
+    Used2 =
+        case Used =< Total of
+            true ->
+                Used;
+            false ->
+                Total
+        end,
+    Free = Total - Used2,
+    Threshold = maps:get(threshold, Opts, 90),
+    UsedPct = used_pct(Used2, Total),
+    Status = threshold_status(UsedPct, Threshold),
+    {ok, #{total => Total, used => Used2, free => Free, used_percent => UsedPct,
+           status => Status}}.
+
+used_pct(_Used, 0) ->
+    0.0;
+used_pct(Used, Total) ->
+    Used / Total * 100.0.
+
+%% @doc Real scheduler utilization via erlang:statistics(scheduler_wall_time).
+check_cpu() ->
+    check_cpu(#{}).
+
+check_cpu(Opts) ->
+    Cores = erlang:system_info(logical_processors_available),
+    Usage = sample_scheduler(),
+    Threshold = maps:get(threshold, Opts, 80),
+    {ok, #{usage_percent => Usage, cores => Cores,
+           status => threshold_status(Usage, Threshold)}}.
+
+sample_scheduler() ->
+    case erlang:statistics(scheduler_wall_time) of
+        Scheds when Scheds =:= [] ; Scheds =:= undefined ->
+            0.0;
+        Scheds ->
+            {A, T} =
+                lists:foldl(fun(Entry, {A0, T0}) ->
+                               case entry_times(Entry) of
+                                   {Act, Tot} when is_number(Act), is_number(Tot) ->
+                                       {A0 + Act, T0 + Tot};
+                                   _ ->
+                                       {A0, T0}
+                               end
+                            end,
+                            {0, 0},
+                            Scheds),
+            case T of
+                0 ->
+                    0.0;
+                _ ->
+                    A / T * 100.0
+            end
+    end.
+
+entry_times(Entry) when tuple_size(Entry) >= 3 ->
+    {element(2, Entry), element(3, Entry)};
+entry_times(_) ->
+    undefined.
+
+%% @doc Real disk usage of the current working directory's filesystem
+%% (parsed from df -k).
+check_disk() ->
+    {ok, Result} = df_usage(),
+    case Result of
+        #{total := Total, used := Used} when Total > 0 ->
+            Free = Total - Used,
+            {ok, #{total => Total, used => Used, free => Free,
+                   status => threshold_status(Used / Total * 100.0, 90)}};
+        _ ->
+            {ok, #{total => 0, used => 0, free => 0, status => warn}}
+    end.
+
+df_usage() ->
+    Output = os:cmd("df -k ."),
+    Lines = string:split(string:trim(Output), "\n", all),
+    case Lines of
+        [_Header, DataLine | _] ->
+            Fields = string:split(DataLine, " ", all),
+            NonEmpty = [F || F <- Fields, F =/= <<>>],
+            case NonEmpty of
+                [_, TotalK, UsedK, _AvailK | _] ->
+                    {ok, #{total => binary_to_integer_i(TotalK) * 1024,
+                           used => binary_to_integer_i(UsedK) * 1024}};
+                _ ->
+                    {ok, #{}}
+            end;
+        _ ->
+            {ok, #{}}
+    end.
+
+binary_to_integer_i(B) ->
+    try
+        binary_to_integer(B)
+    catch
+        _:_ ->
+            0
+    end.
+
+%% @doc Process count vs limit.
+check_processes() ->
+    Count = erlang:system_info(process_count),
+    Limit = erlang:system_info(process_limit),
+    Pct = Count / Limit * 100.0,
+    {ok, #{count => Count, limit => Limit, status => threshold_status(Pct, 80)}}.
+
+%% @doc Port count vs limit.
+check_ports() ->
+    Count = length(erlang:ports()),
+    Limit = erlang:system_info(port_limit),
+    Pct = Count / Limit * 100.0,
+    {ok, #{count => Count, limit => Limit, status => threshold_status(Pct, 80)}}.
+
+%% @doc ETS table count + total memory words.
+check_ets() ->
+    Tables = ets:all(),
+    Memory =
+        lists:foldl(fun(T, Acc) ->
+                       case catch ets:info(T, memory) of
+                           M when is_integer(M) ->
+                               Acc + M;
+                           _ ->
+                               Acc
+                       end
+                    end,
+                    0,
+                    Tables),
+    Count = length(Tables),
+    {ok, #{count => Count, memory => Memory, status => pass}}.
+
+%% @doc Dependency check: required modules present and loadable.
+check_dependencies() ->
+    Required = [erlmcp_client, erlmcp_server, erlmcp_registry, erlmcp_transport_stdio,
+                erlmcp_transport_tcp],
+    {Loaded, Missing} =
+        lists:foldl(fun(M, {L, Miss}) ->
+                       case code:ensure_loaded(M) of
+                           {module, M} ->
+                               {[M | L], Miss};
+                           _ ->
+                               {L, [M | Miss]}
+                       end
+                    end,
+                    {[], []},
+                    Required),
+    Status = case Missing of [] -> pass; _ -> warn end,
+    {ok, #{status => Status, missing => Missing, loaded => Loaded}}.
+
+%% @doc Running applications (names only) and known-but-stopped ones.
+check_applications() ->
+    Running = [App || {App, _, _} <- application:which_applications()],
+    Known = [kernel, stdlib, sasl, crypto, ssl, inets, erlmcp, erlmcp_core],
+    Stopped = [App || App <- Known, not lists:member(App, Running)],
+    Status = case lists:member(erlmcp, Running) orelse lists:member(erlmcp_core, Running)
+             of
+                 true -> pass;
+                 false -> warn
+             end,
+    {ok, #{running => Running, stopped => Stopped, status => Status}}.
+
+%% @doc Single application check.
+check_application(App) when is_atom(App) ->
+    case lists:keymember(App, 1, application:which_applications()) of
+        true ->
+            {ok, #{status => pass, application => App}};
+        false ->
+            {ok, #{status => fail, application => App, reason => not_running}}
+    end.
+
+%% @doc Known supervisor trees: alive (registered) and reachable.
+check_supervisors() ->
+    Candidates = [erlmcp_sup, erlmcp_core_sup, erlmcp_validation_sup, erlmcp_registry_sup,
+                  kernel_sup, stdlib_sup],
+    {Alive, _Dead} =
+        lists:foldl(fun(S, {A, D}) ->
+                       case whereis(S) =/= undefined
+                            andalso is_process_alive(whereis(S))
+                       of
+                           true ->
+                               {[S | A], D};
+                           false ->
+                               {A, [S | D]}
+                       end
+                    end,
+                    {[], []},
+                    Candidates),
+    Healthy = length(Alive),
+    Status = case Healthy of 0 -> warn; _ -> pass end,
+    {ok, #{trees => Healthy, healthy => Healthy, dead => length(_Dead), status => Status}}.
+
+%% @doc Network connectivity: real round-trip to the local node.
+check_network() ->
+    {Time, Result} =
+        timer:tc(fun() ->
+                    net_adm:ping(node())
+                 end),
+    LatencyMs = Time / 1000.0,
+    Connectivity =
+        case Result of
+            pong ->
+                ok;
+            pang ->
+                failed
+        end,
+    Status = case Connectivity of ok -> pass; _ -> fail end,
+    {ok, #{connectivity => Connectivity, latency => LatencyMs, status => Status}}.
+
+%% @doc Aggregate all checks into one health summary.
+health_summary() ->
+    Checks =
+        [{erlang_version, check_erlang_version()},
+         {otp_version, check_otp_version()},
+         {memory, check_memory()},
+         {cpu, check_cpu()},
+         {processes, check_processes()},
+         {ports, check_ports()},
+         {ets, check_ets()},
+         {dependencies, check_dependencies()},
+         {applications, check_applications()},
+         {supervisors, check_supervisors()},
+         {network, check_network()}],
+    {Passed, Failed, Warnings, Results} =
+        lists:foldl(fun({Name, {ok, Map}}, {P, F, W, Acc}) ->
+                       case maps:get(status, Map, warn) of
+                           pass ->
+                               {P + 1, F, W, [{Name, Map} | Acc]};
+                           fail ->
+                               {P, F + 1, W, [{Name, Map} | Acc]};
+                           _ ->
+                               {P, F, W + 1, [{Name, Map} | Acc]}
+                       end;
+                   ({Name, _Unexpected}, {P, F, W, Acc}) ->
+                       {P, F + 1, W, [{Name, #{status => fail}} | Acc]}
+                    end,
+                    {0, 0, 0, []},
+                    Checks),
+    Overall =
+        case Failed of
+            0 ->
+                case Warnings of
+                    0 ->
+                        healthy;
+                    _ ->
+                        degraded
+                end;
+            _ ->
+                unhealthy
+        end,
+    {ok, #{overall_status => Overall, checks => maps:from_list(Results),
+           passed => Passed, failed => Failed, warnings => Warnings}}.
+
+%% @doc Real VM performance metrics: run queue depth, reductions, contexts.
+performance_metrics() ->
+    RunQueue = erlang:statistics(run_queue),
+    {_, ContextSwitches} = erlang:statistics(context_switches),
+    {_, Reductions} = erlang:statistics(reductions),
+    SchedWall0 = erlang:statistics(scheduler_wall_time),
+    SchedWall =
+        case SchedWall0 of
+            L when is_list(L), L =/= [] ->
+                L;
+            _ ->
+                [{1, 0, 1}]
+        end,
+    {A, T} =
+        lists:foldl(fun(Entry, {A0, T0}) ->
+                       case entry_times(Entry) of
+                           {Act, Tot} when is_number(Act), is_number(Tot) ->
+                               {A0 + Act, T0 + Tot};
+                           _ ->
+                               {A0, T0}
+                       end
+                    end,
+                    {0, 0},
+                    SchedWall),
+    Latency =
+        case T of
+            0 ->
+                0.0;
+            _ ->
+                (T - A) / T * 100.0
+        end,
+    {ok, #{throughput => Reductions, latency => Latency, queue_depth => RunQueue,
+           context_switches => ContextSwitches}}.
+
+threshold_status(Value, Threshold) when is_number(Value), is_number(Threshold) ->
+    if
+        Value >= Threshold * 1.1 ->
+            fail;
+        Value >= Threshold ->
+            warn;
+        true ->
+            pass
+    end;
+threshold_status(_Value, _Threshold) ->
+    pass.
