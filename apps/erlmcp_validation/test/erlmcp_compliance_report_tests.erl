@@ -45,25 +45,8 @@ setup_evidence() ->
     {TmpDir}.
 
 cleanup_evidence({TmpDir}) ->
-    %% Clean up temporary directory
-    case file:list_dir(TmpDir) of
-        {ok, []} ->
-            ok = file:del_dir(TmpDir);
-        {ok, Files} ->
-            lists:foreach(fun(F) ->
-                             File = filename:join([TmpDir, F]),
-                             case file:del_file(File) of
-                                 ok ->
-                                     ok;
-                                 {error, _} ->
-                                     ok
-                             end
-                          end,
-                          Files),
-            ok = file:del_dir(TmpDir);
-        {error, _} ->
-            ok
-    end,
+    %% Clean up temporary directory (recursive: bundle subdirs must go first)
+    cleanup_recursive(TmpDir),
     %% Stop application
     application:stop(erlmcp_validation).
 
@@ -81,7 +64,7 @@ cleanup_recursive(Dir) ->
                                  true ->
                                      cleanup_recursive(Path);
                                  false ->
-                                     file:del_file(Path)
+                                     file:delete(Path)
                              end
                           end),
             file:del_dir(Dir);
