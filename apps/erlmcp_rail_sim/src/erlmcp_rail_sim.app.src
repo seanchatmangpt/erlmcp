@@ -1,0 +1,8 @@
+{application, erlmcp_rail_sim,
+ [{description, "Deterministic payment-rail message simulator (drop-ACK, duplicate, reorder, delayed reject)"},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications, [kernel, stdlib]},
+  {env, []},
+  {modules, [erlmcp_rail_sim, erlmcp_rail_recon]},
+  {licenses, ["Apache-2.0"]}]}.
