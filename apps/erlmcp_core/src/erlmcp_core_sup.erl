@@ -70,17 +70,9 @@ init([]) ->
            modules => [erlmcp_request_manager]}],
 
     %% Additional supervisors for optional features
-    AdditionalChildSpecs =
-        %% ================================================================
-        %% MEMORY MONITOR: System-wide memory monitoring (OTP 28+)
-        %% Monitors memory usage and triggers GC/binary GC as needed
-        %% ================================================================
-        [#{id => erlmcp_memory_monitor,
-           start => {erlmcp_memory_monitor, start_link, []},
-           restart => permanent,
-           shutdown => 5000,
-           type => worker,
-           modules => [erlmcp_memory_monitor]}],
+    %% (erlmcp_memory_monitor is owned by erlmcp_resilience_sup; starting it
+    %% here too would collide on its {local, erlmcp_memory_monitor} name.)
+    AdditionalChildSpecs = [],
     %% Client and Plugin supervisors
     ClientPluginChildSpecs =
         %% ================================================================

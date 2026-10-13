@@ -23,7 +23,8 @@
          get_sla_metrics/1]).
 
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
+         handle_continue/2]).
 
 -define(SERVER, ?MODULE).
 -define(DEFAULT_METRICS_RETENTION, 2592000000).  % 30 days in milliseconds
@@ -152,8 +153,9 @@ init(Config) ->
     ets:new(erlmcp_sla_compliance, [set, public, named_table]),
     ets:new(erlmcp_sla_alerts, [set, public, named_table]),
 
-    %% Register default SLAs
-    register_default_slas(),
+    %% Register default SLAs after the server enters its loop (the public
+    %% register_sla/4 API does a gen_server:call to this same process, which
+    %% dead-locks if done from init/1).
 
     %% Start periodic report generation
     ReportInterval = maps:get(report_interval, Config, ?DEFAULT_REPORT_INTERVAL),
@@ -167,7 +169,30 @@ init(Config) ->
         alert_threshold => maps:get(alert_threshold, Config, ?DEFAULT_ALERT_THRESHOLD)
     },
 
-    {ok, State}.
+    {ok, State, {continue, register_default_slas}}.
+
+-spec handle_continue(term(), map()) -> {noreply, map()}.
+handle_continue(register_default_slas, State) ->
+    register_default_slas(),
+    {noreply, State};
+handle_continue(_Continue, State) ->
+    {noreply, State}.
+
+%% Direct ETS registration used from inside the server (handle_continue);
+%% the public register_sla/4 is a gen_server:call and would raise
+%% calling_self if invoked from the server process itself.
+do_register_sla(SlaName, Target, Unit, Config0) ->
+    %% init_sla_metrics/2 requires target/unit inside the config map
+    Config = maps:merge(#{target => Target, unit => Unit}, Config0),
+    SlaDef = #{name => SlaName,
+               target => Target,
+               unit => Unit,
+               config => Config,
+               created_at => erlang:system_time(millisecond),
+               metrics => []},
+    ets:insert(erlmcp_sla_registry, {SlaName, SlaDef}),
+    init_sla_metrics(SlaName, Config),
+    ok.
 
 handle_call({register_sla, SlaName, Target, Unit, Config}, _From, State) ->
     %% Validate SLA configuration
@@ -293,14 +318,14 @@ code_change(_OldVsn, State, _Extra) ->
 register_default_slas() ->
     %% Register common SLAs
     %% Uptime SLA
-    register_sla(<<"uptime">>, 99.9, <<"percent">>, #{
+    do_register_sla(<<"uptime">>, 99.9, <<"percent">>, #{
         description => "System uptime",
         period => 86400000,  % 24 hours
         window_size => 60000  % 1 minute
     }),
 
     %% Response Time SLA
-    register_sla(<<"response_time">>, 100.0, <<"milliseconds">>, #{
+    do_register_sla(<<"response_time">>, 100.0, <<"milliseconds">>, #{
         description => "Average response time",
         period => 86400000,  % 24 hours
         window_size => 5000,   % 5 seconds
@@ -308,21 +333,21 @@ register_default_slas() ->
     }),
 
     %% Error Rate SLA
-    register_sla(<<"error_rate">>, 0.01, <<"percent">>, #{
+    do_register_sla(<<"error_rate">>, 0.01, <<"percent">>, #{
         description => "Error rate",
         period => 86400000,  % 24 hours
         window_size => 60000  % 1 minute
     }),
 
     %% Throughput SLA
-    register_sla(<<"throughput">>, 10000.0, <<"requests_per_second">>, #{
+    do_register_sla(<<"throughput">>, 10000.0, <<"requests_per_second">>, #{
         description => "Minimum throughput",
         period => 3600000,    % 1 hour
         window_size => 5000    % 5 seconds
     }),
 
     %% Session Success SLA
-    register_sla(<<"session_success">>, 99.0, <<"percent">>, #{
+    do_register_sla(<<"session_success">>, 99.0, <<"percent">>, #{
         description => "Session success rate",
         period => 3600000,    % 1 hour
         window_size => 30000  % 30 seconds

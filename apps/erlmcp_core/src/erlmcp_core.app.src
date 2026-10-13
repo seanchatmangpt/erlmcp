@@ -24,7 +24,11 @@
       jesse,
       gproc,
       jose,
-      bbmustache
+      bbmustache,
+      %% erlmcp_observability_sup's prometheus exporter serves /metrics over
+      %% a ranch/cowboy listener; those supervisors must be running first.
+      ranch,
+      cowboy
   ]},
   {mod, {erlmcp_app, []}},
   {env, [

@@ -11,7 +11,7 @@
          delete_persistent/1]).
 -export([hibernate_idle_sessions/0, list_sessions_with_iterator/0, list_utf8_sessions/0]).
 %% gen_server callbacks
--export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3, handle_continue/2]).
 
 %% Types
 -type session_id() :: binary().
@@ -298,15 +298,24 @@ handle_continue(initialize_storage, State) ->
     %% - {write_concurrency, true} for concurrent session updates
     %% - {decentralized_counters, true} for >2B entries support
     Table =
-        ets:new(?TABLE_NAME,
-                [ordered_set,
-                 public,
-                 named_table,
-                 {read_concurrency, true},
-                 {write_concurrency, true},
-                 {decentralized_counters, true},
-                 {keypos,
-                  2}]),  % Use session id as key (position 2 in tuple {session_data, id, ...})
+        case ets:new(?TABLE_NAME,
+                     [ordered_set,
+                      public,
+                      named_table,
+                      {read_concurrency, true},
+                      {write_concurrency, true},
+                      {decentralized_counters, true},
+                      {keypos,
+                       2}])  % Use session id as key (position 2 in tuple {session_data, id, ...})
+        of
+            T when is_reference(T); is_atom(T) ->
+                T;
+            {error, already_exists} ->
+                %% Restart after a failed boot: the named table survives.
+                %% Reuse it rather than crashing the restart.
+                ets:delete_all_objects(?TABLE_NAME),
+                ?TABLE_NAME
+        end,
 
     %% Create Mnesia table for persistent sessions (Joe Armstrong: "Databases are for persistence")
     %% This can be slow but won't block supervisor startup
@@ -367,8 +376,12 @@ terminate(_Reason, State) ->
                 erlang:cancel_timer(Timer)
         end,
 
-    %% Delete ETS table
-    ets:delete(State#state.table),
+    %% Delete ETS table (guard: never created if init failed early)
+    case State#state.table of
+        undefined -> ok;
+        Table when is_reference(Table) -> ets:delete(Table);
+        _Name when is_atom(_Name) -> catch ets:delete(_Name)
+    end,
     ok.
 
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.

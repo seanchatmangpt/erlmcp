@@ -150,6 +150,8 @@ get_replication_factor() ->
 %%====================================================================
 
 -spec init(map() | []) -> {ok, state()}.
+init(Options) when is_list(Options) ->
+    init(maps:from_list(Options));
 init(Options) ->
     process_flag(trap_exit, true),
 
@@ -158,8 +160,13 @@ init(Options) ->
     ReplicationFactor = maps:get(replication_factor, Options, 2),
     InitialNodes = maps:get(nodes, Options, []),
 
-    %% OTP 27: Enable node monitoring with distribution flags
-    ok = net_kernel:monitor_nodes(true, [{node_type, all}, {nodedown_reason, true}]),
+    %% OTP 27: Enable node monitoring with distribution flags.
+    %% {nodedown_reason, true} is rejected by net_kernel:monitor_nodes/2 on a
+    %% non-distributed node; plain node monitoring needs no options.
+    _ = case net_kernel:monitor_nodes(true, [{node_type, all}, {nodedown_reason, true}]) of
+            ok -> ok;
+            {error, _} -> net_kernel:monitor_nodes(true)
+        end,
 
     %% Start heartbeat timer
     HeartbeatRef = erlang:send_after(HeartbeatInterval, self(), heartbeat),
