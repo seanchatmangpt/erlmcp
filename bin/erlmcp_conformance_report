@@ -1,0 +1,184 @@
+#!/usr/bin/env escript
+%% ConformanceRunner pattern port (catalog primitive Y, mirrors ash_a2a
+%% lib/mix/tasks/ash_a2a.v1_conformance_report.ex): one command -> machine-readable
+%% court verdict report.
+%%
+%% - Maintained court list: conformance/courts.config ({courts, [{Name, Path}]})
+%%   overridable via ERLMCP_CONFORMANCE_COURTS env var.
+%% - Filesystem existence check FIRST: missing court file => verdict FAIL
+%%   (missing_file). "A court you cannot execute is not a court that passed."
+%% - Each existing court runs as a real OS subprocess
+%%   (`rebar3 ct --suite=Path --logdir=log/ct_conformance/<name>`).
+%% - Courts are listed and run individually: one broken suite degrades to its
+%%   own FAIL verdict, never a total abort.
+%% - JSON report -> conformance/report.json; exit non-zero iff totals.fail > 0.
+%%
+%% Usage: bin/erlmcp_conformance_report        (run all courts)
+%%        bin/erlmcp_conformance_report --only name1,name2
+-module(erlmcp_conformance_report).
+-mode(compile).
+
+-export([main/1]).
+
+-define(COURT_TIMEOUT_MS, 300000).
+
+main(Args) ->
+    {Only, Manifest} = parse_args(Args, [], undefined),
+    Root = root(),
+    ManifestPath = case Manifest of
+        undefined -> filename:join(Root, "conformance/courts.config");
+        P -> P
+    end,
+    AllCourts = read_courts(ManifestPath),
+    Courts = filter_only(AllCourts, Only),
+    io:format("ConformanceRunner: ~b court(s) from ~s~n", [length(Courts), ManifestPath]),
+    Results = [run_court(Root, C) || C <- Courts],
+    Totals = totals(Results),
+    ReportPath = filename:join(Root, "conformance/report.json"),
+    JSON = render_json(Results, Totals),
+    ok = filelib:ensure_dir(ReportPath),
+    ok = file:write_file(ReportPath, JSON),
+    io:format("Report: ~s~n  totals: pass=~b fail=~b total=~b~n",
+              [ReportPath, maps:get(pass, Totals), maps:get(fail, Totals),
+               maps:get(total, Totals)]),
+    case maps:get(fail, Totals) of
+        0 -> halt(0);
+        N -> io:format("FAILURES: ~b court(s) failed~n", [N]), halt(1)
+    end.
+
+parse_args(["--only", Only | Rest], _Acc, M) -> parse_args(Rest, split(Only), M);
+parse_args(["--courts", M | Rest], Acc, _) -> parse_args(Rest, Acc, M);
+parse_args([_ | Rest], Acc, M) -> parse_args(Rest, Acc, M);
+parse_args([], Acc, M) -> {Acc, M}.
+
+split(S) -> [list_to_atom(T) || T <- string:split(S, ",", all), T =/= ""].
+
+filter_only(Courts, []) -> Courts;
+filter_only(Courts, Only) ->
+    [C || C = {Name, _} <- Courts, lists:member(Name, Only)].
+
+root() -> {ok, D} = file:get_cwd(), D.
+
+read_courts(Manifest) ->
+    case file:consult(Manifest) of
+        {ok, Terms} ->
+            case [C || {courts, C} <- Terms] of
+                [Courts | _] -> Courts;
+                [] ->
+                    io:format("ERROR: no {courts, [...]} term in ~s~n", [Manifest]),
+                    halt(2)
+            end;
+        {error, R} ->
+            io:format("ERROR: cannot read court manifest ~s: ~p~n", [Manifest, R]),
+            halt(2)
+    end.
+
+%% ===================================================================
+%% Per-court: existence check FIRST, then real subprocess
+%% ===================================================================
+
+run_court(Root, {Name, RelPath}) ->
+    AbsPath = filename:join(Root, RelPath),
+    io:format("  court ~s -> ~s~n", [Name, RelPath]),
+    case filelib:is_regular(AbsPath) of
+        false ->
+            io:format("    verdict FAIL (missing_file)~n"),
+            {Name, RelPath, null, <<"FAIL">>, <<"missing_file">>};
+        true ->
+            LogDir = filename:join([Root, "log", "ct_conformance", atom_to_list(Name)]),
+            filelib:ensure_dir(filename:join(LogDir, "x")),
+            Cmd = "cd \"" ++ Root ++ "\" && rebar3 ct --suite=\"" ++ RelPath
+                  ++ "\" --logdir=\"" ++ LogDir ++ "\" 2>&1",
+            case run_cmd(Cmd, ?COURT_TIMEOUT_MS) of
+                {0, _} ->
+                    io:format("    verdict PASS (exit 0)~n"),
+                    {Name, RelPath, 0, <<"PASS">>, null};
+                {Code, Out} when is_integer(Code) ->
+                    Reason = classify_failure(Out),
+                    io:format("    verdict FAIL (exit ~b, ~s)~n", [Code, Reason]),
+                    {Name, RelPath, Code, <<"FAIL">>, Reason};
+                {timeout, _} ->
+                    io:format("    verdict FAIL (timeout after ~b ms)~n",
+                              [?COURT_TIMEOUT_MS]),
+                    {Name, RelPath, null, <<"FAIL">>, <<"timeout">>}
+            end
+    end.
+
+classify_failure(Out0) ->
+    Out = case re:replace(Out0, "\e\\[[0-9;]*m", "", [global, {return, binary}]) of
+        B when is_binary(B) -> B;
+        Other -> unicode:characters_to_binary(Other)
+    end,
+    case re:run(Out, "\\{error,([^}\\n]{1,120})", [{capture, [1], binary}]) of
+        {match, [E]} -> E;
+        nomatch ->
+            case re:run(Out, "Failures occurred running tests|, [0-9]+ failed",
+                        [{capture, none}]) of
+                match -> <<"test_failures">>;
+                nomatch -> <<"exit_nonzero">>
+            end
+    end.
+
+%% ===================================================================
+%% Subprocess with timeout
+%% ===================================================================
+
+run_cmd(Cmd, TimeoutMs) ->
+    Port = open_port({spawn_executable, "/bin/sh"},
+                     [{args, ["-c", Cmd]}, exit_status, binary, {line, 4096},
+                      stderr_to_stdout]),
+    drain(Port, TimeoutMs, <<>>, <<>>).
+
+drain(Port, TimeoutMs, Buf, OutAcc) ->
+    receive
+        {Port, {exit_status, 0}} -> {0, finalize(OutAcc, Buf)};
+        {Port, {exit_status, Code}} -> {Code, finalize(OutAcc, Buf)};
+        {Port, {data, {eol, Line}}} ->
+            drain(Port, TimeoutMs, <<>>, <<OutAcc/binary, Line/binary, "\n">>);
+        {Port, {data, {noeol, Line}}} ->
+            drain(Port, TimeoutMs, <<Buf/binary, Line/binary>>, OutAcc);
+        {'EXIT', Port, _} -> {138, finalize(OutAcc, Buf)}
+    after TimeoutMs ->
+        catch port_close(Port),
+        {timeout, finalize(OutAcc, Buf)}
+    end.
+
+finalize(B, A) -> <<A/binary, B/binary>>.
+
+%% ===================================================================
+%% Totals + JSON
+%% ===================================================================
+
+totals(Results) ->
+    Pass = length([1 || {_, _, _, <<"PASS">>, _} <- Results]),
+    Fail = length([1 || {_, _, _, <<"FAIL">>, _} <- Results]),
+    #{pass => Pass, fail => Fail, total => length(Results)}.
+
+render_json(Results, Totals) ->
+    CourtsJSON = string:join(
+                   [io_lib:format("    {\"name\": \"~s\", \"file\": \"~s\", "
+                                  "\"exit_code\": ~s, \"verdict\": \"~s\", \"reason\": ~s}",
+                                  [n2s(Name), esc(File), exit_code_json(Code), Verdict,
+                                   reason_json(Rsn)])
+                    || {Name, File, Code, Verdict, Rsn} <- Results], ",\n"),
+    io_lib:format(
+      "{\n"
+      "  \"courts\": [\n~s\n  ],\n"
+      "  \"totals\": {\"pass\": ~b, \"fail\": ~b, \"total\": ~b}\n"
+      "}\n",
+      [CourtsJSON,
+       maps:get(pass, Totals), maps:get(fail, Totals), maps:get(total, Totals)]).
+
+exit_code_json(null) -> "null";
+exit_code_json(Code) when is_integer(Code) -> integer_to_list(Code).
+
+reason_json(null) -> "null";
+reason_json(Rsn) -> ["\"", esc(unicode:characters_to_list(Rsn)), "\""].
+
+n2s(N) when is_atom(N) -> atom_to_list(N);
+n2s(N) when is_list(N) -> N;
+n2s(N) when is_binary(N) -> unicode:characters_to_list(N).
+
+esc(S) ->
+    NoAnsi = re:replace(S, "\e\\[[0-9;]*m", "", [global, {return, list}]),
+    re:replace(NoAnsi, "([\"\\\\])", "\\\\\\1", [global, {return, list}]).

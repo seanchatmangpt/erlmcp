@@ -32,8 +32,8 @@
 %% Programmatic API
 -export([run/1, run/2, validate_spec/0, validate_protocol_message/1, validate_transport/1,
          validate_compliance/0, validate_all/0, generate_compliance_report/1]).
-%% Escript entry point
--export([main/1]).
+%% Command-line parsing surface (used by erlmcp_validate_cli_tests)
+-export([parse_args/1, run_command/2]).
 
 -define(VERSION, "1.0.0").
 -define(SECTIONS,
