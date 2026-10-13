@@ -300,23 +300,24 @@ json_roundtrip_test() ->
 
 json_error_handling_test() ->
     %% Test: Invalid JSON syntax
-    ?assertError(badarg, erlmcp_json:decode(<<"not valid json">>)),
-    ?assertError(badarg, erlmcp_json:decode(<<"{invalid}">>)),
-    ?assertError(badarg, erlmcp_json:decode(<<"{\"key\": invalid}">>)),
+    %% OTP 27 native json raises {decode_error, ...} (jsx raised badarg)
+    ?assertError({decode_error, _}, erlmcp_json:decode(<<"not valid json">>)),
+    ?assertError({decode_error, _}, erlmcp_json:decode(<<"{invalid}">>)),
+    ?assertError({decode_error, _}, erlmcp_json:decode(<<"{\"key\": invalid}">>)),
 
     %% Test: Incomplete JSON
-    ?assertError(badarg, erlmcp_json:decode(<<"{\"key\":">>)),
-    ?assertError(badarg, erlmcp_json:decode(<<"[1,2,">>)),
+    ?assertError({decode_error, _}, erlmcp_json:decode(<<"{\"key\":">>)),
+    ?assertError({decode_error, _}, erlmcp_json:decode(<<"[1,2,">>)),
 
     %% Test: Invalid UTF-8 (create invalid UTF-8 sequence)
     InvalidUtf8 = <<"{\"key\":\"", 16#FF, 16#FE, "\"}">>,
-    ?assertError(badarg, erlmcp_json:decode(InvalidUtf8)),
+    ?assertError({decode_error, _}, erlmcp_json:decode(InvalidUtf8)),
 
     %% Test: Empty string
-    ?assertError(badarg, erlmcp_json:decode(<<"">>)),
+    ?assertError({decode_error, _}, erlmcp_json:decode(<<"">>)),
 
     %% Test: Only whitespace
-    ?assertError(badarg, erlmcp_json:decode(<<"   ">>)).
+    ?assertError({decode_error, _}, erlmcp_json:decode(<<"   ">>)).
 
 %%====================================================================
 %% Large Payload Tests
