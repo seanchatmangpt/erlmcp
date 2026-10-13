@@ -22,7 +22,8 @@
 valid_localhost_origin_test() ->
     %% Test localhost origin (development)
     Origin = <<"http://localhost">>,
-    AllowedOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+    %% P0 hardening: default whitelist is empty; origins are explicit
+    AllowedOrigins = [Origin],
 
     Result = erlmcp_origin_validator:validate_origin(Origin, AllowedOrigins),
 
@@ -33,7 +34,7 @@ valid_localhost_origin_test() ->
 valid_localhost_with_port_test() ->
     %% Test localhost with port
     Origin = <<"http://localhost:8080">>,
-    AllowedOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+    AllowedOrigins = [Origin],
 
     Result = erlmcp_origin_validator:validate_origin(Origin, AllowedOrigins),
 
@@ -42,7 +43,7 @@ valid_localhost_with_port_test() ->
 valid_127_0_0_1_test() ->
     %% Test 127.0.0.1 IP address
     Origin = <<"http://127.0.0.1">>,
-    AllowedOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+    AllowedOrigins = [Origin],
 
     Result = erlmcp_origin_validator:validate_origin(Origin, AllowedOrigins),
 
@@ -51,7 +52,7 @@ valid_127_0_0_1_test() ->
 valid_ipv6_localhost_test() ->
     %% Test IPv6 localhost [::1]
     Origin = <<"http://[::1]">>,
-    AllowedOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+    AllowedOrigins = [Origin],
 
     Result = erlmcp_origin_validator:validate_origin(Origin, AllowedOrigins),
 
@@ -60,7 +61,8 @@ valid_ipv6_localhost_test() ->
 valid_null_origin_test() ->
     %% Test null origin (same-origin policy)
     Origin = <<"null">>,
-    AllowedOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+    %% Null origin must be explicitly whitelisted
+    AllowedOrigins = [Origin],
 
     Result = erlmcp_origin_validator:validate_origin(Origin, AllowedOrigins),
 
@@ -223,11 +225,11 @@ dns_rebinding_ipv6_private_test() ->
 undefined_origin_test() ->
     %% Test undefined origin (no Origin header)
     Origin = undefined,
-    AllowedOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+    %% P0 hardening: undefined origin allowed only when explicitly whitelisted
+    AllowedOrigins = [<<"null">>],
 
     Result = erlmcp_origin_validator:validate_origin(Origin, AllowedOrigins),
 
-    %% Undefined origin is allowed for local development
     ?assertMatch({ok, _}, Result).
 
 case_sensitive_origin_test() ->
@@ -265,15 +267,12 @@ origin_with_path_test() ->
 
 default_allowed_origins_test() ->
     %% Test get_default_allowed_origins returns expected origins
-    AllowedOrigins = erlmcp_origin_validator:get_default_allowed_origins(),
+    %% P0 hardening: default (no config) is an empty deny-all list;
+    %% configured origins are returned verbatim
+    ?assertEqual([], erlmcp_origin_validator:get_default_allowed_origins()),
 
-    ?assert(is_list(AllowedOrigins)),
-    ?assert(length(AllowedOrigins) > 0),
-    %% Should include localhost
-    ?assert(lists:member(<<"http://localhost">>, AllowedOrigins)),
-    %% Should include 127.0.0.1
-    ?assert(lists:member(<<"http://127.0.0.1">>, AllowedOrigins)),
-    %% Should include IPv6 localhost
-    ?assert(lists:member(<<"http://[::1]">>, AllowedOrigins)),
-    %% Should include null for same-origin
-    ?assert(lists:member(<<"null">>, AllowedOrigins)).
+    Configured = [<<"http://localhost">>, <<"null">>],
+    ok = application:set_env(erlmcp, allowed_origins, Configured),
+    ?assertEqual(Configured,
+                 erlmcp_origin_validator:get_default_allowed_origins()),
+    ok = application:unset_env(erlmcp, allowed_origins).

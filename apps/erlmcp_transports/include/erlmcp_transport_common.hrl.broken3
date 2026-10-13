@@ -1,0 +1,232 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Common type definitions and macros for erlmcp transport modules
+%%%
+%%% This header file provides shared definitions used across all transport
+%%% implementations to ensure consistency and interoperability.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-ifndef(erlmcp_transport_common_hrl).
+-define(erlmcp_transport_common_hrl, true).
+
+%%====================================================================
+%% Transport Type Definitions
+%%====================================================================
+
+%% Transport types (must match erlmcp_transport:transport_type())
+-type transport_type() :: stdio | tcp | http | ws | sse.
+
+%% Connection states
+-type connection_state() :: disconnected | connecting | connected | reconnecting | error.
+
+%% Transport configuration options (subset of full transport_opts())
+-type transport_config() ::
+    #{id => binary() | atom(),
+      type => transport_type(),
+      owner => pid(),
+      host => inet:hostname() | inet:ip_address(),
+      port => inet:port_number(),
+      url => binary() | string(),
+      connect_timeout => timeout(),
+      send_timeout => timeout(),
+      recv_timeout => timeout(),
+      max_reconnect_attempts => pos_integer() | infinity,
+      max_message_size => pos_integer(),
+      ssl_options => [ssl:tls_client_option()],
+      headers => [{binary() | string(), binary() | string()}],
+      compression => boolean() | gzip | deflate,
+      health_check => boolean(),
+      test_mode => boolean()}.
+
+%% Transport statistics
+-type transport_stats() ::
+    #{bytes_sent => non_neg_integer(),
+      bytes_received => non_neg_integer(),
+      messages_sent => non_neg_integer(),
+      messages_received => non_neg_integer(),
+      connection_attempts => non_neg_integer(),
+      reconnect_count => non_neg_integer(),
+      error_count => non_neg_integer(),
+      last_activity => integer(),
+      uptime => integer(),
+      average_latency => float() | undefined,
+      throughput => float() | undefined}.
+
+%% Error types
+-type transport_error() ::
+    {connection_failed, term()} |
+    {connection_timeout, term()} |
+    {send_failed, term()} |
+    {send_timeout, term()} |
+    {receive_failed, term()} |
+    {receive_timeout, term()} |
+    {protocol_error, term()} |
+    {invalid_message, term()} |
+    {resource_error, term()} |
+    {configuration_error, term()} |
+    {ssl_error, term()} |
+    {unknown_error, term()}.
+
+%% Quality of Service levels
+-type qos_level() ::
+    best_effort |    % No guarantees, minimal overhead
+    reliable,       % Retry failed operations
+    ordered,        % Reliable + message ordering
+    guaranteed.     % Ordered with delivery confirmation
+
+%% Backpressure handling
+-type backpressure_strategy() ::
+    drop |          % Drop new messages when overloaded
+    block |         % Block senders when overloaded
+    resize |        % Resize buffers when overloaded
+    overload.       % Trigger overload handling
+
+%% Compression types
+-type compression_type() ::
+    none |          % No compression
+    gzip |          % GZIP compression
+    deflate |       % Deflate compression
+    auto.           % Auto-negotiate compression
+
+%%====================================================================
+%% Transport Constants
+%%====================================================================
+
+%% Default transport configuration values
+-define(DEFAULT_CONNECT_TIMEOUT, 5000).      %% 5 seconds
+-define(DEFAULT_SEND_TIMEOUT, 10000).        %% 10 seconds
+-define(DEFAULT_RECV_TIMEOUT, 10000).        %% 10 seconds
+-define(DEFAULT_MAX_MESSAGE_SIZE, 16#1000000). %% 16MB
+-define(DEFAULT_MAX_RECONNECT_ATTEMPTS, 5).
+-define(DEFAULT_HEALTH_CHECK_INTERVAL, 30000). %% 30 seconds
+-define(DEFAULT_METRICS_INTERVAL, 60000).    %% 1 minute
+
+%% TCP transport specific
+-define(DEFAULT_TCP_PORT, 8080).
+-define(DEFAULT_TCP_BUFFER_SIZE, 65536).      %% 64KB
+-define(DEFAULT_TCP_NUM_ACCEPTORS, 10).
+-define(DEFAULT_TCP_MAX_CONNECTIONS, 1000).
+
+%% HTTP transport specific
+-define(DEFAULT_HTTP_PORT, 80).
+-define(DEFAULT_HTTPS_PORT, 443).
+-define(DEFAULT_HTTP_TIMEOUT, 30000).        %% 30 seconds
+-define(DEFAULT_HTTP_MAX_REDIRECTS, 5).
+
+%% WebSocket transport specific
+-define(DEFAULT_WS_PORT, 8080).
+-define(DEFAULT_WS_PATH, "/mcp/ws").
+-define(DEFAULT_WS_MAX_MESSAGE_SIZE, 16#1000000). %% 16MB
+-define(DEFAULT_WS_PING_INTERVAL, 30000).   %% 30 seconds
+-define(DEFAULT_WS_IDLE_TIMEOUT, 300000).   %% 5 minutes
+
+%% SSE transport specific
+-define(DEFAULT_SSE_PORT, 8080).
+-define(DEFAULT_SSE_PATH, "/mcp/sse").
+-define(DEFAULT_SSE_PING_INTERVAL, 30000).   %% 30 seconds
+
+%% Error codes (compatible with JSON-RPC error codes)
+-define(ERROR_TRANSPORT_CONNECTION_FAILED, -32000).
+-define(ERROR_TRANSPORT_TIMEOUT, -32001).
+-define(ERROR_TRANSPORT_INVALID_CONFIG, -32002).
+-define(ERROR_TRANSPORT_MESSAGE_TOO_LARGE, -32003).
+-define(ERROR_TRANSPORT_PROTOCOL_ERROR, -32004).
+-define(ERROR_TRANSPORT_RESOURCE_EXHAUSTED, -32005).
+
+%% Message framing
+-define(MESSAGE_DELIMITER, <<"\n">>).       %% JSON-RPC line delimiter
+-define(BINARY_PREFIX, <<"data: ">>).      %% SSE binary prefix
+
+%%====================================================================
+ Logging Macros
+%%====================================================================
+
+%% Transport-specific logging with structured data
+-define(LOG_TRANSPORT(Level, TransportId, Message, Data),
+    logger:Level("Transport ~p: " ++ Message, [TransportId | Data])).
+
+-define(LOG_TRANSPORT_DEBUG(TransportId, Message, Data),
+    ?LOG_TRANSPORT(debug, TransportId, Message, Data)).
+
+-define(LOG_TRANSPORT_INFO(TransportId, Message, Data),
+    ?LOG_TRANSPORT(info, TransportId, Message, Data)).
+
+-define(LOG_TRANSPORT_WARNING(TransportId, Message, Data),
+    ?LOG_TRANSPORT(warning, TransportId, Message, Data)).
+
+-define(LOG_TRANSPORT_ERROR(TransportId, Message, Data),
+    ?LOG_TRANSPORT(error, TransportId, Message, Data)).
+
+%% Performance monitoring macros
+-define(METRIC(TransportId, Metric, Value),
+    begin
+        case erlang:whereis(erlmcp_metrics) of
+            undefined -> ok;
+            Pid -> erlmcp_metrics:record(TransportId, Metric, Value)
+        end
+    end).
+
+-define(METRIC_INC(TransportId, Metric),
+    ?METRIC(TransportId, Metric, 1)).
+
+-define(METRIC_DEC(TransportId, Metric),
+    ?METRIC(TransportId, Metric, -1)).
+
+%%====================================================================
+%% Transport Event Types
+%%====================================================================
+
+%% Transport events for monitoring and debugging
+-type transport_event() ::
+    {transport_connected, pid()} |           % Transport connected
+    {transport_disconnected, pid(), term()} | % Transport disconnected
+    {transport_message, pid(), binary()} |    % Message received
+    {transport_error, pid(), term()} |       % Transport error
+    {transport_metrics, pid(), map()}.       % Metrics update
+
+%%====================================================================
+%% Utility Macros
+%%====================================================================
+
+%% Check if a term is a valid transport type
+-define(IS_TRANSPORT_TYPE(T),
+    (T =:= stdio) orelse (T =:= tcp) orelse
+    (T =:= http) orelse (T =:= ws) orelse (T =:= sse)).
+
+%% Check if timeout is valid
+-define(IS_VALID_TIMEOUT(T),
+    (T =:= infinity) orelse (is_integer(T) andalso T > 0)).
+
+%% Check if message size is within limits
+-define(IS_VALID_MESSAGE_SIZE(Size, Max),
+    (is_integer(Size) andalso Size >= 0) andalso
+    (Max =:= infinity orelse Size =< Max)).
+
+%% Common error tuple patterns
+-define(ERROR(Reason), {error, Reason}).
+-define(ERROR(Code, Reason), {error, Code, Reason}).
+
+%% Success response patterns
+-define(OK(Result), {ok, Result}).
+-define(OK(Result, State), {ok, Result, State}).
+
+%%====================================================================
+ OTP Version Constants
+%%====================================================================
+
+%% Detect OTP version for feature availability
+-define(OTP_VERSION, begin
+    try
+        {_, IntStr} = erlang:system_info(otp_release),
+        list_to_integer(IntStr)
+    catch
+        _ -> 0
+    end
+end).
+
+-define(OTP_SUPPORTED, (?OTP_VERSION >= 26)).
+-define(OTP_HAS_UTF8, (?OTP_VERSION >= 26)).
+-define(OTP_HAS_SOCKET, (?OTP_VERSION >= 26)).
+
+-endif.  % erlmcp_transport_common_hrl

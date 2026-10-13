@@ -1,0 +1,538 @@
+%%%-------------------------------------------------------------------
+%%% @doc MCP HTTP Transport (Gun backend)
+%%%
+%%% HTTP/2-capable transport using Gun library.
+%%% Provides multiplexing and flow control.
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_http_gun).
+
+-behaviour(gen_server).
+-behaviour(erlmcp_transport).
+
+%% Transport behavior callbacks
+-export([connect/1, send/2, recv/2, close/1, get_info/1]).
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+%% API exports
+-export([start_link/1]).
+
+-include("erlmcp.hrl").
+-include_lib("kernel/include/logger.hrl").
+
+%% Types
+-record(http_gun_state, {
+    transport_id :: binary() | atom() | undefined,
+    conn :: pid() | undefined,
+    host :: binary(),
+    port :: pos_integer(),
+    path :: binary(),
+    scheme :: http | https,
+    headers :: [{binary(), binary()}],
+    timeout :: pos_integer(),
+    gun_monitor :: reference() | undefined,
+    pending_requests :: #{reference() => {pid(), reference(), binary()}},
+    active_requests :: non_neg_integer(),
+    max_retries :: non_neg_integer(),
+    retry_delay :: pos_integer(),
+    owner :: pid() | undefined,
+    transport :: tcp | tls,
+    connect_timeout :: pos_integer(),
+    start_time :: integer(),
+    last_activity :: integer()
+}).
+
+-type state() :: #http_gun_state{}.
+
+-export_type([state/0]).
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+%% @doc Start the HTTP Gun transport
+-spec start_link(map()) -> {ok, pid()} | {error, term()}.
+start_link(Args) when is_map(Args) ->
+    gen_server:start_link(?MODULE, Args, []).
+
+%% @doc Connect to HTTP server
+-spec connect(map()) -> {ok, state()} | {error, term()}.
+connect(Args) when is_map(Args) ->
+    case build_initial_state(Args) of
+        {ok, State} ->
+            case do_connect(State) of
+                {ok, NewState} ->
+                    {ok, NewState};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc Send message via HTTP
+-spec send(binary(), state()) -> {ok, state()} | {error, term()}.
+send(Message, #http_gun_state{conn = Conn} = State) when is_pid(Conn) ->
+    try
+        StreamRef = gun:post(Conn, State#http_gun_state.path, State#http_gun_state.headers, Message),
+        Pending = maps:put(StreamRef, {self(), make_ref(), Message}, State#http_gun_state.pending_requests),
+        {ok, State#http_gun_state{
+            pending_requests = Pending,
+            active_requests = State#http_gun_state.active_requests + 1
+        }}
+    catch
+        error:Reason ->
+            {error, {send_failed, Reason}}
+    end;
+send(_Message, State) ->
+    {error, not_connected}.
+
+%% @doc Receive response via HTTP
+-spec recv(timeout(), state()) -> {ok, {binary(), state()}} | {error, term()}.
+recv(Timeout, #http_gun_state{conn = Conn} = State) when is_pid(Conn) ->
+    receive
+        {gun_data, Conn, StreamRef, fin, Data} ->
+            case maps:get(StreamRef, State#http_gun_state.pending_requests, undefined) of
+                {_, _, _} ->
+                    {ok, {Data, State#http_gun_state{
+                        pending_requests = maps:remove(StreamRef, State#http_gun_state.pending_requests),
+                        active_requests = max(0, State#http_gun_state.active_requests - 1)
+                    }}};
+                undefined ->
+                    {error, {unknown_stream, StreamRef}}
+            end;
+        {gun_error, Conn, StreamRef, Reason} ->
+            {error, {stream_error, StreamRef, Reason}}
+    after Timeout ->
+        {error, timeout}
+    end;
+recv(_Timeout, State) ->
+    {error, not_connected}.
+
+%% @doc Close HTTP connection
+-spec close(state()) -> ok.
+close(#http_gun_state{conn = undefined}) ->
+    ok;
+close(#http_gun_state{conn = Conn}) ->
+    gun:close(Conn),
+    ok.
+
+%% @doc Get comprehensive transport information
+-spec get_info(state()) -> {ok, map()} | {error, term()}.
+get_info(#http_gun_state{
+    conn = Conn,
+    host = Host,
+    port = Port,
+    scheme = Scheme,
+    active_requests = ActiveReqs,
+    pending_requests = PendingReqs
+} = State) ->
+    Status = case is_process_alive(Conn) of
+        true -> connected;
+        false -> disconnected
+    end,
+
+    {ok, #{
+        id => State#http_gun_state.transport_id,
+        type => http,
+        status => Status,
+        scheme => Scheme,
+        host => Host,
+        port => Port,
+        active_requests => ActiveReqs,
+        pending_requests => maps:size(PendingReqs),
+        config => #{
+            timeout => State#http_gun_state.timeout,
+            max_retries => State#http_gun_state.max_retries,
+            retry_delay => State#http_gun_state.retry_delay
+        },
+        statistics => #{
+            messages_sent => State#http_gun_state.active_requests,
+            connection_time => State#http_gun_state.start_time
+        }
+    }}.
+
+%%====================================================================
+%% gen_server callbacks
+%%====================================================================
+
+-spec init(map()) -> {ok, state()} | {error, term()}.
+init(Args) ->
+    process_flag(trap_exit, true),
+    case build_initial_state(Args) of
+        {ok, State} ->
+            case do_connect(State) of
+                {ok, NewState} ->
+                    {ok, NewState};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+-spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()}.
+handle_call({connect, Args}, _From, State) ->
+    case build_initial_state(Args) of
+        {ok, NewState} ->
+            case do_connect(NewState) of
+                {ok, FinalState} ->
+                    {reply, {ok, FinalState}, FinalState};
+                {error, Reason} ->
+                    {reply, {error, Reason}, State}
+            end;
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end;
+handle_call({send, Message}, _From, #http_gun_state{conn = undefined} = State) ->
+    case do_connect(State) of
+        {ok, NewState} ->
+            handle_call({send, Message}, _From, NewState);
+        {error, Reason} ->
+            {reply, {error, Reason}, State}
+    end;
+handle_call({send, Message}, From, #http_gun_state{conn = Conn} = State) ->
+    StreamRef = gun:post(Conn, State#http_gun_state.path, State#http_gun_state.headers, Message),
+    Pending = maps:put(StreamRef, {From, make_ref(), Message}, State#http_gun_state.pending_requests),
+    NewState = State#http_gun_state{
+        pending_requests = Pending,
+        active_requests = State#http_gun_state.active_requests + 1
+    },
+    {noreply, NewState};
+handle_call({recv, Timeout}, _From, State) ->
+    %% For HTTP, we handle responses via handle_info
+    %% This is for synchronous waiting
+    {reply, {error, not_supported}, State};
+handle_call({close}, _From, State) ->
+    do_close(State),
+    {reply, ok, State};
+handle_call(get_state, _From, State) ->
+    {reply, {ok, State}, State};
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_request}, State}.
+
+-spec handle_cast(term(), state()) -> {noreply, state()}.
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+-spec handle_info(term(), state()) -> {noreply, state()} | {stop, term(), state()}.
+handle_info({gun_up, GunPid, _Protocol}, #http_gun_state{conn = GunPid} = State) ->
+    logger:info("Gun HTTP connection established to ~s://~s:~p",
+                [State#http_gun_state.scheme, State#http_gun_state.host, State#http_gun_state.port]),
+    {noreply, State};
+handle_info({gun_down, GunPid, _Protocol, Reason, _}, #http_gun_state{conn = GunPid} = State) ->
+    logger:warning("Gun HTTP connection down: ~p", [Reason]),
+    %% Attempt reconnect
+    case do_connect(State) of
+        {ok, NewState} ->
+            {noreply, NewState};
+        {error, _} ->
+            {noreply, State#http_gun_state{conn = undefined, gun_monitor = undefined}}
+    end;
+handle_info({gun_response, GunPid, StreamRef, fin, StatusCode, Headers},
+            #http_gun_state{conn = GunPid} = State) ->
+    %% Response with no body
+    handle_gun_response(StreamRef, StatusCode, Headers, <<>>, State);
+handle_info({gun_response, GunPid, StreamRef, nofin, StatusCode, Headers},
+            #http_gun_state{conn = GunPid} = State) ->
+    %% Response with body coming - store headers and status
+    case maps:get(StreamRef, State#http_gun_state.pending_requests, undefined) of
+        {From, FromRef, Message} ->
+            NewPending = maps:put(StreamRef, {From, FromRef, Message, StatusCode, Headers}, State#http_gun_state.pending_requests),
+            {noreply, State#http_gun_state{pending_requests = NewPending}};
+        _ ->
+            {noreply, State}
+    end;
+handle_info({gun_data, GunPid, StreamRef, fin, Data}, #http_gun_state{conn = GunPid} = State) ->
+    %% Final data chunk
+    case maps:take(StreamRef, State#http_gun_state.pending_requests) of
+        {{From, _FromRef, Message, StatusCode, Headers}, NewPending} ->
+            NewState = State#http_gun_state{
+                pending_requests = NewPending,
+                active_requests = max(0, State#http_gun_state.active_requests - 1)
+            },
+            FinalState = handle_gun_response(StreamRef, StatusCode, Headers, Data, NewState),
+            {noreply, process_request_queue(FinalState)};
+        error ->
+            logger:warning("Received data for unknown stream: ~p", [StreamRef]),
+            {noreply, State}
+    end;
+handle_info({gun_data, GunPid, StreamRef, nofin, _Data}, #http_gun_state{conn = GunPid} = State) ->
+    %% More data coming, accumulate if needed
+    {noreply, State};
+handle_info({gun_error, GunPid, StreamRef, Reason}, #http_gun_state{conn = GunPid} = State) ->
+    logger:error("Gun stream error ~p: ~p", [StreamRef, Reason]),
+    handle_gun_error(StreamRef, Reason, State);
+handle_info({gun_error, GunPid, Reason}, #http_gun_state{conn = GunPid} = State) ->
+    logger:error("Gun connection error: ~p", [Reason]),
+    {noreply, State};
+handle_info({'DOWN', MonitorRef, process, GunPid, Reason},
+            #http_gun_state{conn = GunPid, gun_monitor = MonitorRef} = State) ->
+    logger:warning("Gun process ~p died: ~p", [GunPid, Reason]),
+    case do_connect(State) of
+        {ok, NewState} ->
+            {noreply, NewState};
+        {error, _} ->
+            {noreply, State#http_gun_state{conn = undefined, gun_monitor = undefined}}
+    end;
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+-spec terminate(term(), state()) -> ok.
+terminate(_Reason, #http_gun_state{conn = undefined}) ->
+    ok;
+terminate(_Reason, #http_gun_state{conn = Conn}) ->
+    gun:close(Conn),
+    ok.
+
+-spec code_change(term(), state(), term()) -> {ok, state()}.
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal Functions
+%%====================================================================
+
+%% @doc Build initial state from configuration
+-spec build_initial_state(map()) -> {ok, state()} | {error, term()}.
+build_initial_state(Args) ->
+    Url = maps:get(url, Args, <<"http://localhost:8080">>),
+    TransportId = maps:get(transport_id, Args, undefined),
+    Now = erlang:system_time(millisecond),
+
+    case parse_url(Url) of
+        {ok, Scheme, Host, Port, Path} ->
+            Headers = normalize_headers(maps:get(headers, Args, [])),
+            Timeout = maps:get(timeout, Args, 30000),
+            ConnectTimeout = maps:get(connect_timeout, Args, 5000),
+            MaxRetries = maps:get(max_retries, Args, 3),
+            RetryDelay = maps:get(retry_delay, Args, 1000),
+            Owner = maps:get(owner, Args, undefined),
+
+            {ok, #http_gun_state{
+                transport_id = TransportId,
+                scheme = Scheme,
+                host = Host,
+                port = Port,
+                path = Path,
+                headers = Headers,
+                timeout = Timeout,
+                connect_timeout = ConnectTimeout,
+                max_retries = MaxRetries,
+                retry_delay = RetryDelay,
+                pending_requests = #{},
+                active_requests = 0,
+                owner = Owner,
+                transport = case Scheme of
+                    https -> tls;
+                    http -> tcp
+                end,
+                start_time = Now,
+                last_activity = Now
+            }};
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc Parse URL into components
+-spec parse_url(binary()) -> {ok, http | https, binary(), pos_integer(), binary()} | {error, term()}.
+parse_url(Url) when is_binary(Url) ->
+    case uri_string:parse(Url) of
+        #{scheme := SchemeStr, host := Host} = Parsed ->
+            Scheme = case SchemeStr of
+                <<"https">> -> https;
+                "https" -> https;
+                <<"http">> -> http;
+                "http" -> http;
+                _ -> http
+            end,
+
+            Port = maps:get(port, Parsed, default_port(Scheme)),
+            Path = maps:get(path, Parsed, <<"/">>),
+            Query = maps:get(query, Parsed, <<>>),
+
+            FullPath = case Query of
+                <<>> -> ensure_binary(Path);
+                _ -> <<(ensure_binary(Path))/binary, "?", (ensure_binary(Query))/binary>>
+            end,
+
+            {ok, Scheme, ensure_binary(Host), Port, FullPath};
+        _ ->
+            {error, {invalid_url, Url}}
+    end.
+
+%% @doc Get default port for scheme
+-spec default_port(http | https) -> pos_integer().
+default_port(https) -> 443;
+default_port(http) -> 80.
+
+%% @doc Ensure value is binary
+-spec ensure_binary(term()) -> binary().
+ensure_binary(V) when is_binary(V) -> V;
+ensure_binary(V) when is_list(V) -> list_to_binary(V);
+ensure_binary(V) when is_atom(V) -> atom_to_binary(V, utf8).
+
+%% @doc Normalize headers
+-spec normalize_headers([{term(), term()}]) -> [{binary(), binary()}].
+normalize_headers(Headers) ->
+    DefaultHeaders = [
+        {<<"content-type">>, <<"application/json">>},
+        {<<"accept">>, <<"application/json">>},
+        {<<"user-agent">>, <<"erlmcp-transport-http-gun/1.0">>}
+    ],
+
+    UserHeaders = lists:map(fun({K, V}) -> {ensure_binary(K), ensure_binary(V)} end, Headers),
+    merge_headers(DefaultHeaders, UserHeaders).
+
+%% @doc Merge headers, user headers take precedence
+-spec merge_headers([{binary(), binary()}], [{binary(), binary()}]) -> [{binary(), binary()}].
+merge_headers(Defaults, User) ->
+    UserMap = maps:from_list([{string:lowercase(K), {K, V}} || {K, V} <- User]),
+    Filtered = lists:filter(fun({K, _}) -> not maps:is_key(string:lowercase(K), UserMap) end, Defaults),
+    Filtered ++ User.
+
+%% @doc Establish connection
+-spec do_connect(state()) -> {ok, state()} | {error, term()}.
+do_connect(#http_gun_state{conn = OldPid, gun_monitor = OldMon} = State) ->
+    %% Close old connection
+    case OldPid of
+        undefined -> ok;
+        _ ->
+            case OldMon of
+                undefined -> ok;
+                _ -> demonitor(OldMon, [flush])
+            end,
+            gun:close(OldPid)
+    end,
+
+    %% Build gun options
+    GunOpts = build_gun_opts(State),
+
+    case gun:open(State#http_gun_state.host, State#http_gun_state.port, GunOpts) of
+        {ok, GunPid} ->
+            MonitorRef = monitor(process, GunPid),
+            case gun:await_up(GunPid, State#http_gun_state.connect_timeout) of
+                {ok, Protocol} ->
+                    logger:info("Gun connected with protocol: ~p", [Protocol]),
+                    {ok, State#http_gun_state{conn = GunPid, gun_monitor = MonitorRef}};
+                {error, timeout} ->
+                    gun:close(GunPid),
+                    {error, connect_timeout};
+                {error, Reason} ->
+                    gun:close(GunPid),
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+%% @doc Build gun options
+-spec build_gun_opts(state()) -> map().
+build_gun_opts(#http_gun_state{transport = tls,
+                               scheme = https,
+                               connect_timeout = ConnectTimeout,
+                               timeout = Timeout}) ->
+    %% HTTP/2 with TLS
+    #{protocols => [http2, http],
+      transport => ssl,
+      transport_opts => #{verify => verify_peer},
+      connect_timeout => ConnectTimeout,
+      http_opts => #{keepalive => Timeout},
+      http2_opts => #{keepalive => Timeout}};
+build_gun_opts(#http_gun_state{connect_timeout = ConnectTimeout, timeout = Timeout}) ->
+    %% HTTP/1.1 or HTTP/2 over TCP
+    #{protocols => [http2, http],
+      transport => tcp,
+      connect_timeout => ConnectTimeout,
+      http_opts => #{keepalive => Timeout},
+      http2_opts => #{keepalive => Timeout}}.
+
+%% @doc Close connection
+-spec do_close(state()) -> ok.
+do_close(#http_gun_state{conn = undefined}) ->
+    ok;
+do_close(#http_gun_state{conn = Conn}) ->
+    gun:close(Conn),
+    ok.
+
+%% @doc Handle gun response
+-spec handle_gun_response(reference(), non_neg_integer(), [{binary(), binary()}], binary(), state()) -> state().
+handle_gun_response(StreamRef, StatusCode, Headers, Body, State) ->
+    case maps:take(StreamRef, State#http_gun_state.pending_requests) of
+        {{From, _FromRef, _Message, _StatusCode, _Headers}, NewPending} ->
+            %% Process response
+            case StatusCode >= 200 andalso StatusCode < 300 of
+                true ->
+                    %% Success
+                    gen_server:reply(From, {ok, Body}),
+                    logger:debug("HTTP request successful: ~p", [StatusCode]);
+                false ->
+                    %% Error
+                    gen_server:reply(From, {error, {http_error, StatusCode, Body}}),
+                    logger:error("HTTP request failed: ~p ~s", [StatusCode, Body])
+            end,
+
+            State#http_gun_state{
+                pending_requests = NewPending,
+                active_requests = max(0, State#http_gun_state.active_requests - 1)
+            };
+        _ ->
+            logger:warning("Received response for unknown stream: ~p", [StreamRef]),
+            State
+    end.
+
+%% @doc Handle gun error
+-spec handle_gun_error(reference(), term(), state()) -> state().
+handle_gun_error(StreamRef, Reason, State) ->
+    case maps:take(StreamRef, State#http_gun_state.pending_requests) of
+        {{From, _FromRef, Message, Attempts}, NewPending} ->
+            CheckRetry = State#http_gun_state.max_retries > 0,
+            case CheckRetry andalso should_retry(Reason) of
+                true ->
+                    case Attempts < State#http_gun_state.max_retries of
+                        true ->
+                            %% Schedule retry
+                            Delay = calculate_retry_delay(Attempts, State),
+                            erlang:send_after(Delay, self(), {retry_request, Message, From, Attempts}),
+                            logger:info("Retrying HTTP request ~p in ~p ms", [Attempts + 1, Delay]);
+                        false ->
+                            gen_server:reply(From, {error, Reason}),
+                            logger:error("HTTP request failed after ~p attempts: ~p", [State#http_gun_state.max_retries, Reason])
+                    end;
+                false ->
+                    gen_server:reply(From, {error, Reason}),
+                    logger:error("HTTP request failed: ~p", [Reason])
+            end,
+
+            State#http_gun_state{
+                pending_requests = NewPending,
+                active_requests = max(0, State#http_gun_state.active_requests - 1)
+            };
+        _ ->
+            logger:warning("Received error for unknown stream: ~p", [StreamRef]),
+            State
+    end.
+
+%% @doc Check if request should be retried
+-spec should_retry(term()) -> boolean().
+should_retry({http_error, StatusCode}) ->
+    StatusCode >= 500 orelse StatusCode =:= 429;
+should_retry(_) ->
+    true.
+
+%% @doc Calculate retry delay with exponential backoff
+-spec calculate_retry_delay(non_neg_integer(), state()) -> pos_integer().
+calculate_retry_delay(Attempts, State) ->
+    Backoff = State#http_gun_state.retry_delay * (1 bsl Attempts),
+    MaxDelay = 30000,  % 30 seconds max
+    Jitter = rand:uniform(1000),
+    min(Backoff + Jitter, MaxDelay).
+
+%% @doc Process request queue for new requests
+-spec process_request_queue(state()) -> state().
+process_request_queue(State) ->
+    %% This is a simplified version - in practice, you'd manage a queue
+    %% For now, just ensure we're not exceeding connection limits
+    State.

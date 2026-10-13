@@ -34,7 +34,7 @@ create_tcp_socket_defaults_test() ->
             Result = erlmcp_socket_utils:create_tcp_socket(Options),
             case Result of
                 {ok, Socket} ->
-                    ?assert(is_reference(Socket)),
+                    ?assertMatch({'$socket', _}, Socket),
                     %% Clean up
                     ok = socket:close(Socket);
                 {error, Reason} ->
@@ -56,11 +56,10 @@ create_tcp_socket_custom_buffers_test() ->
             Result = erlmcp_socket_utils:create_tcp_socket(Options),
             case Result of
                 {ok, Socket} ->
-                    ?assert(is_reference(Socket)),
-                    %% Verify buffer sizes were set
-                    {ok, Info} = socket:info(Socket),
-                    RcvBuf = proplists:get_value(recbuf, Info, 0),
-                    SndBuf = proplists:get_value(sndbuf, Info, 0),
+                    ?assertMatch({'$socket', _}, Socket),
+                    %% Verify buffer sizes were set (OTP 28: getopt)
+                    {ok, RcvBuf} = socket:getopt(Socket, socket, rcvbuf),
+                    {ok, SndBuf} = socket:getopt(Socket, socket, sndbuf),
                     ?assertEqual(?TEST_RCVBUF, RcvBuf),
                     ?assertEqual(?TEST_SNDBUF, SndBuf),
                     %% Clean up
@@ -83,11 +82,10 @@ create_tcp_socket_nodelay_test() ->
             Result = erlmcp_socket_utils:create_tcp_socket(Options),
             case Result of
                 {ok, Socket} ->
-                    ?assert(is_reference(Socket)),
-                    %% Verify options were set
-                    {ok, Info} = socket:info(Socket),
-                    NoDelay = proplists:get_value(nodelay, Info, false),
-                    ReuseAddr = proplists:get_value(reuseaddr, Info, false),
+                    ?assertMatch({'$socket', _}, Socket),
+                    %% Verify options were set (OTP 28: getopt)
+                    {ok, NoDelay} = socket:getopt(Socket, tcp, nodelay),
+                    {ok, ReuseAddr} = socket:getopt(Socket, socket, reuseaddr),
                     ?assert(NoDelay),
                     ?assert(ReuseAddr),
                     %% Clean up
@@ -110,10 +108,10 @@ enable_backpressure_test() ->
                     %% Enable backpressure
                     BackpressureResult = erlmcp_socket_utils:enable_backpressure(Socket),
                     ?assertEqual(ok, BackpressureResult),
-                    %% Verify socket is in passive mode
-                    {ok, Info} = socket:info(Socket),
-                    Active = proplists:get_value(active, Info, false),
-                    ?assertNot(Active),
+                    %% Verify a one-shot readability notification is armed
+                    %% (OTP 28 replacement for active/notify)
+                    {ok, SelectRead} = socket:getopt(Socket, otp, select_read),
+                    ?assert(SelectRead),
                     %% Clean up
                     ok = socket:close(Socket);
                 {error, Reason} ->
@@ -138,10 +136,9 @@ set_buffer_sizes_test() ->
                     },
                     SetResult = erlmcp_socket_utils:set_buffer_sizes(Socket, NewBuffers),
                     ?assertEqual(ok, SetResult),
-                    %% Verify new buffer sizes
-                    {ok, Info} = socket:info(Socket),
-                    RcvBuf = proplists:get_value(recbuf, Info, 0),
-                    SndBuf = proplists:get_value(sndbuf, Info, 0),
+                    %% Verify new buffer sizes (OTP 28: getopt)
+                    {ok, RcvBuf} = socket:getopt(Socket, socket, rcvbuf),
+                    {ok, SndBuf} = socket:getopt(Socket, socket, sndbuf),
                     ?assertEqual(?TEST_RCVBUF * 2, RcvBuf),
                     ?assertEqual(?TEST_SNDBUF * 2, SndBuf),
                     %% Clean up
@@ -169,11 +166,11 @@ get_socket_info_test() ->
                     ?assertMatch({ok, _}, InfoResult),
                     {ok, InfoMap} = InfoResult,
                     ?assert(is_map(InfoMap)),
-                    %% Verify expected fields
-                    RcvBuf = maps:get(recbuf, InfoMap, undefined),
-                    SndBuf = maps:get(sndbuf, InfoMap, undefined),
-                    ?assertEqual(?TEST_RCVBUF, RcvBuf),
-                    ?assertEqual(?TEST_SNDBUF, SndBuf),
+                    %% Verify expected fields (OTP 28 info map)
+                    ?assertEqual(inet, maps:get(domain, InfoMap)),
+                    ?assertEqual(tcp, maps:get(protocol, InfoMap)),
+                    ?assertEqual(stream, maps:get(type, InfoMap)),
+                    ?assert(is_map(maps:get(counters, InfoMap))),
                     %% Clean up
                     ok = socket:close(Socket);
                 {error, Reason} ->
@@ -218,11 +215,10 @@ create_tcp_socket_ipv6_test() ->
             Result = erlmcp_socket_utils:create_tcp_socket(inet6, Options),
             case Result of
                 {ok, Socket} ->
-                    ?assert(is_reference(Socket)),
-                    %% Verify domain is inet6
-                    {ok, Info} = socket:info(Socket),
-                    Domain = proplists:get_value(domain, Info, undefined),
-                    ?assertEqual(inet6, Domain),
+                    ?assertMatch({'$socket', _}, Socket),
+                    %% Verify domain is inet6 (OTP 28: via info map)
+                    {ok, InfoMap6} = erlmcp_socket_utils:get_socket_info(Socket),
+                    ?assertEqual(inet6, maps:get(domain, InfoMap6)),
                     %% Clean up
                     ok = socket:close(Socket);
                 {error, Reason} ->
@@ -247,15 +243,15 @@ socket_lifecycle_test() ->
                 sndbuf => ?TEST_SNDBUF,
                 nodelay => true
             },
-            {ok, Socket} = ?assertMatch({ok, _},
-                erlmcp_socket_utils:create_tcp_socket(Options)),
+            {ok, Socket} = erlmcp_socket_utils:create_tcp_socket(Options),
+            ?assertMatch({ok, _}, {ok, Socket}),
 
             %% Enable backpressure
             ?assertEqual(ok, erlmcp_socket_utils:enable_backpressure(Socket)),
 
             %% Get socket info
-            {ok, Info} = ?assertMatch({ok, _},
-                erlmcp_socket_utils:get_socket_info(Socket)),
+            {ok, Info} = erlmcp_socket_utils:get_socket_info(Socket),
+            ?assertMatch({ok, _}, {ok, Info}),
 
             %% Modify buffer sizes
             NewBuffers = #{rcvbuf => ?TEST_RCVBUF div 2},
@@ -264,8 +260,9 @@ socket_lifecycle_test() ->
             %% Close socket
             ?assertEqual(ok, socket:close(Socket)),
 
-            %% Verify socket is closed
-            ?assertMatch({error, _}, socket:info(Socket));
+            %% Verify socket is closed (OTP 28: closed sockets are
+            %% unusable via getopt, even if info still returns counters)
+            ?assertMatch({error, _}, catch socket:getopt(Socket, socket, rcvbuf));
         false ->
             ?debugMsg("Skipping test - socket API not supported")
     end.

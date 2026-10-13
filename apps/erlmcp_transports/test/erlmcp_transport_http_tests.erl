@@ -155,7 +155,7 @@ http_send_behavior_test_() ->
              {ok, Pid} ->
                  try
                      % Test send (may fail if no server, but shouldn't crash)
-                     TestData = jsx:encode(#{method => <<"test">>, params => #{}}),
+                     TestData = erlmcp_json_native:encode(#{method => <<"test">>, params => #{}}),
                      Result = erlmcp_transport_http:send(Pid, TestData),
 
                      % Either ok or error is acceptable
@@ -421,7 +421,7 @@ http_json_data_test_() ->
      [{"Valid JSON data",
        fun() ->
           JsonData =
-              jsx:encode(#{jsonrpc => <<"2.0">>,
+              erlmcp_json_native:encode(#{jsonrpc => <<"2.0">>,
                            method => <<"test">>,
                            id => 1}),
           ?assert(is_binary(JsonData)),
@@ -430,7 +430,7 @@ http_json_data_test_() ->
       {"JSON array params",
        fun() ->
           JsonData =
-              jsx:encode(#{jsonrpc => <<"2.0">>,
+              erlmcp_json_native:encode(#{jsonrpc => <<"2.0">>,
                            method => <<"test">>,
                            params => [1, 2, 3],
                            id => 1}),
@@ -439,7 +439,7 @@ http_json_data_test_() ->
       {"JSON object params",
        fun() ->
           JsonData =
-              jsx:encode(#{jsonrpc => <<"2.0">>,
+              erlmcp_json_native:encode(#{jsonrpc => <<"2.0">>,
                            method => <<"test">>,
                            params => #{key => <<"value">>},
                            id => 1}),
@@ -474,7 +474,7 @@ http_json_data_test_() ->
 %          {ok, Pid} = erlmcp_transport_http:init(Opts),
 %
 %          % Send request
-%          Request = jsx:encode(#{method => <<"test">>}),
+%          Request = erlmcp_json_native:encode(#{method => <<"test">>}),
 %          ok = erlmcp_transport_http:send(Pid, Request),
 %
 %          % Receive response

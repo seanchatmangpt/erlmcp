@@ -215,7 +215,7 @@ t006_discover_parses_subsets() ->
             {skip, no_jsx};
         {file, _} ->
             set_k8s_env(),
-            Body = jsx:encode(#{
+            Body = erlmcp_json_native:encode(#{
                 <<"subsets">> => [
                     #{<<"addresses">> => [#{<<"ip">> => <<"192.168.1.5">>}],
                       <<"ports">>     => [#{<<"port">> => 9090}]}

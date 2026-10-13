@@ -264,7 +264,7 @@ format_error_response_test() ->
     ?assert(is_list(Headers)),
     ?assert(is_binary(Body)),
     %% Verify JSON body
-    Decoded = jsx:decode(Body),
+    Decoded = erlmcp_json_native:decode(Body),
     ?assert(maps:is_key(<<"error">>, Decoded)).
 
 error_response_with_binary_data_test() ->
@@ -276,5 +276,5 @@ error_response_with_binary_data_test() ->
 
     ?assertMatch({400, _, _}, Response),
     {_Code, _Headers, Body} = Response,
-    Decoded = jsx:decode(Body),
+    Decoded = erlmcp_json_native:decode(Body),
     ?assert(maps:is_key(<<"data">>, Decoded)).

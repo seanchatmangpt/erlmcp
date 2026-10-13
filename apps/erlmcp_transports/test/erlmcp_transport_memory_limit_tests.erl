@@ -59,11 +59,12 @@ http_transport_memory_limit_test_() ->
      fun(_) ->
         [?_test(begin
                     SmallMessage =
-                        jsx:encode(#{jsonrpc => <<"2.0">>,
+                        erlmcp_json_native:encode(#{jsonrpc => <<"2.0">>,
                                      method => <<"test">>,
                                      id => 1}),
                     ?assertEqual(ok, erlmcp_memory_guard:check_allocation(byte_size(SmallMessage))),
-                    OversizePayload = <<"{\"data\": \"", <<0:8000000/unit:8>>/binary, "\"}">>,
+                    %% 20 MB payload exceeds the 16 MB default limit
+                    OversizePayload = <<"{\"data\": \"", <<0:20000000/unit:8>>/binary, "\"}">>,
                     ?assertEqual({error, payload_too_large},
                                  erlmcp_memory_guard:check_allocation(byte_size(OversizePayload)))
                 end)]

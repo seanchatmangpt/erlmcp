@@ -52,17 +52,19 @@ create_tcp_socket(Domain, Options) when is_map(Options) ->
             ReuseAddr = maps:get(reuseaddr, Options, ?DEFAULT_REUSEADDR),
 
             %% Build socket options list (OTP 26-28 format)
+            %% OTP 28: socket:setopts/2 was removed; socket:setopt/4
+            %% (Socket, Level, Name, Value) is the API.
             SocketOpts =
-                [{rcvbuf, RcvBuf},
-                 {sndbuf, SndBuf},
-                 {nodelay, NoDelay},
-                 {reuseaddr, ReuseAddr}],
+                [{socket, rcvbuf, RcvBuf},
+                 {socket, sndbuf, SndBuf},
+                 {tcp, nodelay, NoDelay},
+                 {socket, reuseaddr, ReuseAddr}],
 
             %% Open socket with canonical protocol name (OTP 28 requirement)
             case socket:open(Domain, stream, tcp) of
                 {ok, Socket} ->
                     %% Set socket options
-                    case socket:setopts(Socket, SocketOpts) of
+                    case set_socket_opts(Socket, SocketOpts) of
                         ok ->
                             {ok, Socket};
                         {error, OptsReason} ->
@@ -84,19 +86,14 @@ create_tcp_socket(Domain, Options) when is_map(Options) ->
 enable_backpressure(Socket) ->
     case is_supported() of
         true ->
-            %% Set to passive mode
-            case socket:setopts(Socket, [{active, false}]) of
+            %% OTP 28: the 'active' option and socket:notify/2 were removed.
+            %% The socket API is passive by default; request a one-shot
+            %% readability notification via the 'select_read' otp option.
+            case socket:setopt(Socket, otp, select_read, true) of
                 ok ->
-                    %% Request notification for next receive (OTP 26 backpressure)
-                    %% Note: 'receive' is a reserved word, use 'recv' instead
-                    case socket:notify(Socket, {select, recv, once}) of
-                        {ok, _} ->
-                            ok;
-                        {error, Reason} ->
-                            {error, {notify_failed, Reason}}
-                    end;
+                    ok;
                 {error, Reason} ->
-                    {error, {setopts_failed, Reason}}
+                    {error, {notify_failed, Reason}}
             end;
         false ->
             {error, unsupported_otp_version}
@@ -110,9 +107,9 @@ set_buffer_sizes(Socket, BufferSizes) when is_map(BufferSizes) ->
     case is_supported() of
         true ->
             Opts = maps:fold(fun(K, V, Acc) ->
-                                [{K, V} | Acc]
+                                [{socket, K, V} | Acc]
                              end, [], BufferSizes),
-            socket:setopts(Socket, Opts);
+            set_socket_opts(Socket, Opts);
         false ->
             {error, unsupported_otp_version}
     end.
@@ -124,11 +121,10 @@ get_socket_info(Socket) ->
     case is_supported() of
         true ->
             case socket:info(Socket) of
-                {ok, Info} when is_list(Info) ->
+                Info when is_list(Info) ->
                     %% Convert proplist to map for easier access
-                    InfoMap = maps:from_list(Info),
-                    {ok, InfoMap};
-                {ok, InfoMap} when is_map(InfoMap) ->
+                    {ok, maps:from_list(Info)};
+                InfoMap when is_map(InfoMap) ->
                     {ok, InfoMap};
                 {error, Reason} ->
                     {error, Reason}
@@ -220,3 +216,17 @@ validate_options(Options) ->
     end.
 
 -compile({nowarn_unused_function, validate_options/1}).  %% Reserved for future use
+
+%% @doc Apply OTP 28 socket:setopt/4 options one at a time.
+%% Returns ok or {error, Reason} for the first failing option.
+-spec set_socket_opts(socket(), [{socket | tcp | otp, atom(), term()}]) ->
+    ok | {error, term()}.
+set_socket_opts(_Socket, []) ->
+    ok;
+set_socket_opts(Socket, [{Level, Name, Value} | Rest]) ->
+    case socket:setopt(Socket, Level, Name, Value) of
+        ok ->
+            set_socket_opts(Socket, Rest);
+        {error, Reason} ->
+            {error, {Level, Name, Reason}}
+    end.

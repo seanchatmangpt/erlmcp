@@ -220,7 +220,7 @@ t005_discover_parses_single_service() ->
         false ->
             {skip, no_jsx};
         {file, _} ->
-            Body = jsx:encode([
+            Body = erlmcp_json_native:encode([
                 #{<<"Service">> => #{
                     <<"Address">> => <<"10.1.2.3">>,
                     <<"Port">> => 4242
