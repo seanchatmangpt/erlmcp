@@ -167,8 +167,9 @@ start_link() ->
                            {ok, tls_options()} | {error, validation_error()}.
 build_tls_options(Role, Config) when is_map(Config) ->
     maybe
-        ok ?= validate_tls_config(Config);
-        begin
+        validate_tls_config(Config)
+    else
+        ok ->
             try case Role of
                     client -> build_client_tls_opts(Config);
                     server -> build_server_tls_opts(Config)
@@ -177,9 +178,7 @@ build_tls_options(Role, Config) when is_map(Config) ->
                 Type:Error:Stacktrace ->
                     ?LOG_ERROR("Failed to build TLS options: ~p:~p~n~p", [Type, Error, Stacktrace]),
                     {error, {build_failed, {Type, Error}}}
-            end
-        end
-    else
+            end;
         {error, Reason} ->
             {error, Reason}
     end.

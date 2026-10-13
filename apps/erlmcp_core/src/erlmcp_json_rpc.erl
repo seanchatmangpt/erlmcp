@@ -119,9 +119,9 @@ decode_batch(Json) when is_binary(Json) ->
         Data when is_map(Data) ->
             %% Single request, wrap in list
             maybe
-                {ok, Message} ?= erlmcp_message_parser:parse_json_rpc(Data);
-                {ok, [Message]}
+                erlmcp_message_parser:parse_json_rpc(Data)
             else
+                {ok, Message} -> {ok, [Message]};
                 Error -> Error
             end;
         _ ->
@@ -915,10 +915,15 @@ parse_batch([]) ->
 parse_batch(Requests) when is_list(Requests) ->
     %% Validate version field for all requests first, then process each request
     maybe
-        ok ?= validate_batch_version(Requests);
-        {ok, Messages} ?= parse_batch_requests(Requests, []);
-        {ok, Messages}
+        validate_batch_version(Requests)
     else
+        ok ->
+            maybe
+                parse_batch_requests(Requests, [])
+            else
+                {ok, Messages} -> {ok, Messages};
+                {error, Reason} -> {error, Reason}
+            end;
         {error, Reason} ->
             {error, Reason}
     end.
@@ -1137,11 +1142,10 @@ validate_utf8_fallback(_) ->
 -spec ensure_utf8_encoding(term()) -> {ok, term()} | {error, {invalid_utf8, string()}}.
 ensure_utf8_encoding(Term) when is_binary(Term) ->
     maybe
-        true ?= validate_utf8(Term);
-        {ok, Term}
+        validate_utf8(Term)
     else
-        _ ->
-            {error, {invalid_utf8, "binary contains invalid UTF-8 sequences"}}
+        true -> {ok, Term};
+        _ -> {error, {invalid_utf8, "binary contains invalid UTF-8 sequences"}}
     end;
 ensure_utf8_encoding(Map) when is_map(Map) ->
     ensure_utf8_map(Map, #{}, []);
@@ -1163,10 +1167,15 @@ ensure_utf8_map(Map, Acc, Path) ->
     maps:fold(fun(K, V, {ok, AccIn}) ->
         PathK = [binary_to_list(K) | Path],
         maybe
-            {ok, _} ?= ensure_utf8_encoding(K);
-            {ok, _} ?= ensure_utf8_encoding(V);
-            {ok, maps:put(K, V, AccIn)}
+            ensure_utf8_encoding(K)
         else
+            {ok, _} ->
+                maybe
+                    ensure_utf8_encoding(V)
+                else
+                    {ok, _} -> {ok, maps:put(K, V, AccIn)};
+                    {error, _} = Error -> Error
+                end;
             {error, _} = Error ->
                 Error
         end
@@ -1209,10 +1218,15 @@ ensure_utf8_tuple(Tuple, Index, Size) ->
     {ok, binary()} | {error, {invalid_utf8, string()}}.
 encode_request_utf8(Id, Method, Params) ->
     maybe
-        {ok, _} ?= ensure_utf8_encoding(Method);
-        {ok, _} ?= ensure_utf8_encoding(Params);
-        {ok, encode_request(Id, Method, Params)}
+        ensure_utf8_encoding(Method)
     else
+        {ok, _} ->
+            maybe
+                ensure_utf8_encoding(Params)
+            else
+                {ok, _} -> {ok, encode_request(Id, Method, Params)};
+                {error, _} = Error -> Error
+            end;
         {error, _} = Error ->
             Error
     end.
@@ -1222,11 +1236,10 @@ encode_request_utf8(Id, Method, Params) ->
     {ok, binary()} | {error, {invalid_utf8, string()}}.
 encode_response_utf8(Id, Result) ->
     maybe
-        {ok, _} ?= ensure_utf8_encoding(Result);
-        {ok, encode_response(Id, Result)}
+        ensure_utf8_encoding(Result)
     else
-        {error, _} = Error ->
-            Error
+        {ok, _} -> {ok, encode_response(Id, Result)};
+        {error, _} = Error -> Error
     end.
 
 %% Parsing functions moved to erlmcp_message_parser.erl for hot path optimization
