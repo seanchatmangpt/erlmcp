@@ -1,0 +1,634 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Comprehensive Common Test suite for erlmcp_mcp_types module
+%%%
+%%% This test suite validates the MCP type system including:
+%%% - Nominal type creation and validation
+%%% - Type safety and error handling
+%%% - UUID generation
+%%% - Message category types
+%%% - Token generation and validation
+%%% - Performance characteristics
+%%% - Concurrent type operations
+%%% - Integration with MCP message handling
+%%%
+%%% Chicago School TDD methodology is used with real processes only.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_mcp_types_SUITE).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%% Suite callbacks
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_group/2, end_per_group/2,
+         init_per_testcase/2, end_per_testcase/2]).
+
+%% Test cases
+-export([module_exists/1,
+         nominal_type_creation/1,
+         nominal_type_validation/1,
+         uuid_generation/1,
+         token_generation/1,
+         message_category_types/1,
+         type_conversions/1,
+         error_handling/1,
+         performance_benchmarks/1,
+         concurrent_operations/1,
+         integration_tests/1]).
+
+%%====================================================================
+%% Suite Configuration
+%%====================================================================
+
+all() ->
+    [{group, core_types},
+     {group, validation_tests},
+     {group, generation_tests},
+     {group, performance_tests},
+     {group, concurrent_tests}].
+
+groups() ->
+    [{core_types, [parallel],
+      [module_exists, nominal_type_creation, message_category_types]},
+     {validation_tests, [parallel],
+      [nominal_type_validation, type_conversions, error_handling]},
+     {generation_tests, [parallel],
+      [uuid_generation, token_generation]},
+     {performance_tests, [parallel],
+      [performance_benchmarks]},
+     {concurrent_tests, [parallel],
+      [concurrent_operations, integration_tests]}].
+
+%%====================================================================
+%% Suite Setup/Teardown
+%%====================================================================
+
+init_per_suite(Config) ->
+    ct:pal("Starting MCP types test suite"),
+
+    % Start required applications
+    {ok, Apps} = application:ensure_all_started(crypto),
+    ct:pal("Started applications: ~p", [Apps]),
+
+    % Ensure uuid is available
+    case code:ensure_loaded(uuid) of
+        {module, uuid} ->
+            ct:pal("UUID module available");
+        {error, _} ->
+            ct:pal("UUID module not available, using crypto for UUID generation")
+    end,
+
+    Config.
+
+end_per_suite(_Config) ->
+    ct:pal("Ending MCP types test suite"),
+    % Clean up applications
+    _ = application:stop(crypto),
+    ok.
+
+init_per_group(GroupName, Config) ->
+    ct:pal("Starting test group: ~p", [GroupName]),
+    Config.
+
+end_per_group(GroupName, _Config) ->
+    ct:pal("Ending test group: ~p", [GroupName]),
+    ok.
+
+init_per_testcase(TestCase, Config) ->
+    ct:pal("Starting test case: ~p", [TestCase]),
+    Config.
+
+end_per_testcase(TestCase, _Config) ->
+    ct:pal("Ending test case: ~p", [TestCase]),
+    ok.
+
+%%====================================================================
+%% Test Cases - Core Types
+%%====================================================================
+
+module_exists(Config) ->
+    % Verify the MCP types module exists and loads correctly
+    ?assert(code:is_loaded(erlmcp_mcp_types) =/= false,
+            "MCP types module not loaded"),
+
+    % Check module exports
+    Exports = erlmcp_mcp_types:module_info(exports),
+    ?assert(is_list(Exports), "Exports not a list"),
+    ?assert(length(Exports) > 0, "No exports found"),
+
+    % Verify key functions are exported
+    RequiredExports = [new_request_id/1, validate_request_id/1, generate_request_id/0,
+                      new_tool_name/1, validate_tool_name/1, generate_session_id/0,
+                      new_resource_uri/1, validate_resource_uri/1,
+                      new_progress_token/1, generate_progress_token/0,
+                      generate_cursor_token/0],
+
+    lists:foreach(fun({Func, Arity}) ->
+                     ?assert(erlang:function_exported(erlmcp_mcp_types, Func, Arity),
+                             "Missing required function: ~p/~p", [Func, Arity])
+                  end,
+                  RequiredExports),
+    ok.
+
+nominal_type_creation(Config) ->
+    % Test nominal type creation functions
+
+    % Test request ID creation
+    ValidRequestId = <<"test-request-123">>,
+    CreatedRequestId = erlmcp_mcp_types:new_request_id(ValidRequestId),
+    ?assertEqual(ValidRequestId, CreatedRequestId, "Request ID creation failed"),
+
+    % Test tool name creation
+    ValidToolName = <<"test_tool">>,
+    CreatedToolName = erlmcp_mcp_types:new_tool_name(ValidToolName),
+    ?assertEqual(ValidToolName, CreatedToolName, "Tool name creation failed"),
+
+    % Test resource URI creation
+    ValidUri = <<"https://example.com/resource">>,
+    CreatedUri = erlmcp_mcp_types:new_resource_uri(ValidUri),
+    ?assertEqual(ValidUri, CreatedUri, "Resource URI creation failed"),
+
+    % Test session ID creation
+    ValidSessionId = <<"session-123">>,
+    CreatedSessionId = erlmcp_mcp_types:new_session_id(ValidSessionId),
+    ?assertEqual(ValidSessionId, CreatedSessionId, "Session ID creation failed"),
+
+    % Test prompt name creation
+    ValidPromptName = <<"test_prompt">>,
+    CreatedPromptName = erlmcp_mcp_types:new_prompt_name(ValidPromptName),
+    ?assertEqual(ValidPromptName, CreatedPromptName, "Prompt name creation failed"),
+
+    % Test task ID creation
+    ValidTaskId = <<"task-456">>,
+    CreatedTaskId = erlmcp_mcp_types:new_task_id(ValidTaskId),
+    ?assertEqual(ValidTaskId, CreatedTaskId, "Task ID creation failed"),
+
+    % Test progress token creation (binary)
+    ValidProgressTokenBinary = <<"progress-token">>,
+    CreatedProgressTokenBinary = erlmcp_mcp_types:new_progress_token(ValidProgressTokenBinary),
+    ?assertEqual(ValidProgressTokenBinary, CreatedProgressTokenBinary,
+                 "Progress token (binary) creation failed"),
+
+    % Test progress token creation (integer)
+    ValidProgressTokenInt = 42,
+    CreatedProgressTokenInt = erlmcp_mcp_types:new_progress_token(ValidProgressTokenInt),
+    ?assertEqual(ValidProgressTokenInt, CreatedProgressTokenInt,
+                 "Progress token (integer) creation failed"),
+
+    % Test cursor token creation
+    ValidCursorToken = <<"cursor-token-123">>,
+    CreatedCursorToken = erlmcp_mcp_types:new_cursor_token(ValidCursorToken),
+    ?assertEqual(ValidCursorToken, CreatedCursorToken, "Cursor token creation failed"),
+    ok.
+
+message_category_types(Config) ->
+    % Test message category types
+    % Note: These are map() types, so we test their structure
+
+    % Test call message structure
+    CallMessage = #{<<"jsonrpc">> => <<"2.0">>,
+                   <<"method">> => <<"test_method">>,
+                   <<"params">> => #{<<"param1">> => <<"value1">>},
+                   <<"id">> => 1},
+    ?assert(is_map(CallMessage), "Call message should be a map"),
+    ?assert(maps:is_key(<<"jsonrpc">>, CallMessage), "Missing jsonrpc field"),
+    ?assert(maps:is_key(<<"method">>, CallMessage), "Missing method field"),
+
+    % Test result message structure
+    ResultMessage = #{<<"jsonrpc">> => <<"2.0">>,
+                     <<"result">> => #{<<"status">> => <<"success">>},
+                     <<"id">> => 1},
+    ?assert(is_map(ResultMessage), "Result message should be a map"),
+    ?assert(maps:is_key(<<"jsonrpc">>, ResultMessage), "Missing jsonrpc field"),
+    ?assert(maps:is_key(<<"result">>, ResultMessage), "Missing result field"),
+
+    % Test notification message structure
+    NotificationMessage = #{<<"jsonrpc">> => <<"2.0">>,
+                          <<"method">> => <<"notification">>,
+                          <<"params">> => #{<<"data">> => <<"notification_data">>}},
+    ?assert(is_map(NotificationMessage), "Notification message should be a map"),
+    ?assert(maps:is_key(<<"jsonrpc">>, NotificationMessage), "Missing jsonrpc field"),
+    ?assert(maps:is_key(<<"method">>, NotificationMessage), "Missing method field"),
+    ?assertNot(maps:is_key(<<"id">>, NotificationMessage),
+                "Notification should not have id field"),
+    ok.
+
+%%====================================================================
+%% Test Cases - Validation Tests
+%%====================================================================
+
+nominal_type_validation(Config) ->
+    % Test nominal type validation functions
+
+    % Test request ID validation
+    ValidRequestId = <<"valid-request-id">>,
+    ?assertEqual({ok, ValidRequestId},
+                 erlmcp_mcp_types:validate_request_id(ValidRequestId)),
+
+    InvalidRequestIdCases = [
+        <<>>, % Empty binary
+        not_a_binary, % Not a binary
+        <<"">>, % Empty binary (again)
+        123, % Not a binary
+        [] % Not a binary
+    ],
+
+    lists:foreach(fun(InvalidId) ->
+                     ?assertMatch({error, _},
+                                  erlmcp_mcp_types:validate_request_id(InvalidId))
+                  end,
+                  InvalidRequestIdCases),
+
+    % Test tool name validation
+    ValidToolName = <<"valid_tool_name">>,
+    ?assertEqual({ok, ValidToolName},
+                 erlmcp_mcp_types:validate_tool_name(ValidToolName)),
+
+    InvalidToolNameCases = [
+        <<>>, % Empty binary
+        123, % Not a binary
+        [] % Not a binary
+    ],
+
+    lists:foreach(fun(InvalidName) ->
+                     ?assertMatch({error, _},
+                                  erlmcp_mcp_types:validate_tool_name(InvalidName))
+                  end,
+                  InvalidToolNameCases),
+
+    % Test resource URI validation
+    ValidResourceUri = <<"https://example.com/resource">>,
+    ?assertEqual({ok, ValidResourceUri},
+                 erlmcp_mcp_types:validate_resource_uri(ValidResourceUri)),
+
+    InvalidUriCases = [
+        <<>>, % Empty binary
+        <<"not-a-uri">>, % Invalid URI format
+        123, % Not a binary
+        [] % Not a binary
+    ],
+
+    lists:foreach(fun(InvalidUri) ->
+                     ?assertMatch({error, _},
+                                  erlmcp_mcp_types:validate_resource_uri(InvalidUri))
+                  end,
+                  InvalidUriCases),
+
+    % Test session ID validation
+    ValidSessionId = <<"session-123">>,
+    ?assertEqual({ok, ValidSessionId},
+                 erlmcp_mcp_types:validate_session_id(ValidSessionId)),
+
+    InvalidSessionIdCases = [
+        <<>>,
+        123,
+        []
+    ],
+
+    lists:foreach(fun(InvalidId) ->
+                     ?assertMatch({error, _},
+                                  erlmcp_mcp_types:validate_session_id(InvalidId))
+                  end,
+                  InvalidSessionIdCases),
+    ok.
+
+type_conversions(Config) ->
+    % Test type conversion and validation consistency
+
+    % Test that created types validate correctly
+    RequestId = erlmcp_mcp_types:new_request_id(<<"test-request">>),
+    ?assertEqual({ok, RequestId}, erlmcp_mcp_types:validate_request_id(RequestId)),
+
+    ToolName = erlmcp_mcp_types:new_tool_name(<<"test-tool">>),
+    ?assertEqual({ok, ToolName}, erlmcp_mcp_types:validate_tool_name(ToolName)),
+
+    ResourceUri = erlmcp_mcp_types:new_resource_uri(<<"https://example.com">>),
+    ?assertEqual({ok, ResourceUri}, erlmcp_mcp_types:validate_resource_uri(ResourceUri)),
+
+    SessionId = erlmcp_mcp_types:new_session_id(<<"session-test">>),
+    ?assertEqual({ok, SessionId}, erlmcp_mcp_types:validate_session_id(SessionId)),
+
+    ProgressTokenBinary = erlmcp_mcp_types:new_progress_token(<<"binary-token">>),
+    ?assertEqual({ok, ProgressTokenBinary},
+                 erlmcp_mcp_types:validate_progress_token(ProgressTokenBinary)),
+
+    ProgressTokenInt = erlmcp_mcp_types:new_progress_token(42),
+    ?assertEqual({ok, ProgressTokenInt},
+                 erlmcp_mcp_types:validate_progress_token(ProgressTokenInt)),
+
+    CursorToken = erlmcp_mcp_types:new_cursor_token(<<"cursor-test">>),
+    ?assertEqual({ok, CursorToken}, erlmcp_mcp_types:validate_cursor_token(CursorToken)),
+    ok.
+
+error_handling(Config) ->
+    % Test error handling in type functions
+
+    % Test new_* functions with invalid inputs
+    ?assertError(badarg, erlmcp_mcp_types:new_request_id(<<>>)),
+    ?assertError(badarg, erlmcp_mcp_types:new_request_id(not_a_binary)),
+    ?assertError(badarg, erlmcp_mcp_types:new_tool_name(<<>>)),
+    ?assertError(badarg, erlmcp_mcp_types:new_resource_uri(<<>>)),
+    ?assertError(badarg, erlmcp_mcp_types:new_session_id(<<>>)),
+    ?assertError(badarg, erlmcp_mcp_types:new_prompt_name(<<>>)),
+    ?assertError(badarg, erlmcp_mcp_types:new_task_id(<<>>)),
+    ?assertError(badarg, erlmcp_mcp_types:new_progress_token(0)),
+    ?assertError(badarg, erlmcp_mcp_types:new_progress_token(-1)),
+    ?assertError(badarg, erlmcp_mcp_types:new_progress_token(<<>>)),
+    ?assertError(badarg, erlmcp_mcp_types:new_cursor_token(<<>>)),
+
+    % Test validation functions with invalid types
+    ?assertMatch({error, _}, erlmcp_mcp_types:validate_request_id(not_a_binary)),
+    ?assertMatch({error, _}, erlmcp_mcp_types:validate_tool_name(not_a_binary)),
+    ?assertMatch({error, _}, erlmcp_mcp_types:validate_resource_uri(not_a_binary)),
+    ?assertMatch({error, _}, erlmcp_mcp_types:validate_session_id(not_a_binary)),
+
+    % Note: Some validation functions might not be exported
+    % We test the ones that are available
+    ok.
+
+%%====================================================================
+%% Test Cases - Generation Tests
+%%====================================================================
+
+uuid_generation(Config) ->
+    % Test UUID generation
+
+    % Generate multiple UUIDs
+    UUIDs = lists:map(fun(_) -> erlmcp_mcp_types:generate_request_id() end,
+                      lists:seq(1, 10)),
+
+    % Verify all UUIDs are binaries
+    lists:foreach(fun(UUID) ->
+                     ?assert(is_binary(UUID), "UUID should be a binary")
+                  end,
+                  UUIDs),
+
+    % Verify all UUIDs are unique
+    UniqueUUIDs = lists:usort(UUIDs),
+    ?assertEqual(length(UUIDs), length(UniqueUUIDs),
+                 "UUIDs should be unique"),
+
+    % Verify UUID format (should match UUID v4 pattern)
+    lists:foreach(fun(UUID) ->
+                     UUIDString = binary_to_list(UUID),
+                     % Basic UUID format validation: 8-4-4-4-12 hex digits
+                     UUIDRegex = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+                     ?assertMatch({ok, _, []}, re:run(UUIDString, UUIDRegex))
+                  end,
+                  UUIDs),
+
+    % Test session ID generation
+    SessionIds = lists:map(fun(_) -> erlmcp_mcp_types:generate_session_id() end,
+                          lists:seq(1, 5)),
+    lists:foreach(fun(SessionId) ->
+                     ?assert(is_binary(SessionId), "Session ID should be a binary"),
+                     ?assert(byte_size(SessionId) > 0, "Session ID should not be empty")
+                  end,
+                  SessionIds),
+
+    % Test task ID generation
+    TaskIds = lists:map(fun(_) -> erlmcp_mcp_types:generate_task_id() end,
+                        lists:seq(1, 5)),
+    lists:foreach(fun(TaskId) ->
+                     ?assert(is_binary(TaskId), "Task ID should be a binary"),
+                     ?assert(byte_size(TaskId) > 0, "Task ID should not be empty")
+                  end,
+                  TaskIds),
+    ok.
+
+token_generation(Config) ->
+    % Test token generation
+
+    % Test progress token generation
+    ProgressTokens = lists:map(fun(_) -> erlmcp_mcp_types:generate_progress_token() end,
+                              lists:seq(1, 10)),
+
+    lists:foreach(fun(Token) ->
+                     % Progress tokens can be binary or integer
+                     ?assert(is_binary(Token) orelse is_integer(Token),
+                             "Progress token should be binary or integer"),
+                     case is_integer(Token) of
+                         true ->
+                             ?assert(Token > 0, "Integer progress token should be positive");
+                         false ->
+                             ?assert(byte_size(Token) > 0, "Binary progress token should not be empty")
+                     end
+                  end,
+                  ProgressTokens),
+
+    % Test cursor token generation
+    CursorTokens = lists:map(fun(_) -> erlmcp_mcp_types:generate_cursor_token() end,
+                             lists:seq(1, 10)),
+
+    lists:foreach(fun(Token) ->
+                     ?assert(is_binary(Token), "Cursor token should be a binary"),
+                     ?assert(byte_size(Token) > 0, "Cursor token should not be empty"),
+                     % Cursor tokens are base64 encoded
+                     ?assertMatch({ok, _}, base64:decode(Token))
+                  end,
+                  CursorTokens),
+
+    % Verify tokens are unique
+    UniqueProgressTokens = lists:usort(ProgressTokens),
+    ?assertEqual(length(ProgressTokens), length(UniqueProgressTokens),
+                 "Progress tokens should be unique"),
+
+    UniqueCursorTokens = lists:usort(CursorTokens),
+    ?assertEqual(length(CursorTokens), length(UniqueCursorTokens),
+                 "Cursor tokens should be unique"),
+    ok.
+
+%%====================================================================
+%% Test Cases - Performance Tests
+%%====================================================================
+
+performance_benchmarks(Config) ->
+    % Test performance characteristics of type operations
+
+    % Benchmark UUID generation
+    NumUUIDs = 1000,
+    StartUUID = erlang:monotonic_time(millisecond),
+
+    UUIDs = lists:map(fun(_) -> erlmcp_mcp_types:generate_request_id() end,
+                      lists:seq(1, NumUUIDs)),
+
+    EndUUID = erlang:monotonic_time(millisecond),
+    UUIDDuration = EndUUID - StartUUID,
+
+    ct:pal("Generated ~p UUIDs in ~p ms", [NumUUIDs, UUIDDuration]),
+    ct:pal("Average time per UUID: ~.2f ms", [UUIDDuration / NumUUIDs]),
+
+    % Performance assertions
+    ?assert(UUIDDuration < 1000, "UUID generation too slow: ~p ms", [UUIDDuration]),
+    ?assert((UUIDDuration / NumUUIDs) < 1, "Per-UUID time too high: ~p ms",
+            [UUIDDuration / NumUUIDs]),
+
+    % Benchmark token generation
+    NumTokens = 1000,
+    StartTokens = erlang:monotonic_time(millisecond),
+
+    Tokens = lists:map(fun(_) -> erlmcp_mcp_types:generate_progress_token() end,
+                      lists:seq(1, NumTokens)),
+
+    EndTokens = erlang:monotonic_time(millisecond),
+    TokenDuration = EndTokens - StartTokens,
+
+    ct:pal("Generated ~p progress tokens in ~p ms", [NumTokens, TokenDuration]),
+    ct:pal("Average time per token: ~.2f ms", [TokenDuration / NumTokens]),
+
+    % Performance assertions
+    ?assert(TokenDuration < 500, "Token generation too slow: ~p ms", [TokenDuration]),
+    ?assert((TokenDuration / NumTokens) < 0.5, "Per-token time too high: ~p ms",
+            [TokenDuration / NumTokens]),
+
+    % Benchmark validation operations
+    NumValidations = 1000,
+    StartValidation = erlang:monotonic_time(millisecond),
+
+    lists:foldl(fun(_, Acc) ->
+                    ValidId = erlmcp_mcp_types:new_request_id(<<"test">>),
+                    {ok, ValidatedId} = erlmcp_mcp_types:validate_request_id(ValidId),
+                    Acc + 1
+                end,
+                0,
+                lists:seq(1, NumValidations)),
+
+    EndValidation = erlang:monotonic_time(millisecond),
+    ValidationDuration = EndValidation - StartValidation,
+
+    ct:pal("Performed ~p validations in ~p ms", [NumValidations, ValidationDuration]),
+    ct:pal("Average time per validation: ~.2f ms", [ValidationDuration / NumValidations]),
+
+    % Performance assertions
+    ?assert(ValidationDuration < 500, "Validation too slow: ~p ms", [ValidationDuration]),
+    ?assert((ValidationDuration / NumValidations) < 0.5, "Per-validation time too high: ~p ms",
+            [ValidationDuration / NumValidations]),
+    ok.
+
+%%====================================================================
+%% Test Cases - Concurrent Tests
+%%====================================================================
+
+concurrent_operations(Config) ->
+    % Test concurrent type operations
+
+    NumProcesses = 10,
+    NumOperationsPerProcess = 100,
+
+    % Concurrent UUID generation
+    StartUUID = erlang:monotonic_time(millisecond),
+
+    PidsUUID = lists:map(fun(I) ->
+                            spawn_link(fun() ->
+                                          UUIDs = lists:map(fun(_) -> erlmcp_mcp_types:generate_request_id() end,
+                                                            lists:seq(1, NumOperationsPerProcess)),
+                                          ct:pal("Process ~p generated ~p UUIDs", [I, length(UUIDs)])
+                                      end)
+                        end,
+                        lists:seq(1, NumProcesses)),
+
+    % Wait for all processes to complete
+    lists:foreach(fun(Pid) ->
+                     receive
+                         {'EXIT', Pid, _} -> ok
+                     end
+                   end,
+                   PidsUUID),
+
+    EndUUID = erlang:monotonic_time(millisecond),
+    ConcurrentUUIDDuration = EndUUID - StartUUID,
+
+    ct:pal("Concurrent UUID generation: ~p processes x ~p operations = ~p total",
+           [NumProcesses, NumOperationsPerProcess, NumProcesses * NumOperationsPerProcess]),
+    ct:pal("Total time: ~p ms", [ConcurrentUUIDDuration]),
+    ct:pal("Average time per operation: ~.2f ms",
+           [ConcurrentUUIDDuration / (NumProcesses * NumOperationsPerProcess)]),
+
+    % Concurrent validation
+    StartValidation = erlang:monotonic_time(millisecond),
+
+    PidsValidation = lists:map(fun(I) ->
+                                 spawn_link(fun() ->
+                                               lists:foldl(fun(_, Acc) ->
+                                                               ValidId = erlmcp_mcp_types:new_request_id(<<"test">>),
+                                                               {ok, _} = erlmcp_mcp_types:validate_request_id(ValidId),
+                                                               Acc + 1
+                                                           end,
+                                                           0,
+                                                           lists:seq(1, NumOperationsPerProcess))
+                                           end)
+                             end,
+                             lists:seq(1, NumProcesses)),
+
+    % Wait for all processes to complete
+    lists:foreach(fun(Pid) ->
+                     receive
+                         {'EXIT', Pid, _} -> ok
+                     end
+                   end,
+                   PidsValidation),
+
+    EndValidation = erlang:monotonic_time(millisecond),
+    ConcurrentValidationDuration = EndValidation - StartValidation,
+
+    ct:pal("Concurrent validation: ~p processes x ~p operations = ~p total",
+           [NumProcesses, NumOperationsPerProcess, NumProcesses * NumOperationsPerProcess]),
+    ct:pal("Total time: ~p ms", [ConcurrentValidationDuration]),
+    ct:pal("Average time per operation: ~.2f ms",
+           [ConcurrentValidationDuration / (NumProcesses * NumOperationsPerProcess)]),
+
+    % Performance assertions for concurrent operations
+    ?assert(ConcurrentUUIDDuration < 2000, "Concurrent UUID generation too slow"),
+    ?assert(ConcurrentValidationDuration < 2000, "Concurrent validation too slow"),
+    ok.
+
+integration_tests(Config) ->
+    % Test integration with MCP message handling
+
+    % Test that generated IDs work in MCP messages
+    RequestId = erlmcp_mcp_types:generate_request_id(),
+    ToolName = erlmcp_mcp_types:new_tool_name(<<"test_tool">>),
+
+    % Create a valid MCP call message
+    CallMessage = #{<<"jsonrpc">> => <<"2.0">>,
+                   <<"method">> => <<"tools/call">>,
+                   <<"params">> => #{<<"name">> => ToolName,
+                                   <<"arguments">> => #{}}},
+                   <<"id">> => RequestId},
+
+    % Verify message structure
+    ?assert(is_map(CallMessage), "Call message should be a map"),
+    ?assert(maps:is_key(<<"jsonrpc">>, CallMessage), "Missing jsonrpc field"),
+    ?assert(maps:is_key(<<"method">>, CallMessage), "Missing method field"),
+    ?assert(maps:is_key(<<"params">>, CallMessage), "Missing params field"),
+    ?assert(maps:is_key(<<"id">>, CallMessage), "Missing id field"),
+    ?assertEqual(RequestId, maps:get(<<"id">>, CallMessage), "Request ID mismatch"),
+    ?assertEqual(ToolName, maps:get(<<"name">>, maps:get(<<"params">>, CallMessage)),
+                 "Tool name mismatch"),
+
+    % Test with result message
+    ResultMessage = #{<<"jsonrpc">> => <<"2.0">>,
+                     <<"result">> => #{<<"content">> => [#{<<"type">> => <<"text">>,
+                                                           <<"text">> => <<"Success">>}]},
+                     <<"id">> => RequestId},
+
+    ?assert(is_map(ResultMessage), "Result message should be a map"),
+    ?assert(maps:is_key(<<"jsonrpc">>, ResultMessage), "Missing jsonrpc field"),
+    ?assert(maps:is_key(<<"result">>, ResultMessage), "Missing result field"),
+    ?assert(maps:is_key(<<"id">>, ResultMessage), "Missing id field"),
+    ?assertEqual(RequestId, maps:get(<<"id">>, ResultMessage), "Request ID mismatch"),
+
+    % Test with notification message
+    NotificationMessage = #{<<"jsonrpc">> => <<"2.0">>,
+                          <<"method">> => <<"notifications/progress">>,
+                          <<"params">> => #{<<"progress">> => 50}},
+
+    ?assert(is_map(NotificationMessage), "Notification message should be a map"),
+    ?assert(maps:is_key(<<"jsonrpc">>, NotificationMessage), "Missing jsonrpc field"),
+    ?assert(maps:is_key(<<"method">>, NotificationMessage), "Missing method field"),
+    ?assert(maps:is_key(<<"params">>, NotificationMessage), "Missing params field"),
+    ?assertNot(maps:is_key(<<"id">>, NotificationMessage),
+                "Notification should not have id field"),
+    ok.

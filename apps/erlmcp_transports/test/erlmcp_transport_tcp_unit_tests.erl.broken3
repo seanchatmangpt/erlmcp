@@ -1,0 +1,401 @@
+%%%-------------------------------------------------------------------
+%%% @doc TCP Transport Unit Tests
+%%%
+%%% Comprehensive EUnit tests for erlmcp_transport_tcp module
+%%% Tests client and server modes, connection management, reconnection,
+%%% message framing, and resource management.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_tcp_unit_tests).
+-author("erlmcp").
+
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp_transport_tcp.hrl").
+
+%% Test timeout (30 seconds for connection tests)
+-define(TEST_TIMEOUT, 30000).
+
+%%%=============================================================================
+%%% Test State
+%%%=============================================================================
+
+-record(tcp_test_state, {
+    client_pid :: pid() | undefined,
+    server_pid :: pid() | undefined,
+    server_port :: inet:port_number(),
+    test_socket :: port() | undefined
+}).
+
+%%%=============================================================================
+%%% Setup and Teardown
+%%%=============================================================================
+
+setup_tcp_transport() ->
+    %% Start a test TCP server
+    {ok, ListenSocket} = gen_tcp:listen(0, [binary, {active, false}, {packet, line}]),
+    {ok, Port} = inet:port(ListenSocket),
+
+    %% Start client process
+    ClientOpts = #{
+        mode => client,
+        host => <<"localhost">>,
+        port => Port,
+        owner => self()
+    },
+    {ok, ClientPid} = erlmcp_transport_tcp:start_link(ClientOpts),
+
+    #tcp_test_state{
+        client_pid = ClientPid,
+        server_port = Port,
+        test_socket = ListenSocket
+    }.
+
+cleanup_tcp_transport(#tcp_test_state{test_socket = Socket, client_pid = Pid}) ->
+    catch gen_tcp:close(Socket),
+    catch gen_server:stop(Pid),
+    ok.
+
+%%%=============================================================================
+%%% Test Generators
+%%%=============================================================================
+
+tcp_transport_test_() ->
+    {setup,
+     fun setup_tcp_transport/0,
+     fun cleanup_tcp_transport/1,
+     [
+      fun test_start_link/1,
+      fun test_transport_init/1,
+      fun test_get_info/1,
+      fun test_send_receive/1,
+      fun test_client_modes/1,
+      fun test_message_extraction/1,
+      fun test_duration_parsing/1,
+      fun test_keepalive_opts/1,
+      fun test_max_message_size/1,
+      fun test_socket_options/1
+     ],
+     [{timeout, ?TEST_TIMEOUT}]}.
+
+%%%=============================================================================
+%%% Basic Lifecycle Tests
+%%%=============================================================================
+
+test_start_link(_State) ->
+    %% Test starting with valid options
+    Opts = #{mode => client, host => <<"localhost">>, port => 0},
+    ?assertMatch({ok, _Pid}, erlmcp_transport_tcp:start_link(Opts)),
+
+    %% Test starting with server mode
+    ServerOpts = #{mode => server, port => 0, server_id => test_server},
+    ?assertMatch({ok, _Pid}, erlmcp_transport_tcp:start_link(ServerOpts)).
+
+test_transport_init(_State) ->
+    %% Test transport_init function
+    Opts = #{mode => client, host => <<"127.0.0.1">>, port => 9999},
+    ?assertMatch({ok, #state{}}, erlmcp_transport_tcp:transport_init(Opts)),
+
+    %% Test server mode init
+    ServerOpts = #{mode => server, port => 0, server_id => test_server},
+    ?assertMatch({ok, #state{}}, erlmcp_transport_tcp:transport_init(ServerOpts)).
+
+%%%=============================================================================
+%%% Info and State Tests
+%%%=============================================================================
+
+test_get_info(#tcp_test_state{client_pid = Pid}) ->
+    %% Get transport info from PID
+    Info = erlmcp_transport_tcp:get_info(Pid),
+    ?assert(is_map(Info)),
+    ?assert(maps:is_key(transport_id, Info)),
+    ?assert(maps:is_key(type, Info)),
+    ?assert(maps:is_key(status, Info)),
+    ?assert(maps:is_key(mode, Info)),
+
+    %% Check values
+    ?assertEqual(tcp, maps:get(type, Info)),
+    ?assertEqual(client, maps:get(mode, Info)).
+
+%%%=============================================================================
+%%% Send and Receive Tests
+%%%=============================================================================
+
+test_send_receive(#tcp_test_state{client_pid = Pid, test_socket = ListenSocket}) ->
+    %% Accept connection from client
+    {ok, Socket} = gen_tcp:accept(ListenSocket, 5000),
+    inet:setopts(Socket, [{active, false}, {packet, line}]),
+
+    %% Send data via transport
+    ?assertEqual(ok, erlmcp_transport_tcp:send(
+        #state{socket = Socket, connected = true}, <<"test message">>
+    )),
+
+    %% Verify data was sent
+    {ok, Data} = gen_tcp:recv(Socket, 0, 1000),
+    ?assertEqual(<<"test message\n">>, Data),
+
+    gen_tcp:close(Socket).
+
+test_message_extraction(_State) ->
+    %% Test message extraction from buffer
+    Buffer = <<"message1\nmessage2\nmessage3\n">>,
+    {Messages, Remaining} = extract_messages(Buffer),
+
+    ?assertEqual(3, length(Messages)),
+    ?assertEqual([<<"message1">>, <<"message2">>, <<"message3">>], Messages),
+    ?assertEqual(<<>>, Remaining).
+
+test_message_extraction_partial(_State) ->
+    %% Test partial message (no trailing newline)
+    Buffer = <<"message1\nmessage2">>,
+    {Messages, Remaining} = extract_messages(Buffer),
+
+    ?assertEqual(1, length(Messages)),
+    ?assertEqual([<<"message1">>], Messages),
+    ?assertEqual(<<"message2">>, Remaining).
+
+test_message_extraction_empty(_State) ->
+    %% Test empty buffer
+    Buffer = <<>>,
+    {Messages, Remaining} = extract_messages(Buffer),
+
+    ?assertEqual([], Messages),
+    ?assertEqual(<<>>, Remaining).
+
+test_message_extraction_multiple_newlines(_State) ->
+    %% Test multiple consecutive newlines
+    Buffer = <<"message1\n\n\nmessage2\n">>,
+    {Messages, Remaining} = extract_messages(Buffer),
+
+    %% Empty messages are filtered
+    ?assertEqual(2, length(Messages)),
+    ?assertEqual([<<"message1">>, <<"message2">>], Messages),
+    ?assertEqual(<<>>, Remaining).
+
+%%%=============================================================================
+%%% Client Mode Tests
+%%%=============================================================================
+
+test_client_modes(_State) ->
+    %% Test various client configurations
+    BaseOpts = #{mode => client, host => <<"localhost">>, port => 0},
+
+    %% Test with keepalive enabled
+    KeepaliveOpts = BaseOpts#{keepalive => true},
+    ?assertMatch({ok, _}, erlmcp_transport_tcp:start_link(KeepaliveOpts)),
+
+    %% Test with nodelay enabled
+    NoDelayOpts = BaseOpts#{nodelay => true},
+    ?assertMatch({ok, _}, erlmcp_transport_tcp:start_link(NoDelayOpts)),
+
+    %% Test with buffer size
+    BufferOpts = BaseOpts#{buffer_size => 65536},
+    ?assertMatch({ok, _}, erlmcp_transport_tcp:start_link(BufferOpts)).
+
+%%%=============================================================================
+%%% Connection Management Tests
+%%%=============================================================================
+
+connection_tests_test_() ->
+    {setup,
+     fun setup_tcp_transport/0,
+     fun cleanup_tcp_transport/1,
+     [
+      fun test_reconnect_backoff/1,
+      fun test_connection_limits/1,
+      fun test_max_reconnect_attempts/1
+     ],
+     [{timeout, ?TEST_TIMEOUT}]}.
+
+test_reconnect_backoff(_State) ->
+    %% Test exponential backoff calculation
+    ?assertEqual(1000 + rand:uniform(250), calculate_backoff(0)),
+    ?assertEqual(2000 + rand:uniform(500), calculate_backoff(1)),
+    ?assertEqual(4000 + rand:uniform(1000), calculate_backoff(2)),
+
+    %% Verify max backoff cap
+    Backoff10 = calculate_backoff(10),
+    ?assert(Backoff10 =< ?MAX_RECONNECT_DELAY).
+
+test_connection_limits(_State) ->
+    %% Test connection limit handling
+    Opts = #{
+        mode => server,
+        port => 0,
+        server_id => test_server_limits,
+        max_connections => 10
+    },
+    ?assertMatch({ok, _}, erlmcp_transport_tcp:start_link(Opts)).
+
+test_max_reconnect_attempts(_State) ->
+    %% Test max reconnect attempts
+    Opts = #{
+        mode => client,
+        host => <<"nonexistent.host.example">>,
+        port => 9999,
+        max_reconnect_attempts => 3
+    },
+
+    %% Should start but fail to connect
+    {ok, Pid} = erlmcp_transport_tcp:start_link(Opts),
+    ?assert(is_pid(Pid)),
+
+    %% Wait for connection attempts
+    timer:sleep(100),
+    gen_server:stop(Pid).
+
+%%%=============================================================================
+%%% Configuration Tests
+%%%=============================================================================
+
+config_tests_test_() ->
+    [
+      fun test_duration_parsing/0,
+      fun test_keepalive_options/0,
+      fun test_socket_option_building/0,
+      fun test_max_message_size/0
+    ].
+
+test_duration_parsing() ->
+    %% Test duration string parsing
+    ?assertEqual(30, parse_duration(<<"30s">>)),
+    ?assertEqual(300, parse_duration(<<"5m">>)),
+    ?assertEqual(3600, parse_duration(<<"1h">>)),
+    ?assertEqual(7200, parse_duration(<<"2h">>)),
+
+    %% Test invalid duration
+    ?assertEqual(0, parse_duration(<<"invalid">>)),
+    ?assertEqual(0, parse_duration(<<"">>)).
+
+test_keepalive_options() ->
+    %% Test keepalive options building
+    Opts = #{keepalive => true},
+    KeepaliveOpts = build_keepalive_opts(Opts),
+    ?assert(lists:keymember(keepalive, 1, KeepaliveOpts)),
+
+    %% Test detailed keepalive
+    DetailedOpts = #{
+        keepalive => #{
+            enable => true,
+            idle => 7200000,
+            interval => 75000,
+            count => 9
+        }
+    },
+    DetailedKeepalive = build_keepalive_opts(DetailedOpts),
+    ?assert(length(DetailedKeepalive) >= 4).  % Multiple options
+
+test_socket_option_building() ->
+    %% Test socket options building
+    Opts = #{nodelay => true, buffer_size => 32768},
+    SocketOpts = build_socket_options(Opts),
+
+    ?assert(lists:keymember(binary, 1, SocketOpts)),
+    ?assert(lists:keymember({active, true}, 1, SocketOpts)),
+    ?assert(lists:keymember({nodelay, true}, 1, SocketOpts)),
+    ?assert(lists:keymember({recbuf, 32768}, 1, SocketOpts)).
+
+test_max_message_size() ->
+    %% Test max message size retrieval
+    MaxSize = erlmcp_transport_tcp:get_max_message_size(),
+    ?assert(is_integer(MaxSize)),
+    ?assert(MaxSize > 0),
+    ?assertEqual(?DEFAULT_MAX_MESSAGE_SIZE, MaxSize).
+
+%%%=============================================================================
+%%% Utility Function Tests
+%%%=============================================================================
+
+utility_tests_test_() ->
+    [
+      fun test_ranch_ref_generation/0,
+      fun test_message_too_large_handling/0
+    ].
+
+test_ranch_ref_generation() ->
+    %% Test ranch reference generation
+    ?assert(is_atom(make_ranch_ref(undefined, undefined))),
+    ?assert(is_atom(make_ranch_ref(test_transport, undefined))),
+    ?assert(is_atom(make_ranch_ref(undefined, test_server))),
+    ?assert(is_atom(make_ranch_ref(test_transport, test_server))),
+
+    %% Verify ref format
+    Ref1 = make_ranch_ref(test_transport, test_server),
+    RefStr = atom_to_list(Ref1),
+    ?assert(string:str(RefStr, "test_transport") > 0),
+    ?assert(string:str(RefStr, "test_server") > 0),
+    ?assert(string:str(RefStr, "ranch") > 0).
+
+test_message_too_large_handling() ->
+    %% Test message size limit enforcement
+    MaxSize = erlmcp_transport_tcp:get_max_message_size(),
+
+    %% Create data exceeding limit
+    LargeData = <<0:(MaxSize + 1)>>,
+
+    %% Should trigger size limit check
+    State = #state{
+        buffer = <<>>,
+        max_message_size = MaxSize
+    },
+
+    %% Simulate receiving large data
+    NewBufferSize = byte_size(State#state.buffer) + byte_size(LargeData),
+    ?assert(NewBufferSize > MaxSize).
+
+%%%=============================================================================
+%%% Pool Tests
+%%%=============================================================================
+
+pool_tests_test_() ->
+    [
+      fun test_pool_stats_empty/0,
+      fun test_acquire_release/0
+    ].
+
+test_pool_stats_empty() ->
+    %% Test pool stats when pool doesn't exist
+    ?assertEqual({error, pool_not_started}, erlmcp_transport_tcp:pool_stats()).
+
+test_acquire_release() ->
+    %% Test acquire and release functions
+    Opts = #{mode => client, host => <<"localhost">>, port => 0},
+
+    %% Without pooling
+    ?assertMatch({ok, _Pid}, erlmcp_transport_tcp:acquire_connection(
+        Opts#{use_pool => false}
+    )).
+
+%%%=============================================================================
+%%% Internal Function Helpers
+%%%=============================================================================
+
+%% Mock the internal functions for testing
+
+extract_messages(Buffer) ->
+    erlmcp_transport_tcp:extract_messages(Buffer).
+
+calculate_backoff(Attempts) ->
+    BaseDelay = min(?INITIAL_RECONNECT_DELAY * (1 bsl Attempts), ?MAX_RECONNECT_DELAY),
+    Jitter = rand:uniform(BaseDelay div 4),
+    BaseDelay + Jitter.
+
+parse_duration(Duration) ->
+    erlmcp_transport_tcp:parse_duration(Duration).
+
+build_keepalive_opts(Opts) ->
+    erlmcp_transport_tcp:build_keepalive_opts(Opts).
+
+build_socket_options(Opts) ->
+    erlmcp_transport_tcp:build_socket_options(Opts).
+
+make_ranch_ref(TransportId, ServerId) ->
+    erlmcp_transport_tcp:make_ranch_ref(TransportId, ServerId).
+
+%%%=============================================================================
+%%% Default Constants
+%%%=============================================================================
+
+-define(INITIAL_RECONNECT_DELAY, 1000).
+-define(MAX_RECONNECT_DELAY, 60000).
+-define(DEFAULT_MAX_MESSAGE_SIZE, 16777216).

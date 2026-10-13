@@ -1,0 +1,544 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Comprehensive Common Test suite for erlmcp_transport module
+%%%
+%%% This test suite validates the core transport functionality including:
+%%% - Transport lifecycle management
+%%% - Message routing and delivery
+%%% - Error handling and recovery
+%%% - Performance characteristics
+%%% - Concurrent access patterns
+%%% - Integration with transport registry
+%%%
+%%% Chicago School TDD methodology is used with real processes only.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_SUITE).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+
+%% Suite callbacks
+-export([all/0, groups/0, init_per_suite/1, end_per_suite/1, init_per_group/2, end_per_group/2,
+         init_per_testcase/2, end_per_testcase/2]).
+
+%% Test cases
+-export([transport_module_exists/1,
+         transport_lifecycle/1,
+         transport_registry_integration/1,
+         message_routing/1,
+         error_handling/1,
+         concurrent_access/1,
+         performance_benchmarks/1,
+         transport_types/1,
+         transport_configuration/1,
+         transport_metrics/1,
+         transport_health/1]).
+
+%%====================================================================
+%% Suite Configuration
+%%====================================================================
+
+all() ->
+    [{group, core_functionality},
+     {group, integration_tests},
+     {group, performance_tests},
+     {group, concurrent_tests},
+     {group, error_handling}].
+
+groups() ->
+    [{core_functionality, [parallel],
+      [transport_module_exists,
+       transport_lifecycle,
+       transport_types,
+       transport_configuration]},
+     {integration_tests, [sequential],
+      [transport_registry_integration,
+       message_routing,
+       transport_health]},
+     {performance_tests, [parallel],
+      [performance_benchmarks]},
+     {concurrent_tests, [parallel],
+      [concurrent_access]},
+     {error_handling, [parallel],
+      [error_handling]}].
+
+%%====================================================================
+%% Suite Setup/Teardown
+%%====================================================================
+
+init_per_suite(Config) ->
+    ct:pal("Starting transport test suite"),
+
+    % Start required applications
+    {ok, Apps} = application:ensure_all_started(crypto),
+    ct:pal("Started applications: ~p", [Apps]),
+
+    % Start gproc for registry
+    {ok, _} = application:ensure_all_started(gproc),
+
+    % Start erlmcp_core application
+    case application:ensure_all_started(erlmcp_core) of
+        {ok, CoreApps} ->
+            ct:pal("Started erlmcp_core: ~p", [CoreApps]);
+        {error, Reason} ->
+            ct:fail("Failed to start erlmcp_core: ~p", [Reason])
+    end,
+
+    % Verify transport registry is available
+    case whereis(erlmcp_transport_registry) of
+        undefined ->
+            ct:fail("Transport registry not available");
+        Pid when is_pid(Pid) ->
+            ct:pal("Transport registry available: ~p", [Pid])
+    end,
+
+    Config.
+
+end_per_suite(_Config) ->
+    ct:pal("Ending transport test suite"),
+    % Clean up applications
+    _ = application:stop(erlmcp_core),
+    _ = application:stop(gproc),
+    _ = application:stop(crypto),
+    ok.
+
+init_per_group(GroupName, Config) ->
+    ct:pal("Starting test group: ~p", [GroupName]),
+    Config.
+
+end_per_group(GroupName, _Config) ->
+    ct:pal("Ending test group: ~p", [GroupName]),
+    ok.
+
+init_per_testcase(TestCase, Config) ->
+    ct:pal("Starting test case: ~p", [TestCase]),
+    % Ensure clean state for each test
+    cleanup_test_state(),
+    Config.
+
+end_per_testcase(TestCase, _Config) ->
+    ct:pal("Ending test case: ~p", [TestCase]),
+    % Clean up after each test
+    cleanup_test_state(),
+    ok.
+
+%%====================================================================
+%% Test Cases - Core Functionality
+%%====================================================================
+
+transport_module_exists(Config) ->
+    % Verify the transport module exists and loads correctly
+    ?assert(code:is_loaded(erlmcp_transport) =/= false,
+            "Transport module not loaded"),
+
+    % Check module exports
+    Exports = erlmcp_transport:module_info(exports),
+    ?assert(is_list(Exports), "Exports not a list"),
+    ?assert(length(Exports) > 0, "No exports found"),
+
+    % Verify key functions are exported
+    RequiredExports = [start_link/1, stop/1, send/2, status/1],
+    lists:foreach(fun({Func, Arity}) ->
+                     ?assert(erlang:function_exported(erlmcp_transport, Func, Arity),
+                             "Missing required function: ~p/~p", [Func, Arity])
+                  end,
+                  RequiredExports),
+    ok.
+
+transport_lifecycle(Config) ->
+    % Test complete transport lifecycle
+    TransportId = <<"test_transport_lifecycle">>,
+
+    % 1. Create transport configuration
+    ConfigMap = #{transport_id => TransportId,
+                  transport_type => stdio,
+                  owner => self(),
+                  test_mode => true},
+
+    % 2. Start transport using proper API
+    case erlmcp_transport:start_link(ConfigMap) of
+        {ok, Pid} when is_pid(Pid) ->
+            % Verify process is alive
+            ?assert(is_process_alive(Pid), "Process not alive after start"),
+
+            % 3. Test transport status
+            Status = erlmcp_transport:status(Pid),
+            ?assert(is_map(Status), "Status not a map"),
+            ?assert(maps:is_key(transport_id, Status), "Missing transport_id in status"),
+
+            % 4. Test transport stop
+            ?assertEqual(ok, erlmcp_transport:stop(Pid)),
+
+            % 5. Verify process is terminated
+            timer:sleep(100),
+            ?assertNot(is_process_alive(Pid), "Process not terminated after stop");
+        {error, Reason} ->
+            ct:fail("Failed to start transport: ~p", [Reason])
+    end,
+    ok.
+
+transport_types(Config) ->
+    % Test all supported transport types
+    TransportTypes = [stdio, tcp, http, websocket, sse],
+
+    lists:foreach(fun(Type) ->
+                     TransportId = list_to_binary("test_" ++ atom_to_list(Type)),
+                     Config = #{transport_id => TransportId,
+                              transport_type => Type,
+                              owner => self(),
+                              test_mode => true},
+
+                     % Test that transport can be created with the type
+                     case erlmcp_transport:start_link(Config) of
+                         {ok, Pid} ->
+                             % Verify type is correct
+                             Status = erlmcp_transport:status(Pid),
+                             ?assertEqual(Type, maps:get(transport_type, Status)),
+
+                             % Clean up
+                             erlmcp_transport:stop(Pid),
+                             timer:sleep(50);
+                         {error, Reason} ->
+                             ct:pal("Transport type ~p not available: ~p", [Type, Reason])
+                     end
+                  end,
+                  TransportTypes),
+    ok.
+
+transport_configuration(Config) ->
+    % Test transport configuration validation
+    TestConfigs = [
+        % Valid configuration
+        #{transport_id => <<"valid_config">>,
+          transport_type => stdio,
+          owner => self(),
+          test_mode => true,
+          max_message_size => 1024},
+
+        % Configuration with additional options
+        #{transport_id => <<"with_options">>,
+          transport_type => stdio,
+          owner => self(),
+          test_mode => false,
+          compression => true,
+          batch_size => 10},
+
+        % Minimal configuration
+        #{transport_id => <<"minimal">>,
+          transport_type => stdio,
+          owner => self()}
+    ],
+
+    lists:foreach(fun(ConfigMap) ->
+                     TransportId = maps:get(transport_id, ConfigMap),
+
+                     case erlmcp_transport:start_link(ConfigMap) of
+                         {ok, Pid} ->
+                             % Verify configuration is applied
+                             Status = erlmcp_transport:status(Pid),
+                             ?assertEqual(TransportId, maps:get(transport_id, Status)),
+
+                             % Clean up
+                             erlmcp_transport:stop(Pid),
+                             timer:sleep(50);
+                         {error, Reason} ->
+                             ct:fail("Valid configuration failed: ~p", [Reason])
+                     end
+                  end,
+                  TestConfigs),
+    ok.
+
+%%====================================================================
+%% Test Cases - Integration Tests
+%%====================================================================
+
+transport_registry_integration(Config) ->
+    % Test integration with transport registry
+    TransportId = <<"registry_test">>,
+
+    % 1. Start transport
+    Config = #{transport_id => TransportId,
+               transport_type => stdio,
+               owner => self(),
+               test_mode => true},
+
+    {ok, Pid} = erlmcp_transport:start_link(Config),
+
+    % 2. Verify transport is registered
+    case erlmcp_transport_registry:resolve_transport(TransportId) of
+        {ok, RegisteredPid} ->
+            ?assertEqual(Pid, RegisteredPid, "Registry PID mismatch");
+        {error, not_found} ->
+            ct:fail("Transport not found in registry");
+        {error, Reason} ->
+            ct:fail("Registry error: ~p", [Reason])
+    end,
+
+    % 3. Verify registry statistics
+    Stats = erlmcp_transport_registry:get_stats(),
+    ?assert(is_map(Stats), "Stats not a map"),
+    ?assert(maps:is_key(total_transports, Stats), "Missing total_transports in stats"),
+
+    % 4. Test transport listing
+    Transports = erlmcp_transport_registry:list_transports(),
+    ?assert(is_list(Transports), "Transports not a list"),
+    ?assert(lists:any(fun(T) -> maps:get(id, T) =:= TransportId end, Transports),
+            "Transport not in list"),
+
+    % 5. Clean up
+    erlmcp_transport:stop(Pid),
+    timer:sleep(100),
+
+    % 6. Verify transport is unregistered
+    ?assertEqual({error, not_found},
+                 erlmcp_transport_registry:resolve_transport(TransportId)),
+    ok.
+
+message_routing(Config) ->
+    % Test message routing functionality
+    TransportId = <<"routing_test">>,
+
+    % Create multiple transports
+    Transports = lists:map(fun(I) ->
+                               Id = list_to_binary("route_" ++ integer_to_list(I)),
+                               Config = #{transport_id => Id,
+                                        transport_type => stdio,
+                                        owner => self(),
+                                        test_mode => true},
+                               {ok, Pid} = erlmcp_transport:start_link(Config),
+                               {Id, Pid}
+                           end,
+                           lists:seq(1, 3)),
+
+    % Test routing to specific transport
+    lists:foreach(fun({Id, Pid}) ->
+                     TestMessage = #{<<"type">> => <<"test">>,
+                                   <<"data">> => <<"message to ", Id/binary>>},
+
+                     ?assertEqual(ok, erlmcp_transport:send(Pid, TestMessage)),
+
+                     % Verify message was sent (stdio transport sends to stdout)
+                     ct:pal("Sent message to transport ~p", [Id])
+                   end,
+                   Transports),
+
+    % Clean up all transports
+    lists:foreach(fun({_, Pid}) ->
+                     erlmcp_transport:stop(Pid),
+                     timer:sleep(50)
+                   end,
+                   Transports),
+    ok.
+
+transport_health(Config) ->
+    % Test transport health monitoring
+    TransportId = <<"health_test">>,
+
+    % Start a transport
+    Config = #{transport_id => TransportId,
+               transport_type => stdio,
+               owner => self(),
+               test_mode => true},
+
+    {ok, Pid} = erlmcp_transport:start_link(Config),
+
+    % Test health check
+    case erlmcp_transport_registry:health_check() of
+        {ok, HealthStatus} ->
+            ?assert(is_map(HealthStatus), "Health status not a map"),
+            ?assert(maps:is_key(healthy_transports, HealthStatus),
+                     "Missing healthy_transports in health status");
+        {error, Reason} ->
+            ct:pal("Health check failed: ~p", [Reason])
+    end,
+
+    % Test individual transport health
+    Status = erlmcp_transport:status(Pid),
+    ?assert(is_map(Status), "Transport status not a map"),
+    ?assert(maps:is_key(alive, Status), "Missing alive status"),
+    ?assert(maps:get(alive, Status) =:= true, "Transport should be alive"),
+
+    % Clean up
+    erlmcp_transport:stop(Pid),
+    timer:sleep(100),
+    ok.
+
+%%====================================================================
+%% Test Cases - Performance Tests
+%%====================================================================
+
+performance_benchmarks(Config) ->
+    % Test performance characteristics
+    TransportId = <<"perf_test">>,
+
+    % Create test transport
+    Config = #{transport_id => TransportId,
+               transport_type => stdio,
+               owner => self(),
+               test_mode => true},
+
+    {ok, Pid} = erlmcp_transport:start_link(Config),
+
+    % Benchmark message sending
+    NumMessages = 1000,
+    MessageSize = 100,
+
+    % Generate test messages
+    TestMessages = lists:map(fun(I) ->
+                                 #{<<"type">> => <<"benchmark">>,
+                                   <<"index">> => I,
+                                   <<"data">> => crypto:strong_rand_bytes(MessageSize)}
+                             end,
+                             lists:seq(1, NumMessages)),
+
+    % Measure message sending performance
+    Start = erlang:monotonic_time(millisecond),
+
+    lists:foreach(fun(Message) ->
+                     ?assertEqual(ok, erlmcp_transport:send(Pid, Message))
+                   end,
+                   TestMessages),
+
+    End = erlang:monotonic_time(millisecond),
+    Duration = End - Start,
+
+    ct:pal("Sent ~p messages in ~p ms", [NumMessages, Duration]),
+    ct:pal("Average time per message: ~.2f ms", [Duration / NumMessages]),
+
+    % Performance assertions
+    ?assert(Duration < 5000, "Message sending too slow: ~p ms", [Duration]),
+    ?assert((Duration / NumMessages) < 10, "Per-message time too high: ~p ms",
+            [Duration / NumMessages]),
+
+    % Clean up
+    erlmcp_transport:stop(Pid),
+    timer:sleep(100),
+    ok.
+
+%%====================================================================
+%% Test Cases - Concurrent Tests
+%%====================================================================
+
+concurrent_access(Config) ->
+    % Test concurrent access to transport
+    NumTransports = 10,
+    NumMessagesPerTransport = 100,
+
+    % Create multiple transports
+    Transports = lists:map(fun(I) ->
+                               Id = list_to_binary("concurrent_" ++ integer_to_list(I)),
+                               Config = #{transport_id => Id,
+                                        transport_type => stdio,
+                                        owner => self(),
+                                        test_mode => true},
+                               {ok, Pid} = erlmcp_transport:start_link(Config),
+                               {Id, Pid}
+                           end,
+                           lists:seq(1, NumTransports)),
+
+    % Send messages concurrently
+    Start = erlang:monotonic_time(millisecond),
+
+    lists:foreach(fun({Id, Pid}) ->
+                     % Spawn concurrent process for this transport
+                     spawn_link(fun() ->
+                                   Messages = lists:map(fun(J) ->
+                                                             #{<<"transport">> => Id,
+                                                               <<"message">> => J}
+                                                       end,
+                                                       lists:seq(1, NumMessagesPerTransport)),
+
+                                   lists:foreach(fun(Message) ->
+                                                    ?assertEqual(ok, erlmcp_transport:send(Pid, Message))
+                                                  end,
+                                                  Messages)
+                               end)
+                   end,
+                   Transports),
+
+    % Wait for all messages to be sent
+    timer:sleep(2000),
+
+    End = erlang:monotonic_time(millisecond),
+    Duration = End - Start,
+    TotalMessages = NumTransports * NumMessagesPerTransport,
+
+    ct:pal("Concurrent test: ~p messages in ~p ms", [TotalMessages, Duration]),
+    ct:pal("Average time per message: ~.2f ms", [Duration / TotalMessages]),
+
+    % Clean up
+    lists:foreach(fun({_, Pid}) ->
+                     erlmcp_transport:stop(Pid),
+                     timer:sleep(50)
+                   end,
+                   Transports),
+    ok.
+
+%%====================================================================
+%% Test Cases - Error Handling
+%%====================================================================
+
+error_handling(Config) ->
+    % Test error handling scenarios
+
+    % 1. Test with invalid transport type
+    InvalidConfig = #{transport_id => <<"invalid_type">>,
+                     transport_type => nonexistent,
+                     owner => self()},
+
+    ?assertMatch({error, _}, erlmcp_transport:start_link(InvalidConfig)),
+
+    % 2. Test with missing required fields
+    IncompleteConfig = #{transport_id => <<"incomplete">>,
+                        owner => self()},
+
+    ?assertMatch({error, _}, erlmcp_transport:start_link(IncompleteConfig)),
+
+    % 3. Test sending to non-existent transport
+    ?assertMatch({error, not_found}, erlmcp_transport:send(undefined, <<"test">>)),
+
+    % 4. Test sending invalid message format
+    TransportId = <<"error_test">>,
+    Config = #{transport_id => TransportId,
+               transport_type => stdio,
+               owner => self(),
+               test_mode => true},
+
+    {ok, Pid} = erlmcp_transport:start_link(Config),
+
+    % Test with non-map message
+    ?assertMatch({error, _}, erlmcp_transport:send(Pid, "not a map")),
+
+    % Test with empty message
+    ?assertEqual(ok, erlmcp_transport:send(Pid, #{})), % Should be valid
+
+    % Clean up
+    erlmcp_transport:stop(Pid),
+    timer:sleep(100),
+    ok.
+
+%%====================================================================
+%% Internal Functions
+%%====================================================================
+
+cleanup_test_state() ->
+    % Clean up any remaining test transports
+    case erlmcp_transport_registry:list_transports() of
+        Transports when is_list(Transports) ->
+            lists:foreach(fun(Transport) ->
+                             TransportId = maps:get(id, Transport),
+                             case erlmcp_transport_registry:resolve_transport(TransportId) of
+                                 {ok, Pid} ->
+                                     erlmcp_transport:stop(Pid),
+                                     ct:pal("Cleaned up transport: ~p", [TransportId]);
+                                 _ ->
+                                     ok
+                             end
+                           end,
+                           Transports);
+        _ ->
+            ok
+    end,
+    ok.

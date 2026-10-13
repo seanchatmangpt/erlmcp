@@ -46,11 +46,11 @@ test_list_tools_after_init(Client) ->
             case erlmcp_client:list_tools(Client) of
                 {ok, Tools} ->
                     ?assert(is_list(Tools));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 %%====================================================================
@@ -86,11 +86,11 @@ test_call_tool_simple(Client) ->
             case erlmcp_client:call_tool(Client, <<"echo">>, #{msg => <<"hi">>}) of
                 {ok, R} ->
                     ?assert(is_map(R));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_call_tool_complex(Client) ->
@@ -105,11 +105,11 @@ test_call_tool_complex(Client) ->
             case erlmcp_client:call_tool(Client, <<"complex">>, Args) of
                 {ok, R} ->
                     ?assert(is_map(R));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_call_tool_empty_args(Client) ->
@@ -118,19 +118,19 @@ test_call_tool_empty_args(Client) ->
             case erlmcp_client:call_tool(Client, <<"noargs">>, #{}) of
                 {ok, R} ->
                     ?assert(is_map(R));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_call_nonexistent_tool(Client) ->
     case erlmcp_client:initialize(Client, #mcp_client_capabilities{}) of
         {ok, _} ->
             ?assertMatch({error, _}, erlmcp_client:call_tool(Client, <<"nonexistent_xyz">>, #{}));
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 %%====================================================================
@@ -166,11 +166,11 @@ test_list_resource_templates(Client) ->
             case erlmcp_client:list_resource_templates(Client) of
                 {ok, T} ->
                     ?assert(is_list(T));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_read_resource(Client) ->
@@ -179,11 +179,11 @@ test_read_resource(Client) ->
             case erlmcp_client:read_resource(Client, <<"file:///t.txt">>) of
                 {ok, C} ->
                     ?assert(is_map(C));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_subscribe_resource(Client) ->
@@ -191,12 +191,12 @@ test_subscribe_resource(Client) ->
         {ok, _} ->
             case erlmcp_client:subscribe_to_resource(Client, <<"file:///t.txt">>) of
                 ok ->
-                    ?assert(true);
-                {error, _} ->
-                    ?assert(true)
+                    ok;
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_unsubscribe_resource(Client) ->
@@ -204,12 +204,12 @@ test_unsubscribe_resource(Client) ->
         {ok, _} ->
             case erlmcp_client:unsubscribe_from_resource(Client, <<"file:///t.txt">>) of
                 ok ->
-                    ?assert(true);
-                {error, _} ->
-                    ?assert(true)
+                    ok;
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 %%====================================================================
@@ -244,11 +244,11 @@ test_list_prompts(Client) ->
             case erlmcp_client:list_prompts(Client) of
                 {ok, P} ->
                     ?assert(is_list(P));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_get_prompt(Client) ->
@@ -257,11 +257,11 @@ test_get_prompt(Client) ->
             case erlmcp_client:get_prompt(Client, <<"test_prompt">>) of
                 {ok, P} ->
                     ?assert(is_map(P));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_get_prompt_with_args(Client) ->
@@ -270,11 +270,11 @@ test_get_prompt_with_args(Client) ->
             case erlmcp_client:get_prompt(Client, <<"test_prompt">>, #{n => <<"test">>, v => 42}) of
                 {ok, P} ->
                     ?assert(is_map(P));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 %%====================================================================
@@ -304,11 +304,11 @@ test_complete_default_timeout(Client) ->
             case erlmcp_client:complete(Client, <<"ref">>, <<"partial">>) of
                 {ok, C} ->
                     ?assert(is_map(C));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_complete_custom_timeout(Client) ->
@@ -317,19 +317,19 @@ test_complete_custom_timeout(Client) ->
             case erlmcp_client:complete(Client, <<"ref">>, <<"partial">>, 10000) of
                 {ok, C} ->
                     ?assert(is_map(C));
-                {error, _} ->
-                    ?assert(true)
+                {error, Reason} ->
+                    erlang:error({unexpected_error, Reason})
             end;
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 test_complete_invalid_ref(Client) ->
     case erlmcp_client:initialize(Client, #mcp_client_capabilities{}) of
         {ok, _} ->
             ?assertMatch({error, _}, erlmcp_client:complete(Client, <<>>, <<"p">>));
-        {error, _} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({unexpected_error, Reason})
     end.
 
 %%====================================================================
@@ -424,7 +424,8 @@ test_concurrent_batch_requests(Client) ->
                                                end)
                    end),
         timer:sleep(1000),
-        ?assert(true)
+        %% Concurrent batches must not have crashed the client process
+        ?assert(erlang:is_process_alive(Client))
     catch
         error:badarg ->
             ok

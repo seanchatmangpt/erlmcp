@@ -56,9 +56,9 @@ test_circuit_closed() ->
     %% Check circuit state (API call - observable)
     case erlmcp_transport_health:get_circuit_state(TransportPid) of
         {ok, closed} ->
-            ?assert(true);
-        {error, _Reason} ->
-            ?assert(true)
+            ok;
+        {error, Reason} ->
+            erlang:error({get_circuit_state_failed, Reason})
     end,
 
     gen_server:stop(TransportPid).
@@ -86,8 +86,8 @@ test_circuit_open() ->
     case erlmcp_transport_health:get_circuit_state(TransportPid) of
         {ok, State} ->
             ?assert(State =:= open orelse State =:= closed);
-        {error, _Reason} ->
-            ?assert(true)
+        {error, Reason} ->
+            erlang:error({get_circuit_state_failed, Reason})
     end,
 
     gen_server:stop(TransportPid).
@@ -111,12 +111,12 @@ test_circuit_half_open() ->
     %% Check circuit state (API call - observable)
     case erlmcp_transport_health:get_circuit_state(TransportPid) of
         {ok, half_open} ->
-            ?assert(true);
+            ok;
         {ok, open} ->
             %% May still be open if timeout not reached
-            ?assert(true);
-        {error, _Reason} ->
-            ?assert(true)
+            ok;
+        {error, Reason} ->
+            erlang:error({get_circuit_state_failed, Reason})
     end,
 
     gen_server:stop(TransportPid).
@@ -148,12 +148,12 @@ test_open_on_failures() ->
     %% Circuit should be open (API call - observable)
     case erlmcp_transport_health:get_circuit_state(TransportPid) of
         {ok, open} ->
-            ?assert(true);
+            ok;
         {ok, closed} ->
             %% Threshold may not be met
-            ?assert(true);
-        {error, _Reason} ->
-            ?assert(true)
+            ok;
+        {error, Reason} ->
+            erlang:error({get_circuit_state_failed, Reason})
     end,
 
     gen_server:stop(TransportPid).
@@ -179,12 +179,12 @@ test_half_open_after_timeout() ->
     %% Circuit should be half-open (API call - observable)
     case erlmcp_transport_health:get_circuit_state(TransportPid) of
         {ok, half_open} ->
-            ?assert(true);
+            ok;
         {ok, open} ->
             %% May still be open
-            ?assert(true);
-        {error, _Reason} ->
-            ?assert(true)
+            ok;
+        {error, Reason} ->
+            erlang:error({get_circuit_state_failed, Reason})
     end,
 
     gen_server:stop(TransportPid).
@@ -209,12 +209,12 @@ test_close_on_success() ->
     %% Circuit should be closed (API call - observable)
     case erlmcp_transport_health:get_circuit_state(TransportPid) of
         {ok, closed} ->
-            ?assert(true);
+            ok;
         {ok, half_open} ->
             %% May still be in half-open
-            ?assert(true);
-        {error, _Reason} ->
-            ?assert(true)
+            ok;
+        {error, Reason} ->
+            erlang:error({get_circuit_state_failed, Reason})
     end,
 
     gen_server:stop(TransportPid).

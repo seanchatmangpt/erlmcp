@@ -158,11 +158,11 @@ test_jwt_algorithm_confusion_attack() ->
     % Create JWT with "none" algorithm (no signature)
     % The kid is present but doesn't exist in registry, so we get unknown_key_id
     Header =
-        jsx:encode(#{<<"alg">> => <<"none">>,
+        erlmcp_json:encode(#{<<"alg">> => <<"none">>,
                      <<"typ">> => <<"JWT">>,
                      <<"kid">> => <<"none_attack_kid">>}),
     Payload =
-        jsx:encode(#{<<"sub">> => <<"attacker">>, <<"exp">> => erlang:system_time(second) + 3600}),
+        erlmcp_json:encode(#{<<"sub">> => <<"attacker">>, <<"exp">> => erlang:system_time(second) + 3600}),
 
     HeaderB64 = base64:encode(Header),
     PayloadB64 = base64:encode(Payload),
@@ -292,10 +292,10 @@ create_jwt_signed(_PrivateKey, Claims, Options) ->
     % Encode
     HeaderB64 =
         base64:encode(
-            jsx:encode(HeaderWithKid)),
+            erlmcp_json:encode(HeaderWithKid)),
     PayloadB64 =
         base64:encode(
-            jsx:encode(Payload2)),
+            erlmcp_json:encode(Payload2)),
 
     % In production, this would sign with PrivateKey using jose
     % For testing, we create a placeholder signature
@@ -312,10 +312,10 @@ create_jwt_forged(Claims) ->
 
     HeaderB64 =
         base64:encode(
-            jsx:encode(Header)),
+            erlmcp_json:encode(Header)),
     PayloadB64 =
         base64:encode(
-            jsx:encode(Claims)),
+            erlmcp_json:encode(Claims)),
 
     % FORGED: Invalid signature (wrong signature)
     ForgedSignature = base64:encode(<<"forged_signature">>),
@@ -347,7 +347,7 @@ test_jwt_validation() ->
     % The setup adds test_public_key which is invalid PEM, so test_kid won't work
     Header =
         base64:encode(
-            jsx:encode(#{<<"alg">> => <<"HS256">>,
+            erlmcp_json:encode(#{<<"alg">> => <<"HS256">>,
                          <<"typ">> => <<"JWT">>,
                          <<"kid">> => <<"validation_test_kid">>})),
 
@@ -355,7 +355,7 @@ test_jwt_validation() ->
     FutureExp = erlang:system_time(second) + 3600,
     Payload =
         base64:encode(
-            jsx:encode(#{<<"sub">> => <<"user_test">>,
+            erlmcp_json:encode(#{<<"sub">> => <<"user_test">>,
                          <<"exp">> => FutureExp,
                          <<"iat">> => erlang:system_time(second),
                          <<"iss">> => <<"test_issuer">>})),
@@ -372,10 +372,10 @@ test_jwt_missing_expiration() ->
     % JWT without exp claim (but with kid to pass key ID check)
     Header =
         base64:encode(
-            jsx:encode(#{<<"alg">> => <<"HS256">>, <<"kid">> => <<"missing_exp_kid">>})),
+            erlmcp_json:encode(#{<<"alg">> => <<"HS256">>, <<"kid">> => <<"missing_exp_kid">>})),
     Payload =
         base64:encode(
-            jsx:encode(#{<<"sub">> => <<"user_test">>, <<"iat">> => erlang:system_time(second)})),
+            erlmcp_json:encode(#{<<"sub">> => <<"user_test">>, <<"iat">> => erlang:system_time(second)})),
     Signature = base64:encode(<<"sig">>),
     Token = <<Header/binary, ".", Payload/binary, ".", Signature/binary>>,
 
@@ -390,7 +390,7 @@ test_jwt_invalid_base64() ->
     % So we get unknown_key_id (the payload decode error happens later)
     Header =
         base64:encode(
-            jsx:encode(#{<<"alg">> => <<"HS256">>, <<"kid">> => <<"invalid_base64_kid">>})),
+            erlmcp_json:encode(#{<<"alg">> => <<"HS256">>, <<"kid">> => <<"invalid_base64_kid">>})),
     InvalidPayload = <<"not_valid_base64!!!">>,
     Signature = base64:encode(<<"sig">>),
     Token = <<Header/binary, ".", InvalidPayload/binary, ".", Signature/binary>>,
@@ -401,10 +401,11 @@ test_jwt_invalid_base64() ->
     ok.
 
 test_oauth2_validation() ->
-    % OAuth2 is configured in setup, should return mock response
-    {ok, TokenInfo} = erlmcp_auth:validate_oauth2_token(<<"test_oauth2_token">>),
-    ?assertEqual(<<"oauth2_user">>, maps:get(<<"user_id">>, TokenInfo)),
-    ?assertEqual(<<"read write">>, maps:get(<<"scope">>, TokenInfo)),
+    % OAuth2 is enabled in setup but no introspection client_id/client_secret
+    % is configured, so the server cannot reach a real introspection endpoint
+    % and reports the missing credential instead of fabricating a token.
+    {error, oauth2_client_id_missing} =
+        erlmcp_auth:validate_oauth2_token(<<"test_oauth2_token">>),
 
     ok.
 
@@ -415,13 +416,15 @@ test_oauth2_not_configured() ->
     ok.
 
 test_mtls_validation() ->
-    % mTLS is configured in setup
+    % mTLS is configured in setup. erlmcp_auth_mtls:validate/2 requires a real
+    % DER certificate under the `certificate` key (parsed with public_key and
+    % chain-verified against configured CA roots); a descriptive CertInfo map
+    % without DER bytes is rejected as invalid_certificate_info.
     CertInfo =
         #{subject => #{cn => <<"client.example.com">>, o => <<"Test Org">>},
           issuer => <<"Test CA">>},
 
-    {ok, UserId} = erlmcp_auth:validate_mtls(CertInfo),
-    ?assertEqual(<<"client.example.com">>, UserId),
+    {error, invalid_certificate_info} = erlmcp_auth:validate_mtls(CertInfo),
 
     ok.
 
@@ -632,11 +635,11 @@ test_revoked_token_validation() ->
     % Create valid JWT with unknown kid (so we can revoke it before signature check)
     Header =
         base64:encode(
-            jsx:encode(#{<<"alg">> => <<"HS256">>, <<"kid">> => <<"test_revoked_kid">>})),
+            erlmcp_json:encode(#{<<"alg">> => <<"HS256">>, <<"kid">> => <<"test_revoked_kid">>})),
     FutureExp = erlang:system_time(second) + 3600,
     Payload =
         base64:encode(
-            jsx:encode(#{<<"sub">> => <<"user_test">>, <<"exp">> => FutureExp})),
+            erlmcp_json:encode(#{<<"sub">> => <<"user_test">>, <<"exp">> => FutureExp})),
     Signature = base64:encode(<<"sig">>),
     Token = <<Header/binary, ".", Payload/binary, ".", Signature/binary>>,
 

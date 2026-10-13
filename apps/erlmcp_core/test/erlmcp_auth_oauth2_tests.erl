@@ -270,7 +270,9 @@ token_cache_expiration_test() ->
 
     case ExpiresIn of
         undefined ->
-            ?assert(true);
+            %% Unreachable by design: TokenInfo above always sets expires_in.
+            %% A cached token without expires_in can never expire - flunk.
+            erlang:error({expires_in_missing_from_cache, CachedInfo});
         _ ->
             ?assert(CurrentTime - Timestamp >= (ExpiresIn * 1000))
     end,

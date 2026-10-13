@@ -99,22 +99,22 @@ test_breakpoints() ->
     %% Note: Line numbers are module-specific, this is a demonstration
     case erlmcp_otp_debugger:set_breakpoint(erlmcp_otp_debugger_tests, 100) of
         ok ->
-            ?assert(true);
+            ok;
         {error, {badkey, _Line}} ->
             %% Line 100 doesn't exist - that's ok for this test
-            ?assert(true);
+            ok;
         {error, {unsupported, _Line}} ->
             %% Line doesn't support breakpoints (e.g., function head)
-            ?assert(true)
+            ok
     end,
 
     %% Clear breakpoint
     case erlmcp_otp_debugger:clear_breakpoint(erlmcp_otp_debugger_tests, 100) of
         ok ->
-            ?assert(true);
-        {error, _Reason} ->
-            %% Expected if breakpoint wasn't set
-            ?assert(true)
+            ok;
+        {error, Reason} ->
+            %% Expected if breakpoint wasn't set - tolerated, nothing further to verify
+            ok
     end.
 
 test_list_breakpoints() ->
@@ -127,19 +127,19 @@ test_list_breakpoints() ->
     %% List breakpoints for a specific module
     case erlmcp_otp_debugger:list_breakpoints(lists) of
         {ok, ModuleBreakpoints} when is_map(ModuleBreakpoints) ->
-            ?assert(true);
+            ?assert(is_map(ModuleBreakpoints));
         {error, badkey} ->
-            %% Module not loaded for debugging
-            ?assert(true)
+            %% Module not loaded for debugging - tolerated
+            ok
     end,
 
     %% List breakpoints for specific function
     case erlmcp_otp_debugger:list_breakpoints(lists, seq, 2) of
         {ok, FunBreakpoints} when is_map(FunBreakpoints) ->
-            ?assert(true);
+            ?assert(is_map(FunBreakpoints));
         {error, _Reason} ->
             %% Expected
-            ?assert(true)
+            ok
     end.
 
 %%%=============================================================================
@@ -154,7 +154,9 @@ test_instrumentations() ->
 
     %% Toggle instrumentations
     ok = erlmcp_otp_debugger:toggle_instrumentations(#{line_breakpoint => true}),
-    ?assert(true).
+    %% Verify the toggle took effect via the observable getter
+    Instrumentations2 = erlmcp_otp_debugger:get_instrumentations(),
+    ?assert(is_boolean(maps:get(line_breakpoint, Instrumentations2))).
 
 %%%=============================================================================
 %%% PROCESS INSPECTION TESTS
@@ -169,10 +171,11 @@ test_inspect_process() ->
     %% Try to inspect (will fail as process is not suspended)
     case erlmcp_otp_debugger:inspect_process(Pid) of
         {error, process_running} ->
-            ?assert(true);
+            %% Expected: live unsuspended process must be rejected
+            ?assertMatch({error, process_running}, erlmcp_otp_debugger:inspect_process(Pid));
         {ok, _} ->
             %% If by some chance it's suspended, that's also valid
-            ?assert(true)
+            ok
     end,
 
     %% Cleanup
@@ -189,7 +192,8 @@ debugger_workflow_test_() ->
 test_debugger_workflow() ->
     case erlmcp_otp_debugger:is_supported() of
         false ->
-            ?assert(true);  % Skip if not supported
+            %% Skip if not supported - tolerated environmental degradation
+            ok;
         true ->
             %% 1. Start debugger
             {ok, Session} = erlmcp_otp_debugger:start(),
@@ -252,7 +256,8 @@ gen_server_behavior_test_() ->
 test_gen_server_behavior() ->
     case erlmcp_otp_debugger:is_supported() of
         false ->
-            ?assert(true);
+            %% Skip if not supported - tolerated environmental degradation
+            ok;
         true ->
             {ok, Session} = erlmcp_otp_debugger:start(),
 
@@ -264,5 +269,6 @@ test_gen_server_behavior() ->
             gen_server:cast(erlmcp_otp_debugger, test_cast),
 
             erlmcp_otp_debugger:stop(Session),
-            ?assert(true)
+            %% Cast must not have crashed the debugger process
+            ?assert(erlang:is_process_alive(whereis(erlmcp_otp_debugger)))
     end.
