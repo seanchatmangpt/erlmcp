@@ -1,205 +1,87 @@
 %%%-------------------------------------------------------------------
-%%% @doc
-%%% Tests for erlmcp_cli_registry module
+%%% @doc EUnit tests for erlmcp_cli_registry (real exported API).
 %%%
+%%% Rewritten from non-Erlang pseudo-code (python comment syntax, undefined
+%%% #command_info record, nonexistent functions is_valid_command/1,
+%%% list_commands_by_category/1, reload/0, get_metrics/0, stop/0).
+%%%
+%%% Real API under test (apps/erlmcp_cli/src/erlmcp_cli_registry.erl):
+%%%   start_link/0, register_command/2, unregister_command/1,
+%%%   lookup_command/1, list_commands/0, execute_command/2,
+%%%   get_command_schema/1, reload_commands/0
+%%%
+%%% Chicago school: the test module itself is the real command module
+%%% (exports execute/1); no mocks.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(cli_registry_tests).
 
 -include_lib("eunit/include/eunit.hrl").
 
-%%====================================================================
-%% Test Cases
-%%====================================================================
+%% The registry executes commands via Module:execute(Args); this test
+%% module is a real command module.
+-export([execute/1]).
 
-%% @doc Test basic command registration and lookup
-basic_registry_test() ->
-    %% Create a test registry process
-    Pid = start_test_registry(),
-
-    %% Test command lookup for non-existent command
-    {error, not_found} = erlmcp_cli_registry:lookup_command(<<"test_nonexistent">>),
-
-    %% Test successful command lookup
-    {ok, CommandInfo} = erlmcp_cli_registry:lookup_command(<<"mcp.health">>),
-    ?assert(is_record(CommandInfo, command_info)),
-    ?assertEqual(<<"mcp.health">>, CommandInfo#command_info.name),
-
-    %% Cleanup
-    stop_test_registry(Pid).
-
-%% @doc Test command registration
-command_registration_test() ->
-    Pid = start_test_registry(),
-
-    %% Register a new command
-    Command = #command_info{
-        name = <<"test.command">>,
-        module = test_module,
-        function = test_function,
-        arity = 2,
-        description = <<"Test command">>,
-        category = <<"test">>,
-        safety_level = safe
-    },
-
-    ok = erlmcp_cli_registry:register_command(Command),
-
-    %% Verify registration
-    {ok, RegisteredCommand} = erlmcp_cli_registry:lookup_command(<<"test.command">>),
-    ?assertEqual(Command, RegisteredCommand),
-
-    %% Cleanup
-    stop_test_registry(Pid).
-
-%% @doc Test command execution
-command_execution_test() ->
-    Pid = start_test_registry(),
-
-    %% Execute a command with valid arguments
-    Args = [<<"arg1">>, <<"arg2">>],
-    Result = erlmcp_cli_registry:execute_command(<<"mcp.health">>, Args),
-    ?assert(is_map(Result)),
-
-    %% Execute command with invalid number of arguments
-    {error, invalid_arguments} = erlmcp_cli_registry:execute_command(<<"mcp.health">>, []),
-    {error, invalid_arguments} = erlmcp_cli_registry:execute_command(<<"mcp.health">>, [<<"extra">>]),
-
-    %% Cleanup
-    stop_test_registry(Pid).
-
-%% @doc Test command validation
-command_validation_test() ->
-    Pid = start_test_registry(),
-
-    %% Test valid command
-    ?assertEqual(true, erlmcp_cli_registry:is_valid_command(<<"mcp.health">>)),
-
-    %% Test invalid command (non-existent)
-    ?assertEqual(false, erlmcp_cli_registry:is_valid_command(<<"invalid.command">>)),
-
-    %% Test invalid command name format
-    ?assertEqual(false, erlmcp_cli_registry:is_valid_command(123)),
-    ?assertEqual(false, erlmcp_cli_registry:is_valid_command(<<>>)),
-
-    %% Cleanup
-    stop_test_registry(Pid).
-
-%% @doc Test command categories
-command_categories_test() ->
-    Pid = start_test_registry(),
-
-    %% List commands by category
-    Commands = erlmcp_cli_registry:list_commands_by_category(<<"mcp">>),
-    ?assert(is_list(Commands)),
-    ?assert(length(Commands) > 0),
-
-    %% Test non-existent category
-    [] = erlmcp_cli_registry:list_commands_by_category(<<"nonexistent">>),
-
-    %% Cleanup
-    stop_test_registry(Pid).
-
-%% @doc Test hot-reload functionality
-hot_reload_test() ->
-    Pid = start_test_registry(),
-
-    %% Get initial command count
-    InitialCommands = erlmcp_cli_registry:list_commands(),
-    InitialCount = length(InitialCommands),
-
-    %% Reload registry (this should reload from persistent storage)
-    ok = erlmcp_cli_registry:reload(),
-
-    %% Verify command count remains the same
-    ReloadedCommands = erlmcp_cli_registry:list_commands(),
-    ?assertEqual(InitialCount, length(ReloadedCommands)),
-
-    %% Cleanup
-    stop_test_registry(Pid).
-
-%% @doc Test metrics collection
-registry_metrics_test() ->
-    Pid = start_test_registry(),
-
-    %% Execute some commands to generate metrics
-    ok = erlmcp_cli_registry:execute_command(<<"mcp.health">>, []),
-    ok = erlmcp_cli_registry:execute_command(<<"mcp.health">>, []),
-    {error, invalid_arguments} = erlmcp_cli_registry:execute_command(<<"mcp.health">>, []),
-
-    %% Get metrics
-    Metrics = erlmcp_cli_registry:get_metrics(),
-    ?assert(is_map(Metrics)),
-    ?assert(is_integer(maps:get("lookups", Metrics, 0))),
-    ?assert(is_integer(maps:get("executions", Metrics, 0))),
-    ?assert(is_integer(maps:get("errors", Metrics, 0))),
-
-    %% Cleanup
-    stop_test_registry(Pid).
-
-%% @doc Test error handling for invalid operations
-error_handling_test() ->
-    Pid = start_test_registry(),
-
-    %% Test lookup with invalid command name
-    {error, not_found} = erlmcp_cli_registry:lookup_command(<<>>),
-    {error, not_found} = erlmcp_cli_registry:lookup_command(<<42>>),
-
-    %% Test execute with invalid command name
-    {error, not_found} = erlmcp_cli_registry:execute_command(<<>>, []),
-
-    %% Test execute with non-list arguments
-    {error, invalid_arguments} = erlmcp_cli_registry:execute_command(<<"mcp.health">>, <<"not_a_list">>),
-
-    %% Cleanup
-    stop_test_registry(Pid).
+execute(_Args) ->
+    {ok, #{<<"status">> => <<"ok">>}}.
 
 %%====================================================================
-%% Helper Functions
+%% Tests
 %%====================================================================
 
-%% @doc Start a test registry process
-start_test_registry() ->
-    %% Start the registry process
-    Pid = erlmcp_cli_registry:start_link(),
+lookup_unknown_command_test() ->
+    {ok, _} = erlmcp_cli_registry:start_link(),
+    ?assertMatch({error, command_not_found},
+                 erlmcp_cli_registry:lookup_command(<<"test_nonexistent">>)),
+    gen_server:stop(erlmcp_cli_registry).
 
-    %% Wait for process to initialize
-    timer:sleep(100),
+register_lookup_execute_roundtrip_test() ->
+    {ok, _} = erlmcp_cli_registry:start_link(),
+    ?assertEqual(ok, erlmcp_cli_registry:register_command(<<"test.command">>,
+                                                          cli_registry_tests)),
+    {ok, Info} = erlmcp_cli_registry:lookup_command(<<"test.command">>),
+    ?assertMatch({ok, #{<<"status">> := <<"ok">>}},
+                 erlmcp_cli_registry:execute_command(<<"test.command">>, [<<"a">>])),
+    %% The returned #command_info record carries the registered module
+    %% (field 2 of #command_info is 'module').
+    ?assertEqual(cli_registry_tests, element(2, Info)),
+    gen_server:stop(erlmcp_cli_registry).
 
-    %% Verify process is alive
-    ?assert(is_process_alive(Pid)),
+unregister_registered_test() ->
+    {ok, _} = erlmcp_cli_registry:start_link(),
+    ok = erlmcp_cli_registry:register_command(<<"test.command">>, cli_registry_tests),
+    ?assertEqual(ok, erlmcp_cli_registry:unregister_command(<<"test.command">>)),
+    ?assertMatch({error, command_not_found},
+                 erlmcp_cli_registry:lookup_command(<<"test.command">>)),
+    gen_server:stop(erlmcp_cli_registry).
 
-    Pid.
+unregister_missing_test() ->
+    {ok, _} = erlmcp_cli_registry:start_link(),
+    ?assertMatch({error, command_not_found},
+                 erlmcp_cli_registry:unregister_command(<<"never/registered">>)),
+    gen_server:stop(erlmcp_cli_registry).
 
-%% @doc Stop a test registry process
-stop_test_registry(Pid) ->
-    erlmcp_cli_registry:stop(),
-    timer:sleep(50),  # Allow cleanup
-    ok.
+list_commands_test() ->
+    {ok, _} = erlmcp_cli_registry:start_link(),
+    ok = erlmcp_cli_registry:register_command(<<"test.command">>, cli_registry_tests),
+    ?assertMatch({ok, [_ | _]}, erlmcp_cli_registry:list_commands()),
+    gen_server:stop(erlmcp_cli_registry).
 
-%% @doc Test setup - register test commands
-setup_test_commands() ->
-    %% Register test commands for testing
-    TestCommand1 = #command_info{
-        name = <<"test.command1">>,
-        module = test_module1,
-        function = test_function1,
-        arity = 1,
-        description = <<"Test command 1">>,
-        category = <<"test">>,
-        safety_level = safe
-    },
+get_command_schema_test() ->
+    {ok, _} = erlmcp_cli_registry:start_link(),
+    ok = erlmcp_cli_registry:register_command(<<"test.command">>, cli_registry_tests),
+    ?assertMatch({ok, _}, erlmcp_cli_registry:get_command_schema(<<"test.command">>)),
+    ?assertMatch({error, command_not_found},
+                 erlmcp_cli_registry:get_command_schema(<<"no.such.command">>)),
+    gen_server:stop(erlmcp_cli_registry).
 
-    TestCommand2 = #command_info{
-        name = <<"test.command2">>,
-        module = test_module2,
-        function = test_function2,
-        arity = 2,
-        description = <<"Test command 2">>,
-        category = <<"test">>,
-        safety_level = unsafe
-    },
+reload_commands_test() ->
+    {ok, _} = erlmcp_cli_registry:start_link(),
+    ?assertEqual(ok, erlmcp_cli_registry:reload_commands()),
+    gen_server:stop(erlmcp_cli_registry).
 
-    erlmcp_cli_registry:register_command(TestCommand1),
-    erlmcp_cli_registry:register_command(TestCommand2),
-    ok.
+execute_unknown_command_test() ->
+    {ok, _} = erlmcp_cli_registry:start_link(),
+    ?assertMatch({error, command_not_found},
+                 erlmcp_cli_registry:execute_command(<<"no.such.command">>, [])),
+    gen_server:stop(erlmcp_cli_registry).

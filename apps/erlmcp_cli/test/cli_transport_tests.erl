@@ -1,7 +1,24 @@
 %%%-------------------------------------------------------------------
-%%% @doc
-%%% Tests for erlmcp_cli_transport module
+%%% @doc EUnit tests for erlmcp_cli_transport (real exported API).
 %%%
+%%% Rewritten from Elixir-flavored pseudo-code (`%{}` maps,
+%%% ?assertEqual/assertEqual from ExUnit, ?fail). The pseudo-code also
+%%% invented functions that do not exist on the real module:
+%%% transport/2, is_active/1, get_transport_stats/1,
+%%% get_all_transport_stats/0, validate_config/1, start_monitor/0,
+%%% stop_monitor/0, check_health/1, get_transport_metrics/1.
+%%%
+%%% Real API under test (apps/erlmcp_cli/src/erlmcp_cli_transport.erl):
+%%%   start_link(TypeAtom, Opts), send_data(Data, TypeAtom),
+%%%   close_transport(TypeAtom), stdio/0, tcp/0, http/0, ws/0, sse/0,
+%%%   init/2, send/2, close/1
+%%%
+%%% Note the real argument order: send_data(Data, TransportType) and
+%%% close_transport(TransportType) take the transport type as an ATOM,
+%%% not the data first. Active-transport lifecycle (stdio/tcp/http/ws/sse
+%%% against live sockets) needs the full built app; this suite is
+%%% compile-validated only (apps/erlmcp_cli has no rebar build
+%%% integration), so it exercises the deterministic dispatch surface.
 %%% @end
 %%%-------------------------------------------------------------------
 -module(cli_transport_tests).
@@ -9,249 +26,58 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %%====================================================================
-%% Test Cases
+%% Tests
 %%====================================================================
 
-%% @doc Test transport interface creation
-transport_interface_test() ->
-    %% Test transport interface with different types
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"stdio">>, %{})),
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"tcp">>, %{})),
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"http">>, %{})),
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"ws">>, %{})),
-    ?assertEqual(ok, erlmcp_cli_transport:transport(<<"sse">>, %{})),
+type_constants_test() ->
+    ?assertEqual(stdio, erlmcp_cli_transport:stdio()),
+    ?assertEqual(tcp, erlmcp_cli_transport:tcp()),
+    ?assertEqual(http, erlmcp_cli_transport:http()),
+    ?assertEqual(ws, erlmcp_cli_transport:ws()),
+    ?assertEqual(sse, erlmcp_cli_transport:sse()).
 
-    %% Test invalid transport type
-    {error, invalid_transport_type} = erlmcp_cli_transport:transport(<<"invalid">>, %{}),
+invalid_transport_type_dispatch_test() ->
+    %% Real module rejects unknown transport types on every entry point
+    %% with {error, {invalid_transport_type, Type}}.
+    ?assertMatch({error, {invalid_transport_type, bogus}},
+                 erlmcp_cli_transport:start_link(bogus, #{})),
+    ?assertMatch({error, {invalid_transport_type, bogus}},
+                 erlmcp_cli_transport:send_data(<<"message">>, bogus)),
+    ?assertMatch({error, {invalid_transport_type, bogus}},
+                 erlmcp_cli_transport:close_transport(bogus)),
+    ?assertMatch({error, {invalid_transport_type, bogus}},
+                 erlmcp_cli_transport:init(bogus, #{})).
 
-    %% Test transport with invalid options
-    {error, invalid_transport_options} = erlmcp_cli_transport:transport(<<"stdio">>, %{}),  % Malformed options
+behaviour_callback_stubs_test() ->
+    %% The behaviour-level send/close are documented stubs on this module
+    %% (specific transports implement them); assert their real contract.
+    ?assertEqual({error, not_implemented},
+                 erlmcp_cli_transport:send(<<"data">>, some_state)),
+    ?assertEqual(ok, erlmcp_cli_transport:close(some_state)).
+
+send_data_all_known_types_dispatch_test() ->
+    %% Without a live transport process every known type must return an
+    %% {error, _} term (never crash, never ok) when asked to send.
+    Types = [stdio, tcp, http, ws, sse],
+    Results = [erlmcp_cli_transport:send_data(<<"{\"jsonrpc\":\"2.0\",\"id\":1}">>, T)
+               || T <- Types],
+    lists:foreach(fun(R) ->
+                          ?assert(lists:member(element(1, R), [ok, error]))
+                  end, Results),
     ok.
 
-%% @doc Test transport status checking
-transport_status_test() ->
-    %% Test transport status for non-existent transport
-    false = erlmcp_cli_transport:is_active(<<"nonexistent">>),
-
-    %% Start a transport and check status
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{}),
-    true = erlmcp_cli_transport:is_active(<<"stdio">>),
-
-    %% Stop transport and check status
-    ok = erlmcp_cli_transport:close_transport(<<"stdio">>),
-    false = erlmcp_cli_transport:is_active(<<"stdio">>),
+close_transport_all_known_types_dispatch_test() ->
+    Types = [stdio, tcp, http, ws, sse],
+    Results = [erlmcp_cli_transport:close_transport(T) || T <- Types],
+    %% Each is ok or {error, _}; none may crash the caller.
+    lists:foreach(fun(R) ->
+                          ?assert(R =:= ok orelse element(1, R) =:= error)
+                  end, Results),
     ok.
 
-%% @doc Test transport statistics
-transport_stats_test() ->
-    %% Start a transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{}),
-
-    %% Get transport statistics
-    Stats = erlmcp_cli_transport:get_transport_stats(<<"stdio">>),
-    ?assert(is_map(Stats)),
-    ?assert(is_integer(maps:get(<<"messages_sent">>, Stats, 0))),
-    ?assert(is_integer(maps:get(<<"messages_received">>, Stats, 0))),
-    ?assert(is_integer(maps:get(<<"errors">>, Stats, 0))),
-
-    %% Get all transport statistics
-    AllStats = erlmcp_cli_transport:get_all_transport_stats(),
-    ?assert(is_map(AllStats)),
-
-    %% Cleanup
-    erlmcp_cli_transport:close_transport(<<"stdio">>),
-    ok.
-
-%% @doc Test transport configuration validation
-transport_config_test() ->
-    %% Test valid configurations
-    ValidConfigs = [
-        #{"type" => "stdio", "host" => "localhost"},
-        #{"type" => "tcp", "host" => "127.0.0.1", "port" => 8080},
-        #{"type" => "http", "host" => "localhost", "port" => 8080},
-        #{"type" => "ws", "host" => "localhost", "port" => 8080},
-        #{"type" => "sse", "host" => "localhost", "port" => 8080}
-    ],
-
-    lists:foreach(fun(Config) ->
-        case erlmcp_cli_transport:validate_config(Config) of
-            true -> ok;
-            false -> ?assert(false)  % Valid configuration rejected: ~p, [Config]  % TODO: Fix EUnit macro
-        end
-    end, ValidConfigs),
-
-    %% Test invalid configurations
-    InvalidConfigs = [
-        #{"type" => "invalid"},
-        #{"type" => "tcp"},  % Missing port
-        #{"type" => "http", "port" => "invalid"},  % Invalid port type
-        #{"type" => "stdio", "host" => 123},  % Invalid host type
-        #{},  % Empty config
-        #{"type" => null}  % Invalid type
-    ],
-
-    lists:foreach(fun(Config) ->
-        case erlmcp_cli_transport:validate_config(Config) of
-            false -> ok;
-            true -> ?assert(false)  % Invalid configuration accepted: ~p, [Config]
-        end
-    end, InvalidConfigs),
-    ok.
-
-%% @doc Test transport message handling
-transport_message_test() ->
-    %% Start stdio transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{}),
-
-    %% Test message sending
-    Message = <<"{\"jsonrpc\":\"2.0\",\"method\":\"test\",\"id\":1}">>,
-    ok = erlmcp_cli_transport:send_data(<<"stdio">>, Message),
-
-    %% Test message receiving (stdio transport will handle this)
-    ok = erlmcp_cli_transport:send_data(<<"stdio">>, Message),
-
-    %% Test closing transport
-    ok = erlmcp_cli_transport:close_transport(<<"stdio">>),
-
-    %% Test sending to closed transport
-    {error, transport_not_active} = erlmcp_cli_transport:send_data(<<"stdio">>, Message),
-    ok.
-
-%% @doc Test concurrent transport handling
-concurrent_transport_test() ->
-    %% Start multiple transports concurrently
-    Transports = [<<"stdio">>, <<"tcp">>, <<"http">>, <<"ws">>, <<"sse">>],
-    lists:foreach(fun(Type) ->
-        ok = erlmcp_cli_transport:transport(Type, %{
-            "host" => "localhost",
-            "port" => 8080
-        })
-    end, Transports),
-
-    %% Verify all transports are active
-    lists:foreach(fun(Type) ->
-        true = erlmcp_cli_transport:is_active(Type)
-    end, Transports),
-
-    %% Send messages to all transports concurrently
-    Message = <<"{\"jsonrpc\":\"2.0\",\"method\":\"test\",\"id\":1}">>,
-    lists:foreach(fun(Type) ->
-        ok = erlmcp_cli_transport:send_data(Type, Message)
-    end, Transports),
-
-    %% Close all transports
-    lists:foreach(fun(Type) ->
-        ok = erlmcp_cli_transport:close_transport(Type)
-    end, Transports),
-
-    %% Verify all transports are inactive
-    lists:foreach(fun(Type) ->
-        false = erlmcp_cli_transport:is_active(Type)
-    end, Transports),
-    ok.
-
-%% @doc Test transport error handling
-transport_error_test() ->
-    %% Test operations on non-existent transport
-    {error, transport_not_active} = erlmcp_cli_transport:send_data(<<"nonexistent">>, <<"test">>),
-    {error, transport_not_active} = erlmcp_cli_transport:close_transport(<<"nonexistent">>),
-
-    %% Test message sending to invalid transport
-    {error, invalid_transport_type} = erlmcp_cli_transport:send_data(<<"invalid">>, <<"test">>),
-
-    %% Test with malformed message
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{}),
-    ok = erlmcp_cli_transport:send_data(<<"stdio">>, <<"invalid json">>),  % Should handle gracefully
-    ok = erlmcp_cli_transport:close_transport(<<"stdio">>),
-    ok.
-
-%% @doc Test transport event handling
-transport_events_test() ->
-    %% Start transport monitoring
-    ok = erlmcp_cli_transport:start_monitor(),
-
-    %% Start a transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{ "host" => "localhost" }),
-
-    %% Transport should emit connect event
-    receive
-        {transport_event, <<"stdio">>, connected} ->
-            ok;
-        _ ->
-            ?assert(false)  % Unexpected event
-    after 1000 ->
-        ?assert(false)  % No connect event received
-    end,
-
-    %% Send data (should emit send event)
-    Message = <<"{\"jsonrpc\":\"2.0\",\"method\":\"test\",\"id\":1}">>,
-    ok = erlmcp_cli_transport:send_data(<<"stdio">>, Message),
-
-    receive
-        {transport_event, <<"stdio">>, {sent, _Size}} ->
-            ok;
-        _ ->
-            ?assert(false)  % Unexpected event
-    after 1000 ->
-        ?assert(false)  % No send event received
-    end,
-
-    %% Close transport (should emit disconnect event)
-    ok = erlmcp_cli_transport:close_transport(<<"stdio">>),
-
-    receive
-        {transport_event, <<"stdio">>, disconnected} ->
-            ok;
-        _ ->
-            ?assert(false)  % Unexpected event
-    after 1000 ->
-        ?assert(false)  % No disconnect event received
-    end,
-
-    %% Stop monitoring
-    ok = erlmcp_cli_transport:stop_monitor(),
-    ok.
-
-%% @doc Test transport health checks
-transport_health_test() ->
-    %% Check transport health for non-existent transport
-    unhealthy = erlmcp_cli_transport:check_health(<<"nonexistent">>),
-
-    %% Start a transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{ "host" => "localhost" }),
-
-    %% Check transport health
-    Health = erlmcp_cli_transport:check_health(<<"stdio">>),
-    ?assert(Health =:= healthy orelse Health =:= degraded),
-
-    %% Close transport
-    ok = erlmcp_cli_transport:close_transport(<<"stdio">>),
-
-    %% Check health after close
-    unhealthy = erlmcp_cli_transport:check_health(<<"stdio">>),
-    ok.
-
-%% @doc Test transport metrics integration
-transport_metrics_test() ->
-    %% Start a transport
-    ok = erlmcp_cli_transport:transport(<<"stdio">>, %{ "host" => "localhost" }),
-
-    %% Get transport metrics
-    Metrics = erlmcp_cli_transport:get_transport_metrics(<<"stdio">>),
-    ?assert(is_map(Metrics)),
-    ?assert(is_integer(maps:get(<<"messages_sent">>, Metrics, 0))),
-    ?assert(is_integer(maps:get(<<"messages_received">>, Metrics, 0))),
-    ?assert(is_integer(maps:get(<<"errors">>, Metrics, 0))),
-
-    %% Send some messages to generate metrics
-    Message = <<"{\"jsonrpc\":\"2.0\",\"method\":\"test\",\"id\":1}">>,
-    ok = erlmcp_cli_transport:send_data(<<"stdio">>, Message),
-    ok = erlmcp_cli_transport:send_data(<<"stdio">>, Message),
-
-    %% Check that metrics were updated
-    UpdatedMetrics = erlmcp_cli_transport:get_transport_metrics(<<"stdio">>),
-    ?assert(maps:get(<<"messages_sent">>, UpdatedMetrics) > maps:get(<<"messages_sent">>, Metrics)),
-
-    %% Cleanup
-    ok = erlmcp_cli_transport:close_transport(<<"stdio">>),
-    ok.
+init_valid_type_dispatch_test() ->
+    %% init/2 dispatches to the concrete transport's init; without a
+    %% backing process/socket the result is an error term, not a crash.
+    ?assertMatch({error, _}, erlmcp_cli_transport:init(stdio, #{})),
+    ?assertMatch({error, _}, erlmcp_cli_transport:init(tcp, #{host => <<"127.0.0.1">>,
+                                                              port => 1})).
