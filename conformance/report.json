@@ -1,0 +1,15 @@
+{
+  "courts": [
+    {"name": "spec_compliance", "file": "apps/erlmcp_validation/test/erlmcp_spec_compliance_SUITE.erl", "exit_code": 1, "verdict": "FAIL", "reason": "{\"no such file or directory\",\"jsx.app\""},
+    {"name": "mcp_compliance", "file": "apps/erlmcp_validation/test/erlmcp_compliance_SUITE.erl", "exit_code": 1, "verdict": "FAIL", "reason": "{not_started,jesse"},
+    {"name": "protocol_validator", "file": "apps/erlmcp_validation/test/erlmcp_protocol_validator_SUITE.erl", "exit_code": 1, "verdict": "FAIL", "reason": "{parse_error,{error,{decode_error,{invalid_byte,105"},
+    {"name": "protocol_checker", "file": "apps/erlmcp_validation/test/erlmcp_protocol_checker_SUITE.erl", "exit_code": 1, "verdict": "FAIL", "reason": "test_failures"},
+    {"name": "transport_validator", "file": "apps/erlmcp_validation/test/erlmcp_transport_validator_SUITE.erl", "exit_code": null, "verdict": "FAIL", "reason": "timeout"},
+    {"name": "transport_compliance", "file": "apps/erlmcp_transports/test/erlmcp_transport_compliance_SUITE.erl", "exit_code": 1, "verdict": "FAIL", "reason": "{jsx,{\"no such file or directory\",\"jsx.app\""},
+    {"name": "transport_http", "file": "apps/erlmcp_transports/test/erlmcp_transport_http_SUITE.erl", "exit_code": 1, "verdict": "FAIL", "reason": "{jsx,{\"no such file or directory\",\"jsx.app\""},
+    {"name": "transport_behavior", "file": "apps/erlmcp_transports/test/erlmcp_transport_behavior_SUITE.erl", "exit_code": 1, "verdict": "FAIL", "reason": "exit_nonzero"},
+    {"name": "mcp_spec_2025", "file": "apps/erlmcp_core/test/erlmcp_mcp_spec_2025_SUITE.erl", "exit_code": 1, "verdict": "FAIL", "reason": "exit_nonzero"},
+    {"name": "cli_compliance", "file": "apps/erlmcp_cli/test/erlmcp_cli_compliance_SUITE.erl", "exit_code": 1, "verdict": "FAIL", "reason": "exit_nonzero"}
+  ],
+  "totals": {"pass": 0, "fail": 10, "total": 10}
+}
