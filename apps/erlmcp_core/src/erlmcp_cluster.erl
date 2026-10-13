@@ -346,7 +346,7 @@ do_ping_node(Node, State) when element(1, State) =:= state ->
         undefined -> pang;
         NodeState -> do_ping_node(Node, NodeState)
     end;
-do_ping_node(Node, NodeState) ->
+do_ping_node(Node, _NodeState) ->
     case net_adm:ping(Node) of
         pong -> pong;
         pang -> pang

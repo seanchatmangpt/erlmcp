@@ -35,7 +35,7 @@
 }).
 
 -type sandbox_info() :: #sandbox_info{}.
--type execution_result() :: {ok, term()} | {error, term()}.
+%% -type execution_result() :: {ok, term()} | {error, term()}.
 -type execution_options() :: #{
     timeout => timeout(),
     max_memory => non_neg_integer(),
@@ -227,7 +227,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 -spec handle_info(term(), #state{}) -> {noreply, #state{}}.
-handle_info({'DOWN', MonitorRef, process, Pid, Reason}, State) ->
+handle_info({'DOWN', _MonitorRef, process, Pid, Reason}, State) ->
     %% Sandbox process exited
     case maps:get(Pid, State#state.active_sandboxes, undefined) of
         undefined ->
@@ -294,7 +294,7 @@ isolated_execute(ToolName, Args, Options, Caller) ->
 
     try
         %% Get timeout from options
-        Timeout = maps:get(timeout, Options, 30000),
+        _Timeout = maps:get(timeout, Options, 30000),
 
         %% Execute the tool logic
         Result = apply_tool_logic(ToolName, Args),

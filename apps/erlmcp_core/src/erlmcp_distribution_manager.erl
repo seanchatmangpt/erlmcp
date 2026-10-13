@@ -95,9 +95,9 @@ init([]) ->
 
 -spec handle_call(term(), {pid(), reference()}, state()) ->
     {reply, term(), state()}.
-handle_call({connect_node, Node}, _From, State) ->
+handle_call({connect_node, _Node}, _From, State) ->
     {reply, ok, State};
-handle_call({disconnect_node, Node}, _From, State) ->
+handle_call({disconnect_node, _Node}, _From, State) ->
     {reply, ok, State};
 handle_call(get_connected_nodes, _From, State) ->
     ConnectedNodes = maps:values(State#state.connected_nodes),

@@ -71,7 +71,7 @@ check(Options) ->
             {error, io_lib:format("Connection check failed: ~p:~p", [Error, Reason]), #{error => {Error, Reason}}}
     end.
 
-get_connection_info(Options) ->
+get_connection_info(_Options) ->
     % Placeholder implementation - would actually check real connections
     #connection_info{
         total_count = 150,
@@ -172,6 +172,7 @@ generate_connection_summary(ConnectionCountStatus, ResponseTimeStatus, ErrorRate
     }.
 
 % Test function - can be removed in production
+-compile({nowarn_unused_function, [test_bandwidth/0]}).
 test_bandwidth() ->
     % Placeholder for bandwidth testing
     ok.

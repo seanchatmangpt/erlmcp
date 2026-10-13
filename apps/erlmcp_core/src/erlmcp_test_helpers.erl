@@ -60,7 +60,7 @@
          id_counters = #{} :: map(),  %% Prefix -> Counter
          allocated_ports = sets:new() :: sets:set(integer())}).
 
--type state() :: #state{}.
+%% -type state() :: #state{}.
 
 %%%====================================================================
 %%% API Functions
@@ -152,7 +152,7 @@ start_test_server(ServerId, Capabilities) ->
 %% @doc Start a test server with full options.
 -spec start_test_server(binary(), #mcp_server_capabilities{} | map(), map()) ->
                            {ok, pid()} | {error, term()}.
-start_test_server(ServerId, Capabilities, Options) ->
+start_test_server(ServerId, Capabilities, _Options) ->
     case erlmcp_server:start_link(ServerId, Capabilities) of
         {ok, Pid} = Result ->
             gen_server:cast(?SERVER, {register_process, Pid, server, ServerId}),
@@ -473,9 +473,9 @@ handle_call(_Request, _From, State) ->
     {reply, {error, unknown_request}, State}.
 
 %% @private
-handle_cast({register_process, Pid, Type, Id}, #state{test_processes = Processes} = State) ->
+handle_cast({register_process, Pid, _Type, _Id}, #state{test_processes = Processes} = State) ->
     %% Register process for tracking
-    MonitorRef = monitor(process, Pid),
+    _MonitorRef = monitor(process, Pid),
     %% Store process info (in real implementation, use ETS)
     NewProcesses = sets:add_element(Pid, Processes),
     {noreply, State#state{test_processes = NewProcesses}};
@@ -489,7 +489,7 @@ handle_cast(_Request, State) ->
     {noreply, State}.
 
 %% @private
-handle_info({'DOWN', MonitorRef, process, Pid, _Reason},
+handle_info({'DOWN', _MonitorRef, process, Pid, _Reason},
             #state{test_processes = Processes} = State) ->
     %% Clean up process that died
     NewProcesses = sets:del_element(Pid, Processes),

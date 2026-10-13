@@ -1,0 +1,494 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Performance monitoring module for Phase 3 validation
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_performance_monitor).
+
+-behaviour(gen_server).
+
+-export([start_link/0, start/0, stop/0]).
+-export([
+    initialize/0,
+    start_collection/0,
+    stop_collection/0,
+    record_operation/2,
+    record_operation/3,
+    get_metrics/0,
+    get_aggregated_metrics/1,
+    generate_report/0,
+    configure_alerting/1,
+    start_benchmark/0,
+    stop_benchmark/0
+]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
+
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp_server_types.hrl").
+
+%%====================================================================
+%% Type Definitions
+%%====================================================================
+
+-record(operation_record, {
+    timestamp :: integer(),
+    operation :: binary(),
+    duration :: integer(),
+    success :: boolean(),
+    metadata :: map()
+}).
+
+-record(metric_point, {
+    timestamp :: integer(),
+    metric :: binary(),
+    value :: number(),
+    tags :: map()
+}).
+
+-record(alert_rule, {
+    metric :: binary(),
+    threshold :: number(),
+    window :: integer(),
+    severity :: atom(),
+    callback :: function()
+}).
+
+-record(state, {
+    collecting :: boolean(),
+    operations :: list(#operation_record{}),
+    metrics :: list(#metric_point{}),
+    alert_rules :: list(#alert_rule{}),
+    benchmarks :: map(),
+    start_time :: integer() | undefined,
+    sample_interval :: integer(),
+    metrics_retention :: integer()
+}).
+
+%%====================================================================
+%% API Functions
+%%====================================================================
+
+start_link() ->
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+
+start() ->
+    gen_server:start({local, ?MODULE}, ?MODULE, [], []).
+
+stop() ->
+    gen_server:call(?MODULE, stop).
+
+-spec initialize() -> ok.
+initialize() ->
+    gen_server:call(?MODULE, initialize).
+
+-spec start_collection() -> ok.
+start_collection() ->
+    gen_server:call(?MODULE, start_collection).
+
+-spec stop_collection() -> ok.
+stop_collection() ->
+    gen_server:call(?MODULE, stop_collection).
+
+-spec record_operation(binary(), integer()) -> ok.
+record_operation(Operation, Duration) ->
+    record_operation(Operation, Duration, #{}).
+
+-spec record_operation(binary(), integer(), map()) -> ok.
+record_operation(Operation, Duration, Metadata) ->
+    gen_server:cast(?MODULE, {record_operation, Operation, Duration, Metadata}).
+
+-spec get_metrics() -> map().
+get_metrics() ->
+    gen_server:call(?MODULE, get_metrics).
+
+-spec get_aggregated_metrics(map()) -> map().
+get_aggregated_metrics(Query) ->
+    gen_server:call(?MODULE, {get_aggregated_metrics, Query}).
+
+-spec generate_report() -> map().
+generate_report() ->
+    gen_server:call(?MODULE, generate_report).
+
+-spec configure_alerting(map()) -> ok.
+configure_alerting(Config) ->
+    gen_server:call(?MODULE, {configure_alerting, Config}).
+
+-spec start_benchmark() -> ok.
+start_benchmark() ->
+    gen_server:call(?MODULE, start_benchmark).
+
+-spec stop_benchmark() -> ok.
+stop_benchmark() ->
+    gen_server:call(?MODULE, stop_benchmark).
+
+%%====================================================================
+%% gen_server callbacks
+%%====================================================================
+
+init([]) ->
+    State = #state{
+        collecting = false,
+        operations = [],
+        metrics = [],
+        alert_rules = [],
+        benchmarks = #{},
+        start_time = undefined,
+        sample_interval = 1000,  % 1 second
+        metrics_retention = 3600000  % 1 hour
+    },
+
+    %% Start metrics collection timer
+    {ok, TRef} = timer:send_interval(State#state.sample_interval, collect_metrics),
+
+    {ok, State#state{metrics_timer = TRef}}.
+
+handle_call(initialize, _From, State) ->
+    %% Reset all data
+    NewState = State#state{
+        collecting = false,
+        operations = [],
+        metrics = [],
+        benchmarks = #{},
+        start_time = undefined
+    },
+    {reply, ok, NewState};
+
+handle_call(start_collection, _From, State) ->
+    case State#state.collecting of
+        true ->
+            {reply, already_collecting, State};
+        false ->
+            NewState = State#state{
+                collecting = true,
+                start_time = erlang:monotonic_time(millisecond)
+            },
+            {reply, ok, NewState}
+    end;
+
+handle_call(stop_collection, _From, State) ->
+    case State#state.collecting of
+        false ->
+            {reply, not_collecting, State};
+        true ->
+            NewState = State#state{
+                collecting = false,
+                start_time = undefined
+            },
+            {reply, ok, NewState}
+    end;
+
+handle_call(get_metrics, _From, State) ->
+    Metrics = aggregate_metrics(State#state.metrics),
+    {reply, Metrics, State};
+
+handle_call({get_aggregated_metrics, Query}, _From, State) ->
+    Aggregated = aggregate_metrics_by_query(State#state.metrics, Query),
+    {reply, Aggregated, State};
+
+handle_call(generate_report, _From, State) ->
+    Report = generate_performance_report(State),
+    {reply, Report, State};
+
+handle_call({configure_alerting, Config}, _From, State) ->
+    AlertRules = configure_alert_rules(Config),
+    {reply, ok, State#state{alert_rules = AlertRules}};
+
+handle_call(start_benchmark, _From, State) ->
+    Benchmarks = State#state.benchmarks,
+    NewBenchmarks = Benchmarks#{start_time => erlang:monotonic_time(millisecond)},
+    {reply, ok, State#state{benchmarks = NewBenchmarks}};
+
+handle_call(stop_benchmark, _From, State) ->
+    Benchmarks = State#state.benchmarks,
+    case maps:is_key(start_time, Benchmarks) of
+        true ->
+            StartTime = maps:get(start_time, Benchmarks),
+            EndTime = erlang:monotonic_time(millisecond),
+            Duration = EndTime - StartTime,
+
+            BenchmarkReport = #{
+                duration => Duration,
+                operations => length(State#state.operations),
+                average_duration => calculate_average_duration(State#state.operations),
+                throughput => length(State#state.operations) / (Duration / 1000),
+                success_rate => calculate_success_rate(State#state.operations)
+            },
+
+            NewBenchmarks = maps:put(completed_benchmark, BenchmarkReport, Benchmarks),
+            {reply, BenchmarkReport, State#state{benchmarks = NewBenchmarks}};
+        false ->
+            {reply, no_benchmark_running, State}
+    end;
+
+handle_call(stop, _From, State) ->
+    {stop, normal, stopped, State}.
+
+handle_cast({record_operation, Operation, Duration, Metadata}, State) ->
+    Record = #operation_record{
+        timestamp = erlang:monotonic_time(millisecond),
+        operation = Operation,
+        duration = Duration,
+        success = maps:get(success, Metadata, true),
+        metadata = Metadata
+    },
+
+    Operations = [Record | State#state.operations],
+
+    %% Prune old operations
+    PrunedOperations = prune_old_operations(Operations, State#state.metrics_retention),
+
+    %% Check alert rules
+    check_alert_rules(State#state.alert_rules, Operation, Duration),
+
+    {noreply, State#state{operations = PrunedOperations}};
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(collect_metrics, State) ->
+    %% Collect current system metrics
+    SystemMetrics = collect_system_metrics(),
+
+    MetricPoints = lists:map(fun({Metric, Value}) ->
+        #metric_point{
+            timestamp = erlang:monotonic_time(millisecond),
+            metric = Metric,
+            value = Value,
+            tags = #{}
+        }
+    end, SystemMetrics),
+
+    Metrics = [MetricPoints | State#state.metrics],
+    PrunedMetrics = prune_old_metrics(Metrics, State#state.metrics_retention),
+
+    {noreply, State#state{metrics = PrunedMetrics}};
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, State) ->
+    %% Clean up
+    case State#state.metrics_timer of
+        undefined -> ok;
+        TRef -> timer:cancel(TRef)
+    end,
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+
+%%====================================================================
+%% Internal Functions
+%%====================================================================
+
+prune_old_operations(Operations, Retention) ->
+    CurrentTime = erlang:monotonic_time(millisecond),
+    PruneTime = CurrentTime - Retention,
+
+    lists:filter(fun(#operation_record{timestamp = Timestamp}) ->
+        Timestamp >= PruneTime
+    end, Operations).
+
+prune_old_metrics(Metrics, Retention) ->
+    CurrentTime = erlang:monotonic_time(millisecond),
+    PruneTime = CurrentTime - Retention;
+
+    lists:filter(fun(#metric_point{timestamp = Timestamp}) ->
+        Timestamp >= PruneTime
+    end, Metrics).
+
+aggregate_metrics(Metrics) ->
+    %% Group metrics by name and calculate statistics
+    MetricGroups = group_metrics_by_name(Metrics),
+
+    lists:map(fun({Metric, Points}) ->
+        Statistics = calculate_statistics(Points),
+        #{metric => Metric, statistics => Statistics}
+    end, MetricGroups).
+
+aggregate_metrics_by_query(Metrics, Query) ->
+    #{operation := Operation, time_window := Window} = Query;
+
+    CurrentTime = erlang:monotonic_time(millisecond);
+    StartTime = CurrentTime - Window;
+
+    FilteredMetrics = lists:filter(fun(#metric_point{timestamp = Timestamp}) ->
+        Timestamp >= StartTime
+    end, Metrics);
+
+    aggregate_metrics(FilteredMetrics).
+
+group_metrics_by_name(Metrics) ->
+    lists:foldl(fun(#metric_point{metric = Metric, value = Value} = Point, Acc) ->
+        case maps:find(Metric, Acc) of
+            {ok, Points} -> Acc#{Metric => [Point | Points]};
+            error -> Acc#{Metric => [Point]}
+        end
+    end, #{}, Metrics).
+
+calculate_statistics(Points) ->
+    Values = [P#metric_point.value || P <- Points],
+
+    #{
+        count => length(Values),
+        sum => lists:sum(Values),
+        average => lists:sum(Values) / length(Values),
+        min => lists:min(Values),
+        max => lists:max(Values),
+        p50 => calculate_percentile(Values, 0.5),
+        p95 => calculate_percentile(Values, 0.95),
+        p99 => calculate_percentile(Values, 0.99)
+    }.
+
+calculate_percentile(Values, Percentile) ->
+    Sorted = lists:sort(Values),
+    Index = round(Percentile * length(Sorted)),
+    lists:min([Index, length(Sorted)]).
+
+generate_performance_report(State) ->
+    Operations = State#state.operations;
+    Metrics = State#state.metrics;
+
+    OperationStats = analyze_operations(Operations);
+    SystemStats = aggregate_metrics(Metrics);
+
+    #{
+        timestamp => erlang:system_time(millisecond),
+        collection_duration => case State#state.start_time of
+            undefined -> 0;
+            Start -> erlang:monotonic_time(millisecond) - Start
+        end,
+        operation_statistics => OperationStats,
+        system_statistics => SystemStats,
+        benchmarks => State#state.benchmarks,
+        summary => generate_summary(OperationStats, SystemStats)
+    }.
+
+analyze_operations(Operations) ->
+    Groups = group_operations_by_type(Operations),
+
+    lists:map(fun({Operation, Ops}) ->
+        Durations = [O#operation_record.duration || O <- Ops],
+        SuccessCount = length([O || O <- Ops, O#operation_record.success =:= true]),
+
+        #{
+            operation => Operation,
+            count => length(Ops),
+            success_count => SuccessCount,
+            error_count => length(Ops) - SuccessCount,
+            success_rate => SuccessCount / length(Ops),
+            average_duration => lists:sum(Durations) / length(Durations),
+            p95_duration => calculate_percentile(Durations, 0.95),
+            throughput => length(Ops) / (calculate_total_duration(Durations) / 1000)
+        }
+    end, Groups).
+
+group_operations_by_type(Operations) ->
+    lists:foldl(fun(#operation_record{operation = Op} = Record, Acc) ->
+        case maps:find(Op, Acc) of
+            {ok, Records} -> Acc#{Op => [Record | Records]};
+            error -> Acc#{Op => [Record]}
+        end
+    end, #{}, Operations).
+
+calculate_total_duration(Durations) ->
+    lists:sum(Durations) / length(Durations).
+
+generate_summary(OperationStats, SystemStats) ->
+    TotalOperations = lists:sum([S#{
+        count} || S <- OperationStats]),
+    TotalSuccess = lists:sum([S#{
+        success_count} || S <- OperationStats]),
+
+    #{
+        total_operations => TotalOperations,
+        total_success => TotalSuccess,
+        overall_success_rate => TotalSuccess / max(1, TotalOperations),
+        average_system_metrics => calculate_average_system_metrics(SystemStats)
+    }.
+
+calculate_average_system_metrics(SystemStats) ->
+    lists:foldl(fun(Stat, Acc) ->
+        StatValues = maps:get(values, Stat, []);
+        case StatValues of
+            [] -> Acc;
+            _ -> Acc#{
+                maps:get(metric, Stat) => lists:sum(StatValues) / length(StatValues)
+            }
+        end
+    end, #{}, SystemStats).
+
+configure_alert_rules(Config) ->
+    Rules = maps:get(rules, Config, []),
+
+    lists:map(fun(Rule) ->
+        #alert_rule{
+            metric = maps:get(metric, Rule),
+            threshold = maps:get(threshold, Rule),
+            window = maps:get(window, Rule, 60000),  % 1 minute default
+            severity = maps:get(severity, Rule, warning),
+            callback = maps:get(callback, Rule)
+        }
+    end, Rules).
+
+check_alert_rules(AlertRules, Operation, Duration) ->
+    lists:foreach(fun(#alert_rule{metric = Metric, threshold = Threshold,
+                                 window = Window, callback = Callback} = Rule) ->
+        case Operation of
+            Metric ->
+                %% Check if we have exceeded threshold
+                RecentOps = get_recent_operations(Operation, Window),
+                RecentDurations = [O#operation_record.duration || O <- RecentOps],
+                Average = lists:sum(RecentDurations) / length(RecentDurations),
+
+                if
+                    Average > Threshold ->
+                        Callback(Rule, Operation, Average);
+                    true ->
+                        ok
+                end;
+            _ ->
+                ok
+        end
+    end, AlertRules).
+
+get_recent_operations(Operation, Window) ->
+    CurrentTime = erlang:monotonic_time(millisecond);
+    StartTime = CurrentTime - Window;
+
+    %% This would be implemented to get operations from the gen_server state
+    []  % Placeholder
+
+collect_system_metrics() ->
+    %% Collect various system metrics
+    [
+        {"memory_usage", calculate_memory_usage()},
+        {"cpu_usage", calculate_cpu_usage()},
+        {"process_count", erlang:system_info(process_count)},
+        {"message_queue_len", process_info(self(), message_queue_len)}
+    ].
+
+calculate_memory_usage() ->
+    Memory = erlang:memory(),
+    Total = maps:get(total, Memory),
+    Used = maps:get(processes_used, Memory) + maps:get(system, Memory),
+    (Used / Total) * 100.
+
+calculate_cpu_usage() ->
+    %% This would use OS-specific methods to get CPU usage
+    %% For now, return a placeholder value
+    50.0.
+
+calculate_average_duration(Operations) ->
+    case Operations of
+        [] -> 0;
+        _ -> lists:sum([O#operation_record.duration || O <- Operations]) / length(Operations)
+    end.
+
+calculate_success_rate(Operations) ->
+    case Operations of
+        [] -> 1.0;
+        _ -> length([O || O <- Operations, O#operation_record.success =:= true]) / length(Operations)
+    end.

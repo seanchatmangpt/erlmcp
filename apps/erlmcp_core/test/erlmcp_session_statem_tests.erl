@@ -294,7 +294,7 @@ persistence_test_() ->
      fun({Pid, _BackendPid}) ->
          [?_test(begin
                    %% Persist session
-                   ok = erlmcp_session_statem:persist(Pid),
+                   ok = erlmcp_session_statem:persist(Pid)
                    %% Note: Full load test would require more complex setup
                    %% This test verifies the persist call succeeds
                end)]

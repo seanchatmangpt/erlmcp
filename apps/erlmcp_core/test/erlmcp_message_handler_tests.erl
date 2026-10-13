@@ -53,11 +53,10 @@ setup() ->
     %% Create a test server state
     State = #mcp_server_state{
         server_id = test_server,
-        transport_id = test_transport,
         initialized = false,
-        tools = #{<<"test_tool">> => fun(_Args) -> #{result => ok} end},
-        resources = #{<<"test://resource">> => fun(_Uri) -> #{content => <<"test">>} end},
-        prompts = #{<<"test_prompt">> => fun(_Args) -> #{messages => []} end}
+        tools = #{},
+        resources = #{},
+        prompts = #{}
     },
     State.
 

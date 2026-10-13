@@ -46,11 +46,11 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
--spec register_app(app_id(), app_manifest(), permissions()) ->
-                      ok | {error, invalid_manifest | already_registered | too_many_apps}.
-register_app(AppId, AppManifest, Permissions)
-    when is_binary(AppId), is_map(AppManifest), is_list(Permissions) ->
-    gen_server:call(?MODULE, {register_app, AppId, AppManifest, Permissions}, 5000).
+%% -spec register_app(app_id(), app_manifest(), permissions()) ->
+%%                       ok | {error, invalid_manifest | already_registered | too_many_apps}.
+%% register_app(AppId, AppManifest, Permissions)
+%%     when is_binary(AppId), is_map(AppManifest), is_list(Permissions) ->
+%%     gen_server:call(?MODULE, {register_app, AppId, AppManifest, Permissions}, 5000).
 
 -spec get_apps() -> {ok, [map()]}.
 get_apps() ->

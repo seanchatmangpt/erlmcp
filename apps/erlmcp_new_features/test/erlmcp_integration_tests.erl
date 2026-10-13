@@ -55,7 +55,7 @@ integration_test_() ->
       fun concurrent_operations_integration/0,
       fun error_propagation_integration/0,
       fun resource_monitoring_integration/0,
-      end_to_end_workflow_integration/0
+      fun end_to_end_workflow_integration/0
      ]}.
 
 %%%===================================================================
@@ -146,7 +146,7 @@ batch_processor_and_schema_validator_integration() ->
         BatchItems = [
             #{
                 id => list_to_binary("item" ++ integer_to_list(I)),
-                data => <<"test data " ++ integer_to_list(I)>
+                data => list_to_binary("test data " ++ integer_to_list(I))
             }
             || I <- lists:seq(1, 5)
         ],
@@ -397,7 +397,7 @@ end_to_end_workflow_integration() ->
                             tool_name => <<"processor">>,
                             tool_arguments => #{input => <<"batch1">>},
                             max_retries => 0,
-                            timeout_sec := 5
+                            timeout_sec => 5
                         },
                         #{
                             id => <<"process2">>,
@@ -405,7 +405,7 @@ end_to_end_workflow_integration() ->
                             tool_name => <<"processor">>,
                             tool_arguments => #{input => <<"batch2">>},
                             max_retries => 0,
-                            timeout_sec := 5
+                            timeout_sec => 5
                         },
                         #{
                             id => <<"process3">>,
@@ -413,7 +413,7 @@ end_to_end_workflow_integration() ->
                             tool_name => <<"processor">>,
                             tool_arguments => #{input => <<"batch3">>},
                             max_retries => 0,
-                            timeout_sec := 5
+                            timeout_sec => 5
                         }
                     ]
                 },
@@ -424,7 +424,7 @@ end_to_end_workflow_integration() ->
                     tool_name => <<"completer">>,
                     tool_arguments => #{},
                     max_retries => 0,
-                    timeout_sec := 5
+                    timeout_sec => 5
                 }
             ],
             transitions => [

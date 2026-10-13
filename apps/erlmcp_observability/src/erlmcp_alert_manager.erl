@@ -83,7 +83,11 @@
     active_alerts :: #{binary() => #alert{}},
     alert_history :: queue:queue(#alert{}),
     metrics :: map(),
-    last_alert_id :: binary()
+    last_alert_id :: binary(),
+    notification_queue :: queue:queue({binary(), #alert{}, map()}),  % Rate limiting queue
+    slack_webhook_url :: binary() | undefined,
+    smtp_config :: map() | undefined,
+    pagerduty_config :: map() | undefined
 }).
 
 %%====================================================================
@@ -167,6 +171,11 @@ init(Config) ->
     Policies = load_policies(Config),
     Suppressions = load_suppressions(Config),
 
+    %% Load notification configurations
+    SlackWebhookURL = maps:get(slack_webhook_url, Config, undefined),
+    SMTPConfig = maps:get(smtp, Config, #{}),
+    PagerDutyConfig = maps:get(pagerduty, Config, #{}),
+
     %% Initialize state
     State = #state{
         routes = Routes,
@@ -182,11 +191,18 @@ init(Config) ->
             resolved_alerts => 0,
             alerts_by_severity => #{low => 0, medium => 0, high => 0, critical => 0}
         },
-        last_alert_id = generate_alert_id()
+        last_alert_id = generate_alert_id(),
+        notification_queue = queue:new(),
+        slack_webhook_url = SlackWebhookURL,
+        smtp_config = SMTPConfig,
+        pagerduty_config = PagerDutyConfig
     },
 
     %% Start cleanup timer
     erlang:send_after(60000, self(), cleanup_suppressions),
+
+    %% Start notification rate limiter
+    erlang:send_after(5000, self(), process_notification_queue),
 
     {ok, State}.
 
@@ -289,6 +305,15 @@ handle_info(cleanup_suppressions, State) ->
     erlang:send_after(60000, self(), cleanup_suppressions),
 
     {noreply, State#state{suppressions = ActiveSuppressions}};
+
+handle_info(process_notification_queue, State) ->
+    %% Process rate-limited notifications
+    NewState = process_queued_notifications(State),
+
+    %% Schedule next processing
+    erlang:send_after(5000, self(), process_notification_queue),
+
+    {noreply, NewState};
 
 handle_info(_Info, State) ->
     {noreply, State}.
@@ -429,6 +454,12 @@ send_notification(Alert, Target, Template) ->
         _ -> ?LOG_INFO("Unknown target: ~s", [Target])
     end.
 
+%% @doc Queue notification for rate-limited sending
+queue_notification(Alert, Target, Template, State) ->
+    QueueItem = {Target, Alert, Template},
+    NewQueue = queue:in(QueueItem, State#state.notification_queue),
+    State#state{notification_queue = NewQueue}.
+
 %% @doc Format notification from alert and template
 format_notification(Alert, Template) ->
     Base = #{
@@ -485,21 +516,239 @@ get_severity_color(medium) -> "#ff9500";   % Orange
 get_severity_color(high) -> "#ff0000";     % Red
 get_severity_color(critical) -> "#990000".   % Dark Red
 
-%% @doc Send Slack notification (stub)
+%% @doc Send Slack notification via HTTP webhook
 send_slack_notification(Notification) ->
-    ?LOG_INFO("Slack notification: ~p", [Notification]).
+    case get_slack_webhook_url() of
+        undefined ->
+            ?LOG_WARNING("Slack webhook URL not configured", []),
+            {error, no_webhook_url};
+        WebhookURL ->
+            %% Build Slack message payload
+            Payload = format_slack_payload(Notification),
 
-%% @doc Send email notification (stub)
+            %% Send HTTP POST request
+            case httpc:request(post, {
+                binary_to_list(WebhookURL),
+                [{"Content-Type", "application/json"}],
+                "application/json",
+                jsx:encode(Payload)
+            }, [], []) of
+                {ok, {{_, 200, _}, _, _}} ->
+                    ?LOG_INFO("Slack notification sent successfully", []),
+                    ok;
+                {ok, {{_, StatusCode, _}, _, _}} ->
+                    ?LOG_ERROR("Slack notification failed with status: ~p", [StatusCode]),
+                    {error, {http_error, StatusCode}};
+                {error, Reason} ->
+                    ?LOG_ERROR("Slack notification HTTP error: ~p", [Reason]),
+                    {error, Reason}
+            end
+    end.
+
+%% @doc Send email notification via SMTP
 send_email_notification(Notification) ->
-    ?LOG_INFO("Email notification: ~p", [Notification]).
+    case get_smtp_config() of
+        #{relay := Relay, port := Port} = Config ->
+            Subject = maps:get(subject, Notification, <<"Alert">>),
+            Body = maps:get(body, Notification, <<>>),
 
-%% @doc Send PagerDuty notification (stub)
+            %% Build email message
+            Email = build_email_message(Subject, Body, Config),
+
+            %% Send via gen_smtp or similar
+            case maps:get(use_ssl, Config, false) of
+                true ->
+                    ssl:start(),
+                    Options = [{ssl, true}, {port, Port}];
+                false ->
+                    Options = [{port, Port}]
+            end,
+
+            case gen_smtp_client:send({
+                Relay,
+                maps:get(username, Config, undefined),
+                maps:get(password, Config, undefined),
+                Email
+            }, Options) of
+                {ok, _} ->
+                    ?LOG_INFO("Email notification sent successfully", []),
+                    ok;
+                {error, Reason} ->
+                    ?LOG_ERROR("Email notification failed: ~p", [Reason]),
+                    {error, Reason}
+            end;
+        _ ->
+            ?LOG_WARNING("SMTP not configured", []),
+            {error, no_smtp_config}
+    end.
+
+%% @doc Send PagerDuty notification via Events API v2
 send_pagerduty_notification(Notification) ->
-    ?LOG_INFO("PagerDuty notification: ~p", [Notification]).
+    case get_pagerduty_config() of
+        #{routing_key := RoutingKey} = Config ->
+            %% Build PagerDuty event payload
+            EventPayload = #{
+                routing_key => RoutingKey,
+                event_action => <<"trigger">>,
+                payload => #{
+                    summary => maps:get(summary, Notification, <<"Alert">>),
+                    severity => pagerduty_severity(maps:get(severity, Notification, medium)),
+                    source => maps:get(source, Notification, <<"erlmcp">>),
+                    timestamp => erlang:system_time(millisecond),
+                    custom_details => maps:get(details, Notification, #{})
+                }
+            },
 
-%% @doc Send webhook notification (stub)
+            %% Send to PagerDuty Events API
+            URL = maps:get(events_api_url, Config, <<"https://events.pagerduty.com/v2/enqueue">>),
+
+            case httpc:request(post, {
+                binary_to_list(URL),
+                [{"Content-Type", "application/json"}, {"Accept", "application/json"}],
+                "application/json",
+                jsx:encode(EventPayload)
+            }, [], []) of
+                {ok, {{_, 202, _}, _, _}} ->
+                    ?LOG_INFO("PagerDuty event created successfully", []),
+                    ok;
+                {ok, {{_, StatusCode, _}, _, Body}} ->
+                    ?LOG_ERROR("PagerDuty API error ~p: ~s", [StatusCode, Body]),
+                    {error, {http_error, StatusCode}};
+                {error, Reason} ->
+                    ?LOG_ERROR("PagerDuty notification HTTP error: ~p", [Reason]),
+                    {error, Reason}
+            end;
+        _ ->
+            ?LOG_WARNING("PagerDuty not configured", []),
+            {error, no_pagerduty_config}
+    end.
+
+%% @doc Send webhook notification (generic)
 send_webhook_notification(Notification) ->
-    ?LOG_INFO("Webhook notification: ~p", [Notification]).
+    ?LOG_INFO("Webhook notification: ~p", [Notification]),
+    {error, not_implemented}.
+
+%% @doc Get Slack webhook URL from environment or config
+get_slack_webhook_url() ->
+    case os:getenv("SLACK_WEBHOOK_URL") of
+        false -> undefined;
+        URL -> list_to_binary(URL)
+    end.
+
+%% @doc Get SMTP configuration
+get_smtp_config() ->
+    #{
+        relay => list_to_binary(os:getenv("SMTP_RELAY", "localhost")),
+        port => list_to_integer(os:getenv("SMTP_PORT", "587")),
+        username => case os:getenv("SMTP_USERNAME") of
+            false -> undefined;
+            User -> User
+        end,
+        password => case os:getenv("SMTP_PASSWORD") of
+            false -> undefined;
+            Pass -> Pass
+        end,
+        use_ssl => os:getenv("SMTP_USE_SSL", "false") =:= "true",
+        from => list_to_binary(os:getenv("SMTP_FROM", <<"alerts@erlmcp.local">>)),
+        to => list_to_binary(os:getenv("SMTP_TO", <<"admin@erlmcp.local">>))
+    }.
+
+%% @doc Get PagerDuty configuration
+get_pagerduty_config() ->
+    case os:getenv("PAGERDUTY_ROUTING_KEY") of
+        false -> #{};
+        RoutingKey ->
+            #{
+                routing_key => list_to_binary(RoutingKey),
+                events_api_url => list_to_binary(os:getenv("PAGERDUTY_API_URL",
+                    "https://events.pagerduty.com/v2/enqueue"))
+            }
+    end.
+
+%% @doc Format notification for Slack API
+format_slack_payload(Notification) ->
+    #{attachments := [Attachment | _]} = Notification,
+
+    #{
+        text => maps:get(text, Notification, <<"Alert">>),
+        attachments => [Attachment],
+        blocks => [
+            #{
+                type => <<"section">>,
+                text => #{
+                    type => <<"mrkdwn">>,
+                    text => maps:get(message, Attachment, <<"Alert notification">>)
+                }
+            }
+        ]
+    }.
+
+%% @doc Build email message
+build_email_message(Subject, Body, Config) ->
+    From = maps:get(from, Config, <<"alerts@erlmcp.local">>),
+    To = maps:get(to, Config, <<"admin@erlmcp.local">>),
+
+    #{
+        from => From,
+        to => To,
+        subject => Subject,
+        body => Body,
+        content_type => <<"text/html">>
+    }.
+
+%% @doc Convert alert severity to PagerDuty severity
+pagerduty_severity(critical) -> <<"critical">>;
+pagerduty_severity(high) -> <<"error">>;
+pagerduty_severity(medium) -> <<"warning">>;
+pagerduty_severity(low) -> <<"info">>.
+
+%% @doc Process queued notifications with rate limiting
+process_queued_notifications(State) ->
+    Queue = State#state.notification_queue,
+    MaxPerBatch = 5,  % Max notifications per batch
+
+    case queue:out(Queue) of
+        {empty, _} ->
+            State;
+        {{value, {Target, Alert, Template}}, RemainingQueue} ->
+            %% Send notification
+            case send_notification_direct(Alert, Target, Template, State) of
+                ok ->
+                    %% Process more if under limit
+                    process_batch(RemainingQueue, State, MaxPerBatch - 1);
+                {error, _} ->
+                    %% Re-queue on error
+                    State#state{notification_queue = queue:in({Target, Alert, Template}, RemainingQueue)}
+            end
+    end.
+
+%% @doc Process a batch of notifications
+process_batch(Queue, State, 0) ->
+    State#state{notification_queue = Queue};
+process_batch(Queue, State, Count) when Count > 0 ->
+    case queue:out(Queue) of
+        {empty, _} ->
+            State#state{notification_queue = Queue};
+        {{value, {Target, Alert, Template}}, RemainingQueue} ->
+            case send_notification_direct(Alert, Target, Template, State) of
+                ok ->
+                    process_batch(RemainingQueue, State, Count - 1);
+                {error, _} ->
+                    %% Re-queue and stop batch
+                    State#state{notification_queue = queue:in({Target, Alert, Template}, RemainingQueue)}
+            end
+    end.
+
+%% @doc Send notification directly (bypass queue)
+send_notification_direct(Alert, Target, Template, State) ->
+    Notification = format_notification(Alert, Template),
+
+    case Target of
+        <<"slack">> -> send_slack_notification(Notification);
+        <<"email">> -> send_email_notification(Notification);
+        <<"pagerduty">> -> send_pagerduty_notification(Notification);
+        _ -> {error, unknown_target}
+    end.
 
 %% @doc Apply escalation policies
 escalate_alert(Alert, Policies) ->

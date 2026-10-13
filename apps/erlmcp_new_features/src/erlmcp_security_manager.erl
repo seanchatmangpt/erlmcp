@@ -391,7 +391,8 @@ init_security_context(Options) ->
         session_timeout => proplists:get_value(session_timeout, Options, 300000),
         max_capabilities => proplists:get_value(max_capabilities, Options, 1000),
         allowed_containers => proplists:get_value(allowed_containers, Options, [<<"erlmcp_security">>]),
-        ssl_verify => proplists:get_value(ssl_verify, Options, verify_none),
+        ssl_verify => proplists:get_value(ssl_verify, Options, verify_peer),
+        ssl_cacertfile => proplists:get_value(ssl_cacertfile, Options, undefined),
         ip_whitelist => proplists:get_value(ip_whitelist, Options, [])
     }.
 
@@ -520,7 +521,7 @@ do_authorize_capability(Subject, Resource, Action, State) ->
     Capabilities = State#state.capabilities,
 
     %% Find all capabilities for the subject
-    SubjectCapabilities = maps:fold(fun(Id, Capability, Acc) ->
+    SubjectCapabilities = maps:fold(fun(_Id, Capability, Acc) ->
         case maps:get(subject, Capability) of
             Subject ->
                 [Capability | Acc];
@@ -586,7 +587,7 @@ evaluate_condition(_) ->
 %% @private Add capability to the system.
 -spec add_capability_to_system(Capability :: capability(), Subject :: subject(), State :: state()) ->
     {ok, state()} | {error, term()}.
-add_capability_to_system(Capability, Subject, State) ->
+add_capability_to_system(Capability, _Subject, State) ->
     Capabilities = State#state.capabilities,
     MaxCapabilities = maps:get(max_capabilities, State#state.security_context, 1000),
 

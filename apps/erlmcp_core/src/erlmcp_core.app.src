@@ -12,7 +12,8 @@
       erlmcp_a2a_sup,
       erlmcp_a2a_task_manager,
       erlmcp_a2a_agent_card,
-      erlmcp_a2a_push
+      erlmcp_a2a_push,
+      erlmcp_request_manager
   ]},
   {applications, [
       kernel,
@@ -113,6 +114,7 @@
     erlmcp_registry_utils,
     erlmcp_reload_sup,
     erlmcp_request_id,
+    erlmcp_request_manager,
     erlmcp_resource,
     erlmcp_resource_subscriptions,
     erlmcp_roots_server,

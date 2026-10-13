@@ -18,7 +18,7 @@
 -type schema_name() :: atom().
 -type schema() :: map().
 -type validation_result() :: {ok, map()} | {error, [binary()]}.
--type validation_error() :: #{path => binary(), error => binary()}.
+%% -type validation_error() :: #{path => binary(), error => binary()}.  % Internal type, unused
 
 -record(state, {
     schemas = #{},
@@ -79,7 +79,7 @@ handle_call({validate, SchemaName, Data}, _From, State) ->
         service => ?MODULE
     }),
 
-    #state{schemas = Schemas, compiled = Compiled} = State,
+    #state{schemas = Schemas, compiled = _Compiled} = State,
     case maps:find(SchemaName, Schemas) of
         {ok, Schema} ->
             case validate_data(Data, Schema) of

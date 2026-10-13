@@ -1,4 +1,11 @@
 -module(erlmcp_json_native).
+-moduledoc """
+Native JSON encoding/decoding using the OTP 27+ `json` module (EEP-68).
+
+Drop-in replacement for jsx: no NIF dependency, RFC 8259 compliant,
+full UTF-8 support. All decode operations return maps for object keys;
+all encode operations return binaries for compatibility.
+""" .
 
 %% @doc Native JSON encoding/decoding using Erlang OTP 27+ json module
 %% No backward compatibility - OTP 27+ required
@@ -41,6 +48,9 @@
 %% > erlmcp_json_native:encode(#{<<"text">> => <<"こんにちは世界">>}).
 %% <<"{\"text\":\"こんにちは世界\"}">>
 %% '''
+-doc "
+Encodes a JSON term to a binary.
+" .
 -spec encode(json_term()) -> binary().
 encode(Term) ->
     try
@@ -55,6 +65,9 @@ encode(Term) ->
 %% that complexity here. Use json:encode/2 directly if needed.
 %%
 %% Options are currently unused (for API compatibility with jsx).
+-doc "
+Encodes a JSON term with encoder options.
+" .
 -spec encode(json_term(), encode_options()) -> binary().
 encode(Term, _Opts) ->
     %% Native JSON doesn't have the same options as jsx
@@ -77,6 +90,9 @@ encode(Term, _Opts) ->
 %% > erlmcp_json_native:decode(<<"{\"text\":\"مرحبا بالعالم\"}">>).
 %% #{<<"text">> => <<"مرحبا بالعالم">>}
 %% '''
+-doc "
+Decodes a JSON binary, returning maps for object keys.
+" .
 -spec decode(binary()) -> json_term().
 decode(Binary) when is_binary(Binary) ->
     try
@@ -92,6 +108,9 @@ decode(Binary) when is_binary(Binary) ->
 %%
 %% Native JSON always returns maps, so options like [return_maps]
 %% are ignored but accepted for API compatibility.
+-doc "
+Decodes a JSON binary with decoder options.
+" .
 -spec decode(binary(), decode_options()) -> json_term().
 decode(Binary, _Opts) when is_binary(Binary) ->
     %% Native JSON always returns maps (like jsx with [return_maps])

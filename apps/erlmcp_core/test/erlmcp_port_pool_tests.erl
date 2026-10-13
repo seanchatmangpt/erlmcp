@@ -234,34 +234,26 @@ load_balancing_test_() ->
 %%====================================================================
 
 prop_checkout_return() ->
-    ?FORALL(N, choose(1, 20),
-        begin
-            {ok, _Pid} = erlmcp_port_pool:start_link(#{}),
-            Result = try
-                %% Checkout N ports
-                Workers = lists:filtermap(fun(_) ->
-                    case erlmcp_port_pool:checkout_port() of
-                        {ok, W} -> {true, W};
-                        _ -> false
-                    end
-                end, lists:seq(1, N)),
-                %% Return all workers
-                lists:foreach(fun(W) -> erlmcp_port_pool:return_port(W) end, Workers),
-                true
-            catch
-                _:_ -> false
-            after
-                catch exit(whereis(erlmcp_port_pool), shutdown)
-            end,
-            ?implies(N =< 20, Result)
-        end).
+    %% Property-based test: checkout/return N ports (N 1..20) should not crash.
+    lists:foreach(fun(N) ->
+        {ok, _Pid} = erlmcp_port_pool:start_link(#{}),
+        try
+            Workers = lists:filtermap(fun(_) ->
+                case erlmcp_port_pool:checkout_port() of
+                    {ok, W} -> {true, W};
+                    _ -> false
+                end
+            end, lists:seq(1, N)),
+            lists:foreach(fun(W) -> erlmcp_port_pool:return_port(W) end, Workers)
+        after
+            catch exit(whereis(erlmcp_port_pool), shutdown)
+        end
+    end, lists:seq(1, 20)).
 
 checkout_return_property_test_() ->
     {setup,
      fun() -> ok end,
-     fun(__) -> ok end,
+     fun(_) -> ok end,
      fun(_) ->
-         [
-          ?_test(eunit:quickcheck(numtests(10, prop_checkout_return()))
-         ]
+         [?_test(prop_checkout_return())]
      end}.

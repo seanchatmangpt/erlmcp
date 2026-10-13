@@ -30,7 +30,11 @@ erlmcp_mcp_relay_test_() ->
       fun relay_request_backend_timeout_test/0,
       fun set_backend_enabled_test/0,
       fun get_backend_status_test/0,
-      fun concurrent_requests_test/0
+      fun concurrent_requests_test/0,
+      fun default_ssl_verify_test/0,
+      fun ssl_verify_option_override_test/0,
+      fun build_ssl_options_refusal_test/0,
+      fun build_ssl_options_sni_test/0
      ]}.
 
 %%%===================================================================
@@ -196,4 +200,65 @@ concurrent_requests_test() ->
 
         %% Verify: All requests attempted (no crashes)
         ?assertEqual(50, length(Pids))
+    end}.
+
+%%%===================================================================
+%%% SSL Hardening Tests (verify_peer defaults, TLS 1.3-first)
+%%%===================================================================
+
+default_ssl_verify_test() ->
+    {"relay defaults to verify_peer ssl_verify", fun() ->
+        %% Verify: state-based, real gen_server read
+        Context = erlmcp_mcp_relay:get_security_context(),
+        ?assertMatch(#{ssl_verify := verify_peer}, Context),
+        %% Refusal: insecure default must never be present
+        ?assertNotMatch(#{ssl_verify := verify_none}, Context)
+    end}.
+
+ssl_verify_option_override_test() ->
+    {"explicit ssl_verify option is honored", fun() ->
+        %% Restart relay with explicit opt-out (documented escape hatch)
+        ok = gen_server:stop(erlmcp_mcp_relay),
+        {ok, _} = erlmcp_mcp_relay:start_link([{ssl_verify, verify_none}]),
+        Context = erlmcp_mcp_relay:get_security_context(),
+        ?assertMatch(#{ssl_verify := verify_none}, Context),
+        %% Restore default-start relay for the rest of the foreach
+        ok = gen_server:stop(erlmcp_mcp_relay),
+        {ok, _} = erlmcp_mcp_relay:start_link()
+    end}.
+
+build_ssl_options_refusal_test() ->
+    {"build_ssl_options refuses verify_peer without a trust anchor", fun() ->
+        %% Real trust store available on this host -> options build with
+        %% verify_peer; the refusal contract is that verify_none is never
+        %% produced unless explicitly configured.
+        {ok, Opts} = erlmcp_mcp_relay:build_ssl_options(
+                       <<"https://backend.example:8443/mcp">>,
+                       #{ssl_verify => verify_peer,
+                         ssl_cacertfile => undefined}),
+        ?assert(lists:member({verify, verify_peer}, Opts)),
+        ?assertNot(lists:member({verify, verify_none}, Opts)),
+        %% TLS 1.3-first strong ciphers modeled on erlmcp_tls_validation
+        {_, Versions} = lists:keyfind(versions, 1, Opts),
+        ?assert(lists:member('tlsv1.3', Versions)),
+        {_, Ciphers} = lists:keyfind(ciphers, 1, Opts),
+        ?assert(lists:member("TLS_AES_256_GCM_SHA384", Ciphers)),
+        %% cacertfile passthrough when configured
+        CaFile = "/tmp/erlmcp_test_ca.pem",
+        file:write_file(CaFile, <<"-----BEGIN CERTIFICATE-----\nTEST\n">>),
+        {ok, Opts2} = erlmcp_mcp_relay:build_ssl_options(
+                        <<"https://b.example">>,
+                        #{ssl_cacertfile => CaFile}),
+        ?assert(lists:member({cacertfile, CaFile}, Opts2)),
+        file:delete(CaFile)
+    end}.
+
+build_ssl_options_sni_test() ->
+    {"SNI from hostname URL; disabled for IP literals", fun() ->
+        {ok, Opts} = erlmcp_mcp_relay:build_ssl_options(
+                       <<"https://relay.example:8443">>, #{}),
+        ?assert(lists:member({server_name_indication, "relay.example"}, Opts)),
+        {ok, IpOpts} = erlmcp_mcp_relay:build_ssl_options(
+                         <<"https://127.0.0.1:8443">>, #{}),
+        ?assert(lists:member({server_name_indication, disable}, IpOpts))
     end}.

@@ -148,7 +148,6 @@ validate_nesting_depth(Template, Depth) ->
     case binary:match(Template, <<"{{#">>) of
         {Pos, _Len} when Pos < byte_size(Template) - 2 ->
             %% Extract everything after {{# to find the section name
-            Before = binary:part(Template, 0, Pos),
             Rest = binary:part(Template, Pos + 2, byte_size(Template) - Pos - 2),
             case extract_section_name(Rest) of
                 {ok, _Name, Remaining} ->

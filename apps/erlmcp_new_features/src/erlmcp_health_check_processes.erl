@@ -1,4 +1,5 @@
 -module(erlmcp_health_check_processes).
+-compile({no_auto_import, [processes/0]}).
 -export([check/0, check/1]).
 
 %% Process health check implementation
@@ -215,7 +216,7 @@ get_unresponsive_supervisors(Supervisors) ->
         end
     end, Supervisors).
 
-check_missing_workers(Supervisors, Workers) ->
+check_missing_workers(_Supervisors, _Workers) ->
     % Check if expected workers are missing
     % This would require knowledge of expected workers per supervisor
     0.

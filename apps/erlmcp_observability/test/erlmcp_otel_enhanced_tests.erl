@@ -16,7 +16,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--include("erlmcp.hrl").
+-include("include/erlmcp.hrl").
 
 %% Include trace_ctx record definition
 -record(trace_ctx,

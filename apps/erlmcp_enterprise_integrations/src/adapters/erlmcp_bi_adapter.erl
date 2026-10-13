@@ -228,10 +228,10 @@ publish_tableau_dataset(DatasetName, Data, Context, State) ->
     Headers = tableau_headers(State),
     DataSource = tableau_data_source_config(DatasetName, Data, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(DataSource)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(DataSource)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             DataSourceId = proplists:get_value(<<"id">>, Response),
             UpdatedState = State#state{datasets = maps:put(DatasetName, DataSourceId, State#state.datasets)},
             {ok, DataSourceId, UpdatedState};
@@ -250,10 +250,10 @@ create_tableau_dashboard(DashboardName, Config, Context, State) ->
     Headers = tableau_headers(State),
     Workbook = tableau_workbook_config(DashboardName, Config, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Workbook)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Workbook)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             WorkbookId = proplists:get_value(<<"id">>, Response),
             UpdatedState = State#state{dashboards = maps:put(DashboardName, WorkbookId, State#state.dashboards)},
             {ok, WorkbookId, UpdatedState};
@@ -273,10 +273,10 @@ generate_tableau_report(ReportName, Dataset, Context, State) ->
     Headers = tableau_headers(State),
     View = tableau_view_config(ReportName, Dataset, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(View)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(View)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             ViewId = proplists:get_value(<<"id">>, Response),
             {ok, ViewId};
         {ok, {{_, Code, _}, _, _}} ->
@@ -295,10 +295,10 @@ schedule_tableau_refresh(DatasetName, DatasetId, Schedule, State) ->
     Headers = tableau_headers(State),
     RefreshJob = tableau_refresh_job_config(Schedule, State),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(RefreshJob)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(RefreshJob)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             JobId = proplists:get_value(<<"id">>, Response),
             {ok, JobId};
         {ok, {{_, Code, _}, _, _}} ->
@@ -320,7 +320,7 @@ get_tableau_permissions(ResourceId, ResourceType, State) ->
     case httpc:request(get, {Endpoint, Headers},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, jsx:decode(ResponseBody, [{labels, binary}]};
+            {ok, erlmcp_json:decode(ResponseBody, [{labels, binary}]};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {permissions_get_failed, Code}};
         {error, Reason} ->
@@ -338,7 +338,7 @@ grant_tableau_permissions(ResourceId, ResourceType, Permissions, State) ->
     Headers = tableau_headers(State),
     PermissionUpdate = tableau_permission_update(Permissions, State),
 
-    case httpc:request(put, {Endpoint, Headers, "application/json", jsx:encode(PermissionUpdate)},
+    case httpc:request(put, {Endpoint, Headers, "application/json", erlmcp_json:encode(PermissionUpdate)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
             {ok, <<"permissions_updated">>};
@@ -358,10 +358,10 @@ publish_powerbi_dataset(DatasetName, Data, Context, State) ->
     Headers = powerbi_headers(State),
     Dataset = powerbi_dataset_config(DatasetName, Data, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Dataset)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Dataset)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             DatasetId = proplists:get_value(<<"id">>, Response),
             UpdatedState = State#state{datasets = maps:put(DatasetName, DatasetId, State#state.datasets)},
             {ok, DatasetId, UpdatedState};
@@ -378,10 +378,10 @@ create_powerbi_dashboard(DashboardName, Config, Context, State) ->
     Headers = powerbi_headers(State),
     Dashboard = powerbi_dashboard_config(DashboardName, Config, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(Dashboard)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(Dashboard)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             DashboardId = proplists:get_value(<<"id">>, Response),
             UpdatedState = State#state{dashboards = maps:put(DashboardName, DashboardId, State#state.dashboards)},
             {ok, DashboardId, UpdatedState};
@@ -399,10 +399,10 @@ generate_powerbi_report(ReportName, Dataset, Context, State) ->
     Headers = powerbi_headers(State),
     ReportConfig = powerbi_report_config(ReportName, Dataset, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(ReportConfig)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(ReportConfig)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             ReportId = proplists:get_value(<<"id">>, Response),
             {ok, ReportId};
         {ok, {{_, Code, _}, _, _}} ->
@@ -419,10 +419,10 @@ schedule_powerbi_refresh(DatasetName, DatasetId, Schedule, State) ->
     Headers = powerbi_headers(State),
     RefreshSchedule = powerbi_refresh_schedule(Schedule, State),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(RefreshSchedule)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(RefreshSchedule)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 202, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             JobId = proplists:get_value(<<"id">>, Response),
             {ok, JobId};
         {ok, {{_, Code, _}, _, _}} ->
@@ -442,7 +442,7 @@ get_powerbi_permissions(ResourceId, ResourceType, State) ->
     case httpc:request(get, {Endpoint, Headers},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, jsx:decode(ResponseBody, [{labels, binary}]};
+            {ok, erlmcp_json:decode(ResponseBody, [{labels, binary}]};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {permissions_get_failed, Code}};
         {error, Reason} ->
@@ -458,7 +458,7 @@ grant_powerbi_permissions(ResourceId, ResourceType, Permissions, State) ->
     Headers = powerbi_headers(State),
     PermissionUpdate = powerbi_permission_update(Permissions, State),
 
-    case httpc:request(put, {Endpoint, Headers, "application/json", jsx:encode(PermissionUpdate)},
+    case httpc:request(put, {Endpoint, Headers, "application/json", erlmcp_json:encode(PermissionUpdate)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
             {ok, <<"permissions_updated">>};

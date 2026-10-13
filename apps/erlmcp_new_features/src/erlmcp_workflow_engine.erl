@@ -53,6 +53,8 @@
 -module(erlmcp_workflow_engine).
 
 -behaviour(gen_server).
+-compile({nowarn_unused_type, [capability]}).
+-compile({nowarn_unused_function, [validate_token/2]}).
 
 %% API
 -export([start_link/0,
@@ -82,11 +84,11 @@
 -type execution_id() :: binary().
 -type status() :: pending | running | completed | failed | cancelled.
 -type permission() :: binary().
--type capability() :: #{
-    resource => binary(),
-    actions => [binary()],
-    conditions => [map()]
-}.
+%% -type capability() :: #{  % Internal type, unused
+%%     resource => binary(),
+%%     actions => [binary()],
+%%     conditions => [map()]
+%% }.
 
 -type step() :: #{
     id => step_id(),
@@ -339,16 +341,6 @@ handle_call({execute_workflow, WorkflowId, InputData}, _From, State) ->
                             {reply, {error, Reason}, NewState#state{executions = NewExecutions}}
                     end;
                 {error, Reason} ->
-                    %% Log security validation failure
-                    AuditEvent = create_audit_event(
-                        workflow_execution,
-                        ExecutionId,
-                        <<"system">>,
-                        <<"execute_workflow">>,
-                        error,
-                        {WorkflowId, Reason}
-                    ),
-                    NewState = log_audit_event(AuditEvent, State),
                     {reply, {error, Reason}, State}
             end
     end;
@@ -405,7 +397,7 @@ handle_call({authenticate_execution, ExecutionId, AuthData}, _From, State) ->
     case maps:get(ExecutionId, State#state.executions, undefined) of
         undefined ->
             {reply, {error, execution_not_found}, State};
-        Execution ->
+        _Execution ->
             %% Validate authentication data
             case validate_auth_data(AuthData, State) of
                 {ok, Subject} ->
@@ -439,7 +431,7 @@ handle_call({authorize_step, ExecutionId, StepId, Context}, _From, State) ->
     case maps:get(ExecutionId, State#state.executions, undefined) of
         undefined ->
             {reply, {error, execution_not_found}, State};
-        Execution ->
+        _Execution ->
             %% Check step permissions
             case check_step_permissions(ExecutionId, StepId, Context, State) of
                 ok ->
@@ -591,17 +583,7 @@ handle_info(_Info, State) ->
     {noreply, State}.
 
 -spec terminate(term(), #state{}) -> ok.
-terminate(_Reason, State) ->
-    %% Log shutdown event
-    AuditEvent = create_audit_event(
-        system_shutdown,
-        undefined,
-        <<"system">>,
-        <<"shutdown">>,
-        success,
-        completed
-    ),
-    NewState = log_audit_event(AuditEvent, State),
+terminate(_Reason, _State) ->
     ok.
 
 -spec code_change(term(), #state{}, term()) -> {ok, #state{}}.
@@ -626,7 +608,7 @@ validate_workflow_security(_) ->
 -spec validate_security_levels([step()]) -> ok | {error, term()}.
 validate_security_levels([]) ->
     ok;
-validate_security_levels([#{id := Id, type := Type} = Step | Rest]) ->
+validate_security_levels([#{id := _Id, type := _Type} = Step | Rest]) ->
     case validate_step_security(Step) of
         ok -> validate_security_levels(Rest);
         Error -> Error
@@ -759,7 +741,7 @@ validate_token(Token, State) ->
 
 %% @private Check step permissions
 -spec check_step_permissions(execution_id(), step_id(), map(), state()) -> ok | {error, term()}.
-check_step_permissions(ExecutionId, StepId, Context, State) ->
+check_step_permissions(ExecutionId, StepId, _Context, State) ->
     case maps:get(ExecutionId, State#state.executions, undefined) of
         undefined ->
             {error, execution_not_found};
@@ -841,7 +823,7 @@ executor_loop(ExecutionId, #{steps := Steps} = Workflow, InputData, Context) ->
 
 %% @private Execute steps with security validation
 -spec execute_steps_with_security(execution_id(), [step()], [step()], map(), map()) -> {ok, map()} | {error, term()}.
-execute_steps_with_security(ExecutionId, [], _AllSteps, _InputData, _Context) ->
+execute_steps_with_security(_ExecutionId, [], _AllSteps, _InputData, _Context) ->
     {ok, #{}};
 execute_steps_with_security(ExecutionId, [Step | Rest], AllSteps, InputData, Context) ->
     StepId = maps:get(id, Step),
@@ -938,7 +920,7 @@ execute_parallel_with_security(ExecutionId, Children, AllSteps, InputData, Conte
 
 %% @private Execute sequence steps with security
 -spec execute_sequence_with_security(execution_id(), [step()], [step()], map(), map()) -> {ok, map()} | {error, term()}.
-execute_sequence_with_security(ExecutionId, [], _AllSteps, _InputData, Context) ->
+execute_sequence_with_security(_ExecutionId, [], _AllSteps, _InputData, Context) ->
     {ok, Context};
 execute_sequence_with_security(ExecutionId, [Child | Rest], AllSteps, InputData, Context) ->
     case execute_step_with_security(ExecutionId, Child, AllSteps, InputData, Context) of

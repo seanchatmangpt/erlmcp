@@ -227,10 +227,10 @@ send_elk_log(Index, LogLevel, LogData, State) ->
     Headers = elk_headers(State),
     LogDocument = elk_log_document(LogLevel, LogData),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(LogDocument)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(LogDocument)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"_id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {log_failed, Code}};
@@ -244,10 +244,10 @@ query_elk_logs(Index, Query, Context, State) ->
     Headers = elk_headers(State),
     SearchQuery = elk_search_query(Query, Context),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(SearchQuery)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(SearchQuery)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             Hits = proplists:get_value(<<"hits">>, Response, #{}),
             {ok, proplists:get_value(<<"hits">>, Hits, [])};
         {ok, {{_, Code, _}, _, _}} ->
@@ -261,10 +261,10 @@ setup_elk_index(IndexName, Config, State) ->
     Headers = elk_headers(State),
     IndexSettings = elk_index_settings(Config, State),
 
-    case httpc:request(put, {Endpoint, Headers, "application/json", jsx:encode(IndexSettings)},
+    case httpc:request(put, {Endpoint, Headers, "application/json", erlmcp_json:encode(IndexSettings)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"_id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {index_setup_failed, Code}};
@@ -278,10 +278,10 @@ create_elk_pipeline(PipelineName, Config, State) ->
     Headers = elk_headers(State),
     PipelineDef = elk_pipeline_definition(Config, State),
 
-    case httpc:request(put, {Endpoint, Headers, "application/json", jsx:encode(PipelineDef)},
+    case httpc:request(put, {Endpoint, Headers, "application/json", erlmcp_json:encode(PipelineDef)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, PipelineName};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {pipeline_creation_failed, Code}};
@@ -297,7 +297,7 @@ get_elk_stats(Index, State) ->
     case httpc:request(get, {Endpoint, Headers},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, jsx:decode(ResponseBody, [{labels, binary}]};
+            {ok, erlmcp_json:decode(ResponseBody, [{labels, binary}]};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {stats_failed, Code}};
         {error, Reason} ->
@@ -311,10 +311,10 @@ rotate_elk_logs(Index, Policy, State) ->
     Headers = elk_headers(State),
     RolloverBody = elk_rollover_config(Policy, State),
 
-    case httpc:request(post, {RolloverEndpoint, Headers, "application/json", jsx:encode(RolloverBody)},
+    case httpc:request(post, {RolloverEndpoint, Headers, "application/json", erlmcp_json:encode(RolloverBody)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"_new_index">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {rotation_failed, Code}};
@@ -328,7 +328,7 @@ send_graylog_log(Index, LogLevel, LogData, State) ->
     Endpoint = "http://localhost:12201", % Graylog GELF endpoint
     GraylogEvent = graylog_gelf_message(LogLevel, LogData, Index),
 
-    case httpc:request(post, {Endpoint, [], "application/json", jsx:encode(GraylogEvent)},
+    case httpc:request(post, {Endpoint, [], "application/json", erlmcp_json:encode(GraylogEvent)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
             {ok, <<"gelf_sent">>};
@@ -343,10 +343,10 @@ query_graylog_logs(Index, Query, Context, State) ->
     Headers = graylog_headers(State),
     QueryConfig = graylog_query_config(Query, Context, Index),
 
-    case httpc:request(post, {GraylogEndpoint, Headers, "application/json", jsx:encode(QueryConfig)},
+    case httpc:request(post, {GraylogEndpoint, Headers, "application/json", erlmcp_json:encode(QueryConfig)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"messages">>, Response, [])};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {query_failed, Code}};
@@ -360,10 +360,10 @@ setup_graylog_index(IndexName, Config, State) ->
     Headers = graylog_headers(State),
     IndexSetConfig = graylog_indexset_config(IndexName, Config, State),
 
-    case httpc:request(post, {GraylogEndpoint, Headers, "application/json", jsx:encode(IndexSetConfig)},
+    case httpc:request(post, {GraylogEndpoint, Headers, "application/json", erlmcp_json:encode(IndexSetConfig)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {index_setup_failed, Code}};
@@ -377,10 +377,10 @@ create_graylog_pipeline(PipelineName, Config, State) ->
     Headers = graylog_headers(State),
     PipelineConfig = graylog_pipeline_config(PipelineName, Config, State),
 
-    case httpc:request(post, {GraylogEndpoint, Headers, "application/json", jsx:encode(PipelineConfig)},
+    case httpc:request(post, {GraylogEndpoint, Headers, "application/json", erlmcp_json:encode(PipelineConfig)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {pipeline_creation_failed, Code}};
@@ -394,10 +394,10 @@ get_graylog_stats(Index, State) ->
     Headers = graylog_headers(State),
     MetricQuery = #{<<"metrics">> => [<<"index_*">>]},
 
-    case httpc:request(post, {GraylogEndpoint, Headers, "application/json", jsx:encode(MetricQuery)},
+    case httpc:request(post, {GraylogEndpoint, Headers, "application/json", erlmcp_json:encode(MetricQuery)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, jsx:decode(ResponseBody, [{labels, binary}]};
+            {ok, erlmcp_json:decode(ResponseBody, [{labels, binary}]};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {stats_failed, Code}};
         {error, Reason} ->
@@ -428,7 +428,7 @@ send_sumologic_log(Index, LogLevel, LogData, State) ->
     Headers = sumologic_headers(State),
     SumoEvent = sumologic_log_event(LogLevel, LogData, Index),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(SumoEvent)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(SumoEvent)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
             {ok, <<"logs_sent">>};
@@ -443,10 +443,10 @@ query_sumologic_logs(Index, Query, Context, State) ->
     Headers = sumologic_headers(State),
     SearchQuery = sumologic_search_query(Query, Context, Index),
 
-    case httpc:request(post, {Endpoint, Headers, "application/json", jsx:encode(SearchQuery)},
+    case httpc:request(post, {Endpoint, Headers, "application/json", erlmcp_json:encode(SearchQuery)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"messages">>, Response, [])};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {query_failed, Code}};
@@ -459,10 +459,10 @@ setup_sumologic_index(IndexName, Config, State) ->
     Headers = sumologic_headers(State),
     IndexConfig = sumologic_index_config(IndexName, Config, State),
 
-    case httpc:request(post, {SumoEndpoint, Headers, "application/json", jsx:encode(IndexConfig)},
+    case httpc:request(post, {SumoEndpoint, Headers, "application/json", erlmcp_json:encode(IndexConfig)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {index_setup_failed, Code}};
@@ -477,10 +477,10 @@ create_sumologic_pipeline(PipelineName, Config, State) ->
     Headers = sumologic_headers(State),
     SourceConfig = sumologic_source_config(PipelineName, Config, State),
 
-    case httpc:request(post, {SumoEndpoint, Headers, "application/json", jsx:encode(SourceConfig)},
+    case httpc:request(post, {SumoEndpoint, Headers, "application/json", erlmcp_json:encode(SourceConfig)},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 201, _}, _, ResponseBody}} ->
-            Response = jsx:decode(ResponseBody, [{labels, binary}]),
+            Response = erlmcp_json:decode(ResponseBody, [{labels, binary}]),
             {ok, proplists:get_value(<<"id">>, Response)};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {source_creation_failed, Code}};
@@ -497,7 +497,7 @@ get_sumologic_stats(Index, State) ->
     case httpc:request(get, {SumoEndpoint, Headers ++ [{"time_range", TimeRange}]},
                      [{timeout, maps:get(timeout, State#state.config)}], []) of
         {ok, {{_, 200, _}, _, ResponseBody}} ->
-            {ok, jsx:decode(ResponseBody, [{labels, binary}]};
+            {ok, erlmcp_json:decode(ResponseBody, [{labels, binary}]};
         {ok, {{_, Code, _}, _, _}} ->
             {error, {stats_failed, Code}};
         {error, Reason} ->
@@ -535,7 +535,7 @@ elk_log_document(LogLevel, LogData) =>
         timestamp => erlang:system_time(millisecond),
         level => LogLevel,
         host => list_to_binary(atom_to_list(node())),
-        message => jsx:encode(LogData),
+        message => erlmcp_json:encode(LogData),
         metadata => #{
             module => ?MODULE,
             application => erlmcp
@@ -653,10 +653,10 @@ graylog_gelf_message(LogLevel, LogData, Index) =>
         host => list_to_binary(atom_to_list(node())),
         timestamp => erlang:system_time(second),
         level => graylog_log_level(LogLevel),
-        message => jsx:encode(LogData),
+        message => erlmcp_json:encode(LogData),
         facility => "erlmcp",
         file => "erlmcp_logging_adapter.erl",
-        full_message => jsx:encode(LogData),
+        full_message => erlmcp_json:encode(LogData),
         index => Index
     }.
 
@@ -719,7 +719,7 @@ sumologic_log_event(LogLevel, LogData, Index) =>
         timestamp => erlang:system_time(millisecond),
         source => "erlmcp",
         source_category => binary_to_list(Index),
-        message => jsx:encode(LogData),
+        message => erlmcp_json:encode(LogData),
         log_level => LogLevel,
         hostname => list_to_binary(atom_to_list(node()))
     }.

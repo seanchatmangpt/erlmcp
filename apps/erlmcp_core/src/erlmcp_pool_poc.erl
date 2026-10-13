@@ -309,7 +309,6 @@ handle_call({checkout, ClientPid}, From, State) ->
                     {reply, {ok, Worker}, FinalState};
                 {empty, _} ->
                     % Pool at max capacity - queue the request
-                    WaitRef = make_ref(),
                     NewWaiting = queue:in({ClientPid, From, StartTime}, State#state.waiting),
                     NewMetrics = update_metrics(queued, 1, State#state.metrics),
 

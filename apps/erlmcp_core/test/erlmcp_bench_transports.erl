@@ -27,7 +27,7 @@
 
 -module(erlmcp_bench_transports).
 
--export([run/1, run_all/0, all_workloads/0,]).
+-export([run/1, run_all/0, all_workloads/0]).
 
 -include_lib("kernel/include/logger.hrl").
 

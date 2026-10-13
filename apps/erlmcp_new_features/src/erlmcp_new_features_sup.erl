@@ -53,6 +53,14 @@ init([]) ->
             type => worker,
             modules => [erlmcp_dashboard_integration]
         },
+        #{
+            id => erlmcp_health_http,
+            start => {erlmcp_health_http, start_link, []},
+            restart => permanent,
+            shutdown => 5000,
+            type => worker,
+            modules => [erlmcp_health_http]
+        },
 
         % Tier 2: Connection-based services (per-connection)
         #{

@@ -472,23 +472,94 @@ build_event_stack(Events, StartTime) ->
                       E#{relative_time => RelativeTime}
               end, SortedEvents).
 
-%% @private Generate flamegraph SVG
+%% @private Generate flamegraph in Brendan Gregg folded-stack format.
+%% Each line is: "frame1;frame2;...;frameN count"
+%% The output is NOT an SVG — it is the text input for flamegraph.pl.
+%% We return it as a binary; callers piping to flamegraph.pl get the SVG.
 -spec generate_flamegraph_svg([map()], integer(), integer()) -> binary().
-generate_flamegraph_svg(_StackedEvents, _StartTime, _EndTime) ->
-    %% Simplified flamegraph generation
-    <<"<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"800\" height=\"400\">\n",
-      "<text x=\"400\" y=\"200\" text-anchor=\"middle\" font-size=\"16\">Flamegraph (TODO)</text>\n",
-      "</svg>\n">>.
+generate_flamegraph_svg(StackedEvents, _StartTime, _EndTime) ->
+    %% Build a fold-count map from the event type chain for each event.
+    CountMap = lists:foldl(fun(Event, Acc) ->
+                               Stack = build_folded_stack(Event),
+                               maps:update_with(Stack,
+                                               fun(C) -> C + 1 end,
+                                               1, Acc)
+                           end, #{}, StackedEvents),
 
-%% @private Extract process interactions
+    Lines = maps:fold(fun(Stack, Count, Acc) ->
+                          Line = iolist_to_binary([Stack, " ",
+                                                   integer_to_list(Count), "\n"]),
+                          [Line | Acc]
+                      end, [], CountMap),
+
+    iolist_to_binary(Lines).
+
+%% @private Build a folded-stack string for one event.
+%% Uses the event type and any sub-type details as frames.
+-spec build_folded_stack(map()) -> iolist().
+build_folded_stack(#{type := Type} = Event) ->
+    TypeBin = atom_to_binary(Type, utf8),
+    SubType = case maps:get(details, Event, #{}) of
+                  Details when is_map(Details), map_size(Details) > 0 ->
+                      PidStr = iolist_to_binary(io_lib:format("~p", [Details])),
+                      <<";", PidStr/binary>>;
+                  _ ->
+                      <<>>
+              end,
+    <<TypeBin/binary, SubType/binary>>;
+build_folded_stack(_Event) ->
+    <<"unknown">>.
+
+%% @private Extract process interactions from send/receive event pairs.
+%% Returns a list of #{from, to, count} interaction summaries.
 -spec extract_interactions([map()]) -> [map()].
-extract_interactions(_Events) ->
-    %% Simplified interaction extraction
-    [].
+extract_interactions(Events) ->
+    %% Collect all send events that carry pid and to fields
+    Pairs = lists:foldl(fun(#{type := Type, details := Details} = _E, Acc)
+                              when Type =:= send orelse Type =:= message ->
+                            From = maps:get(pid, Details, undefined),
+                            To   = maps:get(to,  Details, undefined),
+                            case {From, To} of
+                                {undefined, _} -> Acc;
+                                {_, undefined} -> Acc;
+                                _              -> [{From, To} | Acc]
+                            end;
+                           (_, Acc) -> Acc
+                        end, [], Events),
 
-%% @private Generate interaction graph SVG
+    %% Aggregate by (From, To) pair
+    CountMap = lists:foldl(fun({From, To}, Acc) ->
+                               maps:update_with({From, To},
+                                               fun(C) -> C + 1 end,
+                                               1, Acc)
+                           end, #{}, Pairs),
+
+    maps:fold(fun({From, To}, Count, Acc) ->
+                  [#{from => From, to => To, count => Count} | Acc]
+              end, [], CountMap).
+
+%% @private Generate interaction graph in DOT format wrapped as a binary.
+%% Nodes are process ids; directed edges are labelled with message count.
 -spec generate_interaction_svg([map()]) -> binary().
-generate_interaction_svg(_Interactions) ->
-    <<"<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"800\" height=\"400\">\n",
-      "<text x=\"400\" y=\"200\" text-anchor=\"middle\" font-size=\"16\">Interaction Graph (TODO)</text>\n",
-      "</svg>\n">>.
+generate_interaction_svg(Interactions) ->
+    NodeSet = lists:foldl(fun(#{from := F, to := T}, Acc) ->
+                              sets:add_element(F, sets:add_element(T, Acc))
+                          end, sets:new([{version, 2}]), Interactions),
+
+    NodeLines = [begin
+                     Label = io_lib:format("~p", [N]),
+                     iolist_to_binary(["  \"", Label, "\";\n"])
+                 end || N <- sets:to_list(NodeSet)],
+
+    EdgeLines = [begin
+                     FL = io_lib:format("~p", [maps:get(from, I)]),
+                     TL = io_lib:format("~p", [maps:get(to,   I)]),
+                     CL = integer_to_list(maps:get(count, I)),
+                     iolist_to_binary(["  \"", FL, "\" -> \"", TL,
+                                        "\" [label=\"", CL, "\"];\n"])
+                 end || I <- Interactions],
+
+    iolist_to_binary(["digraph interaction_graph {\n",
+                      NodeLines,
+                      EdgeLines,
+                      "}\n"]).

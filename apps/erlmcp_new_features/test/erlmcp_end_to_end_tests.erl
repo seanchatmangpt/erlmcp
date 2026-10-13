@@ -436,7 +436,7 @@ create_test_batch_items(N) when N > 0 ->
     lists:map(fun(I) ->
         #{
             id => list_to_binary("item_" ++ integer_to_list(I)),
-            data => <<"test data " ++ integer_to_list(I)>,
+            data => list_to_binary("test data " ++ integer_to_list(I)),
             timestamp => erlang:system_time(millisecond),
             priority => case I rem 10 of 0 -> high; _ -> normal end
         }

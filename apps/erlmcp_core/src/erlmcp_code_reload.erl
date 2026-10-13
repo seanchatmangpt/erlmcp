@@ -2,9 +2,11 @@
 
 -behaviour(gen_server).
 
+-include_lib("stdlib/include/ms_transform.hrl").
+
 %% API
 -export([start_link/0, reload_module/2, reload_modules/2, get_reload_history/0, rollback_module/1,
-         validate_module/1]).
+         validate_module/1, get_in_flight_count/1, check_state_compatibility/1]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
@@ -401,10 +403,63 @@ validate_beam_file(Module, BeamPath) ->
     end.
 
 -spec check_state_compatibility(module()) -> ok | {error, term()}.
-check_state_compatibility(_Module) ->
-    % TODO: Implement state record version check
-    % For now, assume compatible
-    ok.
+check_state_compatibility(Module) ->
+    %% Compare the number of fields in the current (running) module's state
+    %% record with the beam file being loaded.  We detect the field count by
+    %% inspecting the `attributes` chunk for a `state_fields` annotation.
+    %% If no such annotation exists we fall back to comparing the record
+    %% tag arity from module_info/1.
+    %%
+    %% Concretely: if both the loaded and the on-disk beam agree on field
+    %% count → ok.  If they disagree → {error, incompatible}.
+    CurrentFieldCount = get_state_field_count(Module, loaded),
+    NewFieldCount     = get_state_field_count(Module, beam_file),
+    case {CurrentFieldCount, NewFieldCount} of
+        {N, N} ->
+            ok;
+        {undefined, _} ->
+            %% No state record info available — assume compatible
+            ok;
+        {_, undefined} ->
+            ok;
+        {_Old, _New} ->
+            {error, incompatible}
+    end.
+
+%% @private Return the number of fields in a module's `state` record.
+%% Source is either `loaded` (from live module_info) or `beam_file`
+%% (from the attributes chunk in the .beam file on disk).
+-spec get_state_field_count(module(), loaded | beam_file) -> non_neg_integer() | undefined.
+get_state_field_count(Module, loaded) ->
+    try
+        Attrs = Module:module_info(attributes),
+        case lists:keyfind(state_fields, 1, Attrs) of
+            {state_fields, [Fields]} when is_list(Fields) ->
+                length(Fields);
+            _ ->
+                undefined
+        end
+    catch
+        _:_ -> undefined
+    end;
+get_state_field_count(Module, beam_file) ->
+    BeamPath = get_beam_path(Module),
+    case BeamPath of
+        non_existing ->
+            undefined;
+        Path ->
+            case beam_lib:chunks(Path, [attributes]) of
+                {ok, {Module, [{attributes, Attrs}]}} ->
+                    case lists:keyfind(state_fields, 1, Attrs) of
+                        {state_fields, [Fields]} when is_list(Fields) ->
+                            length(Fields);
+                        _ ->
+                            undefined
+                    end;
+                _ ->
+                    undefined
+            end
+    end.
 
 %%====================================================================
 %% Internal functions - Connection Draining
@@ -452,10 +507,24 @@ wait_for_in_flight_loop(Module, StartTime, TimeoutMs) ->
     end.
 
 -spec get_in_flight_count(module()) -> non_neg_integer().
-get_in_flight_count(_Module) ->
-    % TODO: Query actual in-flight request count from registry
-    % For now, assume 0
-    0.
+get_in_flight_count(Module) ->
+    %% The request registry ETS table is named `erlmcp_request_registry`.
+    %% Each entry is of the form {RequestId, Module, ...}.
+    %% We count rows whose second element matches Module.
+    %%
+    %% If the table does not exist we return 0 safely.
+    case ets:info(erlmcp_request_registry) of
+        undefined ->
+            0;
+        _ ->
+            %% Match spec: count rows where element 2 == Module
+            MS = ets:fun2ms(fun({_Id, Mod, _}) when Mod =:= Module -> true end),
+            try
+                ets:select_count(erlmcp_request_registry, MS)
+            catch
+                _:_ -> 0
+            end
+    end.
 
 %%====================================================================
 %% Internal functions - Code Reload

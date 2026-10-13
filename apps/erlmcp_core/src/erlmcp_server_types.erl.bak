@@ -1,0 +1,937 @@
+%%%-------------------------------------------------------------------
+%%% @doc erlmcp_server_types - Complete Server-Side Type Definitions
+%%%
+%%% This module provides comprehensive type definitions for MCP server-side
+%%% implementations, designed for Phase 2 server compatibility.
+%%%
+%%% All types follow MCP 2025-11-25 specification requirements while
+%%% maintaining erlmcp enterprise features and patterns.
+%%%
+%%% == Key Features ==
+%%% - Complete server capability types with validation
+%%% - Client capability types with negotiation support
+%%% - Server configuration and state types
+%%% - Tool, resource, and prompt management types
+%%% - Error handling and result types
+%%% - Comprehensive documentation and examples
+%%%
+%%% == Usage Example ==
+%%%
+%%% ```erlang
+%%% %% Create server configuration
+%%% Config = #{
+%%%     server_info => #{name => <<"my-server">>, version => <<"1.0.0">>},
+%%%     capabilities => erlmcp_server_types:default_server_capabilities(),
+%%%     tools => [Tool1, Tool2],
+%%%     resources => [Resource1],
+%%%     prompts => [Prompt1]
+%%% },
+%%%
+%%% %% Create server state
+%%% State = #server_state{
+%%%     config = Config,
+%%%     phase = initial,
+%%%     active_sessions = maps:new(),
+%%%     registered_tools = maps:new(),
+%%%     registered_resources = maps:new(),
+%%%     registered_prompts = maps:new()
+%%% }.
+%%%
+%%% %% Validate server capabilities
+%%% case erlmcp_server_types:validate_server_capabilities(State#server_state.capabilities) of
+%%%     ok -> ok;
+%%%     {error, Reason} -> error({invalid_capabilities, Reason})
+%%% end.
+%%% ```
+%%%
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_server_types).
+
+-include("erlmcp.hrl").
+
+%% API exports
+-export([
+    %% Capability constructors and validation
+    default_server_capabilities/0,
+    default_client_capabilities/0,
+    validate_server_capabilities/1,
+    validate_client_capabilities/1,
+    negotiate_capabilities/2,
+
+    %% Server configuration builders
+    build_server_config/1,
+    build_server_config/2,
+
+    %% Server state constructors
+    new_server_state/0,
+    new_server_state/1,
+    is_server_ready/1,
+
+    %% Tool management types
+    validate_tool_registration/1,
+    build_tool_info/1,
+
+    %% Resource management types
+    validate_resource_registration/1,
+    build_resource_info/1,
+
+    %% Prompt management types
+    validate_prompt_registration/1,
+    build_prompt_info/1,
+
+    %% Error and result types
+    server_result/2,
+    server_result/3,
+    server_error/2,
+    server_error/3,
+    is_server_success/1,
+
+    %% Session management types
+    create_session_info/2,
+    update_session_activity/2,
+    is_session_valid/1
+]).
+
+%% Type exports
+-export_type([
+    %% Server configuration types
+    server_config/0,
+    server_options/0,
+
+    %% Server state types
+    server_state/0,
+    server_phase/0,
+    session_info/0,
+    session_registry/0,
+
+    %% Capability types (re-export for convenience)
+    mcp_server_capabilities/0,
+    mcp_client_capabilities/0,
+
+    %% Registration types
+    tool_registration/0,
+    resource_registration/0,
+    prompt_registration/0,
+
+    %% Error and result types
+    server_result/0,
+    server_error/0,
+
+    %% Session types
+    session_id/0,
+    client_info/0,
+    subscription_info/0
+]).
+
+%%====================================================================
+%% Type Definitions
+%%====================================================================
+
+%% @type server_config() - Server configuration map
+%% Contains all server configuration parameters
+-type server_config() :: #{
+    %% Core server information
+    server_info := #{name := binary(), version := binary()},
+    capabilities := #mcp_server_capabilities{},
+
+    %% Server options
+    options := server_options(),
+
+    %% MCP resources
+    resources := [#mcp_resource{}],
+    resource_templates := [#mcp_resource_template{}],
+
+    %% MCP tools
+    tools := [#mcp_tool{}],
+
+    %% MCP prompts
+    prompts := [#mcp_prompt{}],
+
+    %% Server behavior options
+    session_timeout := pos_integer(),
+    max_concurrent_requests := pos_integer(),
+    enable_logging := boolean(),
+    experimental_features := map()
+}.
+
+%% @type server_options() - Server behavior configuration
+-type server_options() :: #{
+    %% Session management
+    session_timeout => pos_integer(),  %% milliseconds, default 300000
+    max_concurrent_requests => pos_integer(),  %% default 100
+    enable_metrics => boolean(),  %% default true
+
+    %% Performance tuning
+    request_timeout => pos_integer(),  %% milliseconds, default 30000
+    stream_chunk_size => pos_integer(),  %% default 8192
+    enable_backpressure => boolean(),  %% default true
+
+    %% Security options
+    enable_cors => boolean(),  %% default false
+    allowed_origins => [binary()],  %% default []
+    rate_limit => pos_integer(),  %% requests per minute, default 1000
+
+    %% Enterprise features
+    enable_distributed => boolean(),  %% default false
+    cluster_nodes => [node()],
+    enable_persistence => boolean()  %% default false
+}.
+
+%% @type server_phase() - Server operational phases
+-type server_phase() ::
+    initial |           %% Server starting up
+    initializing |      %% In initialization phase
+    ready |            %% Ready to handle requests
+    busy |             %% Under heavy load
+    maintenance |      %% Under maintenance
+    shutting_down |    %% Shutting down
+    terminated.        %% Terminated
+
+%% @type server_state() - Complete server state record
+-type server_state() :: #{
+    %% Core configuration
+    config := server_config(),
+    phase := server_phase(),
+
+    %% Session management
+    active_sessions := session_registry(),
+    next_session_id := pos_integer(),
+
+    %% Registration registries
+    registered_tools := tool_registration(),
+    registered_resources := resource_registration(),
+    registered_prompts := prompt_registration(),
+
+    %% Operational state
+    metrics := map(),  %% Performance metrics
+    subscriptions := map(),  %% Active subscriptions
+    requests := map(),  %% Active requests
+    last_activity := integer()  %% timestamp
+}.
+
+%% @type session_id() - Session identifier
+-type session_id() :: binary().
+
+%% @type client_info() - Client connection information
+-type client_info() :: #{
+    name := binary(),
+    version := binary(),
+    capabilities := #mcp_client_capabilities{},
+    metadata := map(),
+    connected_at := integer(),
+    remote_address := binary() | undefined,
+    user_agent := binary() | undefined
+}.
+
+%% @type session_info() - Session information record
+-type session_info() :: #{
+    id := session_id(),
+    client_info := client_info(),
+    capabilities := #mcp_client_capabilities{},
+    protocol_version := binary(),
+    created_at := integer(),
+    last_activity := integer(),
+    request_count := non_neg_integer(),
+    subscription_list := [binary()]
+}.
+
+%% @type session_registry() - Session registry
+-type session_registry() :: #{session_id() => session_info()}.
+
+%% @type tool_registration() - Tool registration registry
+-type tool_registration() :: #{
+    binary() => #{
+        tool := #mcp_tool{},
+        handler := function(),
+        metrics := map(),
+        registered_at := integer()
+    }
+}.
+
+%% @type resource_registration() - Resource registration registry
+-type resource_registration() :: #{
+    binary() => #{
+        resource := #mcp_resource{},
+        handler := function(),
+        cached_data := term() | undefined,
+        cache_expires := integer() | undefined,
+        metrics := map(),
+        registered_at := integer()
+    }
+}.
+
+%% @type prompt_registration() - Prompt registration registry
+-type prompt_registration() :: #{
+    binary() => #{
+        prompt := #mcp_prompt{},
+        handler := function(),
+        metrics := map(),
+        registered_at := integer()
+    }
+}.
+
+%% @type subscription_info() - Resource subscription information
+-type subscription_info() :: #{
+    uri := binary(),
+    subscriber := pid(),
+    created_at := integer(),
+    last_notified := integer() | undefined
+}.
+
+%% @type server_result() - Server operation result
+-type server_result() ::
+    {ok, term()} |                              %% Success with data
+    {ok, term(), server_state()} |              %% Success with data and updated state
+    {error, server_error()} |                   %% Error with details
+    {error, server_error(), server_state()}.    %% Error with details and updated state
+
+%% @type server_error() - Server error details
+-type server_error() :: #{
+    code := integer(),        %% Error code (use MCP error codes)
+    message := binary(),     %% Human-readable error message
+    details => term(),       %% Additional error details
+    timestamp => integer(),  %% Error timestamp
+    module => atom(),        %% Error module
+    line => pos_integer()    %% Error line number
+}.
+
+%%====================================================================
+%% Capability Constructors and Validation
+%%====================================================================
+
+%% @doc Create default server capabilities
+%% @returns Default server capabilities with all features disabled
+-spec default_server_capabilities() -> #mcp_server_capabilities{}.
+default_server_capabilities() ->
+    #mcp_server_capabilities{
+        resources = #mcp_resources_capability{
+            subscribe = false,
+            listChanged = false
+        },
+        tools = #mcp_tools_capability{
+            listChanged = false
+        },
+        prompts = #mcp_prompts_capability{
+            listChanged = false
+        },
+        logging = #mcp_logging_capability{},
+        sampling = #mcp_sampling_capability{},
+        roots = #mcp_roots_capability{
+            list_changed = false
+        },
+        completions = undefined,
+        experimental = undefined
+    }.
+
+%% @doc Create default client capabilities
+%% @returns Default client capabilities with minimal features
+-spec default_client_capabilities() -> #mcp_client_capabilities{}.
+default_client_capabilities() ->
+    #mcp_client_capabilities{
+        tools = #mcp_tools_capability{
+            listChanged = false
+        },
+        roots = undefined,
+        sampling = undefined,
+        experimental = undefined
+    }.
+
+%% @doc Validate server capabilities
+%% @returns ok | {error, Reason}
+-spec validate_server_capabilities(#mcp_server_capabilities{}) -> ok | {error, binary()}.
+validate_server_capabilities(#mcp_server_capabilities{} = Caps) ->
+    %% Validate resources capability
+    case validate_resources_capability(Caps#mcp_server_capabilities.resources) of
+        ok -> ok;
+        _Err -> return_error(_Err)
+    end,
+
+    %% Validate tools capability
+    case validate_tools_capability(Caps#mcp_server_capabilities.tools) of
+        ok -> ok;
+        _Err -> return_error(_Err)
+    end,
+
+    %% Validate prompts capability
+    case validate_prompts_capability(Caps#mcp_server_capabilities.prompts) of
+        ok -> ok;
+        _Err -> return_error(_Err)
+    end,
+
+    %% Validate logging capability
+    case validate_logging_capability(Caps#mcp_server_capabilities.logging) of
+        ok -> ok;
+        _Err -> return_error(_Err)
+    end,
+
+    ok.
+
+%% @doc Validate client capabilities
+%% @returns ok | {error, Reason}
+-spec validate_client_capabilities(#mcp_client_capabilities{}) -> ok | {error, binary()}.
+validate_client_capabilities(#mcp_client_capabilities{} = Caps) ->
+    %% Validate tools capability
+    case Caps#mcp_client_capabilities.tools of
+        undefined -> ok;
+        #mcp_tools_capability{} = Tools ->
+            validate_tools_capability(Tools)
+    end,
+
+    %% Validate sampling capability
+    case Caps#mcp_client_capabilities.sampling of
+        undefined -> ok;
+        #mcp_sampling_capability{} = Sampling ->
+            validate_sampling_capability(Sampling)
+    end,
+
+    ok.
+
+%% @doc Negotiate capabilities between server and client
+%% @returns Negotiated server capabilities
+-spec negotiate_capabilities(#mcp_server_capabilities{}, #mcp_client_capabilities{}) ->
+    #mcp_server_capabilities{}.
+negotiate_capabilities(ServerCaps, ClientCaps) ->
+    %% Negotiate resources capability (client doesn't have resources capability)
+    _ResourcesCap = negotiate_resources_capability(
+        ServerCaps#mcp_server_capabilities.resources,
+        undefined
+    ),
+
+    %% Negotiate tools capability
+    _ToolsCap = negotiate_tools_capability(
+        ServerCaps#mcp_server_capabilities.tools,
+        ClientCaps#mcp_client_capabilities.tools
+    ),
+
+    %% Negotiate prompts capability (client doesn't have prompts capability)
+    _PromptsCap = negotiate_prompts_capability(
+        ServerCaps#mcp_server_capabilities.prompts,
+        undefined
+    ),
+
+    %% Keep server-only capabilities (logging, sampling, roots)
+    _LoggingCap = ServerCaps#mcp_server_capabilities.logging,
+    _SamplingCap = ServerCaps#mcp_server_capabilities.sampling,
+    _RootsCap = ServerCaps#mcp_server_capabilities.roots,
+
+    %% Create negotiated capabilities
+    ServerCaps#mcp_server_capabilities{
+        resources = _ResourcesCap,
+        tools = _ToolsCap,
+        prompts = _PromptsCap,
+        logging = ServerCaps#mcp_server_capabilities.logging,
+        sampling = ServerCaps#mcp_server_capabilities.sampling,
+        roots = ServerCaps#mcp_server_capabilities.roots
+    }.
+
+%%====================================================================
+%% Server Configuration Builders
+%%====================================================================
+
+%% @doc Build server configuration from basic info
+%% @returns Server configuration map
+-spec build_server_config(map()) -> server_config().
+build_server_config(ServerInfo) when is_map(ServerInfo) ->
+    build_server_config(ServerInfo, #{}).
+
+%% @doc Build server configuration with options
+%% @returns Server configuration map
+-spec build_server_config(map(), map()) -> server_config().
+build_server_config(ServerInfo, Options) when is_map(ServerInfo), is_map(Options) ->
+    %% Set default options
+    DefaultOptions = #{
+        session_timeout => 300000,  % 5 minutes
+        max_concurrent_requests => 100,
+        enable_metrics => true,
+        request_timeout => 30000,
+        enable_backpressure => true,
+        enable_cors => false,
+        allowed_origins => [],
+        rate_limit => 1000,
+        enable_distributed => false,
+        cluster_nodes => [],
+        enable_persistence => false,
+        experimental_features => #{}
+    },
+
+    MergedOptions = maps:merge(DefaultOptions, Options),
+
+    %% Create default capabilities
+    DefaultCapabilities = default_server_capabilities(),
+
+    %% Auto-enable capabilities based on available tools/resources/prompts
+    HasTools = maps:is_key(<<"tools">>, ServerInfo) orelse
+               lists:any(fun(T) -> T#mcp_tool.name =/= undefined end, []),
+    HasResources = maps:is_key(<<"resources">>, ServerInfo) orelse
+                  lists:any(fun(R) -> R#mcp_resource.uri =/= undefined end, []),
+    HasPrompts = maps:is_key(<<"prompts">>, ServerInfo) orelse
+                 lists:any(fun(P) -> P#mcp_prompt.name =/= undefined end, []),
+
+    EnabledCapabilities = DefaultCapabilities#mcp_server_capabilities{
+        tools = DefaultCapabilities#mcp_server_capabilities.tools#mcp_tools_capability{
+            listChanged = HasTools andalso maps:get(listChanged, MergedOptions, false)
+        },
+        resources = DefaultCapabilities#mcp_server_capabilities.resources#mcp_resources_capability{
+            subscribe = HasResources andalso maps:get(subscribe, MergedOptions, false),
+            listChanged = HasResources andalso maps:get(listChanged, MergedOptions, false)
+        },
+        prompts = DefaultCapabilities#mcp_server_capabilities.prompts#mcp_prompts_capability{
+            listChanged = HasPrompts andalso maps:get(listChanged, MergedOptions, false)
+        }
+    },
+
+    %% Build complete configuration
+    #{
+        server_info => ServerInfo,
+        capabilities => EnabledCapabilities,
+        options => MergedOptions,
+        resources => maps:get(resources, ServerInfo, []),
+        resource_templates => maps:get(resource_templates, ServerInfo, []),
+        tools => maps:get(tools, ServerInfo, []),
+        prompts => maps:get(prompts, ServerInfo, []),
+        session_timeout => maps:get(session_timeout, MergedOptions),
+        max_concurrent_requests => maps:get(max_concurrent_requests, MergedOptions),
+        enable_logging => maps:get(enable_logging, MergedOptions, true),
+        experimental_features => maps:get(experimental_features, MergedOptions, #{})
+    }.
+
+%%====================================================================
+%% Server State Constructors
+%%====================================================================
+
+%% @doc Create new server state with defaults
+%% @returns Default server state
+-spec new_server_state() -> server_state().
+new_server_state() ->
+    new_server_state(build_server_config(#{
+        name => <<"erlmcp-server">>,
+        version => <<"3.0.0">>
+    })).
+
+%% @doc Create new server state from configuration
+%% @returns Server state
+-spec new_server_state(server_config()) -> server_state().
+new_server_state(Config) when is_map(Config) ->
+    Now = erlang:system_time(millisecond),
+
+    #{
+        config => Config,
+        phase => initial,
+        active_sessions => maps:new(),
+        next_session_id => 1,
+        registered_tools => maps:new(),
+        registered_resources => maps:new(),
+        registered_prompts => maps:new(),
+        metrics => #{
+            started_at => Now,
+            requests_count => 0,
+            errors_count => 0,
+            active_sessions => 0
+        },
+        subscriptions => maps:new(),
+        requests => maps:new(),
+        last_activity => Now
+    }.
+
+%% @doc Check if server is ready to handle requests
+%% @returns boolean()
+-spec is_server_ready(server_state()) -> boolean().
+is_server_ready(State) when is_map(State) ->
+    case maps:get(phase, State) of
+        ready -> true;
+        _ -> false
+    end.
+
+%%====================================================================
+%% Tool Management Types
+%%====================================================================
+
+%% @doc Validate tool registration
+%% @returns ok | {error, Reason}
+-spec validate_tool_registration({#mcp_tool{}, function()}) -> ok | {error, binary()}.
+validate_tool_registration({#mcp_tool{name = Name} = Tool, Handler})
+  when is_function(Handler, 1) ->
+    %% Validate tool name
+    case validate_tool_name(Name) of
+        ok ->
+            %% Validate tool description
+            case validate_tool_description(Tool#mcp_tool.description) of
+                ok ->
+                    %% Validate input schema
+                    case validate_input_schema(Tool#mcp_tool.input_schema) of
+                        ok ->
+                            ok;
+                        Error -> Error
+                    end;
+                Error -> Error
+            end;
+        Error -> Error
+    end;
+validate_tool_registration(_) ->
+    {error, <<"Invalid tool registration: handler must be function/1">>}.
+
+%% @doc Build tool information for registration
+%% @returns Tool registration map
+-spec build_tool_info({#mcp_tool{}, function()}) ->
+    {binary(), #{}}.  %% {ToolName, ToolInfo}
+build_tool_info({#mcp_tool{name = Name} = Tool, Handler}) ->
+    Info = #{
+        tool => Tool,
+        handler => Handler,
+        metrics => #{
+            call_count => 0,
+            error_count => 0,
+            avg_duration => 0,
+            last_called => undefined
+        },
+        registered_at => erlang:system_time(millisecond)
+    },
+    {Name, Info}.
+
+%%====================================================================
+%% Resource Management Types
+%%====================================================================
+
+%% @doc Validate resource registration
+%% @returns ok | {error, Reason}
+-spec validate_resource_registration({#mcp_resource{}, function()}) ->
+    ok | {error, binary()}.
+validate_resource_registration({#mcp_resource{uri = Uri} = Resource, Handler})
+  when is_function(Handler, 0) ->
+    %% Validate resource URI
+    case validate_resource_uri(Uri) of
+        ok ->
+            %% Validate resource name
+            case validate_resource_name(Resource#mcp_resource.name) of
+                ok ->
+                    %% Validate mime type if present
+                    case Resource#mcp_resource.mime_type of
+                        undefined -> ok;
+                        MimeType -> validate_mime_type(MimeType)
+                    end;
+                Error -> Error
+            end;
+        Error -> Error
+    end;
+validate_resource_registration(_) ->
+    {error, <<"Invalid resource registration: handler must be function/0">>}.
+
+%% @doc Build resource information for registration
+%% @returns Resource registration map
+-spec build_resource_info({#mcp_resource{}, function()}) ->
+    {binary(), #{}}.  %% {ResourceURI, ResourceInfo}
+build_resource_info({#mcp_resource{uri = Uri} = Resource, Handler}) ->
+    Info = #{
+        resource => Resource,
+        handler => Handler,
+        cached_data => undefined,
+        cache_expires => undefined,
+        metrics => #{
+            access_count => 0,
+            error_count => 0,
+            cache_hit_count => 0,
+            last_accessed => undefined
+        },
+        registered_at => erlang:system_time(millisecond)
+    },
+    {Uri, Info}.
+
+%%====================================================================
+%% Prompt Management Types
+%%====================================================================
+
+%% @doc Validate prompt registration
+%% @returns ok | {error, Reason}
+-spec validate_prompt_registration({#mcp_prompt{}, function()}) ->
+    ok | {error, binary()}.
+validate_prompt_registration({#mcp_prompt{name = Name} = Prompt, Handler})
+  when is_function(Handler, 1) ->
+    %% Validate prompt name
+    case validate_prompt_name(Name) of
+        ok ->
+            %% Validate prompt description
+            case Prompt#mcp_prompt.description of
+                undefined -> ok;
+                Description -> validate_prompt_description(Description)
+            end,
+            %% Validate arguments
+            case validate_prompt_arguments(Prompt#mcp_prompt.arguments) of
+                ok ->
+                    ok;
+                Error -> Error
+            end;
+        Error -> Error
+    end;
+validate_prompt_registration(_) ->
+    {error, <<"Invalid prompt registration: handler must be function/1">>}.
+
+%% @doc Build prompt information for registration
+%% @returns Prompt registration map
+-spec build_prompt_info({#mcp_prompt{}, function()}) ->
+    {binary(), #{}}.  %% {PromptName, PromptInfo}
+build_prompt_info({#mcp_prompt{name = Name} = Prompt, Handler}) ->
+    Info = #{
+        prompt => Prompt,
+        handler => Handler,
+        metrics => #{
+            call_count => 0,
+            error_count => 0,
+            avg_duration => 0,
+            last_called => undefined
+        },
+        registered_at => erlang:system_time(millisecond)
+    },
+    {Name, Info}.
+
+%%====================================================================
+%% Error and Result Types
+%%====================================================================
+
+%% @doc Create server success result
+-spec server_result(term(), server_state()) -> server_result().
+server_result(Result, State) ->
+    {ok, Result, State}.
+
+%% @doc Create server success result without state
+-spec server_result(term()) -> server_result().
+server_result(Result) ->
+    {ok, Result}.
+
+%% @doc Create server result with success flag and state
+-spec server_result(boolean(), term(), server_state()) -> server_result().
+server_result(true, Result, State) ->
+    {ok, Result, State};
+server_result(false, Error, State) ->
+    {error, Error, State}.
+
+%% @doc Create server error result
+-spec server_error(integer(), binary(), server_state()) -> server_result().
+server_error(Code, Message, State) ->
+    Error = #{
+        code => Code,
+        message => Message,
+        timestamp => erlang:system_time(millisecond),
+        module => erlmcp_server_types,
+        line => ?LINE
+    },
+    {error, Error, State}.
+
+%% @doc Create server error result without state
+-spec server_error(integer(), binary()) -> server_result().
+server_error(Code, Message) ->
+    Error = #{
+        code => Code,
+        message => Message,
+        timestamp => erlang:system_time(millisecond),
+        module => erlmcp_server_types,
+        line => ?LINE
+    },
+    {error, Error}.
+
+%% @doc Check if result is successful
+-spec is_server_success(server_result()) -> boolean().
+is_server_success({ok, _}) -> true;
+is_server_success({ok, _, _}) -> true;
+is_server_success(_) -> false.
+
+%%====================================================================
+%% Session Management Types
+%%====================================================================
+
+%% @doc Create session information
+-spec create_session_info(client_info(), #mcp_client_capabilities{}) -> session_info().
+create_session_info(ClientInfo, ClientCaps) ->
+    Now = erlang:system_time(millisecond),
+    SessionId = generate_session_id(),
+
+    #{
+        id => SessionId,
+        client_info => ClientInfo,
+        capabilities => ClientCaps,
+        protocol_version => maps:get(<<"protocolVersion">>, ClientInfo, ?MCP_VERSION),
+        created_at => Now,
+        last_activity => Now,
+        request_count => 0,
+        subscription_list => []
+    }.
+
+%% @doc Update session activity timestamp
+-spec update_session_activity(session_info(), integer()) -> session_info().
+update_session_activity(SessionInfo, Timestamp) ->
+    SessionInfo#{
+        last_activity => Timestamp,
+        request_count => maps:get(request_count, SessionInfo, 0) + 1
+    }.
+
+%% @doc Check if session is valid
+-spec is_session_valid(session_info()) -> boolean().
+is_session_valid(SessionInfo) ->
+    Now = erlang:system_time(millisecond),
+    LastActivity = maps:get(last_activity, SessionInfo),
+    SessionTimeout = 300000,  % 5 minutes default
+
+    Now - LastActivity =< SessionTimeout.
+
+%%====================================================================
+%% Internal Helper Functions
+%%====================================================================
+
+%% @doc Generate session ID
+generate_session_id() ->
+    Timestamp = erlang:system_time(microsecond),
+    Random = crypto:strong_rand_bytes(8),
+    iolist_to_binary(io_lib:format("mcp-session-~.16b-~s", [Timestamp, Random])).
+
+%% @doc Validate tool name
+validate_tool_name(Name) when is_binary(Name) ->
+    case byte_size(Name) of
+        0 -> {error, <<"Tool name cannot be empty">>};
+        Size when Size > 100 -> {error, <<"Tool name too long (max 100 chars)">>};
+        _ -> ok
+    end;
+validate_tool_name(_) ->
+    {error, <<"Tool name must be binary">>}.
+
+%% @doc Validate tool description
+validate_tool_description(Desc) when is_binary(Desc) ->
+    case byte_size(Desc) of
+        Size when Size > 10000 -> {error, <<"Tool description too long (max 10000 chars)">>};
+        _ -> ok
+    end;
+validate_tool_description(_) ->
+    {error, <<"Tool description must be binary">>}.
+
+%% @doc Validate input schema
+validate_input_schema(Schema) when is_map(Schema) ->
+    %% Basic schema validation - check for required fields
+    case maps:is_key(<<"type">>, Schema) of
+        true -> ok;
+        false -> {error, <<"Input schema must have 'type' field">>}
+    end;
+validate_input_schema(undefined) ->
+    {error, <<"Input schema is required">>}.
+
+%% @doc Validate resource URI
+validate_resource_uri(Uri) when is_binary(Uri) ->
+    case byte_size(Uri) of
+        0 -> {error, <<"Resource URI cannot be empty">>};
+        Size when Size > 2048 -> {error, <<"Resource URI too long (max 2048 chars)">>};
+        _ ->
+            %% Basic URI validation
+            case binary:match(Uri, <<"://">>) of
+                nomatch -> {error, <<"Resource URI must include scheme (e.g., 'https://')">>};
+                _ -> ok
+            end
+    end;
+validate_resource_uri(_) ->
+    {error, <<"Resource URI must be binary">>}.
+
+%% @doc Validate resource name
+validate_resource_name(Name) when is_binary(Name) ->
+    case byte_size(Name) of
+        0 -> {error, <<"Resource name cannot be empty">>};
+        Size when Size > 500 -> {error, <<"Resource name too long (max 500 chars)">>};
+        _ -> ok
+    end;
+validate_resource_name(_) ->
+    {error, <<"Resource name must be binary">>}.
+
+%% @doc Validate mime type
+validate_mime_type(MimeType) when is_binary(MimeType) ->
+    case byte_size(MimeType) of
+        Size when Size > 100 -> {error, <<"MIME type too long (max 100 chars)">>};
+        _ -> ok
+    end;
+validate_mime_type(_) ->
+    {error, <<"MIME type must be binary">>}.
+
+%% @doc Validate prompt name
+validate_prompt_name(Name) when is_binary(Name) ->
+    case byte_size(Name) of
+        0 -> {error, <<"Prompt name cannot be empty">>};
+        Size when Size > 100 -> {error, <<"Prompt name too long (max 100 chars)">>};
+        _ -> ok
+    end;
+validate_prompt_name(_) ->
+    {error, <<"Prompt name must be binary">>}.
+
+%% @doc Validate prompt description
+validate_prompt_description(Desc) when is_binary(Desc) ->
+    case byte_size(Desc) of
+        Size when Size > 5000 -> {error, <<"Prompt description too long (max 5000 chars)">>};
+        _ -> ok
+    end;
+validate_prompt_description(_) ->
+    {error, <<"Prompt description must be binary">>}.
+
+%% @doc Validate prompt arguments
+validate_prompt_arguments(Args) when is_list(Args) ->
+    lists:foldl(fun(Arg, Acc) ->
+        case validate_prompt_argument(Arg) of
+            ok -> Acc;
+            Error -> Error
+        end
+    end, ok, Args);
+validate_prompt_arguments(undefined) ->
+    ok;
+validate_prompt_arguments(_) ->
+    {error, <<"Prompt arguments must be a list">>}.
+
+%% @doc Validate prompt argument
+validate_prompt_argument(#mcp_prompt_argument{name = Name, required = Required}) ->
+    %% Validate argument name
+    case validate_prompt_name(Name) of
+        ok ->
+            case Required of
+                true -> ok;
+                false -> ok
+            end;
+        Error -> Error
+    end.
+
+%% @doc Validate resources capability
+validate_resources_capability(#mcp_resources_capability{} = _Cap) ->
+    ok.
+
+%% @doc Validate tools capability
+validate_tools_capability(#mcp_tools_capability{} = _Cap) ->
+    ok.
+
+%% @doc Validate prompts capability
+validate_prompts_capability(#mcp_prompts_capability{} = _Cap) ->
+    ok.
+
+%% @doc Validate logging capability
+validate_logging_capability(#mcp_logging_capability{} = _Cap) ->
+    ok.
+
+%% @doc Validate sampling capability
+validate_sampling_capability(#mcp_sampling_capability{} = _Cap) ->
+    ok.
+
+%% @doc Negotiate resources capability
+negotiate_resources_capability(_ServerCap, undefined) ->
+    #mcp_resources_capability{subscribe = false, listChanged = false};
+negotiate_resources_capability(ServerCap, _ClientCap) ->
+    ServerCap.
+
+%% @doc Negotiate tools capability
+negotiate_tools_capability(_ServerCap, undefined) ->
+    #mcp_tools_capability{listChanged = false};
+negotiate_tools_capability(ServerCap, _ClientCap) ->
+    ServerCap.
+
+%% @doc Negotiate prompts capability
+negotiate_prompts_capability(_ServerCap, undefined) ->
+    #mcp_prompts_capability{listChanged = false};
+negotiate_prompts_capability(ServerCap, _ClientCap) ->
+    ServerCap.
+
+%% @doc Format error
+return_error(Message) when is_binary(Message) ->
+    Message;
+return_error({error, Message}) ->
+    Message;
+return_error(Other) ->
+    iolist_to_binary(io_lib:format("~p", [Other])).

@@ -18,13 +18,14 @@
 %% It is a Cowboy WebSocket handler with its own init/2 interface
 
 %% WebSocket-specific exports (NOT erlmcp_transport_behavior callbacks)
--export([init/2, init/3, send/2, close/1]).
+-export([init/2, send/2, close/1]).
 %% WebSocket handler exports
 -export([init/3, websocket_handle/2, websocket_info/2]).  % Cowboy WebSocket handler callback
 %% Internal/test exports
 -export([validate_utf8/1, validate_message_size/1, process_messages/2, generate_session_id/0,
          check_backpressure/1, update_buffer_usage/3, resume_reading/1, handle_ping_frame/2,
-         handle_pong_frame/2, handle_close_frame/3]).
+         handle_pong_frame/2, handle_close_frame/3, negotiate_compression/1,
+         compress_frame/2, decompress_frame/2, test_state/0]).
 
 %% Configuration constants
 -define(PING_INTERVAL, 30000). %% 30 seconds
@@ -43,6 +44,7 @@
 -define(WS_CLOSE_UNSUPPORTED_DATA, 1003).
 -define(WS_CLOSE_MESSAGE_TOO_BIG, 1009).
 -define(WS_CLOSE_INTERNAL_ERROR, 1011).
+-define(WS_CLOSE_EXTENSION_ERROR, 1010).
 %% Backpressure states
 -define(BACKPRESSURE_INACTIVE, inactive).
 -define(BACKPRESSURE_ACTIVE, active).
@@ -65,6 +67,14 @@
          backpressure_timer :: reference() | undefined,
          messages_pending :: non_neg_integer(),
          bytes_buffered :: non_neg_integer(),
+         %% Compression (RFC 7692 permessage-deflate)
+         compression_enabled = false :: boolean(),
+         compress_zstream :: zstream() | undefined,
+         decompress_zstream :: zstream() | undefined,
+         server_max_window_bits = 15 :: integer(),
+         client_max_window_bits = 15 :: integer(),
+         server_no_context_takeover = false :: boolean(),
+         client_no_context_takeover = false :: boolean(),
          %% Statistics
          messages_received = 0 :: non_neg_integer(),
          messages_sent = 0 :: non_neg_integer(),
@@ -73,6 +83,8 @@
          ping_count = 0 :: non_neg_integer(),
          pong_count = 0 :: non_neg_integer(),
          connection_start_time :: integer()}).
+
+-type zstream() :: term(). %% Opaque zlib stream reference
 
 %%====================================================================
 %% Transport Behavior Implementation
@@ -208,6 +220,7 @@ init(Req, [TransportId, Config], _Opts) ->
     StrictDelimiterCheck = maps:get(strict_delimiter_check, Config, true),
     ValidateUtf8 = maps:get(validate_utf8, Config, true),
     FrameBufferSize = maps:get(frame_buffer_size, Config, ?DEFAULT_FRAME_BUFFER_SIZE),
+    EnableCompression = maps:get(compression_enabled, Config, true),
     SessionId = generate_session_id(),
     ConnectionStartTime = erlang:system_time(millisecond),
 
@@ -215,11 +228,11 @@ init(Req, [TransportId, Config], _Opts) ->
                                   #{<<"transport_id">> => TransportId,
                                     <<"session_id">> => SessionId,
                                     <<"max_message_size">> => MaxMessageSize,
-                                    <<"frame_buffer_size">> => FrameBufferSize}),
+                                    <<"frame_buffer_size">> => FrameBufferSize,
+                                    <<"compression_enabled">> => EnableCompression}),
 
     %% Collect connection info
     PeerAddr = cowboy_req:peer(Req),
-    % Note: cowboy_req:certificates/1 not available in this version
     Certificates = undefined,
     ConnectionInfo =
         #{peer => PeerAddr,
@@ -227,6 +240,44 @@ init(Req, [TransportId, Config], _Opts) ->
           path => cowboy_req:path(Req),
           qs => cowboy_req:qs(Req),
           headers => cowboy_req:headers(Req)},
+
+    %% Negotiate permessage-deflate compression (RFC 7692)
+    CompressionState =
+        case EnableCompression of
+            true ->
+                negotiate_compression(ConnectionInfo);
+            false ->
+                #{enabled => false}
+        end,
+
+    %% Initialize compression streams if negotiated
+    {CompressZ, DecompressZ, ServerMaxWin, ClientMaxWin, ServerNoCtx, ClientNoCtx} =
+        case maps:get(enabled, CompressionState, false) of
+            true ->
+                ServerWin = maps:get(server_max_window_bits, CompressionState, 15),
+                ClientWin = maps:get(client_max_window_bits, CompressionState, 15),
+                ServerNoTakeover = maps:get(server_no_context_takeover, CompressionState, false),
+                ClientNoTakeover = maps:get(client_no_context_takeover, CompressionState, false),
+
+                %% Initialize zlib streams with negotiated parameters
+                CompressStream = zlib:open(),
+                DecompressStream = zlib:open(),
+
+                %% Initialize compression stream with window bits (negative value for raw DEFLATE)
+                zlib:deflateInit(CompressStream, default, -ServerWin),
+
+                %% Initialize decompression stream with window bits (negative value for raw DEFLATE)
+                zlib:inflateInit(DecompressStream, -ClientWin),
+
+                logger:info("WebSocket permessage-deflate negotiated: "
+                           "server_max_window_bits=~p, client_max_window_bits=~p, "
+                           "server_no_context_takeover=~p, client_no_context_takeover=~p",
+                           [ServerWin, ClientWin, ServerNoTakeover, ClientNoTakeover]),
+
+                {CompressStream, DecompressStream, ServerWin, ClientWin, ServerNoTakeover, ClientNoTakeover};
+            false ->
+                {undefined, undefined, 15, 15, false, false}
+        end,
 
     %% Start ping timer for keepalive
     PingTimer = erlang:send_after(?PING_INTERVAL, self(), send_ping),
@@ -249,18 +300,43 @@ init(Req, [TransportId, Config], _Opts) ->
             backpressure_timer = undefined,
             messages_pending = 0,
             bytes_buffered = 0,
+            compression_enabled = maps:get(enabled, CompressionState, false),
+            compress_zstream = CompressZ,
+            decompress_zstream = DecompressZ,
+            server_max_window_bits = ServerMaxWin,
+            client_max_window_bits = ClientMaxWin,
+            server_no_context_takeover = ServerNoCtx,
+            client_no_context_takeover = ClientNoCtx,
             connection_start_time = ConnectionStartTime},
      #{idle_timeout => ?IDLE_TIMEOUT}}.
 
 websocket_handle({text, Data}, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.handle_text_message">>),
     try
-        DataSize = byte_size(Data),
+        %% Decompress if compression is enabled
+        DecompressedData =
+            case State#state.compression_enabled of
+                true ->
+                    case decompress_frame(Data, State) of
+                        {ok, Decompressed} ->
+                            Decompressed;
+                        {error, _Reason} ->
+                            logger:warning("Failed to decompress WebSocket frame"),
+                            close_with_error(compression_error, State),
+                            Data
+                    end;
+                false ->
+                    Data
+            end,
+
+        DataSize = byte_size(DecompressedData),
         erlmcp_tracing:set_attributes(SpanCtx,
                                       #{<<"data_size">> => DataSize,
                                         <<"session_id">> => State#state.session_id,
                                         <<"backpressure_state">> =>
-                                            State#state.backpressure_state}),
+                                            State#state.backpressure_state,
+                                        <<"compressed">> =>
+                                            State#state.compression_enabled}),
 
         %% Update statistics
         NewMessagesReceived = State#state.messages_received + 1,
@@ -270,12 +346,12 @@ websocket_handle({text, Data}, State) ->
         case check_backpressure(State) of
             {ok, NewState1} ->
                 %% Check message size limit first
-                case validate_message_size(Data) of
+                case validate_message_size(DecompressedData) of
                     {ok, _} ->
                         %% Update buffer usage tracking
                         NewState2 = update_buffer_usage(NewState1, DataSize, add),
                         %% Handle fragmented or complete messages
-                        case handle_text_frame(Data, NewState2) of
+                        case handle_text_frame(DecompressedData, NewState2) of
                             {ok, NewState3} ->
                                 FinalState =
                                     NewState3#state{messages_received = NewMessagesReceived,
@@ -283,15 +359,15 @@ websocket_handle({text, Data}, State) ->
                                 erlmcp_tracing:set_status(SpanCtx, ok),
                                 {ok, FinalState};
                             {error, Reason, NewState3} ->
-                                erlmcp_tracing:record_error_details(SpanCtx, Reason, Data),
+                                erlmcp_tracing:record_error_details(SpanCtx, Reason, DecompressedData),
                                 close_with_error(Reason, NewState3)
                         end;
                     {error, too_big} ->
-                        erlmcp_tracing:record_error_details(SpanCtx, message_too_big, Data),
+                        erlmcp_tracing:record_error_details(SpanCtx, message_too_big, DecompressedData),
                         close_with_error(message_too_big, NewState1)
                 end;
             {error, backpressure_active, NewState1} ->
-                erlmcp_tracing:record_error_details(SpanCtx, backpressure_active, Data),
+                erlmcp_tracing:record_error_details(SpanCtx, backpressure_active, DecompressedData),
                 close_with_error(backpressure_failed, NewState1)
         end
     catch
@@ -301,12 +377,71 @@ websocket_handle({text, Data}, State) ->
     after
         erlmcp_tracing:end_span(SpanCtx)
     end;
-websocket_handle({binary, _Data}, State) ->
-    SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.handle_binary">>),
-    erlmcp_tracing:set_attributes(SpanCtx, #{<<"session_id">> => State#state.session_id}),
-    erlmcp_tracing:record_error_details(SpanCtx, binary_frame_not_supported, <<>>),
-    erlmcp_tracing:end_span(SpanCtx),
-    {reply, {close, ?WS_CLOSE_UNSUPPORTED_DATA, <<"Binary frames not supported">>}, State};
+websocket_handle({binary, Data}, State) ->
+    SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.handle_binary_message">>),
+    try
+        %% Decompress if compression is enabled
+        DecompressedData =
+            case State#state.compression_enabled of
+                true ->
+                    case decompress_frame(Data, State) of
+                        {ok, Decompressed} ->
+                            Decompressed;
+                        {error, _Reason} ->
+                            logger:warning("Failed to decompress binary WebSocket frame"),
+                            close_with_error(compression_error, State),
+                            Data
+                    end;
+                false ->
+                    Data
+            end,
+
+        DataSize = byte_size(DecompressedData),
+        erlmcp_tracing:set_attributes(SpanCtx,
+                                      #{<<"data_size">> => DataSize,
+                                        <<"session_id">> => State#state.session_id,
+                                        <<"compressed">> =>
+                                            State#state.compression_enabled}),
+
+        %% Update statistics
+        NewMessagesReceived = State#state.messages_received + 1,
+        NewBytesReceived = State#state.bytes_received + DataSize,
+
+        %% Check for backpressure conditions
+        case check_backpressure(State) of
+            {ok, NewState1} ->
+                %% Check message size limit first
+                case validate_message_size(DecompressedData) of
+                    {ok, _} ->
+                        %% Update buffer usage tracking
+                        NewState2 = update_buffer_usage(NewState1, DataSize, add),
+                        %% Handle binary frame with fragmentation support
+                        case handle_binary_frame(DecompressedData, NewState2) of
+                            {ok, NewState3} ->
+                                FinalState =
+                                    NewState3#state{messages_received = NewMessagesReceived,
+                                                    bytes_received = NewBytesReceived},
+                                erlmcp_tracing:set_status(SpanCtx, ok),
+                                {ok, FinalState};
+                            {error, Reason, NewState3} ->
+                                erlmcp_tracing:record_error_details(SpanCtx, Reason, DecompressedData),
+                                close_with_error(Reason, NewState3)
+                        end;
+                    {error, too_big} ->
+                        erlmcp_tracing:record_error_details(SpanCtx, message_too_big, DecompressedData),
+                        close_with_error(message_too_big, NewState1)
+                end;
+            {error, backpressure_active, NewState1} ->
+                erlmcp_tracing:record_error_details(SpanCtx, backpressure_active, DecompressedData),
+                close_with_error(backpressure_failed, NewState1)
+        end
+    catch
+        Class:CaughtReason:Stacktrace ->
+            erlmcp_tracing:record_exception(SpanCtx, Class, CaughtReason, Stacktrace),
+            {reply, {close, ?WS_CLOSE_PROTOCOL_ERROR, <<"Internal error">>}, State}
+    after
+        erlmcp_tracing:end_span(SpanCtx)
+    end;
 %% Handle ping frames (RFC 6455)
 websocket_handle(ping, State) ->
     handle_ping_frame(<<>>, State);
@@ -337,8 +472,31 @@ websocket_handle(_Frame, State) ->
 websocket_info({send_frame, Data}, State) ->
     SpanCtx = erlmcp_tracing:start_span(<<"transport_ws.send_frame">>),
     try
+        %% Compress if compression is enabled
+        CompressedData =
+            case State#state.compression_enabled of
+                true ->
+                    case compress_frame(Data, State) of
+                        {ok, Compressed} ->
+                            Compressed;
+                        {error, _Reason} ->
+                            logger:warning("Failed to compress WebSocket frame, sending uncompressed"),
+                            Data
+                    end;
+                false ->
+                    Data
+            end,
+
         DataSize = byte_size(Data),
-        erlmcp_tracing:set_attributes(SpanCtx, #{<<"data_size">> => DataSize}),
+        CompressedSize = byte_size(CompressedData),
+        erlmcp_tracing:set_attributes(SpanCtx,
+                                     #{<<"data_size">> => DataSize,
+                                       <<"compressed_size">> => CompressedSize,
+                                       <<"compression_ratio">> =>
+                                           case DataSize > 0 of
+                                               true -> CompressedSize / DataSize;
+                                               false -> 1.0
+                                           end}),
 
         %% Update statistics
         NewMessagesSent = State#state.messages_sent + 1,
@@ -352,7 +510,7 @@ websocket_info({send_frame, Data}, State) ->
 
         FinalState = ResumeState#state{messages_sent = NewMessagesSent, bytes_sent = NewBytesSent},
 
-        {reply, {text, Data}, FinalState}
+        {reply, {text, CompressedData}, FinalState}
     catch
         Class:Reason:Stacktrace ->
             erlmcp_tracing:record_exception(SpanCtx, Class, Reason, Stacktrace),
@@ -388,6 +546,19 @@ websocket_info(close, State) ->
         PingTimerRef ->
             erlang:cancel_timer(PingTimerRef)
     end,
+    %% Close zlib streams if compression was enabled
+    case State#state.compress_zstream of
+        undefined ->
+            ok;
+        CompressZ ->
+            zlib:close(CompressZ)
+    end,
+    case State#state.decompress_zstream of
+        undefined ->
+            ok;
+        DecompressZ ->
+            zlib:close(DecompressZ)
+    end,
     {stop, State};
 websocket_info(_Info, State) ->
     {ok, State}.
@@ -407,6 +578,59 @@ handle_text_frame(Data, State) ->
         Buffer ->
             %% Continue fragment reassembly
             reassemble_fragment(<<Buffer/binary, Data/binary>>, State)
+    end.
+
+%% Handle binary frame with fragmentation support
+-spec handle_binary_frame(binary(), #state{}) -> {ok, #state{}} | {error, atom(), #state{}}.
+handle_binary_frame(Data, State) ->
+    %% Check if this is a fragment continuation
+    case State#state.fragment_buffer of
+        undefined ->
+            %% New binary message
+            process_binary_message(Data, State);
+        Buffer ->
+            %% Continue binary fragment reassembly
+            reassemble_binary_fragment(<<Buffer/binary, Data/binary>>, State)
+    end.
+
+%% Process a complete binary message
+-spec process_binary_message(binary(), #state{}) -> {ok, #state{}} | {error, atom(), #state{}}.
+process_binary_message(Data, State) ->
+    %% Binary frames are assumed to be complete JSON-RPC messages
+    %% without newline delimiters (WebSocket handles framing)
+    case erlmcp_json_native:decode(Data) of
+        {error, Reason} ->
+            logger:warning("JSON parse error in WebSocket binary message: ~p, reason: ~p",
+                           [Data, Reason]),
+            {error, parse_error, State};
+        ParsedMessage when is_map(ParsedMessage) ->
+            %% Route to registry
+            State#state.registry_pid
+            ! {transport_data, State#state.transport_id, ParsedMessage},
+            {ok, State};
+        _ ->
+            logger:warning("Invalid JSON in WebSocket binary message: ~p", [Data]),
+            {error, parse_error, State}
+    end.
+
+%% Reassemble binary fragmented message
+-spec reassemble_binary_fragment(binary(), #state{}) -> {ok, #state{}} | {error, atom(), #state{}}.
+reassemble_binary_fragment(BufferedData, State) ->
+    %% Check if buffered data exceeds max message size
+    case validate_message_size(BufferedData) of
+        {error, too_big} ->
+            logger:error("Binary fragment exceeds maximum size"),
+            {error, message_too_big, State#state{fragment_buffer = undefined}};
+        {ok, _} ->
+            case check_fragment_timeout(State) of
+                ok ->
+                    %% For binary frames, we assume the message is complete
+                    %% when we receive a new frame (WebSocket provides framing)
+                    process_binary_message(BufferedData, State#state{fragment_buffer = undefined});
+                {error, timeout} ->
+                    logger:error("WebSocket binary fragment timeout after ~pms", [?FRAGMENT_TIMEOUT]),
+                    {error, fragment_timeout, State#state{fragment_buffer = undefined}}
+            end
     end.
 
 %% Process potentially multiple newline-delimited messages
@@ -643,6 +867,34 @@ validate_utf8(Data) ->
 %% Internal Functions - Utilities
 %%====================================================================
 
+%% @doc Create a test state for unit testing
+-spec test_state() -> #state{}.
+test_state() ->
+    #state{transport_id = <<"test_transport">>,
+           registry_pid = self(),
+           connection_info = #{},
+           session_id = <<"test_session">>,
+           ping_timer = undefined,
+           fragment_buffer = undefined,
+           fragment_start_time = undefined,
+           max_message_size = ?DEFAULT_MAX_MESSAGE_SIZE,
+           strict_delimiter_check = true,
+           validate_utf8 = true,
+           frame_buffer_size = ?DEFAULT_FRAME_BUFFER_SIZE,
+           frame_buffer_used = 0,
+           backpressure_state = ?BACKPRESSURE_INACTIVE,
+           backpressure_timer = undefined,
+           messages_pending = 0,
+           bytes_buffered = 0,
+           compression_enabled = false,
+           compress_zstream = undefined,
+           decompress_zstream = undefined,
+           server_max_window_bits = 15,
+           client_max_window_bits = 15,
+           server_no_context_takeover = false,
+           client_no_context_takeover = false,
+           connection_start_time = erlang:system_time(millisecond)}.
+
 %% Generate unique session ID
 -spec generate_session_id() -> binary().
 generate_session_id() ->
@@ -678,8 +930,152 @@ close_with_error(fragment_timeout, State) ->
     {reply, {close, ?WS_CLOSE_PROTOCOL_ERROR, <<"Fragment reassembly timeout">>}, State};
 close_with_error(backpressure_failed, State) ->
     {reply, {close, ?WS_CLOSE_GOING_AWAY, <<"Backpressure limit exceeded">>}, State};
+close_with_error(compression_error, State) ->
+    {reply, {close, ?WS_CLOSE_EXTENSION_ERROR, <<"Compression error">>}, State};
 close_with_error(_Reason, State) ->
     {reply, {close, ?WS_CLOSE_INTERNAL_ERROR, <<"Internal error">>}, State}.
+
+%%====================================================================
+%% Compression Functions (RFC 7692 permessage-deflate)
+%%====================================================================
+
+%% @doc Negotiate permessage-deflate compression parameters
+%% Based on RFC 7692: Compression Extensions for WebSocket
+-spec negotiate_compression(map()) -> map().
+negotiate_compression(ConnectionInfo) ->
+    Headers = maps:get(headers, ConnectionInfo, #{}),
+
+    %% Check if client offers permessage-deflate
+    case cowboy_req:header(<<"sec-websocket-extensions">>, Headers, undefined) of
+        undefined ->
+            #{enabled => false};
+        ExtensionsHeader ->
+            %% Parse Sec-WebSocket-Extensions header
+            Extensions = parse_extensions_header(ExtensionsHeader),
+
+            %% Look for permessage-deflate offer
+            case lists:keyfind(<<"permessage-deflate">>, 1, Extensions) of
+                false ->
+                    #{enabled => false};
+                {_, Params} ->
+                    %% Negotiate parameters
+                    ServerMaxWin = negotiate_param(<<"server_max_window_bits">>, Params, 15),
+                    ClientMaxWin = negotiate_param(<<"client_max_window_bits">>, Params, 15),
+                    ServerNoCtx = lists:member(<<"server_no_context_takeover">>, Params),
+                    ClientNoCtx = lists:member(<<"client_no_context_takeover">>, Params),
+
+                    #{enabled => true,
+                      server_max_window_bits => ServerMaxWin,
+                      client_max_window_bits => ClientMaxWin,
+                      server_no_context_takeover => ServerNoCtx,
+                      client_no_context_takeover => ClientNoCtx,
+                      compress_buffer_size => 4096,
+                      decompress_buffer_size => 4096}
+            end
+    end.
+
+%% @doc Parse Sec-WebSocket-Extensions header
+%% Format: "permessage-deflate; server_max_window_bits=15; client_no_context_takeover"
+-spec parse_extensions_header(binary()) -> [{binary(), [binary()]}].
+parse_extensions_header(Header) ->
+    %% Split by comma to get multiple extensions
+    ExtensionsList = binary:split(Header, <<",">>, [global, trim_all]),
+
+    %% Parse each extension
+    lists:map(fun(Extension) ->
+        %% Split extension name and parameters by semicolon
+        Parts = binary:split(Extension, <<";">>, [global, trim_all]),
+        [Name | ParamParts] = Parts,
+
+        %% Extract parameter names (ignore values for now, we use defaults)
+        Params = lists:map(fun(Param) ->
+            Trimmed = binary:trim(Param),
+            case binary:split(Trimmed, <<"=">>) of
+                [ParamName] -> ParamName;
+                [ParamName, _] -> ParamName
+            end
+        end, ParamParts),
+
+        {Name, Params}
+    end, ExtensionsList).
+
+%% @doc Negotiate a compression parameter value
+-spec negotiate_param(binary(), [binary()], integer()) -> integer().
+negotiate_param(ParamName, Params, Default) ->
+    case lists:member(ParamName, Params) of
+        true ->
+            %% Parameter offered by client, use default (highest value)
+            Default;
+        false ->
+            Default
+    end.
+
+%% @doc Compress a WebSocket frame using permessage-deflate (RFC 7692)
+%% Uses DEFLATE compression with context takeover based on negotiation
+-spec compress_frame(binary(), #state{}) -> {ok, binary()} | {error, term()}.
+compress_frame(Data, State) ->
+    Z = State#state.compress_zstream,
+    ServerNoCtx = State#state.server_no_context_takeover,
+
+    try
+        %% For permessage-deflate, we need to reset compression state for each message
+        %% if server_no_context_takeover is true, otherwise we continue using context
+        case ServerNoCtx of
+            true ->
+                %% Reset compression for each message
+                zlib:deflateEnd(Z),
+                zlib:deflateInit(Z, default, -State#state.server_max_window_bits);
+            false ->
+                %% Reset compression context (per-message compression always resets)
+                zlib:deflateEnd(Z),
+                zlib:deflateInit(Z, default, -State#state.server_max_window_bits)
+        end,
+
+        %% Compress the data with sync finish (per-message compression)
+        Compressed = zlib:deflate(Z, Data, finish),
+
+        %% Reset for next message
+        zlib:deflateEnd(Z),
+        zlib:deflateInit(Z, default, -State#state.server_max_window_bits),
+
+        {ok, Compressed}
+    catch
+        Class:Reason:Stacktrace ->
+            logger:error("Compression error: ~p:~p~nStack: ~p", [Class, Reason, Stacktrace]),
+            {error, {Class, Reason}}
+    end.
+
+%% @doc Decompress a WebSocket frame using permessage-deflate (RFC 7692)
+-spec decompress_frame(binary(), #state{}) -> {ok, binary()} | {error, term()}.
+decompress_frame(Data, State) ->
+    Z = State#state.decompress_zstream,
+    ClientNoCtx = State#state.client_no_context_takeover,
+
+    try
+        %% Reset decompression context if client_no_context_takeover is set
+        case ClientNoCtx of
+            true ->
+                zlib:inflateEnd(Z),
+                zlib:inflateInit(Z, -State#state.client_max_window_bits);
+            false ->
+                %% Reset for per-message decompression
+                zlib:inflateEnd(Z),
+                zlib:inflateInit(Z, -State#state.client_max_window_bits)
+        end,
+
+        %% Decompress the data
+        Decompressed = zlib:inflate(Z, Data),
+
+        %% Reinitialize for next message (per-message compression)
+        zlib:inflateEnd(Z),
+        zlib:inflateInit(Z, -State#state.client_max_window_bits),
+
+        {ok, Decompressed}
+    catch
+        Class:Reason:Stacktrace ->
+            logger:error("Decompression error: ~p:~p~nStack: ~p", [Class, Reason, Stacktrace]),
+            {error, {Class, Reason}}
+    end.
 
 %%====================================================================
 %% Backpressure Management Functions

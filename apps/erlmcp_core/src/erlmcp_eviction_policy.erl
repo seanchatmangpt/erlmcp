@@ -405,12 +405,12 @@ evict_random(Table, Count, State) ->
     Keys = ets:select(Table, [{{'$1', '_'}, [], ['$1']}]),
 
     ToEvict = case length(Keys) of
-                  N when N > Count ->
+                  _N when _N > Count ->
                       %% Select random keys
                       lists:sublist(lists:sort(fun(_, _) ->
                                                        rand:uniform() < rand:uniform()
                                                end, Keys), Count);
-                  N ->
+                  _N ->
                       Keys
               end,
 

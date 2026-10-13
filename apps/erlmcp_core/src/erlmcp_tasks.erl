@@ -18,6 +18,7 @@
 -module(erlmcp_tasks).
 
 -behaviour(gen_server).
+-compile({nowarn_unused_function, [list_tasks/1]}).
 
 %% Client API
 -export([start_link/0]).
@@ -52,10 +53,10 @@
 %%%===================================================================
 
 -type task_id() :: binary().
--type task_status() :: pending | processing | completed | failed | cancelled.
+%% -type task_status() :: pending | processing | completed | failed | cancelled.  % Internal type, unused
 -type task() :: #mcp_task{}.
 -type task_list_result() :: #{tasks := [map()], cursor => binary()}.
--type update_function() :: fun((map()) -> map()).
+%% -type update_function() :: fun((map()) -> map()).  % Internal type, unused
 
 -record(state, {task_count = 0 :: non_neg_integer(), pending_cleanup = [] :: [task_id()]}).
 
@@ -171,7 +172,7 @@ update_progress(_ClientPid, TaskId, Update) when is_map(Update) ->
     case maps:get(<<"progressToken">>, Update, undefined) of
         undefined ->
             {error, ?MCP_MSG_INVALID_PROGRESS_TOKEN};
-        Token ->
+        _Token ->
             _Progress = maps:get(<<"progress">>, Update, 0.0),
             Total = maps:get(<<"total">>, Update, undefined),
             set_task_progress(TaskId, {_Progress, Total})

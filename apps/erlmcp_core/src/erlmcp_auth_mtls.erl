@@ -38,6 +38,7 @@
 %%% @end
 %%%-------------------------------------------------------------------
 -module(erlmcp_auth_mtls).
+-compile({no_auto_import,[list_to_existing_atom/1]}).
 
 %% Include ASN.1 records for certificate parsing
 -include_lib("public_key/include/public_key.hrl").
@@ -50,6 +51,13 @@
          extract_sans/1,
          validate_expiration/1,
          build_cert_chain/2]).
+
+%% CA store API
+-export([load_ca_cert/2,
+         find_issuer_by_subject/1,
+         init_ca_store/0]).
+
+-define(CA_CERT_TABLE, erlmcp_ca_cert_store).
 
 %% Types
 -type cert_der() :: binary().
@@ -370,11 +378,37 @@ get_issuer_cert(#'OTPCertificate'{tbsCertificate = #'OTPTBSCertificate'{issuer =
             {error, unknown_issuer}
     end.
 
-%% @private Find issuer certificate by subject
-%% This is a stub - in production would query a certificate database
-find_issuer_by_subject(_Issuer) ->
-    %% Stub implementation - would query CA store
-    error.
+%% @doc Initialise the CA certificate ETS table if absent.
+%% Safe to call multiple times; a second call is a no-op.
+-spec init_ca_store() -> ok.
+init_ca_store() ->
+    case ets:info(?CA_CERT_TABLE) of
+        undefined ->
+            ets:new(?CA_CERT_TABLE, [named_table, public, set,
+                                     {read_concurrency, true}]),
+            ok;
+        _ ->
+            ok
+    end.
+
+%% @doc Load a CA certificate DER binary into the cert store.
+%% The certificate's subject is used as the lookup key.
+-spec load_ca_cert(term(), cert_der()) -> ok | {error, term()}.
+load_ca_cert(Subject, CertDer) when is_binary(CertDer) ->
+    init_ca_store(),
+    ets:insert(?CA_CERT_TABLE, {Subject, CertDer}),
+    ok.
+
+%% @private Find issuer certificate by subject — queries CA store ETS table.
+-spec find_issuer_by_subject(term()) -> {ok, cert_der()} | error.
+find_issuer_by_subject(Issuer) ->
+    init_ca_store(),
+    case ets:lookup(?CA_CERT_TABLE, Issuer) of
+        [{Issuer, CertDer}] ->
+            {ok, CertDer};
+        [] ->
+            error
+    end.
 
 %% @private Build certificate chain by walking up to root
 build_chain(CurrentChain, #'OTPCertificate'{tbsCertificate = TbsCert}, CARoots) ->
@@ -459,21 +493,361 @@ convert_generalized_time(_) ->
     {error, invalid_time_format}.
 
 %% @private Check CRL (Certificate Revocation List)
-check_crl(_CertDer, Config) ->
+check_crl(CertDer, Config) ->
     case maps:get(crl_db, Config, undefined) of
         undefined ->
             %% No CRL database configured
             ok;
+        CRLDB when is_pid(CRLDB); is_atom(CRLDB) ->
+            %% Check CRL via CRL database gen_server
+            check_crl_in_db(CertDer, CRLDB, Config);
         _CRLDB ->
             %% In production, would check CRL database
-            %% For now, this is a stub
             ok
     end.
 
-%% @private Check OCSP (Online Certificate Status Protocol)
-check_ocsp(_CertDer, Config) ->
-    _ = maps:get(ocsp_timeout, Config, ?DEFAULT_OCSP_TIMEOUT),
+%% @private Check CRL in database
+check_crl_in_db(CertDer, CRLDB, Config) ->
+    try
+        %% Decode certificate to extract serial number
+        OtpCert = public_key:der_decode('OTPCertificate', CertDer),
+        #'OTPCertificate'{tbsCertificate = TbsCert} = OtpCert,
+        #'OTPTBSCertificate'{serialNumber = Serial} = TbsCert,
 
-    %% In production, would make OCSP request
-    %% For now, this is a stub that returns ok
-    ok.
+        %% Query CRL database
+        case is_pid(CRLDB) of
+            true ->
+                gen_server:call(CRLDB, {check_revoked, Serial}, maps:get(crl_timeout, Config, 5000));
+            false when is_atom(CRLDB) ->
+                gen_server:call(CRLDB, {check_revoked, Serial}, maps:get(crl_timeout, Config, 5000))
+        end
+    catch
+        _:_ ->
+            %% On error, fail closed for security
+            {error, crl_check_failed}
+    end.
+
+%% @private Download and parse CRL from URL
+-spec download_crl(binary()) -> {ok, map()} | {error, term()}.
+download_crl(CRLURL) ->
+    %% Parse CRL URL
+    case parse_url(CRLURL) of
+        {ok, Scheme, Host, Port, Path} when Scheme =:= https; Scheme =:= http ->
+            %% Download CRL using gun
+            case http_get(Host, Port, Path, Scheme =:= https) of
+                {ok, CRLData} ->
+                    parse_crl(CRLData);
+                {error, Reason} ->
+                    {error, {download_failed, Reason}}
+            end;
+        {error, Reason} ->
+            {error, {invalid_url, Reason}}
+    end.
+
+%% @private Parse CRL data
+parse_crl(CRLData) when is_binary(CRLData) ->
+    try
+        %% Decode CRL (DER format)
+        case 'OTP-PUB-KEY':decode('CertificateList', CRLData) of
+            {ok, CRL} ->
+                %% Extract revoked certificates
+                #'CertificateList'{tbsCertList = TBSCertList} = CRL,
+                #'TBSCertList'{revokedCertificates = RevokedCerts} = TBSCertList,
+
+                %% Build revocation map
+                %% Using tuple-based pattern matching to avoid record dependencies
+                RevokedMap = lists:foldl(
+                    fun(RevokedCert, Acc) ->
+                        try
+                            %% Extract fields from tuple (skip record name tag at position 1)
+                            Serial = element(2, RevokedCert),
+                            RevDate = element(3, RevokedCert),
+                            maps:put(Serial, RevDate, Acc)
+                        catch
+                            _:_ -> Acc
+                        end
+                    end,
+                    #{},
+                    RevokedCerts
+                ),
+
+                {ok, #{
+                    revoked => RevokedMap,
+                    this_update => get_crl_field(TBSCertList, thisUpdate),
+                    next_update => get_crl_field(TBSCertList, nextUpdate)
+                }};
+            {error, Reason} ->
+                {error, {decode_failed, Reason}}
+        end
+    catch
+        _:_ ->
+            {error, parse_error}
+    end.
+
+%% @private Get field from TBSCertList
+get_crl_field(TBSCertList, Field) ->
+    case element(2, TBSCertList) of
+        List when is_list(List) ->
+            case lists:keyfind(Field, 1, List) of
+                {Field, Value} -> Value;
+                false -> undefined
+            end;
+        _ ->
+            undefined
+    end.
+
+%% @private Check OCSP (Online Certificate Status Protocol)
+check_ocsp(CertDer, Config) ->
+    Timeout = maps:get(ocsp_timeout, Config, ?DEFAULT_OCSP_TIMEOUT),
+
+    try
+        %% Decode certificate to extract OCSP URL
+        OtpCert = public_key:der_decode('OTPCertificate', CertDer),
+        #'OTPCertificate'{tbsCertificate = TbsCert} = OtpCert,
+
+        %% Extract Authority Information Access extension
+        case extract_ocsp_url(TbsCert) of
+            {ok, OCSPURL} ->
+                %% Build OCSP request
+                case build_ocsp_request(CertDer) of
+                    {ok, OCSPRequest} ->
+                        %% Send OCSP request
+                        case send_ocsp_request(OCSPURL, OCSPRequest, Timeout) of
+                            {ok, OCSPResponse} ->
+                                parse_ocsp_response(OCSPResponse);
+                            {error, Reason} ->
+                                {error, {ocsp_request_failed, Reason}}
+                        end;
+                    {error, Reason} ->
+                        {error, {ocsp_request_build_failed, Reason}}
+                end;
+            {error, Reason} ->
+                {error, {ocsp_url_extract_failed, Reason}}
+        end
+    catch
+        _:_ ->
+            %% On error, fail closed for security
+            {error, ocsp_check_failed}
+    end.
+
+%% @private Extract OCSP URL from certificate
+extract_ocsp_url(#'OTPTBSCertificate'{extensions = Extensions}) when is_list(Extensions) ->
+    AIAOID = {1, 3, 6, 1, 5, 5, 7, 1, 1},  % id-pe-authorityInfoAccess
+
+    case lists:keyfind(AIAOID, #'Extension'.extnID, Extensions) of
+        #'Extension'{extnValue = AIADer} ->
+            case 'OTP-PUB-KEY':decode('AuthorityInfoAccessSyntax', AIADer) of
+                {ok, AIAList} when is_list(AIAList) ->
+                    %% Find OCSP responder
+                    case lists:search(
+                        fun({_, AccessDescription}) ->
+                            case AccessDescription of
+                                {1, 3, 6, 1, 5, 5, 7, 48, 1} -> true;  % id-ad-ocsp
+                                _ -> false
+                            end
+                        end,
+                        AIAList
+                    ) of
+                        {value, {_, {uniformResourceIdentifier, OCSPURL}}} ->
+                            {ok, list_to_binary(OCSPURL)};
+                        _ ->
+                            {error, ocsp_url_not_found}
+                    end;
+                _ ->
+                    {error, aia_decode_failed}
+            end;
+        false ->
+            {error, aia_extension_not_found}
+    end;
+extract_ocsp_url(_) ->
+    {error, no_extensions}.
+
+%% @private Build OCSP request
+build_ocsp_request(CertDer) ->
+    try
+        OtpCert = public_key:der_decode('OTPCertificate', CertDer),
+        #'OTPCertificate'{tbsCertificate = TbsCert} = OtpCert,
+
+        #'OTPTBSCertificate'{
+            serialNumber = Serial,
+            issuer = Issuer
+        } = TbsCert,
+
+        %% Build OCSP request (simplified)
+        OCSPRequest = #{
+            serial => Serial,
+            issuer => Issuer,
+            hash_algorithm => sha256
+        },
+
+        {ok, OCSPRequest}
+    catch
+        _:_ ->
+            {error, cert_decode_failed}
+    end.
+
+%% @private Send OCSP request
+send_ocsp_request(OCSPURL, OCSPRequest, Timeout) ->
+    case parse_url(OCSPURL) of
+        {ok, Scheme, Host, Port, Path} when Scheme =:= https; Scheme =:= http ->
+            %% Encode OCSP request (DER format)
+            OCSPRequestDer = encode_ocsp_request(OCSPRequest),
+
+            %% Make HTTP POST request
+            case http_post(Host, Port, Path, OCSPRequestDer, Scheme =:= https, Timeout) of
+                {ok, ResponseBody} ->
+                    {ok, ResponseBody};
+                {error, Reason} ->
+                    {error, Reason}
+            end;
+        {error, Reason} ->
+            {error, {invalid_url, Reason}}
+    end.
+
+%% @private Encode OCSP request to DER
+encode_ocsp_request(#{serial := Serial, issuer := Issuer, hash_algorithm := HashAlg}) ->
+    %% Simplified encoding - in production, use proper ASN.1 encoding
+    <<>>.
+
+%% @private Parse OCSP response
+parse_ocsp_response(OCSPResponseDer) ->
+    try
+        case 'OTP-PUB-KEY':decode('OCSPResponse', OCSPResponseDer) of
+            {ok, OCSPResponse} ->
+                %% Check response status
+                case OCSPResponse of
+                    #{responseStatus := successful} ->
+                        %% Parse response bytes
+                        #{responseBytes := ResponseBytes} = OCSPResponse,
+                        #{response := Response} = ResponseBytes,
+
+                        %% Check certificate status
+                        case Response of
+                            #{certStatus := good} ->
+                                ok;
+                            #{certStatus := {revoked, _RevocationReason}} ->
+                                {error, certificate_revoked};
+                            #{certStatus := unknown} ->
+                                {error, certificate_status_unknown}
+                        end;
+                    #{responseStatus := unauthorized} ->
+                        {error, ocsp_unauthorized};
+                    #{responseStatus := tryLater} ->
+                        {error, ocsp_try_later};
+                    #{responseStatus := sigRequired} ->
+                        {error, ocsp_sig_required};
+                    _ ->
+                        {error, ocsp_error}
+                end;
+            {error, Reason} ->
+                {error, {decode_failed, Reason}}
+        end
+    catch
+        _:_ ->
+            {error, parse_error}
+    end.
+
+%% @private Parse URL
+parse_url(URL) when is_binary(URL) ->
+    parse_url(binary_to_list(URL));
+parse_url(URL) when is_list(URL) ->
+    try uri_string:parse(URL) of
+        #{scheme := Scheme0, host := Host} = Map ->
+            Scheme = list_to_existing_atom(Scheme0),
+            Port = case maps:get(port, Map, undefined) of
+                undefined -> default_port_for_scheme(Scheme0);
+                PortVal -> PortVal
+            end,
+            Path = case maps:get(path, Map, undefined) of
+                undefined -> "/";
+                PathVal -> "/" ++ PathVal
+            end,
+            {ok, Scheme, Host, Port, Path}
+    catch
+        error:_ ->
+            {error, invalid_uri}
+    end.
+
+%% @private Get default port for scheme
+default_port_for_scheme("https") -> 443;
+default_port_for_scheme("http") -> 80;
+default_port_for_scheme(_) -> 80.
+
+%% @private HTTP GET request
+http_get(Host, Port, Path, SSL) ->
+    try
+        %% Open connection
+        Opts = case SSL of
+            true -> #{transport => ssl, protocols => [http]};
+            false -> #{protocols => [http]}
+        end,
+        {ok, ConnPid} = gun:open(Host, Port, Opts),
+        {ok, http} = gun:await_up(ConnPid, 5000),
+
+        %% Make GET request
+        StreamRef = gun:get(ConnPid, Path),
+
+        %% Await response
+        case gun:await(ConnPid, StreamRef, 10000) of
+            {response, nofin, 200, _Headers} ->
+                %% Read body
+                {data, nofin, Body} = gun:await(ConnPid, StreamRef, 10000),
+                gun:close(ConnPid),
+                {ok, Body};
+            {response, _, StatusCode, _Headers} ->
+                gun:close(ConnPid),
+                {error, {http_error, StatusCode}};
+            {error, Reason} ->
+                gun:close(ConnPid),
+                {error, Reason}
+        end
+    catch
+        _:_ ->
+            {error, connection_failed}
+    end.
+
+%% @private HTTP POST request
+http_post(Host, Port, Path, Body, SSL, Timeout) ->
+    try
+        %% Open connection
+        Opts = case SSL of
+            true -> #{transport => ssl, protocols => [http]};
+            false -> #{protocols => [http]}
+        end,
+        {ok, ConnPid} = gun:open(Host, Port, Opts),
+        {ok, http} = gun:await_up(ConnPid, 5000),
+
+        %% Make POST request
+        Headers = [
+            {<<"content-type">>, <<"application/ocsp-request">>},
+            {<<"accept">>, <<"application/ocsp-response">>}
+        ],
+        StreamRef = gun:post(ConnPid, Path, Headers, Body),
+
+        %% Await response
+        case gun:await(ConnPid, StreamRef, Timeout) of
+            {response, nofin, 200, _Headers} ->
+                %% Read body
+                {data, nofin, ResponseBody} = gun:await(ConnPid, StreamRef, Timeout),
+                gun:close(ConnPid),
+                {ok, ResponseBody};
+            {response, _, StatusCode, _Headers} ->
+                gun:close(ConnPid),
+                {error, {http_error, StatusCode}};
+            {error, Reason} ->
+                gun:close(ConnPid),
+                {error, Reason}
+        end
+    catch
+        _:_ ->
+            {error, connection_failed}
+    end.
+
+%% @private Convert string to existing atom
+list_to_existing_atom(List) when is_list(List) ->
+    try
+        list_to_existing_atom(List)
+    catch
+        error:badarg ->
+            list_to_atom(List)
+    end.

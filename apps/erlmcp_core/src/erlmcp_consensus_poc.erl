@@ -169,7 +169,7 @@ start_election(State =
 
 %% @doc Request votes from cluster members
 request_votes(Members, CandidateId, Term) ->
-    lists:foreach(fun(MemberId) ->
+    lists:foreach(fun(_MemberId) ->
                      %% In real implementation, would send to actual node
                      %% For POC, we simulate by sending to self
                      self() ! {vote_request, Term, CandidateId}

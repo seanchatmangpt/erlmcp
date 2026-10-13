@@ -5,6 +5,7 @@
 -module(erlmcp_llm_provider_local).
 
 -behaviour(gen_server).
+-compile({nowarn_unused_function, [set_backend/1]}).
 
 %% API
 -export([start_link/0, start_link/1, create_message/2, get_backend/0, set_base_url/1,

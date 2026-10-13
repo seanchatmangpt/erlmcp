@@ -166,22 +166,20 @@ start_link() ->
 -spec build_tls_options(tls_role(), tls_config()) ->
                            {ok, tls_options()} | {error, validation_error()}.
 build_tls_options(Role, Config) when is_map(Config) ->
-    case validate_tls_config(Config) of
-        ok ->
-            try
-                Opts =
-                    case Role of
-                        client ->
-                            build_client_tls_opts(Config);
-                        server ->
-                            build_server_tls_opts(Config)
-                    end,
-                {ok, Opts}
+    maybe
+        ok ?= validate_tls_config(Config);
+        begin
+            try case Role of
+                    client -> build_client_tls_opts(Config);
+                    server -> build_server_tls_opts(Config)
+                end
             catch
                 Type:Error:Stacktrace ->
                     ?LOG_ERROR("Failed to build TLS options: ~p:~p~n~p", [Type, Error, Stacktrace]),
                     {error, {build_failed, {Type, Error}}}
-            end;
+            end
+        end
+    else
         {error, Reason} ->
             {error, Reason}
     end.
@@ -509,7 +507,7 @@ merge_options(OptionLists) ->
 
 %% @private Run all validation checks
 checks(CheckFuns) ->
-    case lists:foldl(fun(CheckFun, Acc) ->
+    lists:foldl(fun(CheckFun, Acc) ->
                         case Acc of
                             {error, _} ->
                                 Acc;  %% Stop on first error
@@ -518,13 +516,7 @@ checks(CheckFuns) ->
                         end
                      end,
                      ok,
-                     CheckFuns)
-    of
-        {error, _} = Error ->
-            Error;
-        ok ->
-            ok
-    end.
+                     CheckFuns).
 
 %% @private Validate required configuration keys
 validate_required_keys(Config, RequiredKeys) ->

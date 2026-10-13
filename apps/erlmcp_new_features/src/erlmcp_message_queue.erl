@@ -355,15 +355,14 @@ handle_cast(_Msg, State) ->
 handle_info(ack_timeout_check, State) ->
     #state{
         delivered = Delivered,
-        config = Config,
-        stats = Stats
+        config = Config
     } = State,
 
     AckTimeoutMs = maps_get_safe(ack_timeout_ms, Config, ?DEFAULT_ACK_TIMEOUT_MS),
     Now = erlang:system_time(millisecond),
 
     %% Check for timed out deliveries
-    {TimeoutDeliveries, ActiveDeliveries} =
+    {TimeoutDeliveries, _ActiveDeliveries} =
         maps:fold(fun(_MessageId, Delivery, {TimeoutAcc, ActiveAcc}) ->
             DeliveredAt = maps_get_safe(delivered_at, Delivery, 0),
             case Now - DeliveredAt >= AckTimeoutMs of
@@ -510,7 +509,7 @@ handle_nack_internal(Delivery, Requeue, State) ->
     #state{
         pending_queue = PendingQueue,
         delivered = Delivered,
-        config = Config,
+        config = _Config,
         stats = Stats
     } = State,
 

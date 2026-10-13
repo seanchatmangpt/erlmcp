@@ -57,7 +57,17 @@ init([]) ->
            restart => permanent,
            shutdown => infinity,
            type => supervisor,
-           modules => [erlmcp_resilience_sup]}],
+           modules => [erlmcp_resilience_sup]},
+         %% ================================================================
+         %% REQUEST MANAGER: Sophisticated request tracking and management
+         %% Handles request priority, timeout, cancellation, and caching
+         %% ================================================================
+         #{id => erlmcp_request_manager,
+           start => {erlmcp_request_manager, start_link, []},
+           restart => permanent,
+           shutdown => 5000,
+           type => worker,
+           modules => [erlmcp_request_manager]}],
 
     %% Additional supervisors for optional features
     AdditionalChildSpecs =

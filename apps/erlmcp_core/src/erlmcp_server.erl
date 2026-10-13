@@ -16,7 +16,7 @@
 ]).
 
 %% API exports
--export([start_link/2, add_resource/3, add_tool/3, add_prompt/3, delete_resource/2,
+-export([start_link/2, start_link/3, add_resource/3, add_tool/3, add_prompt/3, delete_resource/2,
          delete_tool/2, delete_prompt/2, subscribe_resource/3, unsubscribe_resource/2,
          report_progress/4, notify_resource_updated/3, notify_resources_changed/1,
          encode_resource_link/2, encode_resource_link/4, validate_resource_link_uri/1, unregister_notification_handler/2,
@@ -64,7 +64,13 @@
              #{binary() => {pid(), reference()}},  % Notification method -> {HandlerPid, MonitorRef}
          cancellable_requests = #{} ::
              #{term() => reference()},  % RequestId -> CancellationToken mapping
-         priority_alias :: erlang:alias() | undefined  % OTP 28: Priority message queue alias
+         priority_alias :: erlang:alias() | undefined,  % OTP 28: Priority message queue alias
+         % Enterprise features
+         enable_auth :: boolean(),               % Enable authentication middleware
+         enable_observability :: boolean(),       % Enable observability and metrics
+         enable_distributed :: boolean(),         % Enable distributed client registry
+         trace_context :: map() | undefined,      % Current trace context
+         correlation_id :: binary() | undefined   % Current correlation ID for request tracing
         }).
 
 -type state() :: #state{}.
@@ -76,13 +82,28 @@
 -spec start_link(server_id(), #mcp_server_capabilities{} | map()) ->
                     {ok, server()} | {error, term()}.
 start_link(ServerId, Capabilities) when is_record(Capabilities, mcp_server_capabilities) ->
-    gen_server:start_link(?MODULE,
-                          [ServerId, Capabilities],
-                          [{hibernate_after, ?HIBERNATE_AFTER_MS}]);
+    start_link(ServerId, Capabilities, #{});
 start_link(ServerId, Config) when is_map(Config) ->
     Capabilities = maps:get(capabilities, Config, #mcp_server_capabilities{}),
+    start_link(ServerId, Capabilities, Config).
+
+-spec start_link(server_id(), #mcp_server_capabilities{} | map(), map()) ->
+                    {ok, server()} | {error, term()}.
+start_link(ServerId, Capabilities, Options) when is_record(Capabilities, mcp_server_capabilities) ->
+    EnableAuth = maps:get(enable_auth, Options, false),
+    EnableObservability = maps:get(enable_observability, Options, true),
+    EnableDistributed = maps:get(enable_distributed, Options, true),
+
     gen_server:start_link(?MODULE,
-                          [ServerId, Capabilities],
+                          [ServerId, Capabilities, Options],
+                          [{hibernate_after, ?HIBERNATE_AFTER_MS}]);
+start_link(ServerId, Capabilities, Options) when is_map(Capabilities), is_map(Options) ->
+    EnableAuth = maps:get(enable_auth, Options, false),
+    EnableObservability = maps:get(enable_observability, Options, true),
+    EnableDistributed = maps:get(enable_distributed, Options, true),
+
+    gen_server:start_link(?MODULE,
+                          [ServerId, Capabilities, Options],
                           [{hibernate_after, ?HIBERNATE_AFTER_MS}]).
 
 -spec add_resource(server(), binary(), resource_handler()) -> ok.
@@ -203,46 +224,222 @@ stop(Server) ->
 %% gen_server callbacks
 %%====================================================================
 
--spec init([server_id() | #mcp_server_capabilities{}]) -> {ok, state(), {continue, initialize}}.
-init([ServerId, Capabilities]) ->
+-spec init([server_id() | #mcp_server_capabilities{} | map()]) -> {ok, state(), {continue, initialize}}.
+init([ServerId, Capabilities, Options]) ->
     process_flag(trap_exit, true),
 
-    % Fast init - just set up basic state, no blocking operations
+    % Extract enterprise features
+    EnableAuth = maps:get(enable_auth, Options, false),
+    EnableObservability = maps:get(enable_observability, Options, true),
+    EnableDistributed = maps:get(enable_distributed, Options, true),
 
+    % Initialize enterprise modules
+    case EnableAuth of
+        true -> erlmcp_auth:start_link();
+        false -> ok
+    end,
+
+    case EnableObservability of
+        true -> erlmcp_observability:start_link();
+        false -> ok
+    end,
+
+    case EnableDistributed of
+        true -> erlmcp_client_registry:start_link();
+        false -> ok
+    end,
+
+    % Fast init - just set up basic state, no blocking operations
     %% OTP 28: Create priority alias for urgent control signals
     PriorityAlias = try_create_priority_alias(),
-    State = #state{server_id = ServerId, capabilities = Capabilities, priority_alias = PriorityAlias},
+    State = #state{
+        server_id = ServerId,
+        capabilities = Capabilities,
+        priority_alias = PriorityAlias,
+        enable_auth = EnableAuth,
+        enable_observability = EnableObservability,
+        enable_distributed = EnableDistributed
+    },
 
-    logger:info("Starting MCP server ~p (async initialization)", [ServerId]),
+    logger:info("Starting MCP server ~p (async initialization) with auth=~p, observability=~p, distributed=~p",
+                [ServerId, EnableAuth, EnableObservability, EnableDistributed]),
     % Schedule async initialization - won't block supervisor
     {ok, State, {continue, initialize}}.
 
+%%====================================================================
+%% Internal Functions
+%%====================================================================
+
+%% @doc Authenticate request if auth is enabled
+-spec authenticate_request(term(), {pid(), term()}, state()) ->
+    {ok, term(), term(), state()} | {error, term(), state()}.
+authenticate_request(Request, From, State) ->
+    case State#state.enable_auth of
+        true ->
+            case erlmcp_auth:extract_token(From) of
+                {ok, Token} ->
+                    case erlmcp_auth:authenticate(jwt, #{token => Token}) of
+                        {ok, SessionId} ->
+                            {ok, Request, From, State};
+                        {error, Reason} ->
+                            {error, {unauthenticated, Reason}, State}
+                    end;
+                {error, Reason} ->
+                    {error, {unauthenticated, Reason}, State}
+            end;
+        false ->
+            {ok, Request, From, State}
+    end.
+
+%% @doc Check permissions for sensitive operations
+-spec check_permission(term(), {pid(), term()}, state()) ->
+    {ok, term(), state()} | {error, term(), state()}.
+check_permission(Request, From, State) ->
+    case State#state.enable_auth of
+        true ->
+            case erlmcp_auth:extract_token(From) of
+                {ok, Token} ->
+                    case erlmcp_auth:validate_jwt(Token) of
+                        {ok, Claims} ->
+                            %% Check if user has permission for tool execution
+                            case is_sensitive_operation(Request) of
+                                true ->
+                                    case erlmcp_auth:check_permission(Claims, <<"execute">>, <<"tools">>) of
+                                        true -> {ok, Request, State};
+                                        false -> {error, {forbidden, insufficient_permissions}, State}
+                                    end;
+                                false ->
+                                    {ok, Request, State}
+                            end;
+                        {error, Reason} ->
+                            {error, {unauthenticated, Reason}, State}
+                    end;
+                {error, Reason} ->
+                    {error, {unauthenticated, Reason}, State}
+            end;
+        false ->
+            {ok, Request, State}
+    end.
+
+%% @doc Check if operation is sensitive
+-spec is_sensitive_operation(term()) -> boolean().
+is_sensitive_operation({add_tool, _, _}) -> true;
+is_sensitive_operation({add_tool_with_schema, _, _, _}) -> true;
+is_sensitive_operation({add_tool_with_description, _, _, _}) -> true;
+is_sensitive_operation({add_tool_full, _, _, _, _}) -> true;
+is_sensitive_operation({delete_tool, _}) -> true;
+is_sensitive_operation({delete_resource, _}) -> true;
+is_sensitive_operation({add_prompt, _, _}) -> true;
+is_sensitive_operation({add_prompt_with_args, _, _, _}) -> true;
+is_sensitive_operation({add_prompt_with_args_and_schema, _, _, _, _}) -> true;
+is_sensitive_operation({delete_prompt, _}) -> true;
+is_sensitive_operation({subscribe_resource, _, _}) -> false;
+is_sensitive_operation(_) -> false.
+
+%% @doc Emit metrics for RPC calls
+-spec emit_rpc_metrics(term(), {pid(), term()}, state()) -> ok.
+emit_rpc_metrics(Request, _From, State) ->
+    case State#state.enable_observability of
+        true ->
+            case Request of
+                {add_resource, _, _} ->
+                    erlmcp_observability:counter(<<"mcp_add_resource_total">>, 1);
+                {add_tool, _, _} ->
+                    erlmcp_observability:counter(<<"mcp_add_tool_total">>, 1);
+                {add_prompt, _, _} ->
+                    erlmcp_observability:counter(<<"mcp_add_prompt_total">>, 1);
+                {delete_resource, _} ->
+                    erlmcp_observability:counter(<<"mcp_delete_resource_total">>, 1);
+                {delete_tool, _} ->
+                    erlmcp_observability:counter(<<"mcp_delete_tool_total">>, 1);
+                {delete_prompt, _} ->
+                    erlmcp_observability:counter(<<"mcp_delete_prompt_total">>, 1);
+                _ ->
+                    ok
+            end;
+        false ->
+            ok
+    end.
+
+%% @doc Generate and set correlation ID
+-spec set_correlation_id(state()) -> state().
+set_correlation_id(State) ->
+    CorrelationId = generate_correlation_id(),
+    State#state{correlation_id = CorrelationId}.
+
+%% @doc Generate correlation ID
+-spec generate_correlation_id() -> binary().
+generate_correlation_id() ->
+    <<Id:128>> = crypto:strong_rand_bytes(16),
+    integer_to_binary(Id, 16).
+
+%% @doc Log structured JSON event
+-spec log_event(binary(), map(), state()) -> ok.
+log_event(EventType, Metadata, State) ->
+    case State#state.enable_observability of
+        true ->
+            LogData = #{
+                timestamp => erlang:system_time(millisecond),
+                correlation_id => State#state.correlation_id,
+                event_type => EventType,
+                metadata => Metadata,
+                node => node(),
+                server_id => State#state.server_id
+            },
+            erlmcp_observability:log(info, EventType, LogData);
+        false ->
+            ok
+    end.
+
 -spec handle_call(term(), {pid(), term()}, state()) -> {reply, term(), state()} | {reply, term(), state(), hibernate}.
-handle_call({add_resource, Uri, Handler}, _From, State) ->
-    %% Gap #41: Validate URI format before registration
-    case erlmcp_uri_validator:validate_resource_uri_on_registration(Uri) of
-        ok ->
-            Resource =
-                #mcp_resource{uri = Uri,
-                              name = Uri,
-                              mime_type = ?MCP_MIME_TEXT_PLAIN},
-            NewResources = maps:put(Uri, {Resource, Handler}, State#state.resources),
-            notify_list_changed(resources, State),
-            {reply, ok, State#state{resources = NewResources}};
-        {error, {ErrorType, ErrorMsg}} ->
-            {reply,
-             {error,
-              {?JSONRPC_INVALID_PARAMS,
-               ErrorMsg,
-               #{<<"error_type">> => atom_to_binary(ErrorType, utf8), <<"uri">> => Uri}}},
-             State};
-        {error, Reason} ->
-            {reply,
-             {error,
-              {?JSONRPC_INVALID_PARAMS,
-               atom_to_binary(Reason, utf8),
-               #{<<"error_type">> => atom_to_binary(Reason, utf8), <<"uri">> => Uri}}},
-             State, hibernate}
+handle_call({add_resource, Uri, Handler}, From, State) ->
+    %% Set correlation ID for this request
+    StateWithCorrId = set_correlation_id(State),
+
+    %% Authenticate request if auth is enabled
+    case authenticate_request({add_resource, Uri, Handler}, From, StateWithCorrId) of
+        {ok, Request, _, StateWithAuth} ->
+            %% Check permissions
+            case check_permission(Request, From, StateWithAuth) of
+                {ok, _, StateWithPerm} ->
+                    %% Gap #41: Validate URI format before registration
+                    case erlmcp_uri_validator:validate_resource_uri_on_registration(Uri) of
+                        ok ->
+                            %% Emit metrics and log event
+                            emit_rpc_metrics(Request, From, StateWithPerm),
+                            log_event(<<"resource_added">>, #{uri => Uri, from => node(From)}, StateWithPerm),
+
+                            Resource =
+                                #mcp_resource{uri = Uri,
+                                              name = Uri,
+                                              mime_type = ?MCP_MIME_TEXT_PLAIN},
+                            NewResources = maps:put(Uri, {Resource, Handler}, StateWithPerm#state.resources),
+                            notify_list_changed(resources, StateWithPerm),
+                            {reply, ok, StateWithPerm#state{resources = NewResources}};
+                        {error, {ErrorType, ErrorMsg}} ->
+                            log_event(<<"resource_add_failed">>, #{uri => Uri, error => ErrorMsg}, StateWithPerm),
+                            {reply,
+                             {error,
+                              {?JSONRPC_INVALID_PARAMS,
+                               ErrorMsg,
+                               #{<<"error_type">> => atom_to_binary(ErrorType, utf8), <<"uri">> => Uri}}},
+                             StateWithPerm};
+                        {error, Reason} ->
+                            log_event(<<"resource_add_failed">>, #{uri => Uri, error => Reason}, StateWithPerm),
+                            {reply,
+                             {error,
+                              {?JSONRPC_INVALID_PARAMS,
+                               atom_to_binary(Reason, utf8),
+                               #{<<"error_type">> => atom_to_binary(Reason, utf8), <<"uri">> => Uri}}},
+                             StateWithPerm, hibernate}
+                    end;
+                {error, {ErrorType, ErrorMsg}, ErrorState} ->
+                    log_event(<<"resource_add_auth_failed">>, #{error => ErrorMsg}, ErrorState),
+                    {reply, {error, ErrorType, ErrorMsg}, ErrorState}
+            end;
+        {error, {ErrorType, ErrorMsg}, ErrorState} ->
+            log_event(<<"resource_add_auth_failed">>, #{error => ErrorMsg}, ErrorState),
+            {reply, {error, ErrorType, ErrorMsg}, ErrorState}
     end;
 handle_call({add_resource_template, UriTemplate, Name, Handler}, _From, State) ->
     %% Gap #41: Validate URI template format before registration
