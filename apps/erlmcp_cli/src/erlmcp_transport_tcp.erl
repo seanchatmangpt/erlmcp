@@ -109,14 +109,14 @@ send(Data, State) ->
 
                 {ok, State#tcp_state{metrics = Metrics}}
             catch
-                Error:Reason ->
+                Error:CatchReason ->
                     %% Record error
-                    erlmcp_otel:record_error(SpanCtx, {tcp_send_error, Error, Reason}),
+                    erlmcp_otel:record_error(SpanCtx, {tcp_send_error, Error, CatchReason}),
 
                     %% Update error metrics
-                    Metrics = update_metrics(State#tcp_state.metrics, sent, {error, Reason}),
+                    FailMetrics = update_metrics(State#tcp_state.metrics, sent, {error, CatchReason}),
 
-                    {error, {tcp_send_failed, Reason}, State#tcp_state{metrics = Metrics}}
+                    {error, {tcp_send_failed, CatchReason}, State#tcp_state{metrics = FailMetrics}}
             end
     end.
 
@@ -162,19 +162,19 @@ init(Opts) ->
     %% Create OTEL span for TCP transport initialization
     SpanCtx = erlmcp_otel:with_span("cli.transport.tcp.init", #{
         <<"transport">> => <<"tcp">>,
-        <<"session">> => FinalOpts#{session_id},
-        <<"host">> => FinalOpts#{host},
-        <<"port">> => FinalOpts#{port}
+        <<"session">> => maps:get(session_id, FinalOpts),
+        <<"host">> => maps:get(host, FinalOpts),
+        <<"port">> => maps:get(port, FinalOpts)
     }, fun() ->
         ok
     end),
 
     %% Initialize state
     State = #tcp_state{
-        transport_id = FinalOpts#{transport_id},
-        session_id = FinalOpts#{session_id},
-        host = FinalOpts#{host},
-        port = FinalOpts#{port},
+        transport_id = maps:get(transport_id, FinalOpts),
+        session_id = maps:get(session_id, FinalOpts),
+        host = maps:get(host, FinalOpts),
+        port = maps:get(port, FinalOpts),
         socket = undefined,
         pid = undefined,
         metrics = #{
@@ -191,7 +191,7 @@ init(Opts) ->
     case start_gun_process(State) of
         {ok, GunPid} ->
             %% Record initialization metrics
-            erlmcp_metrics:record("cli.transport.tcp.initialized", 1),
+            erlmcp_cli_metrics:record("cli.transport.tcp.initialized", 1),
 
             {ok, State#tcp_state{pid = GunPid}};
         {error, Reason} ->
@@ -231,6 +231,7 @@ handle_call({send_data, Data}, _From, State) ->
             NewState = State#tcp_state{metrics = Metrics};
 
         GunPid ->
+            {Reply, NewState} =
             try
                 %% Send data through gun
                 ok = gun:send(GunPid, Data),
@@ -245,20 +246,17 @@ handle_call({send_data, Data}, _From, State) ->
                     <<"timestamp">> => erlang:system_time(millisecond)
                 }),
 
-                Reply = ok,
-                NewState = State#tcp_state{metrics = Metrics};
-
+                {ok, State#tcp_state{metrics = Metrics}}
             catch
-                Error:Reason ->
+                Error:CatchReason ->
                     %% Record error
-                    erlmcp_otel:record_error(SpanCtx, {tcp_send_error, Error, Reason}),
+                    erlmcp_otel:record_error(SpanCtx, {tcp_send_error, Error, CatchReason}),
 
                     %% Update error metrics
-                    Metrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
+                    FailMetrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
                                                State#tcp_state.metrics),
 
-                    Reply = {error, {tcp_send_failed, Reason}},
-                    NewState = State#tcp_state{metrics = Metrics}
+                    {{error, {tcp_send_failed, CatchReason}}, State#tcp_state{metrics = FailMetrics}}
             end
     end,
 
@@ -344,15 +342,15 @@ handle_cast({received_data, Data}, State) ->
         {noreply, State#tcp_state{metrics = Metrics}}
 
     catch
-        Error:Reason ->
+        Error:CatchReason ->
             %% Record error
-            erlmcp_otel:record_error(SpanCtx, {tcp_receive_error, Error, Reason}),
+            erlmcp_otel:record_error(SpanCtx, {tcp_receive_error, Error, CatchReason}),
 
             %% Update error metrics
-            Metrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
+            FailMetrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
                                        State#tcp_state.metrics),
 
-            {noreply, State#tcp_state{metrics = Metrics}}
+            {noreply, State#tcp_state{metrics = FailMetrics}}
     end;
 
 handle_cast(Msg, State) ->
@@ -403,7 +401,7 @@ terminate(_Reason, State) ->
     end,
 
     %% Send final metrics
-    erlmcp_metrics:record("cli.transport.tcp.terminated", 1),
+    erlmcp_cli_metrics:record("cli.transport.tcp.terminated", 1),
 
     ok.
 

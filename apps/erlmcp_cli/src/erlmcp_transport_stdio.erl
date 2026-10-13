@@ -96,14 +96,14 @@ send(Data, State) ->
 
         {ok, State#stdio_state{metrics = Metrics}}
     catch
-        Error:Reason ->
+        Error:CatchReason ->
             %% Record error
-            erlmcp_otel:record_error(SpanCtx, {stdio_send_error, Error, Reason}),
+            erlmcp_otel:record_error(SpanCtx, {stdio_send_error, Error, CatchReason}),
 
             %% Update error metrics
-            Metrics = update_metrics(State#stdio_state.metrics, sent, {error, Reason}),
+            FailMetrics = update_metrics(State#stdio_state.metrics, sent, {error, CatchReason}),
 
-            {error, {stdio_send_failed, Reason}, State#stdio_state{metrics = Metrics}}
+            {error, {stdio_send_failed, CatchReason}, State#stdio_state{metrics = FailMetrics}}
     end.
 
 %% @doc Close stdio transport
@@ -139,21 +139,21 @@ init(Opts) ->
     %% Create OTEL span for stdio transport initialization
     SpanCtx = erlmcp_otel:with_span("cli.transport.stdio.init", #{
         <<"transport">> => <<"stdio">>,
-        <<"session">> => FinalOpts#{session_id}
+        <<"session">> => maps:get(session_id, FinalOpts)
     }, fun() ->
         ok
     end),
 
     %% Start input stream reader
-    InputPid = case start_input_stream(FinalOpts#{session_id}) of
+    InputPid = case start_input_stream(maps:get(session_id, FinalOpts)) of
         {ok, Pid} -> Pid;
         {error, Reason} -> undefined
     end,
 
     %% Initialize state
     State = #stdio_state{
-        transport_id = FinalOpts#{transport_id},
-        session_id = FinalOpts#{session_id},
+        transport_id = maps:get(transport_id, FinalOpts),
+        session_id = maps:get(session_id, FinalOpts),
         input_stream = InputPid,
         output_stream = self(),
         metrics = #{
@@ -166,7 +166,7 @@ init(Opts) ->
     },
 
     %% Record initialization metrics
-    erlmcp_metrics:record("cli.transport.stdio.initialized", 1),
+    erlmcp_cli_metrics:record("cli.transport.stdio.initialized", 1),
 
     {ok, State}.
 
@@ -185,6 +185,7 @@ handle_call({send_data, Data}, _From, State) ->
                                         undefined),
 
     %% Send data to stdout
+    {Reply, NewState} =
     try
         io:format("~s~n", [Data]),
 
@@ -198,20 +199,17 @@ handle_call({send_data, Data}, _From, State) ->
             <<"timestamp">> => erlang:system_time(millisecond)
         }),
 
-        Reply = ok,
-        NewState = State#stdio_state{metrics = Metrics};
-
+        {ok, State#stdio_state{metrics = Metrics}}
     catch
-        Error:Reason ->
+        Error:CatchReason ->
             %% Record error
-            erlmcp_otel:record_error(SpanCtx, {stdio_send_error, Error, Reason}),
+            erlmcp_otel:record_error(SpanCtx, {stdio_send_error, Error, CatchReason}),
 
             %% Update error metrics
-            Metrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
+            FailMetrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
                                        State#stdio_state.metrics),
 
-            Reply = {error, {stdio_send_failed, Reason}},
-            NewState = State#stdio_state{metrics = Metrics}
+            {{error, {stdio_send_failed, CatchReason}}, State#stdio_state{metrics = FailMetrics}}
     end,
 
     {reply, Reply, NewState};
@@ -288,15 +286,15 @@ handle_cast({received_data, Data}, State) ->
         {noreply, State#stdio_state{metrics = Metrics}}
 
     catch
-        Error:Reason ->
+        Error:CatchReason ->
             %% Record error
-            erlmcp_otel:record_error(SpanCtx, {stdio_receive_error, Error, Reason}),
+            erlmcp_otel:record_error(SpanCtx, {stdio_receive_error, Error, CatchReason}),
 
             %% Update error metrics
-            Metrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
+            FailMetrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
                                        State#stdio_state.metrics),
 
-            {noreply, State#stdio_state{metrics = Metrics}}
+            {noreply, State#stdio_state{metrics = FailMetrics}}
     end;
 
 handle_cast(_Msg, State) ->
@@ -306,8 +304,8 @@ handle_cast(_Msg, State) ->
 -spec handle_info(term(), #stdio_state{}) -> {noreply, #stdio_state{}} | {stop, term(), #stdio_state{}}.
 handle_info({'EXIT', Pid, Reason}, State) ->
     %% Handle input stream death
-    case Pid of
-        State#stdio_state.input_stream ->
+    case Pid =:= State#stdio_state.input_stream of
+        true ->
             lager:warning("Input stream died: ~p", [Reason]),
             {noreply, State#stdio_state{input_stream = undefined}};
         _ ->
@@ -329,7 +327,7 @@ terminate(_Reason, State) ->
     end,
 
     %% Send final metrics
-    erlmcp_metrics:record("cli.transport.stdio.terminated", 1),
+    erlmcp_cli_metrics:record("cli.transport.stdio.terminated", 1),
 
     ok.
 

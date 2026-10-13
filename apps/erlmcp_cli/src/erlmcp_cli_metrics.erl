@@ -20,7 +20,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, record_metric/2, record_counter/2, record_gauge/2, get_metrics/0,
+-export([start_link/0, record/2, record_metric/2, record_counter/2, record_gauge/2, get_metrics/0,
          get_metric/1, reset_metrics/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -77,6 +77,20 @@
 start_link() ->
     gen_server:start_link({local, ?SERVER}, ?MODULE, [], []).
 
+%% @doc Record a metric value (crash-proof bridge: tolerant of unregistered
+%% server, string or binary names; used by all erlmcp_cli modules so metric
+%% side-effects never take down CLI command execution).
+-spec record(term(), number()) -> ok.
+record(Name, Value) when is_number(Value) ->
+    NameBin = case is_binary(Name) of
+                  true -> Name;
+                  false when is_list(Name) -> list_to_binary(Name);
+                  false -> list_to_binary(io_lib:format("~p", [Name]))
+              end,
+    try gen_server:cast(?SERVER, {record_metric, NameBin, Value}) catch _:_ -> ok end;
+record(_Name, _Value) ->
+    ok.
+
 %% @doc Record a metric value
 -spec record_metric(binary(), number()) -> ok.
 record_metric(Name, Value) when is_binary(Name), is_number(Value) ->
@@ -113,13 +127,27 @@ reset_metrics() ->
 
 %% @doc Initialize the metrics system
 -spec init(list()) -> {ok, #metrics_state{}}.
-init( _Opts ) -> SpanCtx = erlmcp_otel : with_span( "cli.metrics.init" , #{ << "metrics.init" >> => true } , fun ( ) -> ok end ) , State = #metrics_state{ metrics = ?DEFAULT_METRICS , aggregators = #{ } , exporters = init_exporters( ) , config = ?DEFAULT_CONFIG } , AggregationTimer = erlang : start_timer( State #metrics_state .
-config #{ aggregation_interval } , self( ) , aggregate_metrics ) , erlmcp_metrics : record( "cli.metrics.initialized" , 1 ) , { ok , State #metrics_state{ aggregators = #{ aggregation_timer => AggregationTimer } } } .
+init(_Opts) ->
     %% Create OTEL span for metrics initialization
-                                                                                                                                                                                                                              %% Initialize state
+    SpanCtx = erlmcp_otel:with_span("cli.metrics.init", #{<<"metrics.init">> => true}, fun() -> ok end),
+
+    %% Initialize state
+    State =
+        #metrics_state{metrics = ?DEFAULT_METRICS,
+                       aggregators = #{},
+                       exporters = init_exporters(),
+                       config = ?DEFAULT_CONFIG},
+
     %% Start aggregation timer
+    AggregationTimer =
+        erlang:start_timer(maps:get(aggregation_interval, State#metrics_state.config),
+                           self(),
+                           aggregate_metrics),
 
     %% Record initialization
+    erlmcp_cli_metrics:record("cli.metrics.initialized", 1),
+
+    {ok, State#metrics_state{aggregators = #{aggregation_timer => AggregationTimer}}}.
 
 %% @doc Handle synchronous calls
 -spec handle_call(term(), {pid(), term()}, #metrics_state{}) -> {reply, term(), #metrics_state{}}.
@@ -135,7 +163,7 @@ handle_call(get_metrics, _From, State) ->
     Response = #{metrics => MetricsMap, aggregators => Aggregators},
 
     %% Record retrieval metrics
-    erlmcp_metrics:record("cli.metrics.retrieved", 1),
+    erlmcp_cli_metrics:record("cli.metrics.retrieved", 1),
 
     {reply, Response, State};
 handle_call({get_metric, Name}, _From, State) ->
@@ -148,11 +176,11 @@ handle_call({get_metric, Name}, _From, State) ->
     case maps:find(Name, State#metrics_state.metrics) of
         {ok, MetricData} ->
             %% Record retrieval
-            erlmcp_metrics:record("cli.metric.lookups", 1),
+            erlmcp_cli_metrics:record("cli.metric.lookups", 1),
             {reply, {ok, MetricData}, State};
         error ->
             %% Record error
-            erlmcp_metrics:record("cli.metric.errors", 1),
+            erlmcp_cli_metrics:record("cli.metric.errors", 1),
             {reply, {error, metric_not_found}, State}
     end;
 handle_call(_Request, _From, State) ->
@@ -216,7 +244,7 @@ handle_cast(reset_metrics, State) ->
     ResetAggregators = maps:map(fun(_, _) -> [] end, State#metrics_state.aggregators),
 
     %% Record reset
-    erlmcp_metrics:record("cli.metrics.reset", 1),
+    erlmcp_cli_metrics:record("cli.metrics.reset", 1),
 
     %% Export reset event
     export_reset_event(State#metrics_state.exporters),
@@ -227,23 +255,36 @@ handle_cast(_Msg, State) ->
 
 %% @doc Handle messages
 -spec handle_info(term(), #metrics_state{}) -> {noreply, #metrics_state{}}.
-handle_info( { timeout , Timer , aggregate_metrics } , State ) -> case Timer of State #metrics_state .
-aggregators #{ aggregation_timer } -> Aggregated = aggregate_metrics( State #metrics_state .
-aggregators ) , UpdatedMetrics = maps : merge( State #metrics_state .
-metrics , Aggregated ) , ResetAggregators = maps : map( fun ( _ , _ ) -> [ ] end , State #metrics_state .
-aggregators ) , NewTimer = erlang : start_timer( State #metrics_state .
-config #{ aggregation_interval } , self( ) , aggregate_metrics ) , erlmcp_metrics : record( "cli.metrics.aggregated" , 1 ) , NewState = State #metrics_state{ metrics = UpdatedMetrics , aggregators = maps : remove( aggregation_timer , ResetAggregators ) , aggregators = maps : put( aggregation_timer , NewTimer , NewState #metrics_state .
-aggregators ) } , { noreply , NewState } ; _ -> { noreply , State } end ; handle_info( _Info , State ) -> { noreply , State } .
-    %% Aggregation timer expired
+handle_info({timeout, Timer, aggregate_metrics}, State) ->
+    case Timer =:= maps:get(aggregation_timer, State#metrics_state.aggregators, undefined) of
+        true ->
+            %% Aggregation timer expired
             %% Aggregate metrics
+            Aggregated = aggregate_metrics(State#metrics_state.aggregators),
 
             %% Update metrics with aggregated values
+            UpdatedMetrics = maps:merge(State#metrics_state.metrics, Aggregated),
 
             %% Reset aggregators
+            ResetAggregators = maps:map(fun(_, _) -> [] end, State#metrics_state.aggregators),
 
             %% Start new timer
+            NewTimer =
+                erlang:start_timer(maps:get(aggregation_interval, State#metrics_state.config),
+                                   self(),
+                                   aggregate_metrics),
 
             %% Record aggregation
+            erlmcp_cli_metrics:record("cli.metrics.aggregated", 1),
+
+            NewAggregators = maps:put(aggregation_timer, NewTimer, ResetAggregators),
+            NewState = State#metrics_state{metrics = UpdatedMetrics, aggregators = NewAggregators},
+            {noreply, NewState};
+        _ ->
+            {noreply, State}
+    end;
+handle_info(_Info, State) ->
+    {noreply, State}.
 
 %% @doc Terminate the metrics system
 -spec terminate(term(), #metrics_state{}) -> ok.
@@ -267,13 +308,17 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Initialize exporters
 -spec init_exporters() -> list().
-init_exporters( ) -> Config = ?DEFAULT_CONFIG #{ exporters } , lists : map( fun ( ExporterType ) -> init_exporter( ExporterType ) end , Config ) .
+init_exporters() ->
+    Config = maps:get(exporters, ?DEFAULT_CONFIG),
+    lists:map(fun(ExporterType) -> init_exporter(ExporterType) end, Config).
 
 %% @doc Initialize a specific exporter
 -spec init_exporter(atom()) -> {atom(), pid() | undefined}.
 init_exporter(prometheus) ->
-    %% Initialize Prometheus exporter
-    case erlmcp_prometheus_exporter:start() of
+    %% Initialize Prometheus exporter. The erlmcp_prometheus_exporter module
+    %% (erlmcp_observability) exposes start_link/1 only — no start/0 — so an
+    %% absent exporter degrades to `undefined` instead of crashing init.
+    case catch erlmcp_prometheus_exporter:start() of
         {ok, Pid} ->
             {prometheus, Pid};
         {error, _} ->
@@ -296,17 +341,17 @@ init_exporter(_Exporter) ->
 %% @doc Determine metric type
 -spec determine_metric_type(binary()) -> counter | gauge | histogram.
 determine_metric_type(Name) ->
-    case Name of
-        _ when binary:matches(Name, <<".counter">>) ->
-            counter;
-        _ when binary:matches(Name, <<".gauge">>) ->
-            gauge;
-        _ when binary:matches(Name, <<".histogram">>) ->
-            histogram;
-        _ when binary:matches(Name, [<<"latency">>, <<"throughput">>]) ->
-            histogram;
-        _ ->
-            gauge
+    IsCounter = binary:matches(Name, <<".counter">>) =/= [],
+    IsGauge = binary:matches(Name, <<".gauge">>) =/= [],
+    IsHistogram = binary:matches(Name, <<".histogram">>) =/= [],
+    IsLatencyOrThroughput =
+        binary:matches(Name, [<<"latency">>, <<"throughput">>]) =/= [],
+    case {IsCounter, IsGauge, IsHistogram, IsLatencyOrThroughput} of
+        {true, _, _, _} -> counter;
+        {_, true, _, _} -> gauge;
+        {_, _, true, _} -> histogram;
+        {_, _, _, true} -> histogram;
+        _ -> gauge
     end.
 
 %% @doc Extract metric tags
@@ -317,17 +362,26 @@ extract_metric_tags(Name) ->
 
     %% Add category tag
     Category =
-        case Name of
-            _ when binary:matches(Name, [<<"cli.commands">>]) ->
+        case binary:matches(Name, [<<"cli.commands">>]) of
+            [_ | _] ->
                 "commands";
-            _ when binary:matches(Name, [<<"cli.sessions">>]) ->
-                "sessions";
-            _ when binary:matches(Name, [<<"cli.errors">>]) ->
-                "errors";
-            _ when binary:matches(Name, [<<"cli.registry">>]) ->
-                "registry";
-            _ ->
-                "other"
+            [] ->
+                case binary:matches(Name, [<<"cli.sessions">>]) of
+                    [_ | _] ->
+                        "sessions";
+                    [] ->
+                        case binary:matches(Name, [<<"cli.errors">>]) of
+                            [_ | _] ->
+                                "errors";
+                            [] ->
+                                case binary:matches(Name, [<<"cli.registry">>]) of
+                                    [_ | _] ->
+                                        "registry";
+                                    [] ->
+                                        "other"
+                                end
+                        end
+                end
         end,
 
     Tags#{category => Category}.

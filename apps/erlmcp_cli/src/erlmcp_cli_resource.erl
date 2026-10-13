@@ -180,7 +180,7 @@ init(_Args) ->
                                     ok
                             end,
 
-                             erlmcp_metrics:record("cli.resource.initialized", 1),
+                             erlmcp_cli_metrics:record("cli.resource.initialized", 1),
                              {ok, State}
                           end).
 
@@ -194,7 +194,7 @@ handle_call(list_resources, _From, State) ->
     ResourceList = maps:values(State#resource_state.resources),
     erlmcp_otel:record_event(SpanCtx, <<"resources.listed">>, #{<<"count">> => length(ResourceList)}),
 
-    erlmcp_metrics:record("cli.resource.list.success", 1),
+    erlmcp_cli_metrics:record("cli.resource.list.success", 1),
     {reply, {ok, ResourceList}, State};
 
 handle_call({list_resources, Filters}, _From, State) ->
@@ -207,7 +207,7 @@ handle_call({list_resources, Filters}, _From, State) ->
     erlmcp_otel:record_event(SpanCtx, <<"resources.filtered">>,
                           #{<<"count">> => length(FilteredResources)}),
 
-    erlmcp_metrics:record("cli.resource.list_filtered.success", 1),
+    erlmcp_cli_metrics:record("cli.resource.list_filtered.success", 1),
     {reply, {ok, FilteredResources}, State};
 
 handle_call({get_resource, Uri, Selector}, _From, State) ->
@@ -223,15 +223,15 @@ handle_call({get_resource, Uri, Selector, Timeout}, _From, State) ->
         case find_resource(Uri, Selector, State) of
             {ok, Resource} ->
                 erlmcp_otel:record_event(SpanCtx, <<"resource.retrieved">>, #{}),
-                erlmcp_metrics:record("cli.resource.get.success", 1),
+                erlmcp_cli_metrics:record("cli.resource.get.success", 1),
                 {reply, {ok, Resource}, State};
             {error, not_found} ->
                 erlmcp_otel:record_error(SpanCtx, {resource_not_found, Uri, Selector}),
-                erlmcp_metrics:record("cli.resource.get.not_found", 1),
+                erlmcp_cli_metrics:record("cli.resource.get.not_found", 1),
                 {reply, {error, not_found}, State};
             {error, Reason} ->
                 erlmcp_otel:record_error(SpanCtx, {resource_get_failed, Uri, Selector, Reason}),
-                erlmcp_metrics:record("cli.resource.get.error", 1),
+                erlmcp_cli_metrics:record("cli.resource.get.error", 1),
                 {reply, {error, Reason}, State}
         end
     after
@@ -272,23 +272,23 @@ handle_call({subscribe_resource, Uri, Selector, Options}, _From, State) ->
                 case start_handler(Handler, Resource) of
                     ok ->
                         erlmcp_otel:record_event(SpanCtx, <<"resource.subscribed">>, #{}),
-                        erlmcp_metrics:record("cli.resource.subscribe.success", 1),
+                        erlmcp_cli_metrics:record("cli.resource.subscribe.success", 1),
                         {reply, ok, State#resource_state{subscriptions = NewSubscriptions, handlers = NewHandlers}};
                     {error, Reason} ->
                         erlmcp_otel:record_error(SpanCtx, {subscription_start_failed, Uri, Selector, Reason}),
-                        erlmcp_metrics:record("cli.resource.subscribe.error", 1),
+                        erlmcp_cli_metrics:record("cli.resource.subscribe.error", 1),
                         {reply, {error, Reason}, State}
                 end;
             {error, not_found} ->
                 erlmcp_otel:record_error(SpanCtx, {resource_not_found, Uri, Selector}),
-                erlmcp_metrics:record("cli.resource.subscribe.not_found", 1),
+                erlmcp_cli_metrics:record("cli.resource.subscribe.not_found", 1),
                 {reply, {error, not_found}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {subscription_failed, Uri, Selector, Error, Reason}),
-            erlmcp_metrics:record("cli.resource.subscribe.error", 1),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {subscription_failed, Uri, Selector, CatchError, CatchReason}),
+            erlmcp_cli_metrics:record("cli.resource.subscribe.error", 1),
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call({unsubscribe_resource, Uri, Selector}, _From, State) ->
@@ -319,19 +319,19 @@ handle_call({unsubscribe_resource, Uri, Selector, Reason}, _From, State) ->
                 notify_watchers(unsubscribe, Uri, Selector, Reason),
 
                 erlmcp_otel:record_event(SpanCtx, <<"resource.unsubscribed">>, #{}),
-                erlmcp_metrics:record("cli.resource.unsubscribe.success", 1),
+                erlmcp_cli_metrics:record("cli.resource.unsubscribe.success", 1),
 
                 {reply, ok, State#resource_state{subscriptions = NewSubscriptions, handlers = NewHandlers}};
             {error, not_found} ->
                 erlmcp_otel:record_error(SpanCtx, {subscription_not_found, Uri, Selector}),
-                erlmcp_metrics:record("cli.resource.unsubscribe.not_found", 1),
+                erlmcp_cli_metrics:record("cli.resource.unsubscribe.not_found", 1),
                 {reply, {error, not_found}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {unsubscription_failed, Uri, Selector, Error, Reason}),
-            erlmcp_metrics:record("cli.resource.unsubscribe.error", 1),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {unsubscription_failed, Uri, Selector, CatchError, CatchReason}),
+            erlmcp_cli_metrics:record("cli.resource.unsubscribe.error", 1),
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call(list_subscriptions, _From, State) ->
@@ -367,19 +367,19 @@ handle_call({create_resource, Uri, ResourceData}, _From, State) ->
                 notify_watchers(create, Uri, Resource),
 
                 erlmcp_otel:record_event(SpanCtx, <<"resource.created">>, #{}),
-                erlmcp_metrics:record("cli.resource.create.success", 1),
+                erlmcp_cli_metrics:record("cli.resource.create.success", 1),
 
                 {reply, ok, State#resource_state{resources = NewResources, registry = NewRegistry}};
             {error, Reason} ->
                 erlmcp_otel:record_error(SpanCtx, {resource_validation_failed, Uri, Reason}),
-                erlmcp_metrics:record("cli.resource.create.validation_error", 1),
+                erlmcp_cli_metrics:record("cli.resource.create.validation_error", 1),
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {resource_create_failed, Uri, Error, Reason}),
-            erlmcp_metrics:record("cli.resource.create.error", 1),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {resource_create_failed, Uri, CatchError, CatchReason}),
+            erlmcp_cli_metrics:record("cli.resource.create.error", 1),
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call({update_resource, Uri, Selector, ResourceData}, _From, State) ->
@@ -418,24 +418,24 @@ handle_call({update_resource, Uri, Selector, ResourceData}, _From, State) ->
                         end,
 
                         erlmcp_otel:record_event(SpanCtx, <<"resource.updated">>, #{}),
-                        erlmcp_metrics:record("cli.resource.update.success", 1),
+                        erlmcp_cli_metrics:record("cli.resource.update.success", 1),
 
                         {reply, ok, State#resource_state{resources = NewResources, registry = NewRegistry}};
                     {error, not_found} ->
                         erlmcp_otel:record_error(SpanCtx, {resource_not_found, Uri, Selector}),
-                        erlmcp_metrics:record("cli.resource.update.not_found", 1),
+                        erlmcp_cli_metrics:record("cli.resource.update.not_found", 1),
                         {reply, {error, not_found}, State}
                 end;
             {error, Reason} ->
                 erlmcp_otel:record_error(SpanCtx, {resource_validation_failed, Uri, Reason}),
-                erlmcp_metrics:record("cli.resource.update.validation_error", 1),
+                erlmcp_cli_metrics:record("cli.resource.update.validation_error", 1),
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {resource_update_failed, Uri, Selector, Error, Reason}),
-            erlmcp_metrics:record("cli.resource.update.error", 1),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {resource_update_failed, Uri, Selector, CatchError, CatchReason}),
+            erlmcp_cli_metrics:record("cli.resource.update.error", 1),
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call({delete_resource, Uri, Selector}, _From, State) ->
@@ -467,18 +467,18 @@ handle_call({delete_resource, Uri, Selector}, _From, State) ->
                 notify_watchers(delete, Uri, Resource),
 
                 erlmcp_otel:record_event(SpanCtx, <<"resource.deleted">>, #{}),
-                erlmcp_metrics:record("cli.resource.delete.success", 1),
+                erlmcp_cli_metrics:record("cli.resource.delete.success", 1),
 
                 {reply, ok, State#resource_state{resources = NewResources, registry = NewRegistry}};
             {error, not_found} ->
                 erlmcp_otel:record_error(SpanCtx, {resource_not_found, Uri, Selector}),
-                erlmcp_metrics:record("cli.resource.delete.not_found", 1),
+                erlmcp_cli_metrics:record("cli.resource.delete.not_found", 1),
                 {reply, {error, not_found}, State}
         end
     catch
         Error:Reason ->
             erlmcp_otel:record_error(SpanCtx, {resource_delete_failed, Uri, Selector, Error, Reason}),
-            erlmcp_metrics:record("cli.resource.delete.error", 1),
+            erlmcp_cli_metrics:record("cli.resource.delete.error", 1),
             {reply, {error, Reason}, State}
     end;
 
@@ -491,12 +491,12 @@ handle_call({search_resources, Query}, _From, State) ->
     try
         SearchResults = search_resources_internal(State#resource_state.resources, Query),
         erlmcp_otel:record_event(SpanCtx, <<"resources.searched">>, #{<<"count">> => length(SearchResults)}),
-        erlmcp_metrics:record("cli.resource.search.success", 1),
+        erlmcp_cli_metrics:record("cli.resource.search.success", 1),
         {reply, {ok, SearchResults}, State}
     catch
         Error:Reason ->
             erlmcp_otel:record_error(SpanCtx, {resource_search_failed, Query, Error, Reason}),
-            erlmcp_metrics:record("cli.resource.search.error", 1),
+            erlmcp_cli_metrics:record("cli.resource.search.error", 1),
             {reply, {error, Reason}, State}
     end;
 
@@ -533,11 +533,11 @@ handle_info(poll_resources, State) ->
 
         erlmcp_otel:record_event(SpanCtx, <<"resources.polled">>,
                               #{<<"polled_count">> => length(PollingResults)}),
-        erlmcp_metrics:record("cli.resource.poll.success", 1)
+        erlmcp_cli_metrics:record("cli.resource.poll.success", 1)
     catch
         Error:Reason ->
             erlmcp_otel:record_error(SpanCtx, {resource_poll_failed, Error, Reason}),
-            erlmcp_metrics:record("cli.resource.poll.error", 1)
+            erlmcp_cli_metrics:record("cli.resource.poll.error", 1)
     end,
 
     %% Schedule next poll
@@ -581,7 +581,7 @@ terminate(_Reason, State) ->
                              notify_watchers(terminated, undefined, undefined),
 
                              %% Record final metrics
-                             erlmcp_metrics:record("cli.resource.terminated", 1),
+                             erlmcp_cli_metrics:record("cli.resource.terminated", 1),
 
                              ok
                           end).
@@ -694,7 +694,7 @@ create_resource_index(Resource) ->
       <<"description">> => maps:get(<<"description">>, Resource, <<>>),
       <<"mimeType">> => maps:get(<<"mimeType">>, Resource, <<"application/json">>),
       <<"tags">> => extract_tags(Resource),
-      <<"searchable_text">>> => create_searchable_text(Resource)}.
+      <<"searchable_text">> => create_searchable_text(Resource)}.
 
 %% @doc Create searchable text
 -spec create_searchable_text(map()) -> binary().
@@ -862,10 +862,22 @@ notify_subscribers(Uri, Selector, NewResource) ->
 
 %% @doc Notify watchers
 -spec notify_watchers(atom(), binary(), map()) -> ok.
-notify_watchners(Event, Uri, Resource) ->
+notify_watchers(Event, Uri, Resource) ->
     lists:foreach(fun(Watcher) ->
                      Watcher ! {resource_event, Event, Uri, Resource}
                  end, get_watchers()).
+
+%% @doc Notify watchers with a selector-scoped event (unsubscription, etc.)
+-spec notify_watchers(atom(), binary(), term(), term()) -> ok.
+notify_watchers(Event, Uri, Selector, Reason) ->
+    lists:foreach(fun(Watcher) ->
+                     Watcher ! {resource_event, Event, Uri, Selector, Reason}
+                 end, get_watchers()).
+
+%% @doc Return the registered resource watchers (empty until a registry
+%%      process is wired in; see #resource_state.watchers).
+-spec get_watchers() -> list().
+get_watchers() -> [].
 
 %% @doc Poll dynamic resources
 -spec poll_dynamic_resources(map()) -> list().
@@ -899,8 +911,8 @@ poll_resource(Resource) ->
                 poll_local_resource(Resource)
         end
     catch
-        Error:Reason ->
-            {error, {poll_failed, Error, Reason}}
+        CatchError:CatchReason ->
+            {error, {poll_failed, CatchError, CatchReason}}
     end.
 
 %% @doc Poll HTTP resource
@@ -918,8 +930,8 @@ poll_http_resource(Resource) ->
                 {error, Reason}
         end
     catch
-        Error:Reason ->
-            {error, {http_poll_error, Error, Reason}}
+        CatchError:CatchReason ->
+            {error, {http_poll_error, CatchError, CatchReason}}
     end.
 
 %% @doc Poll local resource
@@ -938,8 +950,8 @@ poll_local_resource(Resource) ->
                         {error, Reason}
                 end
             catch
-                Error:Reason ->
-                    {error, {file_poll_error, Error, Reason}}
+                CatchError:CatchReason ->
+                    {error, {file_poll_error, CatchError, CatchReason}}
             end
     end.
 

@@ -318,10 +318,41 @@ handle_escape_sequence(State) ->
             State
     end.
 
+%% @doc Trim leading and trailing whitespace from a binary
+-spec trim(binary()) -> binary().
+trim(Binary) when is_binary(Binary) ->
+    Leading = skip_whitespace(Binary),
+    Trailing = drop_trailing_whitespace(Leading),
+    Trailing.
+
+%% @doc Skip leading whitespace characters
+skip_whitespace(<<C, Rest/binary>>) when C =:= $\s; C =:= $\t; C =:= $\r; C =:= $\n ->
+    skip_whitespace(Rest);
+skip_whitespace(Binary) ->
+    Binary.
+
+%% @doc Drop trailing whitespace characters
+drop_trailing_whitespace(Binary) ->
+    Size = byte_size(Binary),
+    case drop_trailing_whitespace(Binary, Size, Size) of
+        undefined -> <<>>;
+        Trimmed -> Trimmed
+    end.
+
+drop_trailing_whitespace(Binary, Pos, End) when Pos > 0 ->
+    case binary:at(Binary, Pos - 1) of
+        C when C =:= $\s; C =:= $\t; C =:= $\r; C =:= $\n ->
+            drop_trailing_whitespace(Binary, Pos - 1, End);
+        _ ->
+            binary:part(Binary, 0, Pos)
+    end;
+drop_trailing_whitespace(_Binary, 0, _End) ->
+    undefined.
+
 %% @doc Process command buffer
 -spec process_command_buffer(state()) -> state().
 process_command_buffer(#state{buffer = Buffer} = State) ->
-    Command = binary:trim(Buffer),
+    Command = trim(Buffer),
 
     % Add to history
     NewHistory = add_to_history(Command, State#state.history),

@@ -3,8 +3,8 @@
 %%% erlmcp_cli_registry - CLI Command Registry
 %%%
 %%% Manages CLI command registration, lookup, and execution with
-comprehensive OTEL tracing and metrics collection .
-
+%%% comprehensive OTEL tracing and metrics collection.
+%%%
 %%%
 %%% == Key Features ==
 %%%
@@ -43,7 +43,7 @@ comprehensive OTEL tracing and metrics collection .
          registered_at :: integer()}).
 -record(registry_state,
         {commands :: map(),          % Command name to command_info
-         modules :: set(),           % Loaded modules
+         modules :: sets:set(),      % Loaded modules
          metrics :: map(),           % Registry-level metrics
          reload_timer :: reference() | undefined}).
 
@@ -111,76 +111,216 @@ reload_commands() ->
 
 %% @doc Initialize the registry
 -spec init(list()) -> {ok, #registry_state{}} | {stop, term()}.
-init( _Opts ) -> SpanCtx = erlmcp_otel : with_span( "cli.registry.init" , #{ << "registry.init" >> => true } , fun ( ) -> ok end ) , State = #registry_state{ commands = ?DEFAULT_REGISTRY #{ commands } , modules = ?DEFAULT_REGISTRY #{ modules } , metrics = ?DEFAULT_REGISTRY #{ metrics } , reload_timer = undefined } , case load_builtin_commands( ) of { ok , NewState } -> ReloadTimer = erlang : start_timer( 30000 , self( ) , reload_timer ) , FinalState = NewState #registry_state{ reload_timer = ReloadTimer } , erlmcp_metrics : record( "cli.registry.initialized" , 1 ) , { ok , FinalState } ; { error , Reason } -> { stop , Reason } end .
+init(_Opts) ->
     %% Create OTEL span for registry initialization
+    SpanCtx = erlmcp_otel:with_span("cli.registry.init",
+                                    #{<<"registry.init">> => true},
+                                    fun() -> ok end),
+
     %% Initialize registry state
+    DefaultMetrics = maps:get(metrics, ?DEFAULT_REGISTRY),
+    State = #registry_state{commands = #{},
+                            modules = sets:new(),
+                            metrics = DefaultMetrics,
+                            reload_timer = undefined},
 
     %% Load built-in commands
-
+    case load_builtin_commands() of
+        {ok, NewState} ->
             %% Start auto-reload timer
+            ReloadTimer = erlang:start_timer(30000, self(), reload_timer),
+            FinalState = NewState#registry_state{reload_timer = ReloadTimer},
 
             %% Record initialization metrics
+            erlmcp_cli_metrics:record("cli.registry.initialized", 1),
+            {ok, FinalState};
+        {error, Reason} ->
+            {stop, Reason}
+    end.
 
 %% @doc Handle synchronous calls
 -spec handle_call(term(), {pid(), term()}, #registry_state{}) ->
                      {reply, term(), #registry_state{}} | {stop, term(), #registry_state{}}.
-handle_call( { register_command , CommandName , Module } , _From , State ) -> SpanCtx = erlmcp_otel : inject_rpc_span( << "cli.registry.register" >> , make_request_id( ) , #{ << "command.name" >> => CommandName , << "command.module" >> => atom_to_binary( Module ) } , undefined ) , case validate_command_module( Module , CommandName ) of { ok , CommandInfo } -> Commands = maps : put( CommandName , CommandInfo , State #registry_state . commands ) , Modules = sets : add_element( Module , State #registry_state . modules ) , Metrics = maps : update_with( "commands.registered" , fun ( V ) -> V + 1 end , State #registry_state . metrics ) , erlmcp_otel : add_event( SpanCtx , << "command.registered" >> , #{ << "command.name" >> => CommandName , << "command.module" >> => atom_to_binary( Module ) } ) , erlmcp_metrics : record( "cli.commands.registered" , 1 ) , Reply = ok , NewState = State #registry_state{ commands = Commands , modules = Modules , metrics = Metrics } ; { error , Reason } -> erlmcp_otel : record_error( SpanCtx , { registration_failed , Reason } ) , erlmcp_metrics : record( "cli.errors.registration" , 1 ) , Reply = { error , Reason } , NewState = State end , { reply , Reply , NewState } ; handle_call( { unregister_command , CommandName } , _From , State ) -> SpanCtx = erlmcp_otel : inject_rpc_span( << "cli.registry.unregister" >> , make_request_id( ) , #{ << "command.name" >> => CommandName } , undefined ) , case maps : find( CommandName , State #registry_state . commands ) of { ok , CommandInfo } -> Module = CommandInfo #command_info . module , Commands = maps : remove( CommandName , State #registry_state . commands ) , Modules = case sets : size( State #registry_state . modules ) > 1 of true -> sets : del_element( Module , State #registry_state . modules ) ; false -> State #registry_state . modules end , Metrics = maps : update_with( "commands.unregistered" , fun ( V ) -> V + 1 end , State #registry_state . metrics ) , erlmcp_otel : add_event( SpanCtx , << "command.unregistered" >> , #{ << "command.name" >> => CommandName , << "command.module" >> => atom_to_binary( Module ) } ) , erlmcp_metrics : record( "cli.commands.unregistered" , 1 ) , Reply = ok , NewState = State #registry_state{ commands = Commands , modules = Modules , metrics = Metrics } ; error -> Reply = { error , command_not_found } , NewState = State end , { reply , Reply , NewState } ; handle_call( { lookup_command , CommandName } , _From , State ) -> SpanCtx = erlmcp_otel : inject_rpc_span( << "cli.registry.lookup" >> , make_request_id( ) , #{ << "command.name" >> => CommandName } , undefined ) , case maps : find( CommandName , State #registry_state . commands ) of { ok , CommandInfo } -> Metrics = maps : update_with( "commands.lookups" , fun ( V ) -> V + 1 end , State #registry_state . metrics ) , RecordCommandInfo = CommandInfo #command_info{ metrics = update_command_metrics( CommandInfo #command_info . metrics , lookup , ok ) } , erlmcp_otel : add_event( SpanCtx , << "command.found" >> , #{ << "command.name" >> => CommandName } ) , erlmcp_metrics : record( "cli.commands.lookups" , 1 ) , Reply = { ok , RecordCommandInfo } , NewState = State #registry_state{ metrics = Metrics } ; error -> Metrics = maps : update_with( "errors.lookup" , fun ( V ) -> V + 1 end , State #registry_state . metrics ) , erlmcp_otel : record_error( SpanCtx , { command_not_found , CommandName } ) , erlmcp_otel : add_event( SpanCtx , << "command.not_found" >> , #{ << "command.name" >> => CommandName } ) , erlmcp_metrics : record( "cli.errors.lookup" , 1 ) , Reply = { error , command_not_found } , NewState = State #registry_state{ metrics = Metrics } end , { reply , Reply , NewState } ; handle_call( list_commands , _From , State ) -> erlmcp_otel : inject_rpc_span( << "cli.registry.list" >> , make_request_id( ) , #{ } , undefined ) , CommandsList = maps : to_list( State #registry_state . commands ) , Reply = { ok , CommandsList } , { reply , Reply , State } ; handle_call( { execute_command , CommandName , Args } , _From , State ) -> SpanCtx = erlmcp_otel : inject_rpc_span( << "cli.registry.execute" >> , make_request_id( ) , #{ << "command.name" >> => CommandName , << "args.length" >> => length( Args ) } , undefined ) , case maps : find( CommandName , State #registry_state . commands ) of { ok , CommandInfo } -> TraceCtx = case CommandInfo #command_info . trace_enabled of true -> erlmcp_otel : with_span( "cli.command" , #{ << "command.name" >> => CommandName , << "command.module" >> => atom_to_binary( CommandInfo #command_info . module ) } , fun ( ) -> SpanCtx end ) ; false -> SpanCtx end , try Result = CommandInfo #command_info . module : execute( Args ) , Metrics = update_command_metrics( CommandInfo #command_info . metrics , execute , ok ) , UpdatedCommands = maps : put( CommandName , CommandInfo #command_info{ metrics = Metrics } , State #registry_state . commands ) , erlmcp_otel : add_event( TraceCtx , << "command.success" >> , #{ << "command.name" >> => CommandName , << "result.size" >> => term_size( Result ) } ) , erlmcp_metrics : record( "cli.commands.executed" , 1 ) , erlmcp_metrics : record( "cli.commands.success" , 1 ) , Reply = { ok , Result } , NewState = State #registry_state{ commands = UpdatedCommands } ; catch Class : Reason : Stacktrace -> erlmcp_otel : record_error( TraceCtx , { Class , Reason , Stacktrace } ) , erlmcp_otel : add_event( TraceCtx , << "command.failed" >> , #{ << "command.name" >> => CommandName , << "error.type" >> => atom_to_binary( Class ) , << "error.message" >> => format_error( Reason ) } ) , RegistryMetrics = maps : update_with( "errors.execute" , fun ( V ) -> V + 1 end , State #registry_state . metrics ) , CommandMetrics = update_command_metrics( CommandInfo #command_info . metrics , execute , { error , Reason } ) , UpdatedCommands = maps : put( CommandName , CommandInfo #command_info{ metrics = CommandMetrics } , State #registry_state . commands ) , erlmcp_metrics : record( "cli.commands.executed" , 1 ) , erlmcp_metrics : record( "cli.commands.failed" , 1 ) , erlmcp_metrics : record( "cli.errors.execute" , 1 ) , Reply = { error , { Class , Reason } } , NewState = State #registry_state{ commands = UpdatedCommands , metrics = RegistryMetrics } end ; error -> erlmcp_otel : record_error( SpanCtx , { command_not_found , CommandName } ) , Metrics = maps : update_with( "errors.execute" , fun ( V ) -> V + 1 end , State #registry_state . metrics ) , erlmcp_metrics : record( "cli.commands.executed" , 1 ) , erlmcp_metrics : record( "cli.commands.failed" , 1 ) , erlmcp_metrics : record( "cli.errors.execute" , 1 ) , Reply = { error , command_not_found } , NewState = State #registry_state{ metrics = Metrics } end , { reply , Reply , NewState } ; handle_call( { get_command_schema , CommandName } , _From , State ) -> case maps : find( CommandName , State #registry_state . commands ) of { ok , CommandInfo } -> case CommandInfo #command_info . schema of undefined -> Schema = generate_command_schema( CommandInfo ) , Reply = { ok , Schema } ; Schema -> Reply = { ok , Schema } end ; error -> Reply = { error , command_not_found } end , { reply , Reply , State } ; handle_call( _Request , _From , State ) -> { reply , { error , unknown_call } , State } .
+handle_call({register_command, CommandName, Module}, _From, State) ->
     %% Create span for command registration
-    %% Validate command module
-
-            %% Register command
-
-            %% Update metrics
-
-            %% Record registration event
-
-            %% Record metrics
-
-            %% Record error
-
-    %% Create span for command unregistration
-
-            %% Find module
-
-            %% Unregister command
-
-            %% Update metrics
-
-            %% Record unregistration event
-
-            %% Record metrics
-
-    %% Create span for command lookup
-
-            %% Update lookup metrics
-
-            %% Record successful lookup
-
-            %% Update error metrics
-
-            %% Record lookup failure
-
-    %% Create span for listing commands
-
-    %% Create span for command execution
-
-            %% Check if tracing is enabled
-
-            %% Execute command
-
-                %% Record success metrics
-
-                %% Record execution success
-
-                    %% Record error
-
-                    %% Update error metrics
-
-            %% Command not found
-
-            %% Update error metrics
-
-                    %% Generate default schema
+    SpanCtx = erlmcp_otel:inject_rpc_span(<<"cli.registry.register">>,
+                                          make_request_id(),
+                                          #{<<"command.name">> => CommandName,
+                                            <<"command.module">> => atom_to_binary(Module)},
+                                          undefined),
+    case validate_command_module(Module, CommandName) of
+        {ok, CommandInfo} ->
+            %% Register command and update metrics
+            Commands = maps:put(CommandName, CommandInfo, State#registry_state.commands),
+            Modules = sets:add_element(Module, State#registry_state.modules),
+            Metrics = maps:update_with("commands.registered", fun(V) -> V + 1 end,
+                                       State#registry_state.metrics),
+            erlmcp_otel:add_event(SpanCtx, <<"command.registered">>,
+                                  #{<<"command.name">> => CommandName,
+                                    <<"command.module">> => atom_to_binary(Module)}),
+            erlmcp_cli_metrics:record("cli.commands.registered", 1),
+            Reply = ok,
+            NewState = State#registry_state{commands = Commands,
+                                            modules = Modules,
+                                            metrics = Metrics};
+        {error, Reason} ->
+            erlmcp_otel:record_error(SpanCtx, {registration_failed, Reason}),
+            erlmcp_cli_metrics:record("cli.errors.registration", 1),
+            Reply = {error, Reason},
+            NewState = State
+    end,
+    {reply, Reply, NewState};
+handle_call({unregister_command, CommandName}, _From, State) ->
+    SpanCtx = erlmcp_otel:inject_rpc_span(<<"cli.registry.unregister">>,
+                                          make_request_id(),
+                                          #{<<"command.name">> => CommandName},
+                                          undefined),
+    case maps:find(CommandName, State#registry_state.commands) of
+        {ok, CommandInfo} ->
+            Module = CommandInfo#command_info.module,
+            Commands = maps:remove(CommandName, State#registry_state.commands),
+            Modules = case sets:size(State#registry_state.modules) > 1 of
+                          true ->
+                              sets:del_element(Module, State#registry_state.modules);
+                          false ->
+                              State#registry_state.modules
+                      end,
+            Metrics = maps:update_with("commands.unregistered", fun(V) -> V + 1 end,
+                                       State#registry_state.metrics),
+            erlmcp_otel:add_event(SpanCtx, <<"command.unregistered">>,
+                                  #{<<"command.name">> => CommandName,
+                                    <<"command.module">> => atom_to_binary(Module)}),
+            erlmcp_cli_metrics:record("cli.commands.unregistered", 1),
+            Reply = ok,
+            NewState = State#registry_state{commands = Commands,
+                                            modules = Modules,
+                                            metrics = Metrics};
+        error ->
+            Reply = {error, command_not_found},
+            NewState = State
+    end,
+    {reply, Reply, NewState};
+handle_call({lookup_command, CommandName}, _From, State) ->
+    SpanCtx = erlmcp_otel:inject_rpc_span(<<"cli.registry.lookup">>,
+                                          make_request_id(),
+                                          #{<<"command.name">> => CommandName},
+                                          undefined),
+    case maps:find(CommandName, State#registry_state.commands) of
+        {ok, CommandInfo} ->
+            Metrics = maps:update_with("commands.lookups", fun(V) -> V + 1 end,
+                                       State#registry_state.metrics),
+            RecordCommandInfo = CommandInfo#command_info{
+                                  metrics = update_command_metrics(
+                                              CommandInfo#command_info.metrics,
+                                              lookup, ok)},
+            erlmcp_otel:add_event(SpanCtx, <<"command.found">>,
+                                  #{<<"command.name">> => CommandName}),
+            erlmcp_cli_metrics:record("cli.commands.lookups", 1),
+            Reply = {ok, RecordCommandInfo},
+            NewState = State#registry_state{metrics = Metrics};
+        error ->
+            Metrics = maps:update_with("errors.lookup", fun(V) -> V + 1 end,
+                                       State#registry_state.metrics),
+            erlmcp_otel:record_error(SpanCtx, {command_not_found, CommandName}),
+            erlmcp_otel:add_event(SpanCtx, <<"command.not_found">>,
+                                  #{<<"command.name">> => CommandName}),
+            erlmcp_cli_metrics:record("cli.errors.lookup", 1),
+            Reply = {error, command_not_found},
+            NewState = State#registry_state{metrics = Metrics}
+    end,
+    {reply, Reply, NewState};
+handle_call(list_commands, _From, State) ->
+    erlmcp_otel:inject_rpc_span(<<"cli.registry.list">>, make_request_id(), #{}, undefined),
+    CommandsList = maps:to_list(State#registry_state.commands),
+    Reply = {ok, CommandsList},
+    {reply, Reply, State};
+handle_call({execute_command, CommandName, Args}, _From, State) ->
+    SpanCtx = erlmcp_otel:inject_rpc_span(<<"cli.registry.execute">>,
+                                          make_request_id(),
+                                          #{<<"command.name">> => CommandName,
+                                            <<"args.length">> => length(Args)},
+                                          undefined),
+    case maps:find(CommandName, State#registry_state.commands) of
+        {ok, CommandInfo} ->
+            TraceCtx = case CommandInfo#command_info.trace_enabled of
+                           true ->
+                               erlmcp_otel:with_span("cli.command",
+                                                     #{<<"command.name">> => CommandName,
+                                                       <<"command.module">> =>
+                                                           atom_to_binary(
+                                                             CommandInfo#command_info.module)},
+                                                     fun() -> SpanCtx end);
+                           false ->
+                               SpanCtx
+                       end,
+            {Reply, NewState} =
+                try
+                    CmdModule = CommandInfo#command_info.module,
+                    Result = CmdModule:execute(Args),
+                    Metrics = update_command_metrics(CommandInfo#command_info.metrics,
+                                                     execute, ok),
+                    UpdatedCommands =
+                        maps:put(CommandName,
+                                 CommandInfo#command_info{metrics = Metrics},
+                                 State#registry_state.commands),
+                    erlmcp_otel:add_event(TraceCtx, <<"command.success">>,
+                                          #{<<"command.name">> => CommandName,
+                                            <<"result.size">> => term_size(Result)}),
+                    erlmcp_cli_metrics:record("cli.commands.executed", 1),
+                    erlmcp_cli_metrics:record("cli.commands.success", 1),
+                    {{ok, Result},
+                     State#registry_state{commands = UpdatedCommands}}
+                catch
+                    Class:Reason:Stacktrace ->
+                        erlmcp_otel:record_error(TraceCtx, {Class, Reason, Stacktrace}),
+                        erlmcp_otel:add_event(TraceCtx, <<"command.failed">>,
+                                              #{<<"command.name">> => CommandName,
+                                                <<"error.type">> => atom_to_binary(Class),
+                                                <<"error.message">> => format_error(Reason)}),
+                        RegistryMetrics =
+                            maps:update_with("errors.execute", fun(V) -> V + 1 end,
+                                             State#registry_state.metrics),
+                        CommandMetrics =
+                            update_command_metrics(CommandInfo#command_info.metrics,
+                                                   execute, {error, Reason}),
+                        CatchCommands =
+                            maps:put(CommandName,
+                                     CommandInfo#command_info{metrics = CommandMetrics},
+                                     State#registry_state.commands),
+                        erlmcp_cli_metrics:record("cli.commands.executed", 1),
+                        erlmcp_cli_metrics:record("cli.commands.failed", 1),
+                        erlmcp_cli_metrics:record("cli.errors.execute", 1),
+                        {{error, {Class, Reason}},
+                         State#registry_state{commands = CatchCommands,
+                                              metrics = RegistryMetrics}}
+                end;
+        error ->
+            erlmcp_otel:record_error(SpanCtx, {command_not_found, CommandName}),
+            Metrics = maps:update_with("errors.execute", fun(V) -> V + 1 end,
+                                       State#registry_state.metrics),
+            erlmcp_cli_metrics:record("cli.commands.executed", 1),
+            erlmcp_cli_metrics:record("cli.commands.failed", 1),
+            erlmcp_cli_metrics:record("cli.errors.execute", 1),
+            Reply = {error, command_not_found},
+            NewState = State#registry_state{metrics = Metrics}
+    end,
+    {reply, Reply, NewState};
+handle_call({get_command_schema, CommandName}, _From, State) ->
+    case maps:find(CommandName, State#registry_state.commands) of
+        {ok, CommandInfo} ->
+            case CommandInfo#command_info.schema of
+                undefined ->
+                    Schema = generate_command_schema(CommandInfo),
+                    Reply = {ok, Schema};
+                Schema ->
+                    Reply = {ok, Schema}
+            end;
+        error ->
+            Reply = {error, command_not_found}
+    end,
+    {reply, Reply, State};
+handle_call(_Request, _From, State) ->
+    {reply, {error, unknown_call}, State}.
 
 %% @doc Handle asynchronous casts
 -spec handle_cast(term(), #registry_state{}) ->
@@ -192,11 +332,11 @@ handle_cast(reload_commands, State) ->
     case reload_command_modules() of
         {ok, NewState} ->
             %% Record reload success
-            erlmcp_metrics:record("cli.commands.reloaded", 1),
+            erlmcp_cli_metrics:record("cli.commands.reloaded", 1),
             {noreply, NewState};
         {error, Reason} ->
             %% Record reload failure
-            erlmcp_metrics:record("cli.commands.reload_failed", 1),
+            erlmcp_cli_metrics:record("cli.commands.reload_failed", 1),
             {noreply, State}
     end;
 handle_cast(_Msg, State) ->
@@ -207,8 +347,8 @@ handle_cast(_Msg, State) ->
                      {noreply, #registry_state{}} | {stop, term(), #registry_state{}}.
 handle_info({timeout, Timer, reload_timer}, State) ->
     %% Auto-reload timer expired
-    case Timer of
-        State#registry_state.reload_timer ->
+    case Timer =:= State#registry_state.reload_timer of
+        true ->
             %% Reload commands
             case reload_command_modules() of
                 {ok, NewState} ->
@@ -243,9 +383,37 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% @doc Load built-in commands
 -spec load_builtin_commands() -> {ok, #registry_state{}} | {error, term()}.
-load_builtin_commands( ) -> BuiltinCommands = [ { << "list" >> , erlmcp_cli_command_list } , { << "help" >> , erlmcp_cli_command_help } , { << "status" >> , erlmcp_cli_command_status } , { << "metrics" >> , erlmcp_cli_command_metrics } , { << "config" >> , erlmcp_cli_command_config } ] , lists : foldl( fun ( { CommandName , Module } , { ok , State } ) -> case validate_command_module( Module , CommandName ) of { ok , CommandInfo } -> Commands = maps : put( CommandName , CommandInfo , State #registry_state . commands ) , Modules = sets : add_element( Module , State #registry_state . modules ) , { ok , State #registry_state{ commands = Commands , modules = Modules } } ; { error , Reason } -> { error , Reason } end end , { ok , #registry_state{ ?DEFAULT_REGISTRY } } , BuiltinCommands ) .
+load_builtin_commands() ->
     %% Built-in commands
+    BuiltinCommands = [{<<"list">>, erlmcp_cli_command_list},
+                       {<<"help">>, erlmcp_cli_command_help},
+                       {<<"status">>, erlmcp_cli_command_status},
+                       {<<"metrics">>, erlmcp_cli_command_metrics},
+                       {<<"config">>, erlmcp_cli_command_config}],
+    DefaultMetrics = maps:get(metrics, ?DEFAULT_REGISTRY),
+    InitialState = #registry_state{commands = #{},
+                                   modules = sets:new(),
+                                   metrics = DefaultMetrics,
+                                   reload_timer = undefined},
     %% Load each command
+    lists:foldl(fun({CommandName, Module}, {ok, State}) ->
+                        case validate_command_module(Module, CommandName) of
+                            {ok, CommandInfo} ->
+                                Commands = maps:put(CommandName, CommandInfo,
+                                                    State#registry_state.commands),
+                                Modules = sets:add_element(Module,
+                                                           State#registry_state.modules),
+                                {ok, State#registry_state{commands = Commands,
+                                                          modules = Modules}};
+                            {error, _Reason} ->
+                                %% Builtin command module not present: skip it
+                                {ok, State}
+                        end;
+                   (_, Acc) ->
+                        Acc
+                end,
+                        {ok, InitialState},
+                        BuiltinCommands).
 
 %% @doc Validate command module
 -spec validate_command_module(module(), binary()) -> {ok, #command_info{}} | {error, term()}.

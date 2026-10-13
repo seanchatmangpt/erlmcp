@@ -51,7 +51,7 @@
           <<"security_level">> => high,
           <<"enable_mtls">> => false,
           <<"jwt_provider">> => internal,
-          <<"jwt_algorithm">> => RS256,
+          <<"jwt_algorithm">> => 'RS256',
           <<"mtls_ca_file">> => undefined,
           <<"mtls_cert_file">> => undefined,
           <<"mtls_key_file">> => undefined}).
@@ -161,7 +161,7 @@ init(_Args) ->
                                  erlang:send_after(300000, self(), cleanup_sessions),
 
                                  %% Record initialization
-                                 erlmcp_metrics:record("cli.auth.initialized", 1),
+                                 erlmcp_cli_metrics:record("cli.auth.initialized", 1),
                                  {ok, State}
                               end).
 
@@ -189,20 +189,21 @@ handle_call({authenticate, Username, Password, Options}, _From, State) ->
 
                 %% Record success metrics
                 erlmcp_otel:record_event(SpanCtx, <<"authentication.success">>, #{}),
-                erlmcp_metrics:record("cli.auth.success", 1),
+                erlmcp_cli_metrics:record("cli.auth.success", 1),
 
                 {reply, {ok, SessionId}, NewState};
             {error, Reason} ->
                 %% Record error metrics
                 erlmcp_otel:record_error(SpanCtx, {authentication_failed, Username, Reason}),
-                erlmcp_metrics:record("cli.auth.failed", 1),
+                erlmcp_cli_metrics:record("cli.auth.failed", 1),
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {auth_error, Username, Error, Reason}),
-            erlmcp_metrics:record("cli.auth.error", 1),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx,
+                                     {auth_error, Username, CatchError, CatchReason}),
+            erlmcp_cli_metrics:record("cli.auth.error", 1),
+            {reply, {error, CatchReason}, State}
     end;
 handle_call({refresh_token, Token}, _From, State) ->
     %% Create OTEL span for token refresh
@@ -218,7 +219,7 @@ handle_call({refresh_token, Token}, _From, State) ->
                         NewState = State#auth_state{jwt_tokens = NewTokens},
 
                         erlmcp_otel:record_event(SpanCtx, <<"token.refreshed">>, #{}),
-                        erlmcp_metrics:record("cli.auth.token_refreshed", 1),
+                        erlmcp_cli_metrics:record("cli.auth.token_refreshed", 1),
                         {reply, {ok, NewToken}, NewState};
                     {error, Reason} ->
                         erlmcp_otel:record_error(SpanCtx, {refresh_failed, Reason}),
@@ -229,9 +230,9 @@ handle_call({refresh_token, Token}, _From, State) ->
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {refresh_error, Error, Reason}),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {refresh_error, CatchError, CatchReason}),
+            {reply, {error, CatchReason}, State}
     end;
 handle_call({validate_token, Token}, _From, State) ->
     try
@@ -242,8 +243,8 @@ handle_call({validate_token, Token}, _From, State) ->
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            {reply, {error, {validation_error, Error, Reason}}, State}
+        CatchError:CatchReason ->
+            {reply, {error, {validation_error, CatchError, CatchReason}}, State}
     end;
 handle_call({get_session_info, SessionId}, _From, State) ->
     try
@@ -255,8 +256,8 @@ handle_call({get_session_info, SessionId}, _From, State) ->
                 {reply, {error, not_found}, State}
         end
     catch
-        Error:Reason ->
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            {reply, {error, CatchReason}, State}
     end;
 handle_call({logout, SessionId}, _From, State) ->
     %% Create OTEL span for logout
@@ -274,7 +275,7 @@ handle_call({logout, SessionId}, _From, State) ->
 
                 %% Record logout
                 erlmcp_otel:record_event(SpanCtx, <<"logout.success">>, #{}),
-                erlmcp_metrics:record("cli.auth.logout", 1),
+                erlmcp_cli_metrics:record("cli.auth.logout", 1),
 
                 {reply, ok, State#auth_state{sessions = NewSessions}};
             error ->
@@ -282,9 +283,9 @@ handle_call({logout, SessionId}, _From, State) ->
                 {reply, {error, not_found}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {logout_error, Error, Reason}),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {logout_error, CatchError, CatchReason}),
+            {reply, {error, CatchReason}, State}
     end;
 handle_call(list_sessions, _From, State) ->
     SessionList = lists:map(fun format_session_info/1, maps:values(State#auth_state.sessions)),
@@ -305,7 +306,7 @@ handle_call({enable_mtls, Config}, _From, State) ->
                         NewState = State#auth_state{mtls_config = NewConfig},
 
                         erlmcp_otel:record_event(SpanCtx, <<"mtls.enabled">>, #{}),
-                        erlmcp_metrics:record("cli.auth.mtls_enabled", 1),
+                        erlmcp_cli_metrics:record("cli.auth.mtls_enabled", 1),
                         {reply, ok, NewState};
                     {error, Reason} ->
                         erlmcp_otel:record_error(SpanCtx, {mtls_cert_failed, Reason}),
@@ -316,9 +317,10 @@ handle_call({enable_mtls, Config}, _From, State) ->
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {mtls_enable_error, Error, Reason}),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx,
+                                     {mtls_enable_error, CatchError, CatchReason}),
+            {reply, {error, CatchReason}, State}
     end;
 handle_call(disable_mtls, _From, State) ->
     %% Create OTEL span for MTLS disablement
@@ -333,7 +335,7 @@ handle_call(disable_mtls, _From, State) ->
     NewState = State#auth_state{mtls_config = NewConfig},
 
     erlmcp_otel:record_event(SpanCtx, <<"mtls.disabled">>, #{}),
-    erlmcp_metrics:record("cli.auth.mtls_disabled", 1),
+    erlmcp_cli_metrics:record("cli.auth.mtls_disabled", 1),
 
     {reply, ok, NewState};
 handle_call({set_jwt_provider, Provider, Config}, _From, State) ->
@@ -351,16 +353,17 @@ handle_call({set_jwt_provider, Provider, Config}, _From, State) ->
                 NewState = State#auth_state{auth_providers = NewProviders},
 
                 erlmcp_otel:record_event(SpanCtx, <<"jwt_provider.set">>, #{}),
-                erlmcp_metrics:record("cli.auth.jwt_provider_set", 1),
+                erlmcp_cli_metrics:record("cli.auth.jwt_provider_set", 1),
                 {reply, ok, NewState};
             {error, Reason} ->
                 erlmcp_otel:record_error(SpanCtx, {jwt_provider_invalid, Reason}),
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {jwt_provider_error, Error, Reason}),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx,
+                                     {jwt_provider_error, CatchError, CatchReason}),
+            {reply, {error, CatchReason}, State}
     end;
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
@@ -392,7 +395,7 @@ handle_cast(clear_expired, State) ->
     erlmcp_otel:record_event(SpanCtx,
                              <<"sessions.cleaned">>,
                              #{<<"removed_count">> => RemovedCount}),
-    erlmcp_metrics:record("cli.auth.sessions_removed", RemovedCount),
+    erlmcp_cli_metrics:record("cli.auth.sessions_removed", RemovedCount),
 
     {noreply, State#auth_state{sessions = ActiveSessions}};
 handle_cast(_Msg, State) ->
@@ -418,7 +421,7 @@ handle_info({session_timeout, SessionId}, State) ->
             %% Invalidate token
             invalidate_jwt_token(Session#session.token, NewState),
 
-            erlmcp_metrics:record("cli.auth.session_timeout", 1),
+            erlmcp_cli_metrics:record("cli.auth.session_timeout", 1),
             {noreply, NewState};
         error ->
             {noreply, State}
@@ -444,7 +447,7 @@ terminate(_Reason, State) ->
                                            maps:to_list(State#auth_state.jwt_tokens)),
 
                              %% Record final metrics
-                             erlmcp_metrics:record("cli.auth.terminated", 1),
+                             erlmcp_cli_metrics:record("cli.auth.terminated", 1),
 
                              ok
                           end).
@@ -509,8 +512,9 @@ load_file_config() ->
                 #{}
         end
     catch
-        Error:Reason ->
-            lager:warning("Failed to parse auth config file: ~p:~p", [Error, Reason]),
+        CatchError:CatchReason ->
+            lager:warning("Failed to parse auth config file: ~p:~p",
+                          [CatchError, CatchReason]),
             #{}
     end.
 
@@ -522,7 +526,7 @@ load_auth_providers(Config) ->
     %% Load internal provider
     InternalConfig =
         #{<<"type">> => internal,
-          <<"algorithm">> => maps:get(<<"jwt_algorithm">>, Config, RS256),
+          <<"algorithm">> => maps:get(<<"jwt_algorithm">>, Config, 'RS256'),
           <<"secret">> => get_jwt_secret(),
           <<"issuer">> => <<"erlmcp_cli">>},
     maps:put(<<"internal">>, InternalConfig, Providers).
@@ -575,22 +579,44 @@ perform_jwt_authentication(Username, Password, State) ->
                 end
         end
     catch
-        Error:Reason ->
-            {error, {jwt_error, Error, Reason}}
+        CatchError:CatchReason ->
+            {error, {jwt_error, CatchError, CatchReason}}
     end.
 
 %% @doc Perform MTLS authentication
 -spec perform_mtls_authentication(binary(), binary(), #auth_state{}) ->
                                      {ok, binary(), binary()} | {error, term()}.
-perform_mtls_authentication( Username , Password , State ) -> try case State #auth_state .
-
-mtls_config of Config when is_map( Config ) -> case extract_mtls_certificates( Config ) of { ok , CertData } -> case validate_certificate_chain( CertData , Config ) of ok -> Authenticate via certificate and optional password case erlmcp_auth : validate_certificate( CertData , Username , Password ) of { ok , Claims } -> Token = generate_jwt_token( Claims , Config ) , { ok , SessionId = generate_session_id( ) , Token } ; { error , Reason } -> { error , Reason } end ; { error , Reason } -> { error , { certificate_validation_failed , Reason } } end ; { error , Reason } -> { error , { certificate_extraction_failed , Reason } } end ; _ -> { error , mtls_not_enabled } end catch Error : Reason -> { error , { mtls_error , Error , Reason } } end .
-
-        %% Validate MTLS configuration
-
-                %% Extract certificates from the connection
-
-                        %% Validate certificate chain
+perform_mtls_authentication(Username, Password, State) ->
+    try
+        case State#auth_state.mtls_config of
+            Config when is_map(Config) ->
+                case extract_mtls_certificates(Config) of
+                    {ok, CertData} ->
+                        case validate_certificate_chain(CertData, Config) of
+                            ok ->
+                                %% Authenticate via certificate and optional password
+                                case erlmcp_auth:validate_certificate(CertData,
+                                                                      Username,
+                                                                      Password) of
+                                    {ok, Claims} ->
+                                        Token = generate_jwt_token(Claims, Config),
+                                        {ok, generate_session_id(), Token};
+                                    {error, Reason} ->
+                                        {error, Reason}
+                                end;
+                            {error, Reason} ->
+                                {error, {certificate_validation_failed, Reason}}
+                        end;
+                    {error, Reason} ->
+                        {error, {certificate_extraction_failed, Reason}}
+                end;
+            _ ->
+                {error, mtls_not_enabled}
+        end
+    catch
+        CatchError:CatchReason ->
+            {error, {mtls_error, CatchError, CatchReason}}
+    end.
 
 %% @doc Validate token internally
 -spec validate_token_internal(binary(), #auth_state{}) -> {ok, map()} | {error, term()}.
@@ -620,10 +646,10 @@ validate_token_internal(Token, State) ->
                 end
         end
     catch
-        {token_expired, NewTokens} ->
+        _TokenExpired ->
             {error, expired};
-        Error:Reason ->
-            {error, {validation_error, Error, Reason}}
+        CatchError:CatchReason ->
+            {error, {validation_error, CatchError, CatchReason}}
     end.
 
 %% @doc Create session record
@@ -663,7 +689,7 @@ generate_jwt_token(Claims, ProviderConfig) ->
 
         %% Generate token (simplified for implementation)
         Header =
-            #{<<"alg">> => atom_to_binary(maps:get(<<"algorithm">>, ProviderConfig, RS256)),
+            #{<<"alg">> => atom_to_binary(maps:get(<<"algorithm">>, ProviderConfig, 'RS256'), utf8),
               <<"typ">> => <<"JWT">>},
 
         Payload = erlmcp_json_native:encode(EnhancedClaims),
@@ -673,8 +699,8 @@ generate_jwt_token(Claims, ProviderConfig) ->
 
         <<HeaderEncoded/binary, ".", PayloadEncoded/binary, ".", Signature/binary>>
     catch
-        Error:Reason ->
-            erlang:exit({jwt_generation_failed, Error, Reason})
+        CatchError:CatchReason ->
+            erlang:exit({jwt_generation_failed, CatchError, CatchReason})
     end.
 
 %% @base64url encode function
@@ -683,6 +709,20 @@ base64url_encode(Data) ->
     Base64 = base64:encode(Data),
     string:replace(
         string:replace(Base64, "+", "-"), "/", "_", {return, binary}).
+
+%% @doc Refresh a JWT token from its claims
+-spec refresh_jwt_token(map(), #auth_state{}) -> {ok, binary()} | {error, term()}.
+refresh_jwt_token(Claims, State) ->
+    case maps:find(<<"internal">>, State#auth_state.auth_providers) of
+        {ok, ProviderConfig} ->
+            try generate_jwt_token(Claims, ProviderConfig) of
+                Token -> {ok, Token}
+            catch
+                _Error:_Reason -> {error, token_refresh_failed}
+            end;
+        error ->
+            {error, provider_not_found}
+    end.
 
 %% @doc Invalidate JWT token
 -spec invalidate_jwt_token(binary(), #auth_state{}) -> ok.
@@ -714,13 +754,13 @@ validate_jwt_token(Token, State) ->
                 {error, invalid_token_format}
         end
     catch
-        Error:Reason ->
-            {error, {token_parse_error, Error, Reason}}
+        CatchError:CatchReason ->
+            {error, {token_parse_error, CatchError, CatchReason}}
     end.
 
 %% @doc Base64url decode function
 -spec base64url_decode(binary()) -> binary().
-base64url_encode(Data) ->
+base64url_decode(Data) ->
     Padding =
         case byte_size(Data) rem 4 of
             2 ->
@@ -731,9 +771,9 @@ base64url_encode(Data) ->
                 <<>>
         end,
     Base64 = list_to_binary([Data, Padding]),
-    binary:replace(
-        binary:replace(Base64, <<"-">>, <<"+">>), <<"_">>, <<"/">>),
-    base64:decode(Base64).
+    Std64 = binary:replace(
+              binary:replace(Base64, <<"-">>, <<"+">>), <<"_">>, <<"/">>),
+    base64:decode(Std64).
 
 %% @doc Verify token signature (simplified)
 -spec verify_token_signature(binary(), map(), #auth_state{}) -> ok | {error, term()}.

@@ -189,7 +189,7 @@ init(_Args) ->
                              %% Start cleanup timer
                              erlang:send_after(60000, self(), cleanup_executions),
 
-                             erlmcp_metrics:record("cli.tool.initialized", 1),
+                             erlmcp_cli_metrics:record("cli.tool.initialized", 1),
                              {ok, State}
                           end).
 
@@ -202,7 +202,7 @@ handle_call(list_tools, _From, State) ->
 
     ToolList = maps:values(State#tool_state.tools),
     erlmcp_otel:record_event(SpanCtx, <<"tools.listed">>, #{<<"count">> => length(ToolList)}),
-    erlmcp_metrics:record("cli.tool.list.success", 1),
+    erlmcp_cli_metrics:record("cli.tool.list.success", 1),
 
     {reply, {ok, ToolList}, State};
 
@@ -215,7 +215,7 @@ handle_call({list_tools, Filters}, _From, State) ->
     FilteredTools = filter_tools(State#tool_state.tools, Filters),
     erlmcp_otel:record_event(SpanCtx, <<"tools.filtered">>,
                           #{<<"count">> => length(FilteredTools)}),
-    erlmcp_metrics:record("cli.tool.list_filtered.success", 1),
+    erlmcp_cli_metrics:record("cli.tool.list_filtered.success", 1),
 
     {reply, {ok, FilteredTools}, State};
 
@@ -235,28 +235,28 @@ handle_call({call_tool, Tool, Args, Timeout, Options}, _From, State) ->
                        case execute_tool_sync(Tool, Args, Timeout, ToolInfo, State) of
                            {ok, Result} ->
                                erlmcp_otel:record_event(SpanCtx, <<"tool.completed">>, #{}),
-                               erlmcp_metrics:record("cli.tool.call.success", 1),
+                               erlmcp_cli_metrics:record("cli.tool.call.success", 1),
                                {reply, {ok, Result}, State};
                            {error, Reason} ->
                                erlmcp_otel:record_error(SpanCtx, {tool_execution_failed, Tool, Reason}),
-                               erlmcp_metrics:record("cli.tool.call.error", 1),
+                               erlmcp_cli_metrics:record("cli.tool.call.error", 1),
                                {reply, {error, Reason}, State}
                        end;
                    true ->
                        erlmcp_otel:record_error(SpanCtx, {tool_concurrency_limit, Tool}),
-                       erlmcp_metrics:record("cli.tool.call.concurrency_error", 1),
+                       erlmcp_cli_metrics:record("cli.tool.call.concurrency_error", 1),
                        {reply, {error, concurrency_limit}, State}
                 end;
             {error, not_found} ->
                 erlmcp_otel:record_error(SpanCtx, {tool_not_found, Tool}),
-                erlmcp_metrics:record("cli.tool.tool_not_found", 1),
+                erlmcp_cli_metrics:record("cli.tool.tool_not_found", 1),
                 {reply, {error, not_found}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {tool_call_error, Tool, Error, Reason}),
-            erlmcp_metrics:record("cli.tool.call.error", 1),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {tool_call_error, Tool, CatchError, CatchReason}),
+            erlmcp_cli_metrics:record("cli.tool.call.error", 1),
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call({call_tool_async, Tool, Args, Options}, _From, State) ->
@@ -292,28 +292,28 @@ handle_call({call_tool_async, Tool, Args, Timeout, Options}, _From, State) ->
 
                                erlmcp_otel:record_event(SpanCtx, <<"tool.started_async">>,
                                                      #{<<"execution_id">> => ExecutionId}),
-                               erlmcp_metrics:record("cli.tool.call_async.success", 1),
+                               erlmcp_cli_metrics:record("cli.tool.call_async.success", 1),
                                {reply, {ok, ExecutionId}, State#tool_state{executions = NewExecutions}};
                            {error, Reason} ->
                                erlmcp_otel:record_error(SpanCtx, {async_start_failed, Tool, Reason}),
-                               erlmcp_metrics:record("cli.tool.call_async.error", 1),
+                               erlmcp_cli_metrics:record("cli.tool.call_async.error", 1),
                                {reply, {error, Reason}, State}
                        end;
                    true ->
                        erlmcp_otel:record_error(SpanCtx, {tool_concurrency_limit, Tool}),
-                       erlmcp_metrics:record("cli.tool.call_async.concurrency_error", 1),
+                       erlmcp_cli_metrics:record("cli.tool.call_async.concurrency_error", 1),
                        {reply, {error, concurrency_limit}, State}
                 end;
             {error, not_found} ->
                 erlmcp_otel:record_error(SpanCtx, {tool_not_found, Tool}),
-                erlmcp_metrics:record("cli.tool.async_tool_not_found", 1),
+                erlmcp_cli_metrics:record("cli.tool.async_tool_not_found", 1),
                 {reply, {error, not_found}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {async_tool_call_error, Tool, Error, Reason}),
-            erlmcp_metrics:record("cli.tool.call_async.error", 1),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {async_tool_call_error, Tool, CatchError, CatchReason}),
+            erlmcp_cli_metrics:record("cli.tool.call_async.error", 1),
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call({cancel_tool, ExecutionId, Reason, Options}, _From, State) ->
@@ -331,35 +331,35 @@ handle_call({cancel_tool, ExecutionId, Reason, Options}, _From, State) ->
                         case cancel_execution(ExecutionId, Reason, State) of
                             ok ->
                                 erlmcp_otel:record_event(SpanCtx, <<"tool.cancelled">>, #{}),
-                                erlmcp_metrics:record("cli.tool.cancel.success", 1),
+                                erlmcp_cli_metrics:record("cli.tool.cancel.success", 1),
                                 {reply, ok, State};
                             {error, CancelReason} ->
                                 erlmcp_otel:record_error(SpanCtx, {cancellation_failed, ExecutionId, CancelReason}),
-                                erlmcp_metrics:record("cli.tool.cancel.error", 1),
+                                erlmcp_cli_metrics:record("cli.tool.cancel.error", 1),
                                 {reply, {error, CancelReason}, State}
                         end;
                     completed ->
                         erlmcp_otel:record_error(SpanCtx, {tool_already_completed, ExecutionId}),
-                        erlmcp_metrics:record("cli.tool.cancel.already_completed", 1),
+                        erlmcp_cli_metrics:record("cli.tool.cancel.already_completed", 1),
                         {reply, {error, already_completed}, State};
                     cancelled ->
                         erlmcp_otel:record_error(SpanCtx, {tool_already_cancelled, ExecutionId}),
-                        erlmcp_metrics:record("cli.tool.cancel.already_cancelled", 1),
+                        erlmcp_cli_metrics:record("cli.tool.cancel.already_cancelled", 1),
                         {reply, {error, already_cancelled}, State};
                     failed ->
                         erlmcp_otel:record_error(SpanCtx, {tool_already_failed, ExecutionId}),
-                        erlmcp_metrics:record("cli.tool.cancel.already_failed", 1),
+                        erlmcp_cli_metrics:record("cli.tool.cancel.already_failed", 1),
                         {reply, {error, already_failed}, State}
                 end;
             error ->
                 erlmcp_otel:record_error(SpanCtx, {execution_not_found, ExecutionId}),
-                erlmcp_metrics:record("cli.tool.cancel.not_found", 1),
+                erlmcp_cli_metrics:record("cli.tool.cancel.not_found", 1),
                 {reply, {error, not_found}, State}
         end
     catch
         Error:Reason ->
             erlmcp_otel:record_error(SpanCtx, {cancellation_error, ExecutionId, Error, Reason}),
-            erlmcp_metrics:record("cli.tool.cancel.error", 1),
+            erlmcp_cli_metrics:record("cli.tool.cancel.error", 1),
             {reply, {error, Reason}, State}
     end;
 
@@ -393,8 +393,8 @@ handle_call({get_tool_result, ExecutionId}, _From, State) ->
                 {reply, {error, not_found}, State}
         end
     catch
-        Error:Reason ->
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call({stream_tool_output, ExecutionId}, _From, State) ->
@@ -420,9 +420,13 @@ handle_call({stream_tool_output, ExecutionId}, _From, State) ->
                 {reply, {error, not_found}, State}
         end
     catch
-        Error:Reason ->
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            {reply, {error, CatchReason}, State}
     end;
+
+handle_call(get_tool_subscribers, _From, State) ->
+    Subscribers = maps:keys(State#tool_state.handlers),
+    {reply, {ok, Subscribers}, State};
 
 handle_call({subscribe_tool_events, Pid}, _From, State) ->
     %% Add event subscriber
@@ -443,7 +447,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @doc Handle messages
--spec handle_info(term(), #tool_state{}) -> {noreply, #tool_state{}}}.
+-spec handle_info(term(), #tool_state{}) -> {noreply, #tool_state{}}.
 handle_info(cleanup_executions, State) ->
     %% Create OTEL span for execution cleanup
     SpanCtx = erlmcp_otel:inject_span("cli.tool.cleanup", #{}, undefined),
@@ -464,7 +468,7 @@ handle_info(cleanup_executions, State) ->
 
     ExecutionsToRemove = maps:size(State#tool_state.executions) - maps:size(ExecutionsToKeep),
     erlmcp_otel:record_event(SpanCtx, <<"executions.cleaned">>, #{<<"removed_count">> => ExecutionsToRemove}),
-    erlmcp_metrics:record("cli.tool.cleanup.executions_removed", ExecutionsToRemove),
+    erlmcp_cli_metrics:record("cli.tool.cleanup.executions_removed", ExecutionsToRemove),
 
     %% Schedule next cleanup
     erlang:send_after(60000, self(), cleanup_executions),
@@ -555,7 +559,7 @@ terminate(_Reason, State) ->
                             notify_tool_event(terminated, undefined, undefined),
 
                              %% Record final metrics
-                             erlmcp_metrics:record("cli.tool.terminated", 1),
+                             erlmcp_cli_metrics:record("cli.tool.terminated", 1),
 
                              ok
                           end).
@@ -762,6 +766,19 @@ notify_tool_event(Event, ExecutionId, Data) ->
         Error:Reason ->
             lager:warning("Failed to notify tool subscribers: ~p:~p", [Error, Reason]),
             ok
+    end.
+
+%% @doc Get tool event subscribers
+-spec get_tool_subscribers() -> [pid()].
+get_tool_subscribers() ->
+    case whereis(?MODULE) of
+        undefined ->
+            [];
+        Pid ->
+            case catch gen_server:call(Pid, get_tool_subscribers) of
+                {ok, Subscribers} -> Subscribers;
+                _ -> []
+            end
     end.
 
 %% @doc Format execution status

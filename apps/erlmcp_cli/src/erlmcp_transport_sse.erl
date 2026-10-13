@@ -113,14 +113,14 @@ send(Data, State) ->
 
                 {ok, State#sse_state{metrics = Metrics}}
             catch
-                Error:Reason ->
+                Error:CatchReason ->
                     %% Record error
-                    erlmcp_otel:record_error(SpanCtx, {sse_send_error, Error, Reason}),
+                    erlmcp_otel:record_error(SpanCtx, {sse_send_error, Error, CatchReason}),
 
                     %% Update error metrics
-                    Metrics = update_metrics(State#sse_state.metrics, sent, {error, Reason}),
+                    FailMetrics = update_metrics(State#sse_state.metrics, sent, {error, CatchReason}),
 
-                    {error, {sse_send_failed, Reason}, State#sse_state{metrics = Metrics}}
+                    {error, {sse_send_failed, CatchReason}, State#sse_state{metrics = FailMetrics}}
             end
     end.
 
@@ -166,19 +166,19 @@ init(Opts) ->
     %% Create OTEL span for SSE transport initialization
     SpanCtx = erlmcp_otel:with_span("cli.transport.sse.init", #{
         <<"transport">> => <<"sse">>,
-        <<"session">> => FinalOpts#{session_id},
-        <<"host">> => FinalOpts#{host},
-        <<"port">> => FinalOpts#{port}
+        <<"session">> => maps:get(session_id, FinalOpts),
+        <<"host">> => maps:get(host, FinalOpts),
+        <<"port">> => maps:get(port, FinalOpts)
     }, fun() ->
         ok
     end),
 
     %% Initialize state
     State = #sse_state{
-        transport_id = FinalOpts#{transport_id},
-        session_id = FinalOpts#{session_id},
-        host = FinalOpts#{host},
-        port = FinalOpts#{port},
+        transport_id = maps:get(transport_id, FinalOpts),
+        session_id = maps:get(session_id, FinalOpts),
+        host = maps:get(host, FinalOpts),
+        port = maps:get(port, FinalOpts),
         http_pid = undefined,
         event_id = 1,
         metrics = #{
@@ -195,7 +195,7 @@ init(Opts) ->
     case start_http_server(State) of
         {ok, Pid} ->
             %% Record initialization metrics
-            erlmcp_metrics:record("cli.transport.sse.initialized", 1),
+            erlmcp_cli_metrics:record("cli.transport.sse.initialized", 1),
 
             {ok, State#sse_state{http_pid = Pid}};
         {error, Reason} ->
@@ -235,6 +235,7 @@ handle_call({send_data, Data}, _From, State) ->
             NewState = State#sse_state{metrics = Metrics};
 
         _ ->
+            {Reply, NewState} =
             try
                 %% Create SSE message
                 SSEMessage = create_sse_message(Data, State),
@@ -253,20 +254,17 @@ handle_call({send_data, Data}, _From, State) ->
                     <<"timestamp">> => erlang:system_time(millisecond)
                 }),
 
-                Reply = ok,
-                NewState = State#sse_state{metrics = Metrics, event_id = State#sse_state.event_id + 1};
-
+                {ok, State#sse_state{metrics = Metrics, event_id = State#sse_state.event_id + 1}}
             catch
-                Error:Reason ->
+                Error:CatchReason ->
                     %% Record error
-                    erlmcp_otel:record_error(SpanCtx, {sse_send_error, Error, Reason}),
+                    erlmcp_otel:record_error(SpanCtx, {sse_send_error, Error, CatchReason}),
 
                     %% Update error metrics
-                    Metrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
+                    FailMetrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
                                                State#sse_state.metrics),
 
-                    Reply = {error, {sse_send_failed, Reason}},
-                    NewState = State#sse_state{metrics = Metrics}
+                    {{error, {sse_send_failed, CatchReason}}, State#sse_state{metrics = FailMetrics}}
             end
     end,
 
@@ -345,15 +343,15 @@ handle_cast({received_data, Data}, State) ->
         {noreply, State#sse_state{metrics = Metrics}}
 
     catch
-        Error:Reason ->
+        Error:CatchReason ->
             %% Record error
-            erlmcp_otel:record_error(SpanCtx, {sse_receive_error, Error, Reason}),
+            erlmcp_otel:record_error(SpanCtx, {sse_receive_error, Error, CatchReason}),
 
             %% Update error metrics
-            Metrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
+            FailMetrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
                                        State#sse_state.metrics),
 
-            {noreply, State#sse_state{metrics = Metrics}}
+            {noreply, State#sse_state{metrics = FailMetrics}}
     end;
 
 handle_cast(_Msg, State) ->
@@ -376,7 +374,7 @@ terminate(_Reason, State) ->
     end,
 
     %% Send final metrics
-    erlmcp_metrics:record("cli.transport.sse.terminated", 1),
+    erlmcp_cli_metrics:record("cli.transport.sse.terminated", 1),
 
     ok.
 

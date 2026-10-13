@@ -4,8 +4,8 @@
 %%%
 %%% Provides comprehensive OpenTelemetry integration for CLI operations
 %%% with JSON-RPC 2.0 protocol support and multi-transport
-compatibility.
-
+%%% compatibility.
+%%%
 %%% Integrates with erlmcp_observability for distributed tracing.
 %%%
 %%% @end
@@ -31,7 +31,6 @@ compatibility.
          spans :: map(),                          % Active spans
          exporters :: list(),                     % Exporter configurations
          metrics :: map(),                        % Metrics registry
-         exporters :: list(),                     % Exporter processes
          resource :: map(),                       % Resource attributes
          service_name :: binary()}).               % Service name
 
@@ -91,8 +90,9 @@ with_span(Name, Attributes, Links, Fun) ->
                 erlang:raise(Class, Reason, Stacktrace)
         end
     catch
-        Error:Reason ->
-            lager:warning("Failed to create span ~p: ~p:~p", [Name, Error, Reason]),
+        CatchError:CatchReason ->
+            lager:warning("Failed to create span ~p: ~p:~p",
+                          [Name, CatchError, CatchReason]),
             Fun()
     end.
 
@@ -207,7 +207,7 @@ init(_Args) ->
                                      %% Initialize span cleanup timer
                                      erlang:send_after(30000, self(), cleanup_spans),
 
-                                     erlmcp_metrics:record("cli.otel.initialized", 1),
+                                     erlmcp_cli_metrics:record("cli.otel.initialized", 1),
                                      {ok, State};
                                  {error, Reason} ->
                                      {stop, Reason}
@@ -278,7 +278,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @doc Handle messages
--spec handle_info( term( ) , #otel_state{ } ) -> { noreply , #otel_state{ } } } .
+-spec handle_info(term(), #otel_state{}) -> {noreply, #otel_state{}}.
 
 handle_info(cleanup_spans, State) ->
     %% Clean up completed spans
@@ -325,7 +325,7 @@ terminate(_Reason, State) ->
                                            State#otel_state.exporters),
 
                              %% Record final metrics
-                             erlmcp_metrics:record("cli.otel.terminated", 1),
+                             erlmcp_cli_metrics:record("cli.otel.terminated", 1),
 
                              ok
                           end).
@@ -450,8 +450,9 @@ load_file_config() ->
                 #{}
         end
     catch
-        Error:Reason ->
-            lager:warning("Failed to parse OTEL config file: ~p:~p", [Error, Reason]),
+        CatchError:CatchReason ->
+            lager:warning("Failed to parse OTEL config file: ~p:~p",
+                          [CatchError, CatchReason]),
             #{}
     end.
 
@@ -538,6 +539,11 @@ init_metrics() ->
       "metrics.recorded" => 0,
       "events.recorded" => 0}.
 
+%% @doc Start span with default parent
+-spec start_span(binary(), map(), map()) -> term().
+start_span(Name, Attributes, Links) ->
+    start_span(Name, Attributes, Links, undefined).
+
 %% @doc Start span
 -spec start_span(binary(), map(), map(), term()) -> term().
 start_span(Name, Attributes, Links, ParentSpanCtx) ->
@@ -556,8 +562,9 @@ start_span(Name, Attributes, Links, ParentSpanCtx) ->
 
         SpanCtx
     catch
-        Error:Reason ->
-            lager:warning("Failed to start span ~p: ~p:~p", [Name, Error, Reason]),
+        CatchError:CatchReason ->
+            lager:warning("Failed to start span ~p: ~p:~p",
+                          [Name, CatchError, CatchReason]),
             undefined
     end.
 
@@ -575,8 +582,8 @@ end_span(SpanCtx, Status) ->
                 otel_span:end_span(SpanCtx)
         end
     catch
-        Error:Reason ->
-            lager:warning("Failed to end span: ~p:~p", [Error, Reason])
+        CatchError:CatchReason ->
+            lager:warning("Failed to end span: ~p:~p", [CatchError, CatchReason])
     end.
 
 %% @doc Link spans

@@ -24,6 +24,19 @@
         {pending_requests :: map(),  % Request ID -> from pid
          metrics :: map()}).
 
+%% Mirrors the command_info record defined in erlmcp_cli_registry.erl
+-record(command_info,
+        {name :: binary(),
+         module :: module(),
+         arity :: integer(),
+         description :: binary(),
+         category :: binary(),
+         safety_level :: low | medium | high,
+         metrics :: map(),
+         trace_enabled :: boolean(),
+         schema :: map() | undefined,
+         registered_at :: integer()}).
+
 -define(SERVER, ?MODULE).
 -define(DEFAULT_STATE,
         #{pending_requests => #{},
@@ -57,10 +70,18 @@ handle_json_rpc(JsonData, Headers, SessionId) ->
 
 %% @doc Initialize the server
 -spec init(term()) -> {ok, #request_state{}}.
-init( _Args ) -> erlmcp_otel : with_span( "cli.json_rpc.init" , #{ } , fun ( ) -> ok end ) , State = #request_state{ pending_requests = #{ } , metrics = ?DEFAULT_STATE #{ metrics } } , erlmcp_metrics : record( "cli.json_rpc.initialized" , 1 ) , { ok , State } .
+init(_Args) ->
     %% Create OTEL span for JSON-RPC server initialization
-                                                                                                                                                                                                                                                                          %% Initialize state
+    erlmcp_otel:with_span("cli.json_rpc.init", #{}, fun() -> ok end),
+
+    %% Initialize state
+    State =
+        #request_state{pending_requests = #{}, metrics = ?DEFAULT_STATE},
+
     %% Start metrics collection
+    erlmcp_cli_metrics:record("cli.json_rpc.initialized", 1),
+
+    {ok, State}.
 
 %% @doc Handle synchronous calls
 -spec handle_call(term(), {pid(), term()}, #request_state{}) -> {reply, term(), #request_state{}}.
@@ -83,7 +104,7 @@ handle_call({handle_json_rpc, JsonData, Headers, SessionId}, From, State) ->
             %% Send JSON-RPC error response
             Response = make_error_response(ParseError),
             erlmcp_otel:record_error(SpanCtx, {parse_error, ParseError}),
-            erlmcp_metrics:record("cli.json_rpc.errors.parse", 1),
+            erlmcp_cli_metrics:record("cli.json_rpc.errors.parse", 1),
 
             %% Update state metrics
             UpdatedMetrics =
@@ -91,7 +112,7 @@ handle_call({handle_json_rpc, JsonData, Headers, SessionId}, From, State) ->
             UpdatedState = State#request_state{metrics = UpdatedMetrics},
 
             {reply, {ok, Response}, UpdatedState}
-    end.
+    end;
 
 handle_call(_Request, _From, State) ->
     {reply, {error, unknown_call}, State}.
@@ -114,7 +135,7 @@ terminate(_Reason, State) ->
                   maps:to_list(State#request_state.pending_requests)),
 
     %% Send final metrics
-    erlmcp_metrics:record("cli.json_rpc.terminated", 1),
+    erlmcp_cli_metrics:record("cli.json_rpc.terminated", 1),
 
     ok.
 
@@ -149,9 +170,13 @@ parse_json_rpc(JsonData, SpanCtx) ->
                 {error, Reason}
         end
     catch
-        Error:Reason:Stacktrace ->
-            erlmcp_otel:record_error(SpanCtx, {json_parse_error, Error, Reason, Stacktrace}),
-            {error, {parse_failed, Reason}}
+        CatchClass:CatchReason:CatchStacktrace ->
+            erlmcp_otel:record_error(SpanCtx,
+                                     {json_parse_error,
+                                      CatchClass,
+                                      CatchReason,
+                                      CatchStacktrace}),
+            {error, {parse_failed, CatchReason}}
     end.
 
 %% @doc Validate JSON-RPC 2.0 request
@@ -255,19 +280,32 @@ execute_json_rpc_method(Method, Params, Headers, SessionId, RequestId, SpanCtx) 
 
 %% @doc Execute CLI method
 -spec execute_cli_method(binary(), list(), binary(), binary(), term()) -> ok.
-execute_cli_method( Method , Args , SessionId , RequestId , SpanCtx ) -> case erlmcp_cli_registry : lookup_command( Method ) of { ok , CommandInfo } -> Result = CommandInfo #command_info .
-
-module : execute( Args ) , Response = make_success_response( RequestId , Result ) , gen_server : cast( ?SERVER , { send_response , RequestId , Response } ) , erlmcp_metrics : record( "cli.json_rpc.requests.success" , 1 ) ; { error , not_found } -> Response = make_error_response( { method_not_found , Method } ) , gen_server : cast( ?SERVER , { send_response , RequestId , Response } ) , erlmcp_otel : record_error( SpanCtx , { method_not_found , Method } ) , erlmcp_metrics : record( "cli.json_rpc.errors.method_not_found" , 1 ) ; { error , Reason } -> Response = make_error_response( { internal_error , Reason } ) , gen_server : cast( ?SERVER , { send_response , RequestId , Response } ) , erlmcp_otel : record_error( SpanCtx , { internal_error , Reason } ) , erlmcp_metrics : record( "cli.json_rpc.errors.internal" , 1 ) end .
+execute_cli_method(Method, Args, SessionId, RequestId, SpanCtx) ->
     %% Look up command in registry
+    case erlmcp_cli_registry:lookup_command(Method) of
+        {ok, CommandInfo} ->
             %% Execute command
+            Result = (CommandInfo#command_info.module):execute(Args),
 
             %% Send success response
+            Response = make_success_response(RequestId, Result),
+            gen_server:cast(?SERVER, {send_response, RequestId, Response}),
 
             %% Record success metrics
-
+            erlmcp_cli_metrics:record("cli.json_rpc.requests.success", 1);
+        {error, not_found} ->
             %% Send method not found error
-
+            Response = make_error_response({method_not_found, Method}),
+            gen_server:cast(?SERVER, {send_response, RequestId, Response}),
+            erlmcp_otel:record_error(SpanCtx, {method_not_found, Method}),
+            erlmcp_cli_metrics:record("cli.json_rpc.errors.method_not_found", 1);
+        {error, Reason} ->
             %% Send internal error
+            Response = make_error_response({internal_error, Reason}),
+            gen_server:cast(?SERVER, {send_response, RequestId, Response}),
+            erlmcp_otel:record_error(SpanCtx, {internal_error, Reason}),
+            erlmcp_cli_metrics:record("cli.json_rpc.errors.internal", 1)
+    end.
 
 %% @doc Send JSON-RPC response
 -spec send_response(binary(), map()) -> ok.
@@ -291,7 +329,41 @@ make_success_response(RequestId, Result) ->
 
 %% @doc Make error response
 -spec make_error_response(term()) -> map().
-make_error_response( { parse_error , Reason } ) -> #{ << "jsonrpc" >> => << "2.0" >> , << "error" >> => #{ << "code" >> => - 32700 , / / Parse error << "message" >> => << "Parse error" >> , << "data" >> => format_error( Reason ) } , << "id" >> => null } ; make_error_response( { invalid_request , Reason } ) -> #{ << "jsonrpc" >> => << "2.0" >> , << "error" >> => #{ << "code" >> => - 32600 , / / Invalid Request << "message" >> => << "Invalid Request" >> , << "data" >> => format_error( Reason ) } , << "id" >> => null } ; make_error_response( { method_not_found , Method } ) -> #{ << "jsonrpc" >> => << "2.0" >> , << "error" >> => #{ << "code" >> => - 32601 , / / Method not found << "message" >> => << "Method not found" >> , << "data" >> => #{ << "method" >> => Method } } , << "id" >> => null } ; make_error_response( { invalid_params , Reason } ) -> #{ << "jsonrpc" >> => << "2.0" >> , << "error" >> => #{ << "code" >> => - 32602 , / / Invalid params << "message" >> => << "Invalid params" >> , << "data" >> => format_error( Reason ) } , << "id" >> => null } ; make_error_response( { internal_error , Reason } ) -> #{ << "jsonrpc" >> => << "2.0" >> , << "error" >> => #{ << "code" >> => - 32603 , / / Internal error << "message" >> => << "Internal error" >> , << "data" >> => format_error( Reason ) } , << "id" >> => null } .
+make_error_response({parse_error, Reason}) ->
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"error">> =>
+          #{<<"code">> => -32700,   %% Parse error
+            <<"message">> => <<"Parse error">>,
+            <<"data">> => format_error(Reason)},
+      <<"id">> => null};
+make_error_response({invalid_request, Reason}) ->
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"error">> =>
+          #{<<"code">> => -32600,   %% Invalid Request
+            <<"message">> => <<"Invalid Request">>,
+            <<"data">> => format_error(Reason)},
+      <<"id">> => null};
+make_error_response({method_not_found, Method}) ->
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"error">> =>
+          #{<<"code">> => -32601,   %% Method not found
+            <<"message">> => <<"Method not found">>,
+            <<"data">> => #{<<"method">> => Method}},
+      <<"id">> => null};
+make_error_response({invalid_params, Reason}) ->
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"error">> =>
+          #{<<"code">> => -32602,   %% Invalid params
+            <<"message">> => <<"Invalid params">>,
+            <<"data">> => format_error(Reason)},
+      <<"id">> => null};
+make_error_response({internal_error, Reason}) ->
+    #{<<"jsonrpc">> => <<"2.0">>,
+      <<"error">> =>
+          #{<<"code">> => -32603,   %% Internal error
+            <<"message">> => <<"Internal error">>,
+            <<"data">> => format_error(Reason)},
+      <<"id">> => null}.
 
 %% @doc Format error
 -spec format_error(term()) -> binary().

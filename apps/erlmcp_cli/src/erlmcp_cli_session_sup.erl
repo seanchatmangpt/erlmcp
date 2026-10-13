@@ -24,6 +24,22 @@
 
 -define(SERVER, ?MODULE).
 
+%% Minimal mirror of #cli_session{} from erlmcp_cli_session.erl
+-record(cli_session, {
+    id :: binary(),
+    pid :: pid(),
+    status :: active | paused | terminated,
+    created :: integer(),
+    last_activity :: integer(),
+    command_count :: integer(),
+    trace_context :: map(),
+    metrics :: map(),
+    config :: map(),
+    parser :: pid() | undefined,
+    executor :: pid() | undefined,
+    transport :: pid() | undefined
+}).
+
 %%====================================================================
 %% API Functions
 %%====================================================================

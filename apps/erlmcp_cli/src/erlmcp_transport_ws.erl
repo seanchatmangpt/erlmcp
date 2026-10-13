@@ -125,14 +125,14 @@ send(Data, State) ->
                         {error, {websocket_send_failed, Reason}, State#ws_state{metrics = Metrics}}
                 end
             catch
-                Error:Reason ->
+                Error:CatchReason ->
                     %% Record error
-                    erlmcp_otel:record_error(SpanCtx, {websocket_send_exception, Error, Reason}),
+                    erlmcp_otel:record_error(SpanCtx, {websocket_send_exception, Error, CatchReason}),
 
                     %% Update error metrics
-                    Metrics = update_metrics(State#ws_state.metrics, sent, {error, Reason}),
+                    FailMetrics = update_metrics(State#ws_state.metrics, sent, {error, CatchReason}),
 
-                    {error, {websocket_send_failed, Reason}, State#ws_state{metrics = Metrics}}
+                    {error, {websocket_send_failed, CatchReason}, State#ws_state{metrics = FailMetrics}}
             end
     end.
 
@@ -178,19 +178,19 @@ init(Opts) ->
     %% Create OTEL span for WebSocket transport initialization
     SpanCtx = erlmcp_otel:with_span("cli.transport.ws.init", #{
         <<"transport">> => <<"websocket">>,
-        <<"session">> => FinalOpts#{session_id},
-        <<"host">> => FinalOpts#{host},
-        <<"port">> => FinalOpts#{port}
+        <<"session">> => maps:get(session_id, FinalOpts),
+        <<"host">> => maps:get(host, FinalOpts),
+        <<"port">> => maps:get(port, FinalOpts)
     }, fun() ->
         ok
     end),
 
     %% Initialize state
     State = #ws_state{
-        transport_id = FinalOpts#{transport_id},
-        session_id = FinalOpts#{session_id},
-        host = FinalOpts#{host},
-        port = FinalOpts#{port},
+        transport_id = maps:get(transport_id, FinalOpts),
+        session_id = maps:get(session_id, FinalOpts),
+        host = maps:get(host, FinalOpts),
+        port = maps:get(port, FinalOpts),
         ws_pid = undefined,
         ws_ref = undefined,
         metrics = #{
@@ -207,7 +207,7 @@ init(Opts) ->
     case connect_websocket(State) of
         {ok, WSPid, WSRef} ->
             %% Record initialization metrics
-            erlmcp_metrics:record("cli.transport.ws.initialized", 1),
+            erlmcp_cli_metrics:record("cli.transport.ws.initialized", 1),
 
             {ok, State#ws_state{ws_pid = WSPid, ws_ref = WSRef}};
         {error, Reason} ->
@@ -247,6 +247,7 @@ handle_call({send_data, Data}, _From, State) ->
             NewState = State#ws_state{metrics = Metrics};
 
         WSPid ->
+            {Reply, NewState} =
             try
                 %% Send JSON-RPC request
                 JsonRequest = jsx:encode(#{
@@ -268,8 +269,7 @@ handle_call({send_data, Data}, _From, State) ->
                             <<"timestamp">> => erlang:system_time(millisecond)
                         }),
 
-                        Reply = ok,
-                        NewState = State#ws_state{metrics = Metrics};
+                        {ok, State#ws_state{metrics = Metrics}};
 
                     {error, Reason} ->
                         %% Record error
@@ -279,20 +279,18 @@ handle_call({send_data, Data}, _From, State) ->
                         Metrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
                                                    State#ws_state.metrics),
 
-                        Reply = {error, {websocket_send_failed, Reason}},
-                        NewState = State#ws_state{metrics = Metrics}
+                        {{error, {websocket_send_failed, Reason}}, State#ws_state{metrics = Metrics}}
                 end
             catch
-                Error:Reason ->
+                Error:CatchReason ->
                     %% Record error
-                    erlmcp_otel:record_error(SpanCtx, {websocket_send_exception, Error, Reason}),
+                    erlmcp_otel:record_error(SpanCtx, {websocket_send_exception, Error, CatchReason}),
 
                     %% Update error metrics
-                    Metrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
+                    FailMetrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
                                                State#ws_state.metrics),
 
-                    Reply = {error, {websocket_send_failed, Reason}},
-                    NewState = State#ws_state{metrics = Metrics}
+                    {{error, {websocket_send_failed, CatchReason}}, State#ws_state{metrics = FailMetrics}}
             end
     end,
 
@@ -371,15 +369,15 @@ handle_cast({received_data, Data}, State) ->
         {noreply, State#ws_state{metrics = Metrics}}
 
     catch
-        Error:Reason ->
+        Error:CatchReason ->
             %% Record error
-            erlmcp_otel:record_error(SpanCtx, {websocket_receive_error, Error, Reason}),
+            erlmcp_otel:record_error(SpanCtx, {websocket_receive_error, Error, CatchReason}),
 
             %% Update error metrics
-            Metrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
+            FailMetrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
                                        State#ws_state.metrics),
 
-            {noreply, State#ws_state{metrics = Metrics}}
+            {noreply, State#ws_state{metrics = FailMetrics}}
     end;
 
 handle_cast(_Msg, State) ->
@@ -392,8 +390,8 @@ handle_info({'DOWN', Ref, process, WSPid, Reason}, State) ->
     lager:warning("WebSocket process ~p died: ~p", [WSPid, Reason]),
 
     %% Check if this is our WebSocket
-    case Ref of
-        State#ws_state.ws_ref ->
+    case Ref =:= State#ws_state.ws_ref of
+        true ->
             %% Record death event
             erlmcp_otel:record_error(undefined, {websocket_process_died, WSPid, Reason}),
 
@@ -484,7 +482,7 @@ terminate(_Reason, State) ->
     end,
 
     %% Send final metrics
-    erlmcp_metrics:record("cli.transport.ws.terminated", 1),
+    erlmcp_cli_metrics:record("cli.transport.ws.terminated", 1),
 
     ok.
 

@@ -22,7 +22,8 @@
 
 -include("erlmcp.hrl").
 -include("erlmcp_observability.hrl").
--include("erlmcp_secrets.hrl").
+%% erlmcp_secrets.hrl removed: header does not exist in the tree; all
+%% records/macros this module needs are defined inline below.
 
 %% Records
 -record(secret_state,
@@ -125,7 +126,7 @@ init(_Args) ->
                              %% Start secret cleanup timer
                             erlang:send_after(?CACHE_TTL, self(), cleanup_cache),
 
-                             erlmcp_metrics:record("cli.secrets.initialized", 1),
+                             erlmcp_cli_metrics:record("cli.secrets.initialized", 1),
                              {ok, State}
                           end).
 
@@ -141,15 +142,15 @@ handle_call({get_secret, Key}, _From, State) ->
     case get_secret_from_cache(Key, State) of
         {ok, Value} ->
             erlmcp_otel:record_event(SpanCtx, <<"secret.retrieved">>, #{<<"key">> => Key}),
-            erlmcp_metrics:record("cli.secrets.get.success", 1),
+            erlmcp_cli_metrics:record("cli.secrets.get.success", 1),
             {reply, {ok, Value}, State};
         {error, not_found} ->
             erlmcp_otel:record_error(SpanCtx, {secret_not_found, Key}),
-            erlmcp_metrics:record("cli.secrets.get.not_found", 1),
+            erlmcp_cli_metrics:record("cli.secrets.get.not_found", 1),
             {reply, {error, not_found}, State};
         {error, Reason} ->
             erlmcp_otel:record_error(SpanCtx, {secret_get_failed, Key, Reason}),
-            erlmcp_metrics:record("cli.secrets.get.error", 1),
+            erlmcp_cli_metrics:record("cli.secrets.get.error", 1),
             {reply, {error, Reason}, State}
     end;
 
@@ -184,7 +185,7 @@ handle_call({set_secret, Key, Value}, _From, State) ->
                         Metrics = update_metrics(State#secret_state.metrics, set),
 
                         erlmcp_otel:record_event(SpanCtx, <<"secret.set">>, #{<<"key">> => Key}),
-                        erlmcp_metrics:record("cli.secrets.set.success", 1),
+                        erlmcp_cli_metrics:record("cli.secrets.set.success", 1),
 
                         {reply, ok, State#secret_state{
                             secrets = NewSecrets,
@@ -194,19 +195,19 @@ handle_call({set_secret, Key, Value}, _From, State) ->
                         }};
                     {error, Reason} ->
                         erlmcp_otel:record_error(SpanCtx, {secret_save_failed, Key, Reason}),
-                        erlmcp_metrics:record("cli.secrets.set.error", 1),
+                        erlmcp_cli_metrics:record("cli.secrets.set.error", 1),
                         {reply, {error, Reason}, State}
                 end;
             {error, Reason} ->
                 erlmcp_otel:record_error(SpanCtx, {secret_validation_failed, Key, Reason}),
-                erlmcp_metrics:record("cli.secrets.set.validation_error", 1),
+                erlmcp_cli_metrics:record("cli.secrets.set.validation_error", 1),
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {secret_encryption_failed, Key, Error, Reason}),
-            erlmcp_metrics:record("cli.secrets.set.error", 1),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {secret_encryption_failed, Key, CatchError, CatchReason}),
+            erlmcp_cli_metrics:record("cli.secrets.set.error", 1),
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call({delete_secret, Key}, _From, State) ->
@@ -235,7 +236,7 @@ handle_call({delete_secret, Key}, _From, State) ->
                     Metrics = update_metrics(State#secret_state.metrics, delete),
 
                     erlmcp_otel:record_event(SpanCtx, <<"secret.deleted">>, #{<<"key">> => Key}),
-                    erlmcp_metrics:record("cli.secrets.delete.success", 1),
+                    erlmcp_cli_metrics:record("cli.secrets.delete.success", 1),
 
                     {reply, ok, State#secret_state{
                         secrets = NewSecrets,
@@ -245,12 +246,12 @@ handle_call({delete_secret, Key}, _From, State) ->
                     }};
                 {error, Reason} ->
                     erlmcp_otel:record_error(SpanCtx, {secret_save_failed, Key, Reason}),
-                    erlmcp_metrics:record("cli.secrets.delete.error", 1),
+                    erlmcp_cli_metrics:record("cli.secrets.delete.error", 1),
                     {reply, {error, Reason}, State}
             end;
         error ->
             erlmcp_otel:record_error(SpanCtx, {secret_not_found, Key}),
-            erlmcp_metrics:record("cli.secrets.delete.not_found", 1),
+            erlmcp_cli_metrics:record("cli.secrets.delete.not_found", 1),
             {reply, {error, not_found}, State}
     end;
 
@@ -281,7 +282,7 @@ handle_call({import_secrets, Secrets}, _From, State) ->
 
                 erlmcp_otel:record_event(SpanCtx, <<"secret.imported">>,
                                       #{<<"count">> => map_size(NewSecrets) - map_size(State#secret_state.secrets)}),
-                erlmcp_metrics:record("cli.secrets.import.success", 1),
+                erlmcp_cli_metrics:record("cli.secrets.import.success", 1),
 
                 {reply, ok, State#secret_state{
                     secrets = NewSecrets,
@@ -290,14 +291,14 @@ handle_call({import_secrets, Secrets}, _From, State) ->
                 }};
             {error, Reason} ->
                 erlmcp_otel:record_error(SpanCtx, {secret_import_failed, Reason}),
-                erlmcp_metrics:record("cli.secrets.import.error", 1),
+                erlmcp_cli_metrics:record("cli.secrets.import.error", 1),
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {secret_validation_failed, Error, Reason}),
-            erlmcp_metrics:record("cli.secrets.import.validation_error", 1),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {secret_validation_failed, CatchError, CatchReason}),
+            erlmcp_cli_metrics:record("cli.secrets.import.validation_error", 1),
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call(export_secrets, _From, State) ->
@@ -324,17 +325,17 @@ handle_call({authenticate, Type, Credentials}, _From, State) ->
             {ok, AuthData} ->
                 erlmcp_otel:record_event(SpanCtx, <<"authentication.success">>,
                                       #{<<"type">> => Type}),
-                erlmcp_metrics:record("cli.secrets.authenticate.success", 1),
+                erlmcp_cli_metrics:record("cli.secrets.authenticate.success", 1),
                 {reply, {ok, AuthData}, State};
             {error, Reason} ->
                 erlmcp_otel:record_error(SpanCtx, {authentication_failed, Type, Reason}),
-                erlmcp_metrics:record("cli.secrets.authenticate.error", 1),
+                erlmcp_cli_metrics:record("cli.secrets.authenticate.error", 1),
                 {reply, {error, Reason}, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {authentication_error, Type, Error, Reason}),
-            {reply, {error, Reason}, State}
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {authentication_error, Type, CatchError, CatchReason}),
+            {reply, {error, CatchReason}, State}
     end;
 
 handle_call(_Request, _From, State) ->
@@ -359,7 +360,7 @@ handle_cast(clear_secrets, State) ->
             Metrics = update_metrics(State#secret_state.metrics, clear),
 
             erlmcp_otel:record_event(SpanCtx, <<"secrets.cleared">>, #{}),
-            erlmcp_metrics:record("cli.secrets.clear.success", 1),
+            erlmcp_cli_metrics:record("cli.secrets.clear.success", 1),
 
             {noreply, State#secret_state{
                 secrets = NewSecrets,
@@ -369,7 +370,7 @@ handle_cast(clear_secrets, State) ->
             }};
         {error, Reason} ->
             erlmcp_otel:record_error(SpanCtx, {secret_clear_failed, Reason}),
-            erlmcp_metrics:record("cli.secrets.clear.error", 1),
+            erlmcp_cli_metrics:record("cli.secrets.clear.error", 1),
             {noreply, State}
     end;
 
@@ -395,7 +396,7 @@ handle_cast(rotate_secrets, State) ->
                 Metrics = update_metrics(State#secret_state.metrics, rotate),
 
                 erlmcp_otel:record_event(SpanCtx, <<"secrets.rotated">>, #{}),
-                erlmcp_metrics:record("cli.secrets.rotate.success", 1),
+                erlmcp_cli_metrics:record("cli.secrets.rotate.success", 1),
 
                 {noreply, State#secret_state{
                     encrypted = encrypt_secrets(ReencryptedSecrets),
@@ -404,13 +405,14 @@ handle_cast(rotate_secrets, State) ->
                 }};
             {error, Reason} ->
                 erlmcp_otel:record_error(SpanCtx, {key_rotation_failed, Reason}),
-                erlmcp_metrics:record("cli.secrets.rotate.error", 1),
+                erlmcp_cli_metrics:record("cli.secrets.rotate.error", 1),
                 {noreply, State}
         end
     catch
-        Error:Reason ->
-            erlmcp_otel:record_error(SpanCtx, {key_rotation_error, Error, Reason}),
+        CatchError:CatchReason ->
+            erlmcp_otel:record_error(SpanCtx, {key_rotation_error, CatchError, CatchReason}),
             {noreply, State}
+
     end;
 
 handle_cast(_Msg, State) ->
@@ -450,7 +452,7 @@ terminate(_Reason, State) ->
                             WipedState = wipe_secrets(State),
 
                              %% Record final metrics
-                             erlmcp_metrics:record("cli.secrets.terminated", 1),
+                             erlmcp_cli_metrics:record("cli.secrets.terminated", 1),
 
                              ok
                           end).
@@ -477,8 +479,8 @@ load_secrets_from_storage() ->
                 #{}
         end
     catch
-        Error:Reason ->
-            lager:warning("Exception loading secrets: ~p:~p", [Error, Reason]),
+        CatchError:CatchReason ->
+            lager:warning("Exception loading secrets: ~p:~p", [CatchError, CatchReason]),
             #{}
     end.
 
@@ -507,8 +509,8 @@ encrypt_secrets(Secrets) ->
                 <<>>
         end
     catch
-        Error:Reason ->
-            lager:warning("Exception encrypting secrets: ~p:~p", [Error, Reason]),
+        CatchError:CatchReason ->
+            lager:warning("Exception encrypting secrets: ~p:~p", [CatchError, CatchReason]),
             <<>>
     end.
 
@@ -524,8 +526,8 @@ encrypt_value(Value, Keyring) ->
                 <<>>
         end
     catch
-        Error:Reason ->
-            lager:warning("Exception encrypting value: ~p:~p", [Error, Reason]),
+        CatchError:CatchReason ->
+            lager:warning("Exception encrypting value: ~p:~p", [CatchError, CatchReason]),
             <<>>
     end.
 
@@ -540,8 +542,8 @@ decrypt_value(Encrypted, Keyring) ->
                 <<>>
         end
     catch
-        Error:Reason ->
-            lager:warning("Exception decrypting value: ~p:~p", [Error, Reason]),
+        CatchError:CatchReason ->
+            lager:warning("Exception decrypting value: ~p:~p", [CatchError, CatchReason]),
             <<>>
     end.
 
@@ -549,18 +551,20 @@ decrypt_value(Encrypted, Keyring) ->
 -spec get_secret_from_cache(binary(), #secret_state{}) -> {ok, binary()} | {error, term()}.
 get_secret_from_cache(Key, State) ->
     case maps:find(Key, State#secret_state.cache) of
-        {ok, {Value, Expiry}} when Expiry > erlang:system_time(millisecond) ->
-            {ok, Value};
-        {ok, _} ->
-            %% Cache expired, remove and try from storage
-            NewCache = maps:remove(Key, State#secret_state.cache),
-            case maps:find(Key, State#secret_state.secrets) of
-                {ok, Encrypted} ->
-                    Decrypted = decrypt_value(Encrypted, State#secret_state.keyring),
-                    NewCache2 = cache_secret(Key, Decrypted, NewCache),
-                    {ok, Decrypted};
-                error ->
-                    {error, not_found}
+        {ok, {Value, Expiry}} ->
+            Now = erlang:system_time(millisecond),
+            case Expiry > Now of
+                true ->
+                    {ok, Value};
+                false ->
+                    %% Cache expired, remove and try from storage
+                    NewCache = maps:remove(Key, State#secret_state.cache),
+                    case maps:find(Key, State#secret_state.secrets) of
+                        {ok, Encrypted} ->
+                            decrypt_value(Encrypted, State#secret_state.keyring);
+                        error ->
+                            {error, not_found}
+                    end
             end;
         error ->
             {error, not_found}
@@ -682,7 +686,7 @@ verify_jwt_token(Token, State) ->
                 {error, jwt_secret_not_found}
         end
     catch
-        Error:Reason -> {error, {verification_error, Error, Reason}}
+        CatchError:CatchReason -> {error, {verification_error, CatchError, CatchReason}}
     end.
 
 %% @doc Verify MTLS certificate
@@ -701,7 +705,7 @@ verify_mtls_cert(Cert, Key, State) ->
                 {error, mtls_ca_not_found}
         end
     catch
-        Error:Reason -> {error, {cert_verification_error, Error, Reason}}
+        CatchError:CatchReason -> {error, {cert_verification_error, CatchError, CatchReason}}
     end.
 
 %% @doc Verify API key
@@ -756,6 +760,16 @@ verify_basic_auth(Username, Password, State) ->
 -spec notify_watchers(binary(), term()) -> ok.
 notify_watchers(Key, Event) ->
     lists:foreach(fun(Watcher) -> Watcher ! {secret_event, Key, Event} end, get_watchers()).
+
+%% @doc Notify secret watchers of a global (key-less) event
+-spec notify_watchers(term()) -> ok.
+notify_watchers(Event) ->
+    notify_watchers(<<"*">>, Event).
+
+%% @doc Return the registered secret watchers (empty until a registry
+%%      process is wired in; see #secret_state.watchers).
+-spec get_watchers() -> list().
+get_watchers() -> [].
 
 %% @doc Initialize metrics
 -spec init_metrics() -> map().

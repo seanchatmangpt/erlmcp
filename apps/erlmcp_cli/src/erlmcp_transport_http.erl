@@ -124,14 +124,14 @@ send(Data, State) ->
                         {error, {http_send_failed, Reason}, State#http_state{metrics = Metrics}}
                 end
             catch
-                Error:Reason ->
+                Error:CatchReason ->
                     %% Record error
-                    erlmcp_otel:record_error(SpanCtx, {http_send_exception, Error, Reason}),
+                    erlmcp_otel:record_error(SpanCtx, {http_send_exception, Error, CatchReason}),
 
                     %% Update error metrics
-                    Metrics = update_metrics(State#http_state.metrics, sent, {error, Reason}),
+                    FailMetrics = update_metrics(State#http_state.metrics, sent, {error, CatchReason}),
 
-                    {error, {http_send_failed, Reason}, State#http_state{metrics = Metrics}}
+                    {error, {http_send_failed, CatchReason}, State#http_state{metrics = FailMetrics}}
             end
     end.
 
@@ -178,19 +178,19 @@ init(Opts) ->
     %% Create OTEL span for HTTP transport initialization
     SpanCtx = erlmcp_otel:with_span("cli.transport.http.init", #{
         <<"transport">> => <<"http">>,
-        <<"session">> => FinalOpts#{session_id},
-        <<"host">> => FinalOpts#{host},
-        <<"port">> => FinalOpts#{port}
+        <<"session">> => maps:get(session_id, FinalOpts),
+        <<"host">> => maps:get(host, FinalOpts),
+        <<"port">> => maps:get(port, FinalOpts)
     }, fun() ->
         ok
     end),
 
     %% Initialize state
     State = #http_state{
-        transport_id = FinalOpts#{transport_id},
-        session_id = FinalOpts#{session_id},
-        host = FinalOpts#{host},
-        port = FinalOpts#{port},
+        transport_id = maps:get(transport_id, FinalOpts),
+        session_id = maps:get(session_id, FinalOpts),
+        host = maps:get(host, FinalOpts),
+        port = maps:get(port, FinalOpts),
         pid = undefined,
         metrics = #{
             "messages.sent" => 0,
@@ -206,7 +206,7 @@ init(Opts) ->
     case start_http_server(State) of
         {ok, Pid} ->
             %% Record initialization metrics
-            erlmcp_metrics:record("cli.transport.http.initialized", 1),
+            erlmcp_cli_metrics:record("cli.transport.http.initialized", 1),
 
             {ok, State#http_state{pid = Pid}};
         {error, Reason} ->
@@ -246,6 +246,7 @@ handle_call({send_data, Data}, _From, State) ->
             NewState = State#http_state{metrics = Metrics};
 
         _ ->
+            {Reply, NewState} =
             try
                 %% Create HTTP request
                 HttpRequest = create_http_request(Data, State),
@@ -275,8 +276,7 @@ handle_call({send_data, Data}, _From, State) ->
                             <<"timestamp">> => erlang:system_time(millisecond)
                         }),
 
-                        Reply = ok,
-                        NewState = State#http_state{metrics = Metrics};
+                        {ok, State#http_state{metrics = Metrics}};
 
                     {error, Reason} ->
                         %% Record error
@@ -286,20 +286,18 @@ handle_call({send_data, Data}, _From, State) ->
                         Metrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
                                                    State#http_state.metrics),
 
-                        Reply = {error, {http_send_failed, Reason}},
-                        NewState = State#http_state{metrics = Metrics}
+                        {{error, {http_send_failed, Reason}}, State#http_state{metrics = Metrics}}
                 end
             catch
-                Error:Reason ->
+                Error:CatchReason ->
                     %% Record error
-                    erlmcp_otel:record_error(SpanCtx, {http_send_exception, Error, Reason}),
+                    erlmcp_otel:record_error(SpanCtx, {http_send_exception, Error, CatchReason}),
 
                     %% Update error metrics
-                    Metrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
+                    FailMetrics = maps:update_with("errors.send", fun(V) -> V + 1 end,
                                                State#http_state.metrics),
 
-                    Reply = {error, {http_send_failed, Reason}},
-                    NewState = State#http_state{metrics = Metrics}
+                    {{error, {http_send_failed, CatchReason}}, State#http_state{metrics = FailMetrics}}
             end
     end,
 
@@ -378,15 +376,15 @@ handle_cast({received_data, Data}, State) ->
         {noreply, State#http_state{metrics = Metrics}}
 
     catch
-        Error:Reason ->
+        Error:CatchReason ->
             %% Record error
-            erlmcp_otel:record_error(SpanCtx, {http_receive_error, Error, Reason}),
+            erlmcp_otel:record_error(SpanCtx, {http_receive_error, Error, CatchReason}),
 
             %% Update error metrics
-            Metrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
+            FailMetrics = maps:update_with("errors.receive", fun(V) -> V + 1 end,
                                        State#http_state.metrics),
 
-            {noreply, State#http_state{metrics = Metrics}}
+            {noreply, State#http_state{metrics = FailMetrics}}
     end;
 
 handle_cast(_Msg, State) ->
@@ -409,7 +407,7 @@ terminate(_Reason, State) ->
     end,
 
     %% Send final metrics
-    erlmcp_metrics:record("cli.transport.http.terminated", 1),
+    erlmcp_cli_metrics:record("cli.transport.http.terminated", 1),
 
     ok.
 

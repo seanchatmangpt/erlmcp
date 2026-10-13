@@ -39,25 +39,37 @@ start_link(TransportType, Opts) ->
 %% @doc Send data through transport
 -spec send_data(binary(), atom()) -> {ok, term()} | {error, term()}.
 send_data(Data, TransportType) ->
-    case TransportType of
+    %% Dispatch must never crash the caller: a transport process that is not
+    %% running surfaces as {error, transport_not_running} (real API contract).
+    case catch case TransportType of
         stdio -> erlmcp_transport_stdio:send(Data);
         tcp -> erlmcp_transport_tcp:send(Data);
         http -> erlmcp_transport_http:send(Data);
         ws -> erlmcp_transport_ws:send(Data);
         sse -> erlmcp_transport_sse:send(Data);
-        _ -> {error, {invalid_transport_type, TransportType}}
+             _ -> {error, {invalid_transport_type, TransportType}}
+         end of
+        {'EXIT', _Reason} ->
+            {error, transport_not_running};
+        Result ->
+            Result
     end.
 
 %% @doc Close transport
 -spec close_transport(atom()) -> ok | {error, term()}.
 close_transport(TransportType) ->
-    case TransportType of
+    case catch case TransportType of
         stdio -> erlmcp_transport_stdio:close();
         tcp -> erlmcp_transport_tcp:close();
         http -> erlmcp_transport_http:close();
         ws -> erlmcp_transport_ws:close();
         sse -> erlmcp_transport_sse:close();
-        _ -> {error, {invalid_transport_type, TransportType}}
+             _ -> {error, {invalid_transport_type, TransportType}}
+         end of
+        {'EXIT', _Reason} ->
+            {error, transport_not_running};
+        Result ->
+            Result
     end.
 
 %% @doc Get transport type constants
@@ -83,13 +95,18 @@ sse() -> sse.
 %% @doc Initialize transport (stub - implemented in specific modules)
 -spec init(atom(), map()) -> {ok, term()} | {error, term()}.
 init(TransportType, Opts) ->
-    case TransportType of
+    case catch case TransportType of
         stdio -> erlmcp_transport_stdio:init(Opts);
         tcp -> erlmcp_transport_tcp:init(Opts);
         http -> erlmcp_transport_http:init(Opts);
         ws -> erlmcp_transport_ws:init(Opts);
         sse -> erlmcp_transport_sse:init(Opts);
-        _ -> {error, {invalid_transport_type, TransportType}}
+             _ -> {error, {invalid_transport_type, TransportType}}
+         end of
+        {'EXIT', _Reason} ->
+            {error, transport_not_running};
+        Result ->
+            Result
     end.
 
 %% @doc Send data through transport (stub - implemented in specific modules)

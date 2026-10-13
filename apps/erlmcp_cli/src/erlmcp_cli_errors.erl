@@ -297,7 +297,7 @@ init(_Args) ->
                              %% Start error cleanup timer
                              erlang:send_after(300000, self(), cleanup_errors), % 5 minutes
 
-                             erlmcp_metrics:record("cli.error.initialized", 1),
+                             erlmcp_cli_metrics:record("cli.error.initialized", 1),
                              {ok, State}
                           end).
 
@@ -356,7 +356,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% @doc Handle messages
--spec handle_info( term( ) , #error_state{ } ) -> { noreply , #error_state{ } } } .
+-spec handle_info(term(), #error_state{}) -> {noreply, #error_state{}}.
 
 handle_info(cleanup_errors, State) ->
     %% Create OTEL span for error cleanup
@@ -373,7 +373,7 @@ handle_info(cleanup_errors, State) ->
     erlmcp_otel:record_event(SpanCtx,
                              <<"errors.cleaned">>,
                              #{<<"cleaned_count">> => maps:size(OldMetrics)}),
-    erlmcp_metrics:record("cli.error.cleanup.executed", 1),
+    erlmcp_cli_metrics:record("cli.error.cleanup.executed", 1),
 
     %% Schedule next cleanup
     erlang:send_after(300000, self(), cleanup_errors),
@@ -394,7 +394,7 @@ terminate(_Reason, State) ->
                                            State#error_state.handlers),
 
                              %% Record final metrics
-                             erlmcp_metrics:record("cli.error.terminated", 1),
+                             erlmcp_cli_metrics:record("cli.error.terminated", 1),
 
                              ok
                           end).
@@ -668,7 +668,21 @@ send_error_rate_alert(ErrorCount, AlertThreshold) ->
 
 %% @doc Log to file
 -spec log_to_file(map()) -> ok.
-log_to_file( LogEntry ) -> try LogFile = filename : join( os : getenv( "HOME" , "." ) , ".erlmcp_errors.log" ) , LogLine = jsx : encode( LogEntry ) << "\n" >> , case file : open( LogFile , [ append , binary ] ) of { ok , File } -> file : write( File , LogLine ) , file : close( File ) ; { error , _ } -> ok end catch _ -> ok end .
+log_to_file(LogEntry) ->
+    try
+        LogFile = filename:join(os:getenv("HOME", "."), ".erlmcp_errors.log"),
+        LogLine = <<(jsx:encode(LogEntry))/binary, "\n">>,
+        case file:open(LogFile, [append, binary]) of
+            {ok, File} ->
+                file:write(File, LogLine),
+                file:close(File);
+            {error, _} ->
+                ok
+        end
+    catch
+        _ ->
+            ok
+    end.
 
 %% @doc Format error type
 -spec format_error_type(term()) -> binary().
