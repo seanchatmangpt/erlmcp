@@ -124,7 +124,7 @@ init_per_suite(Config) ->
     timer:sleep(1000),
     Config.
 
--spec end_per_suite(Config) -> term().
+-spec end_per_suite(Config :: term()) -> term().
 end_per_suite(_Config) ->
     ct:log("Stopping erlmcp Integration Test Suite"),
     application:stop(erlmcp_observability),
@@ -132,12 +132,12 @@ end_per_suite(_Config) ->
     application:stop(erlmcp_core),
     ok.
 
--spec init_per_testcase(TestCase, Config) -> Config.
+-spec init_per_testcase(TestCase :: atom(), Config :: term()) -> term().
 init_per_testcase(TestCase, Config) ->
     ct:log("Starting test case: ~p", [TestCase]),
     Config.
 
--spec end_per_testcase(TestCase, Config) -> ok.
+-spec end_per_testcase(TestCase :: atom(), Config :: term()) -> ok.
 end_per_testcase(TestCase, _Config) ->
     ct:log("Test case complete: ~p", [TestCase]),
     ok.
