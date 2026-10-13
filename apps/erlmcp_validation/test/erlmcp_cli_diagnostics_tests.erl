@@ -173,14 +173,31 @@ test_check_dependencies() ->
 %%%====================================================================
 
 test_check_applications() ->
+    %% Real-state court: attempt to start erlmcp_core, then assert the
+    %% diagnostics verdict MATCHES the observed running state. eunit does
+    %% not start applications by itself; on this tree erlmcp_core cannot
+    %% start (erlmcp_request_manager.erl is disabled as .broken2 while
+    %% erlmcp_core_sup still references it — pre-existing, out of CLI scope),
+    %% so the check must report `warn` and list the app as stopped, never
+    %% silently claim pass.
+    _ = application:ensure_all_started(erlmcp_core),
+    CoreRunning = lists:keymember(erlmcp_core, 1, application:which_applications()),
     {ok, Result} = erlmcp_cli_diagnostics:check_applications(),
     ?assertMatch(#{running := _,
                    stopped := _,
                    status := _},
                  Result),
     {ok, Running} = maps:find(running, Result),
-    ?assert(is_list(Running)),
-    ?assert(lists:member(erlmcp, Running) orelse lists:member(erlmcp_core, Running)).
+    {ok, Stopped} = maps:find(stopped, Result),
+    {ok, Status} = maps:find(status, Result),
+    case CoreRunning of
+        true ->
+            ?assert(lists:member(erlmcp, Running) orelse lists:member(erlmcp_core, Running)),
+            ?assertEqual(pass, Status);
+        false ->
+            ?assert(lists:member(erlmcp_core, Stopped)),
+            ?assertEqual(warn, Status)
+    end.
 
 %%%====================================================================
 %%% Supervisor Tree Tests

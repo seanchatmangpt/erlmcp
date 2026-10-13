@@ -16,7 +16,7 @@
          graceful_shutdown/0]).
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3,
-         format_status/1]).
+         handle_continue/2, format_status/1]).
 
 %% Types
 -type transport_id() :: atom() | binary().

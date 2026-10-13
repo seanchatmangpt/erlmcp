@@ -303,9 +303,12 @@ test_command_aliases() ->
     %% Define alias: "v" → "validate"
     ok = erlmcp_cli_interactive:add_alias(Pid, "v", "validate"),
 
-    %% Use alias
+    %% Use alias — parse_command/1 returns {ok, {Cmd, Args, Flags}}; binding
+    %% {ok, Parsed} already unwraps the outer {ok, _}, so the pattern must
+    %% match the inner tuple only (asserting {ok, {ok, ...}} is a tautological
+    %% mismatch, not a spec fact).
     {ok, Parsed} = erlmcp_cli_interactive:parse_command("v spec"),
-    ?assertMatch({ok, {validate, [<<"spec">>], #{}}}, Parsed),
+    ?assertMatch({validate, [<<"spec">>], #{}}, Parsed),
 
     ok = erlmcp_cli_interactive:stop(Pid).
 
@@ -458,13 +461,14 @@ test_input_sanitization() ->
     Result1 = erlmcp_cli_interactive:parse_command("test\x00command"),
     ?assertMatch({error, {invalid_character, _}}, Result1),
 
-    %% Test excessive whitespace
+    %% Test excessive whitespace — {ok, Parsed} already unwraps the outer
+    %% {ok, _}; match the inner tuple.
     {ok, Parsed} = erlmcp_cli_interactive:parse_command("  help   "),
-    ?assertMatch({ok, {help, [], #{}}}, Parsed),
+    ?assertMatch({help, [], #{}}, Parsed),
 
     %% Test special characters
     {ok, Parsed2} = erlmcp_cli_interactive:parse_command("echo \"hello world\""),
-    ?assertMatch({ok, {echo, [<<"hello world">>], #{}}}, Parsed2).
+    ?assertMatch({echo, [<<"hello world">>], #{}}, Parsed2).
 
 %%%====================================================================
 %%% Command Chaining Tests
@@ -588,9 +592,14 @@ test_circular_alias() ->
     ok = erlmcp_cli_interactive:stop(Pid).
 
 test_unicode_input() ->
-    %% Test Unicode command
+    %% Test Unicode command — {ok, Parsed} already unwraps the outer {ok, _};
+    %% match the inner tuple. The pattern binary MUST carry /utf8: an
+    %% unadorned binary string literal silently truncates codepoints > 255
+    %% to their low byte (世 = U+4E16 -> 0x16), per the Erlang bin-element
+    %% latin1 default (ERTS user's guide, "Unicode binaries"); MCP
+    %% JSON-RPC payloads are UTF-8 (MCP spec transport requirements).
     {ok, Parsed} = erlmcp_cli_interactive:parse_command("echo \"hello 世界\""),
-    ?assertMatch({ok, {echo, [<<"hello 世界">>], #{}}}, Parsed).
+    ?assertMatch({echo, [<<"hello 世界"/utf8>>], #{}}, Parsed).
 
 test_long_command() ->
     %% Test very long command (10KB)

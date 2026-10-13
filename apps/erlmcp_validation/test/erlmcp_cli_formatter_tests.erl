@@ -47,7 +47,9 @@ test_colors() ->
     % Test basic colors
     Red = erlmcp_cli_formatter:error("test"),
     ?assert(is_list(Red)),
-    ?assert(length(Red) > 4),  % Should include ANSI codes
+    % ANSI codes wrap "test": flatten the iolist before measuring — the raw
+    % spine is [code, text, reset] (length 3) regardless of coloring.
+    ?assert(length(lists:flatten(Red)) > 4),  % Should include ANSI codes
 
     Green = erlmcp_cli_formatter:success("test"),
     ?assert(is_list(Green)),

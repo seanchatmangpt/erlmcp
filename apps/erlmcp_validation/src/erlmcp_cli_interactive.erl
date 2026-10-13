@@ -395,11 +395,15 @@ chain_exec([Part | Rest], State, Acc) ->
 
 %% Pipe: run left command to output, then filter through each right stage.
 pipe_exec(Left, Rights, State) ->
+    %% exec_one_to_binary/2 returns {Reply, NewState}; destructure the pair
+    %% (previously matched a bare Reply, crashing on any piped left stage).
     case exec_one_to_binary(Left, State) of
-        {ok, Output} ->
-            {pipe_stages(Output, Rights), State};
-        {error, _} = Error ->
-            {Error, State}
+        {{ok, Output}, NewState} ->
+            {pipe_stages(Output, Rights), NewState};
+        {{error, _} = Error, NewState} ->
+            {Error, NewState};
+        {{exit, normal}, NewState} ->
+            {pipe_stages(<<>>, Rights), NewState}
     end.
 
 pipe_stages(Output, []) ->
