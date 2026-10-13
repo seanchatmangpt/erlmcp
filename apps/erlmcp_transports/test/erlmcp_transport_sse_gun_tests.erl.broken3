@@ -1,0 +1,1444 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Tests for erlmcp_transport_sse_gun module
+%%%
+%%% Comprehensive test suite covering:
+%%% - Basic client and server functionality
+%%% - Connection pooling
+%%% - Error handling
+%%% - SSE protocol compliance
+%%% - Performance metrics
+%%% - Backpressure handling
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_sse_gun_tests).
+
+-include_lib("eunit/include/eunit.hrl").
+-include("erlmcp.hrl").
+-include("erlmcp_transport_sse_gun.hrl").
+
+%%====================================================================
+%% Test Macros
+%%====================================================================
+
+-define(TIMEOUT, 5000). %% 5 second timeout for async operations
+-define(POLL_INTERVAL, 100). %% 100ms polling interval
+-define(MAX_RETRIES, 3).
+
+%%====================================================================
+%% Test Suites
+%%====================================================================
+
+sse_gun_test_() ->
+    {setup,
+        fun setup/0,
+        fun cleanup/1,
+        [
+            basic_client_server_tests(),
+            connection_pooling_tests(),
+            sse_protocol_tests(),
+            error_handling_tests(),
+            metrics_tests(),
+            backpressure_tests(),
+            performance_tests(),
+            ssl_tests()
+        ]
+    }.
+
+%%====================================================================
+%% Setup and Cleanup
+%%====================================================================
+
+setup() ->
+    %% Ensure transport dependencies are available
+    case application:start(gun) of
+        ok -> ok;
+        {error, {already_started, _}} -> ok;
+        {error, Reason} ->
+            throw({failed_to_start_gun, Reason})
+    end,
+
+    %% Initialize test configuration
+    TestConfig = #{
+        test_mode => true,
+        log_level => debug,
+        enable_metrics => true
+    },
+
+    %% Start test registry
+    case whereis(test_registry) of
+        undefined ->
+            spawn(fun() -> test_registry_loop(TestConfig) end);
+        _ ->
+            ok
+    end,
+
+    %% Wait for registry to start
+    timer:sleep(100),
+
+    ok.
+
+cleanup(_Pid) ->
+    %% Stop test processes
+    case whereis(test_registry) of
+        undefined -> ok;
+        Pid -> exit(Pid, normal)
+    end,
+
+    %% Clean up any remaining connections
+    cleanup_connections(),
+
+    ok.
+
+cleanup_connections() ->
+    %% Find and stop all SSE processes
+    Processes = processes(),
+    SSEPids = lists:filter(fun(Pid) ->
+        case process_info(Pid, registered_name) of
+            {registered_name, Name} when is_atom(Name) ->
+                case atom_to_binary(Name, utf8) of
+                    <<"test_sse_", _/binary>> -> true;
+                    _ -> false
+                end;
+            _ -> false
+        end
+    end, Processes),
+
+    lists:foreach(fun(Pid) ->
+        case is_process_alive(Pid) of
+            true -> exit(Pid, cleanup);
+            false -> ok
+        end
+    end, SSEPids).
+
+%%====================================================================
+%% Basic Client/Server Tests
+%%====================================================================
+
+basic_client_server_tests() ->
+    {foreach,
+        fun start_test_server/0,
+        fun stop_test_server/1,
+        [
+            {"test client start/stop", fun test_client_start_stop/0},
+            {"test basic message sending", fun test_basic_message_sending/0},
+            {"test connection info", fun test_connection_info/0},
+            {"test disconnect functionality", fun test_disconnect_functionality/0},
+            {"test concurrent connections", fun test_concurrent_connections/0}
+        ]
+    }.
+
+start_test_server() ->
+    %% Start test server
+    Opts = #{
+        transport_id => <<"test_sse_server">>,
+        mode => server,
+        host => "localhost",
+        port => 0, %% Let OS assign port
+        path => "/test-sse",
+        enable_metrics => true
+    },
+
+    {ok, ServerPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    %% Wait for server to start
+    timer:sleep(500),
+
+    %% Store server port
+    Port = get_server_port(ServerPid),
+    {ServerPid, Port}.
+
+stop_test_server({ServerPid, _Port}) ->
+    erlmcp_transport_sse_gun:close(ServerPid).
+
+test_client_start_stop() ->
+    %% Create test server with assigned port
+    {ServerPid, Port} = start_test_server(),
+
+    %% Test client startup
+    Opts = #{
+        transport_id => <<"test_sse_client">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    %% Verify client is running
+    ?assert(is_process_alive(ClientPid)),
+
+    %% Test client info
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assertEqual(<<"test_sse_client">>, maps:get(transport_id, Info)),
+
+    %% Test client stop
+    erlmcp_transport_sse_gun:close(ClientPid),
+    timer:sleep(100),
+    ?assert(not is_process_alive(ClientPid)),
+
+    stop_test_server({ServerPid, Port}).
+
+test_basic_message_sending() ->
+    {ServerPid, Port} = start_test_server(),
+
+    %% Start test client
+    Opts = #{
+        transport_id => <<"test_sse_client">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+    timer:sleep(1000), %% Wait for connection
+
+    %% Test message sending
+    Event = <<"data: {\"test\": \"message\"}\n\n">>,
+    Result = erlmcp_transport_sse_gun:send(ClientPid, Event),
+
+    %% Verify message was sent
+    ?assertEqual(ok, Result),
+
+    %% Test server received message (would need mock registry)
+    %% For now, just verify client is still running
+    ?assert(is_process_alive(ClientPid)),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_connection_info() ->
+    {ServerPid, Port} = start_test_server(),
+
+    %% Start client
+    Opts = #{
+        transport_id => <<"test_sse_client">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+    timer:sleep(1000),
+
+    %% Test connection info
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+
+    %% Verify expected fields
+    ?assert(is_binary(maps:get(transport_id, Info))),
+    ?assert(atom(maps:get(mode, Info))),
+    ?assert(is_binary(maps:get(host, Info))),
+    ?assert(is_integer(maps:get(port, Info))),
+
+    %% Test connection status
+    Status = maps:get(status, Info),
+    ?assert(lists:member(Status, [connected, connecting])),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_disconnect_functionality() ->
+    {ServerPid, Port} = start_test_server(),
+
+    %% Start client
+    Opts = #{
+        transport_id => <<"test_sse_client">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+    timer:sleep(1000),
+
+    %% Test disconnect
+    Result = erlmcp_transport_sse_gun:disconnect(ClientPid),
+    ?assertEqual(ok, Result),
+
+    %% Verify client is still running but disconnected
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assertEqual(disconnected, maps:get(status, Info)),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_concurrent_connections() ->
+    {ServerPid, Port} = start_test_server(),
+
+    %% Start multiple clients
+    ClientPids = lists:map(fun(I) ->
+        Opts = #{
+            transport_id => <<"test_sse_client_", (integer_to_binary(I))/binary>>,
+            mode => client,
+            host => "localhost",
+            port => Port,
+            path => "/test-sse"
+        },
+        {ok, Pid} = erlmcp_transport_sse_gun:start_link(Opts),
+        Pid
+    end, lists:seq(1, 10)),
+
+    %% Wait for connections
+    timer:sleep(2000),
+
+    %% Verify all clients are connected
+    lists:foreach(fun(Pid) ->
+        {ok, Info} = erlmcp_transport_sse_gun:get_info(Pid),
+        ?assertEqual(connected, maps:get(status, Info))
+    end, ClientPids),
+
+    %% Send concurrent messages
+    Events = lists:map(fun(I) ->
+        <<"data: {\"client\": ", (integer_to_binary(I))/binary, "}\n\n">>
+    end, lists:seq(1, 10)),
+
+    lists:zip(ClientPids, Events),
+    lists:foreach(fun({Pid, Event}) ->
+        erlmcp_transport_sse_gun:send(Pid, Event)
+    end, lists:zip(ClientPids, Events)),
+
+    %% Cleanup
+    lists:foreach(fun(Pid) ->
+        erlmcp_transport_sse_gun:close(Pid)
+    end, ClientPids),
+
+    stop_test_server({ServerPid, Port}).
+
+%%====================================================================
+%% Connection Pooling Tests
+%%====================================================================
+
+connection_pooling_tests() ->
+    {foreach,
+        fun start_test_pool/0,
+        fun stop_test_pool/1,
+        [
+            {"test pool creation", fun test_pool_creation/0},
+            {"test connection acquisition", fun test_connection_acquisition/0},
+            {"test connection release", fun test_connection_release/0},
+            {"test pool stats", fun test_pool_stats/0},
+            {"test pool overflow handling", fun test_pool_overflow_handling/0},
+            {"test pool reconnection", fun test_pool_reconnection/0}
+        ]
+    }.
+
+start_test_pool() ->
+    %% Start test pool
+    PoolOpts = #{
+        transport_id => <<"test_sse_pool">>,
+        mode => client,
+        host => "localhost",
+        port => 0, %% Dynamic port
+        pool_name => test_sse_pool,
+        max_connections => 5,
+        min_connections => 2,
+        enable_metrics => true
+    },
+
+    {ok, PoolPid} = erlmcp_transport_sse_gun:start_link(test_sse_pool, PoolOpts),
+    {PoolPid, get_server_port(PoolPid)}.
+
+stop_test_pool({PoolPid, _Port}) ->
+    erlmcp_transport_sse_gun:close(PoolPid).
+
+test_pool_creation() ->
+    {PoolPid, _Port} = start_test_pool(),
+
+    %% Verify pool is running
+    ?assert(is_process_alive(PoolPid)),
+
+    %% Get pool stats
+    {ok, Stats} = erlmcp_transport_sse_gun:pool_stats(),
+
+    %% Verify expected fields
+    ?assert(is_integer(maps:get(size, Stats))),
+    ?assert(is_integer(maps:get(max, Stats))),
+    ?assert(is_integer(maps:get(workers, Stats))),
+
+    stop_test_pool({PoolPid, _Port}).
+
+test_connection_acquisition() ->
+    {PoolPid, _Port} = start_test_pool(),
+
+    %% Test connection acquisition
+    Opts = #{
+        transport_id => <<"test_acquired">>,
+        mode => client,
+        host => "localhost",
+        port => 8080,
+        path => "/test-sse"
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+
+    %% Verify connection is acquired
+    ?assert(is_process_alive(ClientPid)),
+
+    %% Get connection info
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assertEqual(<<"test_acquired">>, maps:get(transport_id, Info)),
+
+    stop_test_pool({PoolPid, _Port}).
+
+test_connection_release() ->
+    {PoolPid, _Port} = start_test_pool(),
+
+    %% Acquire connection
+    Opts = #{
+        transport_id => <<"test_release">>,
+        mode => client,
+        host => "localhost",
+        port => 8080,
+        path => "/test-sse"
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+
+    %% Release connection
+    Result = erlmcp_transport_sse_gun:release_connection(ClientPid, test_release),
+    ?assertEqual(ok, Result),
+
+    stop_test_pool({PoolPid, _Port}).
+
+test_pool_stats() ->
+    {PoolPid, _Port} = start_test_pool(),
+
+    %% Get initial stats
+    {ok, InitialStats} = erlmcp_transport_sse_gun:pool_stats(),
+
+    %% Acquire a connection
+    Opts = #{
+        transport_id => <<"test_stats">>,
+        mode => client,
+        host => "localhost",
+        port => 8080,
+        path => "/test-sse"
+    },
+
+    {ok, _ClientPid} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+
+    %% Get updated stats
+    {ok, UpdatedStats} = erlmcp_transport_sse_gun:pool_stats(),
+
+    %% Verify stats changed
+    ?assert(maps:get(size, UpdatedStats) >= maps:get(size, InitialStats)),
+
+    stop_test_pool({PoolPid, _Port}).
+
+test_pool_overflow_handling() ->
+    {PoolPid, Port} = start_test_pool(),
+
+    %% Try to acquire more connections than pool size
+    Opts = #{
+        transport_id => <<"test_overflow">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    },
+
+    Results = lists:map(fun(_) ->
+        erlmcp_transport_sse_gun:acquire_connection(Opts)
+    end, lists:seq(1, 10)),
+
+    %% Some requests should succeed, others might be queued or fail
+    SuccessCount = length([R || R <- Results, is_tuple(R)]),
+
+    %% Cleanup
+    lists:foreach(fun({ok, Pid}) ->
+        erlmcp_transport_sse_gun:release_connection(Pid, test_overflow)
+    end, Results),
+
+    stop_test_pool({PoolPid, Port}).
+
+test_pool_reconnection() ->
+    {PoolPid, Port} = start_test_pool(),
+
+    %% Acquire connection
+    Opts = #{
+        transport_id => <<"test_reconnect">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+
+    %% Disconnect
+    erlmcp_transport_sse_gun:disconnect(ClientPid),
+
+    %% Wait a moment
+    timer:sleep(1000),
+
+    %% Try to reconnect
+    {ok, NewClientPid} = erlmcp_transport_sse_gun:acquire_connection(Opts),
+
+    %% Verify new connection
+    ?assert(is_process_alive(NewClientPid)),
+
+    stop_test_pool({PoolPid, Port}).
+
+%%====================================================================
+%% SSE Protocol Tests
+%%====================================================================
+
+sse_protocol_tests() ->
+    {foreach,
+        fun start_test_server/0,
+        fun stop_test_server/1,
+        [
+            {"test sse event parsing", fun test_sse_event_parsing/0},
+            {"test sse event formatting", fun test_sse_event_formatting/0},
+            {"test sse protocol compliance", fun test_sse_protocol_compliance/0},
+            {"test sse event types", fun test_sse_event_types/0},
+            {"test sse retry mechanism", fun test_sse_retry_mechanism/0},
+            {"test sse compression", fun test_sse_compression/0}
+        ]
+    }.
+
+test_sse_event_parsing() ->
+    %% Test basic SSE event parsing
+    Event1 = <<"event: test\ndata: {\"message\": \"hello\"}\n\n">>,
+    Parsed1 = parse_sse_event(Event1),
+    ?assert({ok, #{type := <<"test">>, data := <<"{\"message\": \"hello\"}">>}} =:= Parsed1),
+
+    %% Test event without type
+    Event2 = <<"data: {\"message\": \"hello\"}\n\n">>,
+    Parsed2 = parse_sse_event(Event2),
+    ?assert({ok, #{type := <<"data">>, data := <<"{\"message\": \"hello\"}">>}} =:= Parsed2),
+
+    %% Test invalid format
+    InvalidEvent = <<"invalid format">>,
+    Parsed3 = parse_sse_event(InvalidEvent),
+    ?assert({error, invalid_format} =:= Parsed3).
+
+test_sse_event_formatting() ->
+    %% Test event formatting
+    Event = format_sse_event(notification, "Test message"),
+    Expected = <<"event: notification\ndata: Test message\n\n">>,
+    ?assert(Expected =:= Event).
+
+test_sse_protocol_compliance() ->
+    %% Test SSE protocol compliance
+    Events = [
+        <<"data: {\"type\": \"message\"}\n\n">>,
+        <<"event: notification\ndata: {\"content\": \"Hello!\"}\n\n">>,
+        <<"id: 12345\ndata: {\"message\": \"Persistent\"}\n\n">>,
+        <<"retry: 5000\ndata: {\"message\": \"Retryable\"}\n\n">>
+    ],
+
+    %% Test all valid SSE formats
+    lists:foreach(fun(Event) ->
+        Parsed = parse_sse_event(Event),
+        case Parsed of
+            {ok, _} -> ok;
+            {error, Reason} ->
+                ?assert(false, "Invalid SSE format: ~p, error: ~p", [Event, Reason])
+        end
+    end, Events).
+
+test_sse_event_types() ->
+    %% Test different event types
+    EventTypes = [notification, alert, update, heartbeat, custom],
+
+    lists:foreach(fun(Type) ->
+        Message = io_lib:format("Test message for ~p", [Type]),
+        Event = format_sse_event(Type, Message),
+        Parsed = parse_sse_event(Event),
+        ?assert({ok, #{type := TypeBin}} = Parsed)
+    end, EventTypes).
+
+test_sse_retry_mechanism() ->
+    %% Test retry event format
+    Event = <<"retry: 3000\ndata: {\"message\": \"Retry test\"}\n\n">>,
+    Parsed = parse_sse_event(Event),
+    ?assert({ok, #{type := <<"retry">>, data := <<"{\"message\": \"Retry test\"}">>}} =:= Parsed).
+
+test_sse_compression() ->
+    %% Test compression handling (would need actual compression implementation)
+    Event = <<"data: {\"large\": \"data\", \"size\": \"test\"}\n\n">>,
+
+    %% For now, just test basic parsing works
+    Parsed = parse_sse_event(Event),
+    ?assert({ok, _} =:= Parsed).
+
+%%====================================================================
+%% Error Handling Tests
+%%====================================================================
+
+error_handling_tests() ->
+    {foreach,
+        fun start_test_server/0,
+        fun stop_test_server/1,
+        [
+            {"test connection failure handling", fun test_connection_failure_handling/0},
+            {"test invalid message format", fun test_invalid_message_format/0},
+            {"test timeout handling", fun test_timeout_handling/0},
+            {"test stream reset handling", fun test_stream_reset_handling/0},
+            {"test authentication failure", fun test_authentication_failure/0},
+            {"test ssl connection failure", fun test_ssl_connection_failure/0}
+        ]
+    }.
+
+test_connection_failure_handling() ->
+    %% Try to connect to non-existent server
+    Opts = #{
+        transport_id => <<"test_fail">>,
+        mode => client,
+        host => "nonexistent.server.com",
+        port => 8080,
+        path => "/test-sse"
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    %% Wait for connection failure
+    timer:sleep(2000),
+
+    %% Verify client reports failure
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assert(disconnected =:= maps:get(status, Info)),
+
+    %% Test error recovery
+    erlmcp_transport_sse_gun:close(ClientPid).
+
+test_invalid_message_format() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_invalid">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    }),
+
+    timer:sleep(1000),
+
+    %% Test invalid message format
+    InvalidMessage = <<"invalid format without proper SSE structure">>,
+    Result = erlmcp_transport_sse_gun:send(ClientPid, InvalidMessage),
+    ?assertEqual(ok, Result), %% Should still send, even if invalid
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_timeout_handling() ->
+    %% Test timeout handling with short timeout
+    Opts = #{
+        transport_id => <<"test_timeout">>,
+        mode => client,
+        host => "nonexistent.server.com",
+        port => 8080,
+        retry_timeout => 1000, %% 1 second
+        max_retries => 1
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    %% Wait for timeout to occur
+    timer:sleep(3000),
+
+    %% Should have failed but not crashed
+    ?assert(is_process_alive(ClientPid)),
+
+    erlmcp_transport_sse_gun:close(ClientPid).
+
+test_stream_reset_handling() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_reset">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    }),
+
+    timer:sleep(1000),
+
+    %% Simulate stream reset
+    ClientPid ! {gun_error, self(), reset, test_reset},
+
+    %% Wait for handling
+    timer:sleep(1000),
+
+    %% Client should still be running
+    ?assert(is_process_alive(ClientPid)),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_authentication_failure() ->
+    %% Test with invalid SSL options
+    Opts = #{
+        transport_id => <<"test_auth">>,
+        mode => client,
+        host => "nonexistent.server.com",
+        port => 8443,
+        transport => ssl,
+        ssl_options => [{verify, verify_none}]
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    %% Wait for failure
+    timer:sleep(2000),
+
+    %% Verify failure
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assert(disconnected =:= maps:get(status, Info)),
+
+    erlmcp_transport_sse_gun:close(ClientPid).
+
+test_ssl_connection_failure() ->
+    %% Test SSL connection to non-HTTPS server
+    Opts = #{
+        transport_id => <<"test_ssl">>,
+        mode => client,
+        host => "localhost",
+        port => 8080, %% HTTP port, not HTTPS
+        transport => ssl,
+        ssl_options => [{verify, verify_none}]
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    %% Wait for SSL failure
+    timer:sleep(2000),
+
+    %% Verify failure
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assert(disconnected =:= maps:get(status, Info)),
+
+    erlmcp_transport_sse_gun:close(ClientPid).
+
+%%====================================================================
+%% Metrics Tests
+%%====================================================================
+
+metrics_tests() ->
+    {foreach,
+        fun start_test_server/0,
+        fun stop_test_server/1,
+        [
+            {"test metrics collection", fun test_metrics_collection/0},
+            {"test performance metrics", fun test_performance_metrics/0},
+            {"test error metrics", fun test_error_metrics/0},
+            {"test connection metrics", fun test_connection_metrics/0},
+            {"test throughput metrics", fun test_throughput_metrics/0}
+        ]
+    }.
+
+test_metrics_collection() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_metrics">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse",
+        enable_metrics => true
+    }),
+
+    timer:sleep(1000),
+
+    %% Send some messages
+    Events = [
+        <<"data: {\"test\": \"message1\"}\n\n">>,
+        <<"data: {\"test\": \"message2\"}\n\n">>
+    ],
+
+    lists:foreach(fun(Event) ->
+        erlmcp_transport_sse_gun:send(ClientPid, Event)
+    end, Events),
+
+    %% Get metrics
+    {ok, Metrics} = erlmcp_transport_sse_gun:get_metrics(ClientPid),
+
+    %% Verify metrics collected
+    ?assert(is_integer(maps:get(total_messages_sent, Metrics))),
+    ?assert(is_integer(maps:get(total_bytes_sent, Metrics))),
+    ?assert(is_integer(maps:get(connection_errors, Metrics))),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_performance_metrics() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_performance">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse",
+        enable_metrics => true
+    }),
+
+    timer:sleep(1000),
+
+    %% Send performance test messages
+    StartTime = os:system_time(millisecond),
+    Messages = lists:seq(1, 100),
+
+    lists:foreach(fun(I) ->
+        Event = <<"data: {\"perf\": ", (integer_to_binary(I))/binary, "}\n\n">>,
+        erlmcp_transport_sse_gun:send(ClientPid, Event)
+    end, Messages),
+
+    %% Get performance metrics
+    {ok, Metrics} = erlmcp_transport_sse_gun:get_metrics(ClientPid),
+    EndTime = os:system_time(millisecond),
+
+    %% Calculate throughput
+    DurationSec = (EndTime - StartTime) / 1000,
+    ExpectedThroughput = length(Messages) / DurationSec,
+    ActualThroughput = maps:get(total_messages_sent, Metrics) / DurationSec,
+
+    %% Verify reasonable throughput (should be > 0)
+    ?assert(ActualThroughput > 0),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_error_metrics() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_errors">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse",
+        enable_metrics => true
+    }),
+
+    timer:sleep(1000),
+
+    %% Simulate some errors
+    ClientPid ! {gun_error, self(), stream_error, test_error},
+
+    %% Wait for error handling
+    timer:sleep(1000),
+
+    %% Get metrics
+    {ok, Metrics} = erlmcp_transport_sse_gun:get_metrics(ClientPid),
+
+    %% Verify error metrics
+    ?assert(is_integer(maps:get(connection_errors, Metrics))),
+    ?assert(maps:get(connection_errors, Metrics) >= 0),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_connection_metrics() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_connections">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse",
+        enable_metrics => true
+    }),
+
+    timer:sleep(1000),
+
+    %% Get initial metrics
+    {ok, InitialMetrics} = erlmcp_transport_sse_gun:get_metrics(ClientPid),
+
+    %% Disconnect and reconnect
+    erlmcp_transport_sse_gun:disconnect(ClientPid),
+    timer:sleep(500),
+
+    %% Get updated metrics
+    {ok, UpdatedMetrics} = erlmcp_transport_sse_gun:get_metrics(ClientPid),
+
+    %% Verify connection metrics updated
+    ?assert(maps:get(total_connections, UpdatedMetrics) >= maps:get(total_connections, InitialMetrics)),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_throughput_metrics() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_throughput">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse",
+        enable_metrics => true
+    }),
+
+    timer:sleep(1000),
+
+    %% Send burst of messages
+    BurstSize = 50,
+    Events = lists:map(fun(I) ->
+        <<"data: {\"burst\": ", (integer_to_binary(I))/binary, "}\n\n">>
+    end, lists:seq(1, BurstSize)),
+
+    lists:foreach(fun(Event) ->
+        erlmcp_transport_sse_gun:send(ClientPid, Event)
+    end, Events),
+
+    %% Get metrics
+    {ok, Metrics} = erlmcp_transport_sse_gun:get_metrics(ClientPid),
+
+    %% Verify throughput metrics
+    ?assert(maps:get(total_messages_sent, Metrics) >= BurstSize),
+    ?assert(maps:get(total_bytes_sent, Metrics) > 0),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+%%====================================================================
+%% Backpressure Tests
+%%====================================================================
+
+backpressure_tests() ->
+    {foreach,
+        fun start_test_server/0,
+        fun stop_test_server/1,
+        [
+            {"test backpressure detection", fun test_backpressure_detection/0},
+            {"test backpressure recovery", fun test_backpressure_recovery/0},
+            {"test backpressure threshold", fun test_backpressure_threshold/0},
+            {"test flow control", fun test_flow_control/0},
+            {"test window management", fun test_window_management/0}
+        ]
+    }.
+
+test_backpressure_detection() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_backpressure">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse",
+        backpressure_threshold => 80
+    }),
+
+    timer:sleep(1000),
+
+    %% Simulate backpressure
+    ClientPid ! backpressure_warning,
+
+    %% Wait for handling
+    timer:sleep(500),
+
+    %% Verify backpressure state
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assert(atom(maps:get(backpressure_state, Info))),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_backpressure_recovery() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_recovery">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    }),
+
+    timer:sleep(1000),
+
+    %% Trigger backpressure
+    ClientPid ! {backpressure, active},
+
+    %% Trigger recovery
+    ClientPid ! {backpressure, recovered},
+
+    %% Wait for handling
+    timer:sleep(500),
+
+    %% Verify recovery
+    ?assert(is_process_alive(ClientPid)),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_backpressure_threshold() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_threshold">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse",
+        backpressure_threshold => 90
+    }),
+
+    timer:sleep(1000),
+
+    %% Get initial state
+    {ok, InitialInfo} = erlmcp_transport_sse_gun:get_info(ClientPid),
+
+    %% Send messages to trigger threshold
+    LargeEvent = <<"data: ", (binary:copy(<<"x">>, 10000))/binary, "\n\n">>,
+    erlmcp_transport_sse_gun:send(ClientPid, LargeEvent),
+
+    %% Wait for threshold handling
+    timer:sleep(500),
+
+    %% Check threshold handling
+    {ok, UpdatedInfo} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assert(atom(maps:get(backpressure_state, UpdatedInfo))),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_flow_control() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_flow">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse",
+        flow_control_window => 32768 %% 32KB window
+    }),
+
+    timer:sleep(1000),
+
+    %% Test flow control handling
+    ClientPid ! {flow_control, active},
+
+    %% Verify flow control state
+    ?assert(is_process_alive(ClientPid)),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+test_window_management() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_window">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    }),
+
+    timer:sleep(1000),
+
+    %% Test window update
+    ClientPid ! {window_update, 65536},
+
+    %% Verify window handling
+    ?assert(is_process_alive(ClientPid)),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port}).
+
+%%====================================================================
+%% Performance Tests
+%%====================================================================
+
+performance_tests() ->
+    {foreach,
+        fun start_test_server/0,
+        fun stop_test_server/1,
+        [
+            {"test message throughput", fun test_message_throughput/0},
+            {"test concurrent connections", fun test_concurrent_performance/0},
+            {"test large message handling", fun test_large_message_handling/0},
+            {"test connection overhead", fun test_connection_overhead/0},
+            {"test memory usage", fun test_memory_usage/0}
+        ]
+    }.
+
+test_message_throughput() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_throughput">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    }),
+
+    timer:sleep(1000),
+
+    %% Test message throughput
+    NumMessages = 1000,
+    MessageSize = 100, %% 100 bytes per message
+
+    StartTime = os:system_time(millisecond),
+
+    lists:foreach(fun(I) ->
+        Event = <<"data: {\"id\": ", (integer_to_binary(I))/binary, ", \"data\": ", (binary:copy(<<"x">>, MessageSize))/binary, "}\n\n">>,
+        erlmcp_transport_sse_gun:send(ClientPid, Event)
+    end, lists:seq(1, NumMessages)),
+
+    EndTime = os:system_time(millisecond),
+
+    %% Calculate throughput
+    DurationSec = (EndTime - StartTime) / 1000,
+    MessagesPerSec = NumMessages / DurationSec,
+    BytesPerSec = (NumMessages * MessageSize) / DurationSec,
+
+    %% Verify throughput meets minimum threshold
+    ?assert(MessagesPerSec > 100), %% > 100 messages per second
+    ?assert(BytesPerSec > 10000), %% > 10KB per second
+
+    logger:info("Throughput: ~p messages/sec, ~p bytes/sec", [MessagesPerSec, BytesPerSec]),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port)}.
+
+test_concurrent_performance() ->
+    {ServerPid, Port} = start_test_server(),
+
+    %% Start multiple concurrent clients
+    NumClients = 10,
+    MessagesPerClient = 100,
+
+    ClientPids = lists:map(fun(I) ->
+        {ok, Pid} = erlmcp_transport_sse_gun:start_link(#{
+            transport_id => <<"test_concurrent_", (integer_to_binary(I))/binary>>,
+            mode => client,
+            host => "localhost",
+            port => Port,
+            path => "/test-sse"
+        ),
+        Pid
+    end, lists:seq(1, NumClients)),
+
+    %% Wait for connections
+    timer:sleep(1000),
+
+    %% Send messages concurrently
+    StartTime = os:system_time(millisecond),
+
+    lists:foreach(fun({Pid, I}) ->
+        lists:foreach(fun(J) ->
+            Event = <<"data: {\"client\": ", (integer_to_binary(I))/binary, ", \"msg\": ", (integer_to_binary(J))/binary, "}\n\n">>,
+            erlmcp_transport_sse_gun:send(Pid, Event)
+        end, lists:seq(1, MessagesPerClient))
+    end, lists:zip(ClientPids, lists:seq(1, NumClients))),
+
+    EndTime = os:system_time(millisecond),
+
+    %% Calculate throughput
+    TotalMessages = NumClients * MessagesPerClient,
+    DurationSec = (EndTime - StartTime) / 1000,
+    MessagesPerSec = TotalMessages / DurationSec,
+
+    %% Verify concurrent performance
+    ?assert(MessagesPerSec > 500), %% > 500 messages per second
+
+    logger:info("Concurrent throughput: ~p messages/sec", [MessagesPerSec]),
+
+    %% Cleanup
+    lists:foreach(fun(Pid) ->
+        erlmcp_transport_sse_gun:close(Pid)
+    end, ClientPids),
+
+    stop_test_server({ServerPid, Port)}.
+
+test_large_message_handling() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_large">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    }),
+
+    timer:sleep(1000),
+
+    %% Test large messages (1MB, 5MB, 10MB)
+    MessageSizes = [1024*1024, 5*1024*1024, 10*1024*1024],
+
+    lists:foreach fun(Size) ->
+        Event = <<"data: {\"size\": ", (integer_to_binary(Size))/binary, ", \"data\": ", (binary:copy(<<"x">>, Size))/binary, "}\n\n">>,
+
+        StartTime = os:system_time(microsecond),
+        Result = erlmcp_transport_sse_gun:send(ClientPid, Event),
+        EndTime = os:system_time(microsecond),
+
+        ?assertEqual(ok, Result),
+
+        DurationMs = (EndTime - StartTime) / 1000,
+        ThroughputMBs = (Size / 1024 / 1024) / (DurationMs / 1000),
+
+        logger:info("Large message (~p MB): ~p ms, ~p MB/s", [Size/1024/1024, DurationMs, ThroughputMBs])
+    end, MessageSizes),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port)}).
+
+test_connection_overhead() ->
+    {ServerPid, Port} = start_test_server(),
+
+    NumConnections = 50,
+    OverheadResults = lists:map(fun(I) ->
+        StartTime = os:system_time(microsecond),
+
+        {ok, Pid} = erlmcp_transport_sse_gun:start_link(#{
+            transport_id => <<"test_overhead_", (integer_to_binary(I))/binary>>,
+            mode => client,
+            host => "localhost",
+            port => Port,
+            path => "/test-sse"
+        }),
+
+        %% Wait for connection
+        timer:sleep(100),
+
+        EndTime = os:system_time(microsecond),
+
+        DurationMs = (EndTime - StartTime) / 1000,
+
+        erlmcp_transport_sse_gun:close(Pid),
+
+        {I, DurationMs}
+    end, lists:seq(1, NumConnections)),
+
+    %% Calculate average overhead
+    OverheadTimes = [Time || {_, Time} <- OverheadResults],
+    AvgOverhead = lists:sum(OverheadTimes) / length(OverheadTimes),
+
+    %% Verify reasonable connection overhead
+    ?assert(AvgOverhead < 1000), %% < 1 second average
+
+    logger:info("Average connection overhead: ~p ms", [AvgOverhead]),
+
+    stop_test_server({ServerPid, Port)}).
+
+test_memory_usage() ->
+    {ServerPid, Port} = start_test_server(),
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(#{
+        transport_id => <<"test_memory">>,
+        mode => client,
+        host => "localhost",
+        port => Port,
+        path => "/test-sse"
+    }),
+
+    timer:sleep(1000),
+
+    %% Monitor memory usage
+    InitialMemory = erlang:memory(process, ClientPid),
+
+    %% Send many messages
+    NumMessages = 5000,
+    lists:foreach(fun(I) ->
+        Event = <<"data: {\"memory_test\": ", (integer_to_binary(I))/binary, "}\n\n">>,
+        erlmcp_transport_sse_gun:send(ClientPid, Event)
+    end, lists:seq(1, NumMessages)),
+
+    timer:sleep(1000),
+
+    FinalMemory = erlang:memory(process, ClientPid),
+    MemoryIncrease = FinalMemory - InitialMemory,
+
+    %% Verify memory usage is reasonable
+    ?assert(MemoryIncrease < 50 * 1024 * 1024), %% < 50MB increase
+
+    logger:info("Memory increase: ~p bytes for ~p messages", [MemoryIncrease, NumMessages]),
+
+    cleanup_connections(),
+    stop_test_server({ServerPid, Port)}).
+
+%%====================================================================
+%% SSL Tests
+%%====================================================================
+
+ssl_tests() ->
+    {foreach,
+        fun start_test_server/0,
+        fun stop_test_server/1,
+        [
+            {"test ssl connection", fun test_ssl_connection/0},
+            {"test ssl tls13", fun test_ssl_tls13/0},
+            {"test ssl certificate", fun test_ssl_certificate/0},
+            {"test ssl compression", fun test_ssl_compression/0}
+        ]
+    }.
+
+test_ssl_connection() ->
+    %% Note: This test requires a SSL server to be running
+    %% For now, test SSL configuration
+
+    Opts = #{
+        transport_id => <<"test_ssl">>,
+        mode => client,
+        host => "localhost",
+        port => 8443,
+        transport => ssl,
+        ssl_options => [{verify, verify_none}]
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    %% Wait for SSL handshake attempt
+    timer:sleep(2000),
+
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assert(atom(maps:get(status, Info))),
+
+    erlmcp_transport_sse_gun:close(ClientPid).
+
+test_ssl_tls13() ->
+    Opts = #{
+        transport_id => <<"test_tls13">>,
+        mode => client,
+        host => "localhost",
+        port => 8443,
+        transport => ssl,
+        ssl_options => [
+            {versions, ['tlsv1.3']},
+            {ciphers, ["TLS_AES_256_GCM_SHA384", "TLS_AES_128_GCM_SHA256"]},
+            {verify, verify_none}
+        ]
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    timer:sleep(2000),
+
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assert(atom(maps:get(status, Info))),
+
+    erlmcp_transport_sse_gun:close(ClientPid).
+
+test_ssl_certificate() ->
+    Opts = #{
+        transport_id => <<"test_cert">>,
+        mode => client,
+        host => "localhost",
+        port => 8443,
+        transport => ssl,
+        ssl_options => [
+            {verify, verify_peer},
+            {fail_if_no_peer_cert, true},
+            {server_name_indication, "localhost"}
+        ]
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    timer:sleep(2000),
+
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assert(atom(maps:get(status, Info))),
+
+    erlmcp_transport_sse_gun:close(ClientPid).
+
+test_ssl_compression() ->
+    Opts = #{
+        transport_id => <<"test_ssl_comp">>,
+        mode => client,
+        host => "localhost",
+        port => 8443,
+        transport => ssl,
+        enable_compression => true,
+        ssl_options => [{verify, verify_none}]
+    },
+
+    {ok, ClientPid} = erlmcp_transport_sse_gun:start_link(Opts),
+
+    timer:sleep(2000),
+
+    {ok, Info} = erlmcp_transport_sse_gun:get_info(ClientPid),
+    ?assert(atom(maps:get(status, Info))),
+
+    erlmcp_transport_sse_gun:close(ClientPid).
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+%% Mock SSE event parsing for testing
+parse_sse_event(Data) ->
+    try
+        case binary:split(Data, <<"\n">>, [global]) of
+            [<<"event: ", EventBin/binary>>, <<"data: ", DataBin/binary>>, <<>>] ->
+                {ok, #{
+                    type => binary:replace(EventBin, <<"\r">>, <<>>, [global]),
+                    data => binary:replace(DataBin, <<"\r">>, <<>>, [global]),
+                    timestamp => os:system_time(millisecond)
+                }};
+            [<<"data: ", DataBin/binary>>, <<>>] ->
+                {ok, #{
+                    type => <<"data">>,
+                    data => binary:replace(DataBin, <<"\r">>, <<>>, [global]),
+                    timestamp => os:system_time(millisecond)
+                }};
+            _ ->
+                {error, invalid_format}
+        end
+    catch
+        _:Error ->
+            {error, {parse_error, Error}}
+    end.
+
+%% Mock SSE event formatting for testing
+format_sse_event(EventType, Message) ->
+    EventBin = atom_to_binary(EventType, utf8),
+    MessageBin = unicode:characters_to_binary(Message, utf8),
+    <<"event: ", EventBin/binary, "\ndata: ", MessageBin/binary, "\n\n">>.
+
+%% Mock test registry
+test_registry_loop(Config) ->
+    register(test_registry, self()),
+    test_registry_loop([], Config).
+
+test_registry_loop(Connections, Config) ->
+    receive
+        {register_connection, Id, Pid, Info} ->
+            test_registry_loop([{Id, Pid, Info} | Connections], Config);
+        {unregister_connection, Id} ->
+            test_registry_loop(lists:keydelete(Id, 1, Connections), Config);
+        {get_connection, Id} ->
+            case lists:keyfind(Id, 1, Connections) of
+                {Id, Pid, Info} ->
+                    Pid ! {connection_info, Info};
+                false ->
+                    ok
+            end,
+            test_registry_loop(Connections, Config);
+        {route_event, Id, Event} ->
+            case lists:keyfind(Id, 1, Connections) of
+                {Id, Pid, _} ->
+                    Pid ! {sse_data, Event};
+                false ->
+                    ok
+            end,
+            test_registry_loop(Connections, Config);
+        shutdown ->
+            ok;
+        _Other ->
+            test_registry_loop(Connections, Config)
+    end.
+
+%% Mock server port detection
+get_server_port(Pid) ->
+    %% This is a mock implementation
+    %% In real implementation, would query Gun for actual port
+    8080.

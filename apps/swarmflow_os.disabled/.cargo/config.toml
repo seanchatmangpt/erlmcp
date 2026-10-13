@@ -1,6 +1,3 @@
-[build]
-# Build Rust NIF for the target architecture
-target = ""
 
 [env]
 # Default to musl for Alpine Linux compatibility

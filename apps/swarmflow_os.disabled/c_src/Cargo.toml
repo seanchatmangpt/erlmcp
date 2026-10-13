@@ -20,11 +20,3 @@ opt-level = 3
 
 [profile.release.build-override]
 opt-level = 3
-
-# Enable SIMD optimizations
-[target.'cfg(target_arch = "x86_64")']
-rustflags = ["-C", "target-feature=+avx2"]
-
-[features]
-default = []
-simd = []

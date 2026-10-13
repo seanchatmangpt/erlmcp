@@ -443,20 +443,17 @@ fn calculate_fitness<'a>(
         0.0
     };
 
-    Ok((
-        atoms::ok(),
-        (
-            (atoms::fitness(), fitness),
-            ("precision", precision),
-            ("generalization", generalization),
-            ("simplicity", simplicity),
-            ("f_measure", f_measure),
-            ("sync_moves", sync_moves),
-            ("model_moves", model_moves),
-            ("log_moves", log_moves),
-        ),
-    )
-        .encode(env))
+    let metrics: Vec<rustler::Term> = vec![
+        (atoms::fitness(), fitness).encode(env),
+        ("precision", precision).encode(env),
+        ("generalization", generalization).encode(env),
+        (atoms::ok(), simplicity).encode(env),
+        ("f_measure", f_measure).encode(env),
+        ("sync_moves", sync_moves).encode(env),
+        ("model_moves", model_moves).encode(env),
+        ("log_moves", log_moves).encode(env),
+    ];
+    Ok((atoms::ok(), metrics).encode(env))
 }
 
 // ============================================================================
@@ -834,11 +831,12 @@ fn decompress_events<'a>(env: Env<'a>, compressed: Term<'a>) -> NifResult<Term<'
         events.push((case_id, activity, timestamp, attrs));
     }
 
+    let event_count = events.len();
     Ok((
         atoms::ok(),
         (
             (atoms::decompressed(), events),
-            ("event_count", events.len()),
+            ("event_count", event_count),
         ),
     )
         .encode(env))

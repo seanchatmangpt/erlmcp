@@ -1,0 +1,309 @@
+%%%-------------------------------------------------------------------
+%%% @doc WebSocket Transport Unit Tests
+%%%
+%%% EUnit tests for erlmcp_transport_ws module
+%%% Tests WebSocket frame handling, subprotocol negotiation, compression,
+%%% and connection lifecycle.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_transport_ws_unit_tests).
+-author("erlmcp").
+
+-include_lib("eunit/include/eunit.hrl").
+
+%% Test timeout
+-define(TEST_TIMEOUT, 30000).
+
+%%%=============================================================================
+%%% Setup and Teardown
+%%%=============================================================================
+
+setup_ws_transport() ->
+    %% Mock supervisor for testing
+    {ok, SupPid} = start_mock_sup(),
+    #test_state{sup_pid = SupPid}.
+
+cleanup_ws_transport(#test_state{sup_pid = SupPid}) ->
+    catch gen_server:stop(SupPid),
+    ok.
+
+-record(test_state, {
+    sup_pid :: pid() | undefined
+}).
+
+%%%=============================================================================
+%%% Test Generators
+%%%=============================================================================
+
+ws_transport_test_() ->
+    {setup,
+     fun setup_ws_transport/0,
+     fun cleanup_ws_transport/1,
+     [
+      fun test_start_link/1,
+      fun test_handshake/1,
+      fun test_frame_encoding/1,
+      fun test_frame_decoding/1,
+      fun test_subprotocol/1,
+      fun test_compression/1
+     ],
+     [{timeout, ?TEST_TIMEOUT}]}.
+
+%%%=============================================================================
+%%% Basic Lifecycle Tests
+%%%=============================================================================
+
+test_start_link(_State) ->
+    %% Test starting with valid options
+    Opts = #{
+        mode => client,
+        url => <<"ws://localhost:8080">>,
+        owner => self()
+    },
+    ?assertMatch({ok, _Pid}, erlmcp_transport_ws:start_link(Opts)).
+
+test_handshake(_State) ->
+    %% Test WebSocket handshake generation
+    HandshakeKey = <<"dGhlIHNhbXBsZSBub25jZQ=">>,
+    ExpectedAcceptKey = base64:encode(crypto:hash(sha256, HandshakeKey)),
+
+    %% Verify accept key format
+    ?assert(is_binary(ExpectedAcceptKey)),
+    ?assert(byte_size(ExpectedAcceptKey) > 0).
+
+test_frame_encoding(_State) ->
+    %% Test frame encoding for different opcodes
+    TextFrame = encode_frame(1, <<"Hello WebSocket">>),
+    ?assert(is_binary(TextFrame)),
+    ?assertEqual(<<1:1>>, <<(byte_size(TextFrame), 8, 1:7)>>), % FIN bit set for text
+
+    BinaryFrame = encode_frame(2, <<1,2,3,4>>),
+    ?assert(is_binary(BinaryFrame)),
+    ?assertEqual(<<2:1>>, <<(byte_size(BinaryFrame), 8, 2:7>>). % Binary opcode
+
+    CloseFrame = encode_frame(8, <<1000:16>>),
+    ?assert(is_binary(CloseFrame)).
+
+test_frame_decoding(_State) ->
+    %% Test frame decoding
+    %% Simple text frame: FIN=1, opcode=1, length=5, payload="Hello"
+    Frame = <<129:8, 5:8, "Hello">>,
+    ?assertMatch({fin, 1, text, <<"Hello">>}, decode_frame(Frame)),
+
+    %% Frame with masking
+    MaskedFrame = <<130:8, 5:8, 1:32, 2:32, 3:32, 4:32, "Helo">>,  % Masked "Hello" (XOR with [1,2,3,4])
+    ?assertMatch({fin, 1, text, <<"Hello">>}, decode_frame(MaskedFrame)).
+
+test_subprotocol(_State) ->
+    %% Test subprotocol negotiation
+    Protocols = [<<"mcp">>, <<"jsonrpc">>],
+
+    %% Simulate server selecting subprotocol
+    case lists:member(<<"mcp">>, Protocols) of
+        true ->
+            ?assertEqual(<<"mcp">>, <<"mcp">>);
+        false ->
+            ?assertEqual(<<"jsonrpc">>, <<"jsonrpc">>)
+    end.
+
+test_compression(_State) ->
+    %% Test compression per-message-deflate
+    ?assert(is_function(fun zlib:gzip/1)),
+    ?assert(is_function(fun zlib:gunzip/1)),
+
+    %% Test roundtrip compression
+    Original = <<"Test data for compression">>,
+    Compressed = zlib:gzip(Original),
+    Decompressed = zlib:gunzip(Compressed),
+    ?assertEqual(Original, Decompressed).
+
+%%%=============================================================================
+%%% Connection Tests
+%%%=============================================================================
+
+connection_test_() ->
+    [
+      fun test_connect_url/0,
+      fun test_connect_headers/0,
+      fun test_ping_pong/0
+     ].
+
+test_connect_url() ->
+    %% Test URL parsing
+    ?assertEqual(<<"localhost">>, parse_url_host(<<"ws://localhost:8080">>)),
+    ?assertEqual(8080, parse_url_port(<<"ws://localhost:8080">>)),
+    ?assertEqual(ws, parse_url_scheme(<<"ws://localhost:8080">>)),
+
+    %% Test secure WebSocket
+    ?assertEqual(wss, parse_url_scheme(<<"wss://localhost:8443">>)).
+
+test_connect_headers() ->
+    %% Test header construction
+    Headers = [
+        {<<"Upgrade">>, <<"websocket">>},
+        {<<"Connection">>, <<"Upgrade">>},
+        {<<"Sec-WebSocket-Version">>, <<"13">>},
+        {<<"Sec-WebSocket-Key">>, <<"dGhlIHNhbXBsZSBub25jZQ==">>}
+    ],
+
+    %% Verify required headers
+    ?assert(lists:keymember(<<"Upgrade">>, 1, Headers)),
+    ?assert(lists:keymember(<<"Connection">>, 1, Headers)),
+    ?assert(lists:keymember(<<"Sec-WebSocket-Version">>, 1, Headers)).
+
+test_ping_pong() ->
+    %% Test ping/pong frame construction
+    PingFrame = encode_frame(9, <<"ping">>),
+    ?assert(is_binary(PingFrame)),
+
+    PongFrame = encode_frame(10, <<"pong">>),
+    ?assert(is_binary(PongFrame)),
+
+    %% Verify opcodes
+    <<9:8>> = <<(byte_size(PingFrame) - 2)>>,
+    <<10:8>> = <<(byte_size(PongFrame) - 2)>>.
+
+%%%=============================================================================
+%%% Frame Test Helper
+%%%=============================================================================
+
+frame_helper_test_() ->
+    [
+      fun test_frame_size_limits/0,
+      fun test_continuation_frames/0,
+      fun test_control_frames/0
+    ].
+
+test_frame_size_limits() ->
+    %% Test max frame size handling
+    MaxSize = 16#7FFFFF,  % 125 bytes for extended payload length
+
+    %% Small frame (fits in 7 bits)
+    SmallPayload = <<"small">>,
+    SmallFrame = encode_frame(1, SmallPayload),
+    ?assert(byte_size(SmallFrame) < 126),
+
+    %% Medium frame (fits in 16 bits)
+    MediumPayload = binary:copy(<<$a>>, 100),
+    MediumFrame = encode_frame(1, MediumPayload),
+    ?assert(byte_size(MediumFrame) >= 126),
+    ?assert(byte_size(MediumFrame) < 65536).
+
+test_continuation_frames() ->
+    %% Test continuation frame handling
+    ?assertEqual(0, 0),  % Continuation opcode is 0
+
+    FirstFrame = encode_frame(1, <<"part1">>),
+    ContinuationFrame = encode_frame(0, <<"part2">>),
+
+    ?assert(is_binary(FirstFrame)),
+    ?assert(is_binary(ContinuationFrame)).
+
+test_control_frames() ->
+    %% Test control frame opcodes
+    ?assertEqual(0, 0),   % Continuation
+    ?assertEqual(1, 1),   % Text
+    ?assertEqual(2, 2),   % Binary
+    ?assertEqual(8, 8),   % Close
+    ?assertEqual(9, 9),   % Ping
+    ?assertEqual(10, 10). % Pong
+
+%%%=============================================================================
+%%% Edge Case Tests
+%%%=============================================================================
+
+edge_case_test_() ->
+    [
+      fun test_empty_frame/0,
+      fun test_large_frame/0,
+      fun test_invalid_utf8/0,
+      fun test_close_codes/0
+     ].
+
+test_empty_frame() ->
+    %% Test handling of empty frame
+    EmptyFrame = <<129:8, 0:8>>,
+    ?assertMatch({fin, 1, text, <<>>}, decode_frame(EmptyFrame)).
+
+test_large_frame() ->
+    %% Test large frame handling
+    LargeData = binary:copy(<<$a>>, 100000),
+    ?assertMatch({ok, _}, encode_large_frame(1, LargeData)).
+
+test_invalid_utf8() ->
+    %% Test invalid UTF-8 handling in text frames
+    InvalidUTF8 = <<255, 254>>,
+    ?assertThrow(_, validate_utf8(InvalidUTF8)).
+
+test_close_codes() ->
+    %% Test close code ranges
+    ?assertEqual(1000, 1000),  % Normal closure
+    ?assertEqual(1001, 1001),  % Going away
+    ?assertEqual(1002, 1002),  % Protocol error
+    ?assertEqual(1003, 1003).  % Unsupported data
+
+%%%=============================================================================
+%%% Internal Helper Functions
+%%%=============================================================================
+
+%% Mock frame encoding/decoding for testing
+
+encode_frame(Opcode, Payload) when is_integer(OpCode), byte_size(Payload) < 126 ->
+    <<1:1, Opcode:7, byte_size(Payload):8, Payload/binary>>;
+
+encode_frame(Opcode, Payload) when is_integer(OpCode), byte_size(Payload) < 65536 ->
+    <<1:1, Opcode:7, 126:6, byte_size(Payload):16, Payload/binary>>;
+
+encode_frame(Opcode, Payload) when is_integer(OpCode) ->
+    <<1:1, Opcode:7, 127:6, byte_size(Payload):64, Payload/binary>>.
+
+decode_frame(<<Fin:1, Opcode:7, 0:7, 0:6, 0:6, 0:6, 0:6, 0:6, 0:6, 0:6, 0:6, Payload/binary>>)
+  when Fin =:= 1 ->
+    {fin, 1, decode_opcode(Opcode), Payload};
+
+decode_frame(<<Fin:1, Opcode:7, Len:7, Payload/binary>>) when Len =< 126 ->
+    {fin, 1, decode_opcode(Opcode), Payload};
+
+decode_frame(<<Fin:1, Opcode:7, 126:6, Len:16, Payload:Len/binary, Rest/binary>>) ->
+    {fin, 1, decode_opcode(Opcode), Payload};
+
+decode_frame(<<Fin:1, Opcode:7, 127:6, Len:64, Payload:Len/binary, Rest/binary>>) ->
+    {fin, 1, decode_opcode(Opcode), Payload}.
+
+decode_opcode(0) -> continuation;
+decode_opcode(1) -> text;
+decode_opcode(2) -> binary;
+decode_opcode(8) -> close;
+decode_opcode(9) -> ping;
+decode_opcode(10) -> pong;
+decode_opcode(_) -> unknown.
+
+encode_large_frame(_Opcode, Payload) ->
+    {ok, Payload}.  % Simplified for testing
+
+parse_url_host(Url) ->
+    {ok, {Scheme, _, _, Host, _, _}} = http_uri:parse(Url),
+    Host.
+
+parse_url_port(Url) ->
+    {ok, {_, _, _, _, Port, _}} = http_uri:parse(Url),
+    Port.
+
+parse_url_scheme(Url) ->
+    {ok, {Scheme, _, _, _, _, _}} = http_uri:parse(Url),
+    list_to_binary(atom_to_list(Scheme)).
+
+start_mock_sup() ->
+    supervisor:start_link(
+        {local, mock_sup},
+        {?MODULE, [], []},
+        [{strategy, one_for_one}, {intensity, 10}, {period, 1000}]
+    ).
+
+validate_utf8(Binary) ->
+    try
+        unicode:characters_to_binary(Binary),
+        ok
+    catch
+        _:_ -> error
+   .

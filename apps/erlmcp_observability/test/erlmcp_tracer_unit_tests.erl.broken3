@@ -1,0 +1,189 @@
+%%%-------------------------------------------------------------------
+%%% @doc Tracer Unit Tests
+%%%
+%%% EUnit tests for erlmcp_tracer module
+%%% Tests span creation, context propagation, trace export,
+%%% and span lifecycle management.
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_tracer_tests).
+-author("erlmcp").
+
+-include_lib("eunit/include/eunit.hrl").
+
+%%%=============================================================================
+%%% Test State
+%%%=============================================================================
+
+-record(tracer_test_state, {
+    tracer_pid :: pid() | undefined
+}).
+
+%%%=============================================================================
+%%% Setup and Teardown
+%%%=============================================================================
+
+setup_tracer() ->
+    {ok, Pid} = erlmcp_tracer:start_link(#{}),
+    #tracer_test_state{tracer_pid = Pid}.
+
+cleanup_tracer(#tracer_test_state{tracer_pid = Pid}) ->
+    catch gen_server:stop(Pid),
+    ok.
+
+%%%=============================================================================
+%%% Test Generators
+%%%=============================================================================
+
+tracer_test_() ->
+    {setup,
+     fun setup_tracer/0,
+     fun cleanup_tracer/1,
+     [
+      fun test_start_stop/1,
+      fun test_create_span/1,
+      fun test_span_context/1,
+      fun test_add_event/1,
+      fun test_add_attributes/1,
+      fun test_finish_span/1,
+      fun test_export_trace/1,
+      fun test_trace_id_generation/1,
+      fun test_span_parent_relationship/1
+     ]}.
+
+%%%=============================================================================
+%%% Basic Lifecycle Tests
+%%%=============================================================================
+
+test_start_stop(_State) ->
+    ?assertMatch({ok, _Pid}, erlmcp_tracer:start_link(#{})),
+
+    %% Verify tracer is registered
+    ?assert(is_pid(whereis(erlmcp_tracer))).
+
+test_create_span(#tracer_test_state{tracer_pid = Pid}) ->
+    %% Create a root span
+    Span = erlmcp_tracer:create_span(<<"test-operation">>, #{}),
+
+    ?assert(is_map(Span)),
+    ?assert(maps:is_key(span_id, Span)),
+    ?assert(maps:is_key(trace_id, Span)),
+    ?assert(maps:is_key(parent_span_id, Span)),
+    ?assert(maps:is_key(operation_name, Span)),
+    ?assertEqual(<<"test-operation">>, maps:get(operation_name, Span)),
+
+    %% Verify root span has no parent
+    ?assertEqual(undefined, maps:get(parent_span_id, Span)).
+
+test_span_context(#tracer_test_state{}) ->
+    %% Test span context propagation
+    TraceId = generate_trace_id(),
+    SpanId = generate_span_id(),
+
+    Context = #{
+        trace_id => TraceId,
+        span_id => SpanId,
+        baggage => #{key => <<"value">>}
+    },
+
+    ?assert(is_binary(maps:get(trace_id, Context))),
+    ?assert(is_binary(maps:get(span_id, Context))),
+    ?assert(is_map(maps:get(baggage, Context))).
+
+test_add_event(#tracer_test_state{}) ->
+    %% Test adding events to span
+    SpanId = generate_span_id(),
+    Event = #{
+        name => <<"test-event">>,
+        timestamp => erlang:system_time(millisecond),
+        attributes => #{event_type => <<"test">>}
+    },
+
+    ?assertEqual(ok, erlmcp_tracer:add_event(SpanId, Event)).
+
+test_add_attributes(#tracer_test_state{}) ->
+    %% Test adding attributes to span
+    SpanId = generate_span_id(),
+    Attributes = #{
+        user_id => <<"test-user">>,
+        request_id => <<"req-123">>,
+        duration_ms => 100
+    },
+
+    ?assertEqual(ok, erlmcp_tracer:add_attributes(SpanId, Attributes)).
+
+test_finish_span(#tracer_test_state{}) ->
+    %% Test finishing span
+    SpanId = generate_span_id(),
+    ?assertEqual(ok, erlmcp_tracer:finish_span(SpanId)).
+
+test_export_trace(#tracer_test_state{}) ->
+    %% Test trace export
+    TraceId = generate_trace_id(),
+    ?assertMatch({ok, _}, erlmcp_tracer:export_trace(TraceId)).
+
+test_trace_id_generation(_State) ->
+    %% Test trace ID generation
+    TraceId1 = generate_trace_id(),
+    TraceId2 = generate_trace_id(),
+
+    ?assert(is_binary(TraceId1)),
+    ?assert(is_binary(TraceId2)),
+    ?assertNotEqual(TraceId1, TraceId2),
+    ?assertEqual(16, byte_size(TraceId1)),  % 128-bit hex
+    ?assertEqual(16, byte_size(TraceId2)).
+
+test_span_parent_relationship(_State) ->
+    %% Test parent-child span relationships
+    ParentId = generate_span_id(),
+    ChildId = generate_span_id(),
+
+    %% Create child span with parent
+    ChildSpan = erlmcp_tracer:create_span(<<"child-op">>,
+        #{parent_span_id => ParentId}
+    ),
+
+    ?assertEqual(ParentId, maps:get(parent_span_id, ChildSpan)).
+
+%%%=============================================================================
+%%% Baggage Propagation Tests
+%%%=============================================================================
+
+baggage_test_() ->
+    [
+      fun test_set_baggage/0,
+      fun test_get_baggage/0,
+      fun test_baggage_limits/0
+    ].
+
+test_set_baggage() ->
+    ?assertEqual(ok, erlmcp_tracer:set_baggage(#{key => <<"value">>})),
+    ?assertEqual(#{key => <<"value">>}, erlmcp_tracer:get_baggage()).
+
+test_get_baggage() ->
+    %% Test getting baggage from context
+    ?assertEqual(#{}, erlmcp_tracer:get_baggage()),
+
+    %% After setting
+    erlmcp_tracer:set_baggage(#{test => <<"data">>}),
+    ?assertMatch(#{test := <<"data">>}, erlmcp_tracer:get_baggage()).
+
+test_baggage_limits() ->
+    %% Test baggage size limits
+    LargeBaggage = lists:foldl(fun(I, Acc) ->
+        Acc#{{I, iolist_to_binary(["key-", integer_to_list(I)])} =>
+                 iolist_to_binary(["value-", integer_to_list(I)])}
+    end, #{}, lists:seq(1, 20)),
+
+    %% Should handle up to reasonable limits
+    ?assertEqual(ok, erlmcp_tracer:set_baggage(LargeBaggage)).
+
+%%%=============================================================================
+%%% Helper Functions
+%%%=============================================================================
+
+generate_trace_id() ->
+    binary:part(binary:encode_hex(crypto:strong_rand_bytes(16)), 0, 16).
+
+generate_span_id() ->
+    binary:part(binary:encode_hex(crypto:strong_rand_bytes(8)), 0, 8).

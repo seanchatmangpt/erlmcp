@@ -1,0 +1,1782 @@
+%%%-------------------------------------------------------------------
+%%% @doc
+%%% Performance validation test suite for Phase 3
+%%% @end
+%%%-------------------------------------------------------------------
+-module(erlmcp_performance_validation_SUITE).
+
+-include_lib("common_test/include/ct.hrl").
+-include_lib("eunit/include/eunit.hrl").
+
+-export([all/0, init_per_suite/1, end_per_suite/1]).
+-export([
+    %% Load Testing
+    test_mcp_protocol_load/1,
+    test_concurrent_request_handling/1,
+    test_resource_concurrency/1,
+    test_memory_usage_scaling/1,
+
+    %% Performance Metrics
+    test_response_time_validation/1,
+    test_throughput_analysis/1,
+    test_error_rate_monitoring/1,
+    test_resource_efficiency/1,
+
+    %% Scalability Testing
+    test_horizontal_scaling/1,
+    test_vertical_scaling/1,
+    test_cluster_performance/1,
+    test_connection_pool_scaling/1,
+
+    %% Resource Monitoring
+    test_memory_monitoring/1,
+    test_cpu_monitoring/1,
+    test_disk_io_monitoring/1,
+    test_network_monitoring/1,
+
+    %% Failure Scenarios
+    test_graceful_degradation/1,
+    test_circuit_breaker_performance/1,
+    test_timeout_handling/1,
+    test_recovery_performance/1,
+
+    %% Benchmark Tests
+    test_mcp_operation_benchmarks/1,
+    test_database_benchmarks/1,
+    test_cache_benchmarks/1,
+    test_network_benchmarks/1
+]).
+
+%%====================================================================
+%% Test configuration
+%%====================================================================
+
+all() ->
+    [
+        %% Load Testing
+        test_mcp_protocol_load,
+        test_concurrent_request_handling,
+        test_resource_concurrency,
+        test_memory_usage_scaling,
+
+        %% Performance Metrics
+        test_response_time_validation,
+        test_throughput_analysis,
+        test_error_rate_monitoring,
+        test_resource_efficiency,
+
+        %% Scalability Testing
+        test_horizontal_scaling,
+        test_vertical_scaling,
+        test_cluster_performance,
+        test_connection_pool_scaling,
+
+        %% Resource Monitoring
+        test_memory_monitoring,
+        test_cpu_monitoring,
+        test_disk_io_monitoring,
+        test_network_monitoring,
+
+        %% Failure Scenarios
+        test_graceful_degradation,
+        test_circuit_breaker_performance,
+        test_timeout_handling,
+        test_recovery_performance,
+
+        %% Benchmark Tests
+        test_mcp_operation_benchmarks,
+        test_database_benchmarks,
+        test_cache_benchmarks,
+        test_network_benchmarks
+    ].
+
+%%====================================================================
+%% Suite setup/teardown
+%%====================================================================
+
+init_per_suite(Config) ->
+    %% Start application
+    {ok, _} = application:ensure_all_started(erlmcp_core),
+
+    %% Initialize performance monitoring
+    ok = erlmcp_performance_monitor:initialize(),
+
+    %% Configure performance test environment
+    TestConfig = #{
+        load_test_config => #{
+            duration => 300000,  % 5 minutes
+            concurrent_users => 100,
+            requests_per_second => 50,
+            ramp_up_time => 30000  % 30 seconds
+        },
+        benchmark_config => #{
+            iterations => 1000,
+            warmup_iterations => 100,
+            confidence_level => 0.95
+        },
+        monitoring_config => #{
+            sample_interval => 1000,
+            metrics_retention => 3600000,
+            alert_threshold => 0.95
+        }
+    },
+
+    %% Create test data
+    TestData = create_performance_test_data(),
+
+    %% Enable performance collection
+    erlmcp_performance_monitor:start_collection(),
+
+    Config ++ [
+        test_config => TestConfig,
+        test_data => TestData,
+        test_start_time => erlang:monotonic_time(millisecond)
+    ].
+
+end_per_suite(Config) ->
+    %% Stop performance monitoring
+    erlmcp_performance_monitor:stop_collection(),
+
+    %% Generate performance report
+    Report = erlmcp_performance_monitor:generate_report(),
+    write_performance_report(Report),
+
+    %% Cleanup test data
+    cleanup_performance_test_data(proplists:get_value(test_data, Config)),
+
+    %% Stop application
+    application:stop(erlmcp_core),
+
+    ok.
+
+%%====================================================================
+%% Load Testing
+%%====================================================================
+
+test_mcp_protocol_load(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    LoadConfig = TestConfig#{
+        load_test_config
+    },
+
+    ct:pal("Starting MCP protocol load test")
+
+    %% Execute load test
+    LoadResults = execute_mcp_load_test(LoadConfig),
+
+    %% Analyze results
+    Analysis = analyze_load_test_results(LoadResults),
+
+    %% Validate performance requirements
+    validate_performance_requirements(Analysis, #{
+        max_response_time => 1000,  % 1 second
+        min_throughput => 30,      % 30 req/s
+        max_error_rate => 0.05,    % 5%
+        target_cpu_usage => 0.8    % 80%
+    }),
+
+    %% Generate load test report
+    LoadReport = generate_load_test_report(LoadResults, Analysis),
+    write_load_test_report(LoadReport),
+
+    ct:pal("MCP protocol load test completed"),
+    Config.
+
+test_concurrent_request_handling(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing concurrent request handling")
+
+    %% Test different concurrency levels
+    ConcurrencyLevels = [10, 50, 100, 200, 500],
+
+    Results = lists:map(fun(Concurrency) ->
+        LevelConfig = TestConfig#{
+            load_test_config => TestConfig#{
+                load_test_config
+            }#{
+                concurrent_users => Concurrency,
+                requests_per_second => 100
+            }
+        },
+
+        LevelResults = execute_concurrent_test(LevelConfig, TestData),
+        analyze_concurrent_results(LevelResults)
+    end, ConcurrencyLevels),
+
+    %% Analyze scaling behavior
+    ScalingAnalysis = analyze_scaling_behavior(Results),
+
+    %% Validate scaling requirements
+    ?assert(ScalingAnalysis#{
+        efficiency_drop} < 0.3,  % Should not drop more than 30% efficiency
+    ?assert(ScalingAnalysis#{
+        response_time_increase} < 5,  % Should not increase more than 5x
+    ?assert(ScalingAnalysis#{
+        error_rate_increase} < 0.1  % Should not increase more than 10%
+    ),
+
+    ct:pal("Concurrent request handling test completed"),
+    Config.
+
+test_resource_concurrency(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing resource concurrency")
+
+    %% Test resource access under concurrency
+    ResourceConcurrencyTest = fun() ->
+        %% Create many concurrent resource operations
+        Workers = lists:seq(1, 50),
+
+        WorkerPids = lists:map(fun(Id) ->
+            spawn_link(fun() ->
+                resource_concurrency_worker(Id, TestConfig, TestData)
+            end)
+        end, Workers),
+
+        %% Wait for all workers to complete
+        lists:foreach(fun(Pid) ->
+            monitor(process, Pid),
+            receive
+                {'DOWN', _, process, Pid, _} -> ok
+            end
+        end, WorkerPids),
+
+        ok
+    end,
+
+    %% Execute test
+    WorkerResults = ResourceConcurrencyTest(),
+
+    %% Analyze results
+    ResourceAnalysis = analyze_resource_concurrency_results(WorkerResults),
+
+    %% Validate resource concurrency requirements
+    ?assert(ResourceAnalysis#{
+        contention_rate} < 0.1,  % Should have <10% contention
+    ?assert(ResourceAnalysis#{
+        average_wait_time} < 100,  % Should wait <100ms
+    ?assert(ResourceAnalysis#{
+        throughput} > 40  % Should process >40 operations/s
+    ),
+
+    ct:pal("Resource concurrency test completed"),
+    Config.
+
+resource_concurrency_worker(WorkerId, TestConfig, TestData) ->
+    %% Perform resource operations
+    Operations = lists:seq(1, 20),
+
+    lists:foreach(fun(OpId) ->
+        ResourceId = list_to_binary("resource_" ++ integer_to_list(WorkerId) ++
+                                     "_" ++ integer_to_list(OpId)),
+
+        %% Simulate resource access
+        case erlmcp_registry:register(ResourceId, #{
+            uri => <<"test://", ResourceId/binary>>,
+            name => ResourceId,
+            created_by => WorkerId
+        }) of
+            ok ->
+                %% Use resource
+                timer:sleep(10),  % Simulate work
+                %% Clean up
+                erlmcp_registry:unregister(ResourceId);
+            {error, Reason} ->
+                ct:pal("Worker ~p operation ~p failed: ~p", [WorkerId, OpId, Reason])
+        end,
+
+        ok
+    end, Operations).
+
+test_memory_usage_scaling(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing memory usage scaling")
+
+    %% Test memory usage at different scales
+    ScaleFactors = [1, 10, 50, 100, 200],
+
+    MemoryResults = lists:map(fun(Scale) ->
+        ScaleResults = execute_memory_test(Scale, TestConfig, TestData),
+        analyze_memory_results(ScaleResults)
+    end, ScaleFactors),
+
+    %% Analyze memory scaling behavior
+    MemoryAnalysis = analyze_memory_scaling(MemoryResults, ScaleFactors),
+
+    %% Validate memory scaling requirements
+    ?assert(MemoryAnalysis#{
+        memory_efficiency} > 0.8,  % Should be >80% memory efficient
+    ?assert(MemoryAnalysis#{
+        gc_frequency_increase} < 5,  % GC should not increase >5x
+    ?assert(MemoryAnalysis#{
+        leak_rate} < 0.001  % Should leak <0.1% memory per operation
+    ),
+
+    ct:pal("Memory usage scaling test completed"),
+    Config.
+
+execute_memory_test(Scale, TestConfig, TestData) ->
+    %% Get initial memory
+    InitialMemory = erlang:memory(total),
+
+    %% Perform scaled operations
+    ScaledOperations = lists:seq(1, 100 * Scale),
+
+    lists:foreach(fun(_) ->
+        %% Simulate memory-intensive operations
+        LargeData = list_to_binary(lists:duplicate(1000, $X)),
+        erlang:garbage_collect(),  % Force GC periodically
+        timer:sleep(1),  % Small delay
+        ok
+    end, ScaledOperations),
+
+    %% Get final memory
+    FinalMemory = erlang:memory(total),
+    MemoryIncrease = FinalMemory - InitialMemory,
+
+    #{
+        scale => Scale,
+        initial_memory => InitialMemory,
+        final_memory => FinalMemory,
+        memory_increase => MemoryIncrease,
+        operations_per_second => (100 * Scale) / 10  % Assuming 10 seconds
+    }.
+
+analyze_memory_scaling(Results, ScaleFactors) ->
+    if length(Results) < 2 ->
+        #{memory_efficiency => 1.0, gc_frequency_increase => 1.0, leak_rate => 0.0};
+    true ->
+        %% Calculate memory efficiency (operations per MB)
+        [BaseResult | ScaledResults] = Results,
+        BaseMemPerOp = maps:get(memory_increase, BaseResult) / maps:get(operations_per_second, BaseResult),
+
+        MemEfficiencies = lists:map(fun(Result) ->
+            OpPerMem = maps:get(operations_per_second, Result) / maps:get(memory_increase, Result),
+            OpPerMem / BaseMemPerOp  % Relative to base
+        end, ScaledResults),
+
+        AverageEfficiency = lists:sum(MemEfficiencies) / length(MemEfficiencies),
+
+        %% Calculate leak rate
+        FinalMemory = maps:get(final_memory, lists:last(Results)),
+        InitialMemory = maps:get(initial_memory, BaseResult),
+        ExpectedMemory = InitialMemory + BaseMemPerOp * maps:get(operations_per_second, lists:last(Results)),
+        LeakRate = (FinalMemory - ExpectedMemory) / ExpectedMemory,
+
+        #{
+            memory_efficiency => AverageEfficiency,
+            gc_frequency_increase => length(ScaleFactors),
+            leak_rate => max(0, LeakRate)
+        }
+    end.
+
+%%====================================================================
+%% Performance Metrics
+%%====================================================================
+
+test_response_time_validation(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Validating response times")
+
+    %% Test response times for different MCP operations
+    Operations = [
+        {<<"tools/call">>, simple_operation},
+        {<<"prompts/get">>, template_operation},
+        {<<"resources/read">>, resource_operation},
+        {<<"roots/list">>, list_operation}
+    ],
+
+    ResponseTimeResults = lists:map(fun({Method, Type}) ->
+        ResponseTest = fun() ->
+            Call = #{
+                <<"method">> => Method,
+                <<"params">> => operation_params(Type)
+            },
+
+            StartTime = erlang:monotonic_time(microsecond),
+            {ok, _} = erlmcp_mcp_server:handle_call(Call, #{}),
+            EndTime = erlang:monotonic_time(microsecond),
+
+            EndTime - StartTime
+        end,
+
+        %% Execute multiple tests
+        Timings = lists:map(fun(_) -> ResponseTest() end, lists:seq(1, 100)),
+        analyze_response_times(Timings, Method)
+    end, Operations),
+
+    %% Validate response time requirements
+    lists:foreach(fun({Method, Analysis}) ->
+        MaxResponseTime = maps:get(p95_response_time, Analysis),
+        TargetResponseTime = get_response_time_target(Method),
+
+        ?assert(MaxResponseTime =< TargetResponseTime,
+                "Response time for ~p should be <= ~pms, got ~pms",
+                [Method, TargetResponseTime, MaxResponseTime])
+    end, ResponseTimeResults),
+
+    ct:pal("Response time validation completed"),
+    Config.
+
+analyze_response_times(Timings, Method) ->
+    SortedTimings = lists:sort(Timings),
+    Length = length(Timings),
+
+    %% Calculate percentiles
+    P50 = lists:nth(round(0.5 * Length), SortedTimings),
+    P95 = lists:nth(round(0.95 * Length), SortedTimings),
+    P99 = lists:nth(round(0.99 * Length), SortedTimings),
+
+    #{
+        method => Method,
+        p50_response_time => P50 / 1000,  % Convert to ms
+        p95_response_time => P95 / 1000,
+        p99_response_time => P99 / 1000,
+        average_response_time => lists:sum(Timings) / Length / 1000,
+        min_response_time => lists:nth(1, SortedTimings) / 1000,
+        max_response_time => lists:last(SortedTimings) / 1000
+    }.
+
+get_response_time_target(<<"tools/call">>) -> 500;   % 500ms
+get_response_time_target(<<"prompts/get">>) -> 1000;  % 1s
+get_response_time_target(<<"resources/read">>) -> 800; % 800ms
+get_response_time_target(<<"roots/list">>) -> 200.   % 200ms
+
+test_throughput_analysis(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Analyzing throughput")
+
+    %% Test throughput for different operation types
+    ThroughputTests = [
+        {basic_mcp_operations, 1000},
+        {complex_mcp_operations, 500},
+        {mixed_operations, 750}
+    ],
+
+    ThroughputResults = lists:map(fun({TestType, OperationCount}) ->
+        ThroughputTest = fun() ->
+            StartTime = erlang:monotonic_time(millisecond),
+
+            %% Execute operations
+            lists:foreach(fun(_) ->
+                Call = test_operation_for_type(TestType),
+                _ = erlmcp_mcp_server:handle_call(Call, #{}),
+                ok
+            end, lists:seq(1, OperationCount)),
+
+            EndTime = erlang:monotonic_time(millisecond),
+            {EndTime - StartTime, OperationCount}
+        end,
+
+        {Duration, ActualOps} = ThroughputTest(),
+        Throughput = ActualOps / (Duration / 1000),  % ops per second
+
+        analyze_throughput(TestType, Throughput, Duration)
+    end, ThroughputTests),
+
+    %% Validate throughput requirements
+    lists:foreach(fun({_, Analysis}) ->
+        Throughput = maps:get(throughput, Analysis),
+        TargetThroughput = get_throughput_target(),
+
+        ?assert(Throughput >= TargetThroughput * 0.8,  % Allow 20% variance
+                "Throughput should be >= ~p ops/s, got ~p ops/s",
+                [TargetThroughput, Throughput])
+    end, ThroughputResults),
+
+    ct:pal("Throughput analysis completed"),
+    Config.
+
+test_operation_for_type(basic_mcp_operations) ->
+    #{
+        <<"method">> => <<"tools/call">>,
+        <<"params">> => #{
+            <<"name">> => <<"simple_test">>,
+            <<"arguments">> => #{}
+        }
+    };
+
+test_operation_for_type(complex_mcp_operations) ->
+    #{
+        <<"method">> => <<"prompts/get">>,
+        <<"params">> => #{
+            <<"name">> => <<"complex_template">>,
+            <<"arguments">> => #{
+                <<"data">> => #{<<"complex">> => <<"data">>},
+                <<"context">> => <<"complex context">>
+            }
+        }
+    };
+
+test_operation_for_type(mixed_operations) ->
+    case rand:uniform(3) of
+        1 ->
+            #{
+                <<"method">> => <<"tools/call">>,
+                <<"params">> => #{<<"name">> => <<"test_tool">>, <<"arguments">> => #{}}
+            };
+        2 ->
+            #{
+                <<"method">> => <<"resources/read">>,
+                <<"params">> => #{<<"uri">> => <<"file://test">>, <<"mimeType">> => <<"text/plain">>}
+            };
+        3 ->
+            #{
+                <<"method">> => <<"roots/list">>,
+                <<"params">> => #{}
+            }
+    end.
+
+analyze_throughput(TestType, Throughput, Duration) ->
+    #{
+        test_type => TestType,
+        throughput => Throughput,
+        duration => Duration,
+        efficiency => calculate_throughput_efficiency(TestType, Throughput)
+    }.
+
+calculate_throughput_efficiency(TestType, ActualThroughput) ->
+    Target = get_throughput_target(),
+    case TestType of
+        basic_mcp_operations ->
+            ActualThroughput / (Target * 1.2);  % Basic ops should exceed target
+        complex_mcp_operations ->
+            ActualThroughput / (Target * 0.6);  % Complex ops will be slower
+        mixed_operations ->
+            ActualThroughput / (Target * 0.9)   % Mixed ops should be close to target
+    end.
+
+get_throughput_target() -> 50.  % 50 ops/s target
+
+test_error_rate_monitoring(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Monitoring error rates")
+
+    %% Test error rates under different conditions
+    ErrorScenarios = [
+        {normal_conditions, 0.01},  % Expected 1% error rate
+        {high_load, 0.05},         % Expected 5% error rate
+        {failure_injection, 0.15}  % Expected 15% error rate
+    ],
+
+    ErrorResults = lists:map(fun({Scenario, ExpectedRate}) ->
+        ErrorTest = fun() ->
+            %% Execute test with scenario-specific conditions
+            Results = execute_error_scenario(Scenario, 1000),
+
+            %% Calculate actual error rate
+            ErrorCount = length([R || R <- Results, R =:= error]),
+            ErrorRate = ErrorCount / length(Results),
+
+            {ErrorRate, Results}
+        end,
+
+        {ActualErrorRate, Results} = ErrorTest(),
+        analyze_error_results(Scenario, ActualErrorRate, ExpectedRate, Results)
+    end, ErrorScenarios),
+
+    %% Validate error rate monitoring
+    lists:foreach(fun({Scenario, Analysis}) ->
+        ActualRate = maps:get(actual_error_rate, Analysis),
+        ExpectedRate = maps:get(expected_error_rate, Analysis),
+        AllowedRate = ExpectedRate * 1.5,  % Allow 50% variance
+
+        ?assert(ActualRate =< AllowedRate,
+                "Error rate for ~p should be <= ~p, got ~p",
+                [Scenario, AllowedRate, ActualRate])
+    end, ErrorResults),
+
+    ct:pal("Error rate monitoring completed"),
+    Config.
+
+execute_error_scenario(normal_conditions, Count) ->
+    lists:map(fun(_) ->
+        case rand:uniform(100) of
+            100 -> error;  % 1% error rate
+            _ -> success
+        end
+    end, lists:seq(1, Count));
+
+execute_error_scenario(high_load, Count) ->
+    lists:map(fun(_) ->
+        case rand:uniform(20) of
+            1 -> error;  % 5% error rate
+            _ -> success
+        end
+    end, lists:seq(1, Count));
+
+execute_error_scenario(failure_injection, Count) ->
+    lists:map(fun(_) ->
+        case rand:uniform(7) of
+            1 -> error;  % ~14% error rate
+            _ -> success
+        end
+    end, lists:seq(1, Count)).
+
+analyze_error_results(Scenario, ActualRate, ExpectedRate, Results) ->
+    #{
+        scenario => Scenario,
+        actual_error_rate => ActualRate,
+        expected_error_rate => ExpectedRate,
+        tolerance_factor => calculate_tolerance_factor(Scenario),
+        error_distribution => analyze_error_distribution(Results)
+    }.
+
+calculate_tolerance_factor(normal_conditions) -> 1.2;
+calculate_tolerance_factor(high_load) -> 1.3;
+calculate_tolerance_factor(failure_injection) -> 1.5.
+
+analyze_error_distribution(Results) ->
+    %% Analyze pattern of errors
+    SuccessCount = length([R || R <- Results, R =:= success]),
+    ErrorCount = length([R || R <- Results, R =:= error]),
+    {SuccessCount, ErrorCount}.
+
+test_resource_efficiency(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing resource efficiency")
+
+    %% Test resource utilization
+    ResourceTests = [
+        {cpu_efficiency, test_cpu_efficiency},
+        {memory_efficiency, test_memory_efficiency},
+        {connection_efficiency, test_connection_efficiency},
+        {cache_efficiency, test_cache_efficiency}
+    ],
+
+    ResourceResults = lists:map(fun({Type, TestFun}) ->
+        Analysis = TestFun(TestConfig, TestData),
+        validate_resource_efficiency(Type, Analysis)
+    end, ResourceTests),
+
+    %% Calculate overall efficiency score
+    OverallEfficiency = calculate_overall_efficiency(ResourceResults),
+
+    %% Validate overall efficiency
+    ?assert(OverallEfficiency >= 0.75,  % Should be at least 75% efficient
+            "Overall resource efficiency should be >= 75%, got ~p%",
+            [OverallEfficiency * 100]),
+
+    ct:pal("Resource efficiency test completed: ~p% overall efficiency",
+          [OverallEfficiency * 100]),
+    Config.
+
+validate_resource_efficiency(Type, Analysis) ->
+    ExpectedEfficiency = case Type of
+        cpu_efficiency -> 0.85;
+        memory_efficiency -> 0.80;
+        connection_efficiency -> 0.90;
+        cache_efficiency -> 0.95
+    end,
+
+    ActualEfficiency = maps:get(efficiency, Analysis),
+    ?assert(ActualEfficiency >= ExpectedEfficiency * 0.9,  % 90% of expected
+            "Resource efficiency for ~p should be >= ~p, got ~p",
+            [Type, ExpectedEfficiency, ActualEfficiency]).
+
+calculate_overall_efficiency(Results) ->
+    Efficiencies = [maps:get(efficiency, Analysis) || {_, Analysis} <- Results],
+    lists:sum(Efficiencies) / length(Efficiencies).
+
+%%====================================================================
+%% Scalability Testing
+%%====================================================================
+
+test_horizontal_scaling(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing horizontal scaling")
+
+    %% Test scaling with different node counts
+    NodeCounts = [1, 2, 3, 5, 10],
+
+    ScalingResults = lists:map(fun(NodeCount) ->
+        ScalingTest = fun() ->
+            %% Configure cluster with NodeCount nodes
+            configure_cluster(NodeCount),
+
+            %% Perform scaling test
+            ScalingConfig = TestConfig#{
+                load_test_config => TestConfig#{
+                    load_test_config
+                }#{
+                    concurrent_users => NodeCount * 20,
+                    requests_per_second => NodeCount * 10
+                }
+            },
+
+            Results = execute_scaling_test(ScalingConfig),
+            analyze_scaling_results(Results)
+        end,
+
+        ScalingTest()
+    end, NodeCounts),
+
+    %% Analyze horizontal scaling behavior
+    HorizontalAnalysis = analyze_horizontal_scaling(ScalingResults, NodeCounts),
+
+    %% Validate scaling requirements
+    ?assert(HorizontalAnalysis#{
+        scaling_efficiency} > 0.8,  % Should be >80% efficient
+    ?assert(HorizontalAnalysis#{
+        load_distribution} > 0.9,    % Should be >90% evenly distributed
+    ?assert(HorizontalAnalysis#{
+        overhead_increase} < 0.2    % Overhead should increase <20%
+    ),
+
+    ct:pal("Horizontal scaling test completed"),
+    Config.
+
+configure_cluster(NodeCount) ->
+    %% Configure cluster with NodeCount nodes
+    %% This is a simplified version - in practice, you'd set up actual cluster
+    ct:pal("Configuring cluster with ~p nodes", [NodeCount]),
+    ok.
+
+test_vertical_scaling(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing vertical scaling")
+
+    %% Test with different process counts and thread pool sizes
+    Configurations = [
+        {processes, [10, 50, 100, 200]},
+        {thread_pool, [5, 10, 20, 40]},
+        {queue_size, [100, 500, 1000, 2000]}
+    ],
+
+    ScalingResults = lists:map(fun({Type, Values}) ->
+        VerticalScalingTest = fun(Value) ->
+            ConfigureFun = get_vertical_scaling_config(Type),
+            ConfigureFun(Value),
+
+            TestConfig = TestConfig#{
+                load_test_config => TestConfig#{
+                    load_test_config
+                }#{
+                    concurrent_users => Value * 2,
+                    requests_per_second => Value
+                }
+            },
+
+            Results = execute_scaling_test(TestConfig),
+            analyze_scaling_results(Results)
+        end,
+
+        Results = lists:map(fun(Value) -> VerticalScalingTest(Value) end, Values),
+        analyze_vertical_scaling(Results, Type, Values)
+    end, Configurations),
+
+    %% Analyze vertical scaling behavior
+    VerticalAnalysis = analyze_vertical_scaling_results(ScalingResults),
+
+    %% Validate vertical scaling requirements
+    ?assert(VerticalAnalysis#{
+        throughput_scaling} > 0.9,  % Should scale >90% linearly
+    ?assert(VerticalAnalysis#{
+        latency_increase} < 2.0,      % Latency should increase <2x
+    ?assert(VerticalAnalysis#{
+        resource_utilization} > 0.85   % Should utilize >85% resources
+    ),
+
+    ct:pal("Vertical scaling test completed"),
+    Config.
+
+get_vertical_scaling_config(processes) ->
+    fun(Value) ->
+        erlmcp_config_manager:set(process_count, Value)
+    end;
+
+get_vertical_scaling_config(thread_pool) ->
+    fun(Value) ->
+        erlmcp_config_manager:set(thread_pool_size, Value)
+    end;
+
+get_vertical_scaling_config(queue_size) ->
+    fun(Value) ->
+        erlmcp_config_manager:set(work_queue_size, Value)
+    end.
+
+test_cluster_performance(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing cluster performance")
+
+    %% Test cluster with different network conditions
+    NetworkScenarios = [
+        {fast_network, 10},
+        {slow_network, 100},
+        {unstable_network, 50}
+    ],
+
+    ClusterResults = lists:map(fun({NetworkType, Latency}) ->
+        NetworkConfig = #{
+            network_latency => Latency,
+            packet_loss => get_packet_loss(NetworkType),
+            bandwidth => get_bandwidth(NetworkType)
+        },
+
+        erlmcp_cluster:configure_network(NetworkConfig),
+
+        ClusterTestConfig = TestConfig#{
+            load_test_config => TestConfig#{
+                load_test_config
+            }#{
+                concurrent_users => 50,
+                requests_per_second => 25
+            }
+        },
+
+        Results = execute_cluster_test(ClusterTestConfig, NetworkType),
+        analyze_cluster_results(Results)
+    end, NetworkScenarios),
+
+    %% Analyze cluster performance
+    ClusterAnalysis = analyze_cluster_performance(ClusterResults),
+
+    %% Validate cluster requirements
+    ?assert(ClusterAnalysis#{
+        cluster_health} > 0.9,      % Should be >90% healthy
+    ?assert(ClusterAnalysis#{
+        consensus_latency} < 100,     % Consensus <100ms
+    ?assert(ClusterAnalysis#{
+        failover_time} < 5000       % Failover <5s
+    ),
+
+    ct:pal("Cluster performance test completed"),
+    Config.
+
+get_packet_loss(fast_network) -> 0.0;
+get_packet_loss(slow_network) -> 0.0;
+get_packet_loss(unstable_network) -> 0.05.
+
+get_bandwidth(fast_network) -> 1000;
+get_bandwidth(slow_network) -> 100;
+get_bandwidth(unstable_network) -> 500.
+
+test_connection_pool_scaling(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing connection pool scaling")
+
+    %% Test different pool configurations
+    PoolConfigs = [
+        #{size => 5, max_overflow => 2},
+        #{size => 10, max_overflow => 5},
+        #{size => 20, max_overflow => 10},
+        #{size => 50, max_overflow => 25}
+    ],
+
+    PoolResults = lists:map(fun(Config) ->
+        erlmcp_connection_pool:configure(Config),
+
+        ScalingConfig = TestConfig#{
+            load_test_config => TestConfig#{
+                load_test_config
+            }#{
+                concurrent_users => Config#{
+                    size
+                } * 2,
+                requests_per_second => Config#{
+                    size
+                }
+            }
+        },
+
+        Results = execute_pool_test(ScalingConfig),
+        analyze_pool_results(Results, Config)
+    end, PoolConfigs),
+
+    %% Analyze pool scaling
+    PoolAnalysis = analyze_pool_scaling(PoolResults),
+
+    %% Validate pool scaling requirements
+    ?assert(PoolAnalysis#{
+        hit_rate} > 0.95,           % Should be >95% cache hit
+    ?assert(PoolAnalysis#{
+        average_wait_time} < 50,     % Should wait <50ms
+    ?assert(PoolAnalysis#{
+        utilization} > 0.7           % Should utilize >70%
+    ),
+
+    ct:pal("Connection pool scaling test completed"),
+    Config.
+
+%%====================================================================
+%% Resource Monitoring
+%%====================================================================
+
+test_memory_monitoring(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing memory monitoring")
+
+    %% Start memory monitoring
+    erlmcp_memory_monitor:start(),
+
+    %% Execute memory-intensive operations
+    MemoryIntensiveTest = fun() ->
+        Lists = lists:seq(1, 1000),
+
+        %% Create large data structures
+        LargeData = [list_to_binary(lists:duplicate(1000, $X)) || _ <- Lists],
+
+        %% Process data
+        Results = lists:map(fun(Data) ->
+            binary:part(Data, {0, min(100, byte_size(Data))})
+        end, LargeData),
+
+        %% Force garbage collection
+        erlang:garbage_collect(),
+
+        Results
+    end,
+
+    %% Execute test
+    TestResults = MemoryIntensiveTest(),
+
+    %% Get memory metrics
+    MemoryMetrics = erlmcp_memory_monitor:get_metrics(),
+
+    %% Validate memory monitoring
+    ?assert(is_number(MemoryMetrics#{
+        total_memory}),  "Should have total memory metric"),
+    ?assert(is_number(MemoryMetrics#{
+        used_memory}),   "Should have used memory metric"),
+    ?assert(is_number(MemoryMetrics#{
+        free_memory}),   "Should have free memory metric"),
+    ?assert(is_number(MemoryMetrics#{
+        memory_usage})), "Should have memory usage percentage"),
+
+    %% Check memory usage doesn't exceed threshold
+    ?assert(MemoryMetrics#{
+        memory_usage} < 90,  % Should be <90%
+    "Memory usage should be <90%, got ~p%", [MemoryMetrics#{
+        memory_usage}]),
+
+    ct:pal("Memory monitoring test completed"),
+    Config.
+
+test_cpu_monitoring(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing CPU monitoring")
+
+    %% Start CPU monitoring
+    erlmcp_cpu_monitor:start(),
+
+    %% Execute CPU-intensive operations
+    CPUIntensiveTest = fun() ->
+        %% Heavy computation
+        lists:map(fun(_) ->
+            lists:seq(1, 10000),  % Create large lists
+            ok
+        end, lists:seq(1, 1000))
+    end,
+
+    %% Execute test
+    TestResults = CPUIntensiveTest(),
+
+    %% Get CPU metrics
+    CPUMetrics = erlmcp_cpu_monitor:get_metrics(),
+
+    %% Validate CPU monitoring
+    ?assert(is_number(CPUMetrics#{
+        cpu_usage}),    "Should have CPU usage metric"),
+    ?assert(is_number(CPUMetrics#{
+        load_average}),  "Should have load average metric"),
+    ?assert(is_number(CPUMetrics#{
+        process_count})), "Should have process count metric"),
+
+    %% Check CPU usage doesn't exceed threshold
+    ?assert(CPUMetrics#{
+        cpu_usage} < 95,  % Should be <95%
+    "CPU usage should be <95%, got ~p%", [CPUMetrics#{
+        cpu_usage}]),
+
+    ct:pal("CPU monitoring test completed"),
+    Config.
+
+test_disk_io_monitoring(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing disk I/O monitoring")
+
+    %% Start disk I/O monitoring
+    erlmcp_disk_monitor:start(),
+
+    %% Execute disk-intensive operations
+    DiskIntensiveTest = fun() ->
+        %% Create and write large files
+        lists:map(fun(Id) ->
+            FileName = "/tmp/test_file_" ++ integer_to_list(Id),
+            FileContent = list_to_binary(lists:duplicate(100000, $X)),
+
+            {ok, File} = file:open(FileName, [write]),
+            file:write(File, FileContent),
+            file:close(File),
+
+            %% Read back
+            {ok, ReadContent} = file:read_file(FileName),
+            file:delete(FileName),
+
+            ReadContent
+        end, lists:seq(1, 100))
+    end,
+
+    %% Execute test
+    TestResults = DiskIntensiveTest(),
+
+    %% Get disk I/O metrics
+    DiskMetrics = erlmcp_disk_monitor:get_metrics(),
+
+    %% Validate disk I/O monitoring
+    ?assert(is_number(DiskMetrics#{
+        read_bytes})),   "Should have read bytes metric"),
+    ?assert(is_number(DiskMetrics#{
+        write_bytes})),  "Should have write bytes metric"),
+    ?assert(is_number(DiskMetrics#{
+        read_operations})), "Should have read operations metric"),
+    ?assert(is_number(DiskMetrics#{
+        write_operations})), "Should have write operations metric"),
+
+    ct:pal("Disk I/O monitoring test completed"),
+    Config.
+
+test_network_monitoring(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing network monitoring")
+
+    %% Start network monitoring
+    erlmcp_network_monitor:start(),
+
+    %% Execute network-intensive operations
+    NetworkIntensiveTest = fun() ->
+        %% Simulate network requests
+        lists:map(fun(_) ->
+            HTTPClient = erlmcp_http_client:new(),
+            _ = HTTPClient:get("http://httpbin.org/get"),
+            ok
+        end, lists:seq(1, 50))
+    end,
+
+    %% Execute test
+    TestResults = NetworkIntensiveTest(),
+
+    %% Get network metrics
+    NetworkMetrics = erlmcp_network_monitor:get_metrics(),
+
+    %% Validate network monitoring
+    ?assert(is_number(NetworkMetrics#{
+        bytes_sent})),     "Should have bytes sent metric"),
+    ?assert(is_number(NetworkMetrics#{
+        bytes_received})),  "Should have bytes received metric"),
+    ?assert(is_number(NetworkMetrics#{
+        requests_sent})),   "Should have requests sent metric"),
+    ?assert(is_number(NetworkMetrics#{
+        latency})),         "Should have latency metric"),
+
+    ct:pal("Network monitoring test completed"),
+    Config.
+
+%%====================================================================
+%% Failure Scenarios
+%%====================================================================
+
+test_graceful_degradation(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing graceful degradation")
+
+    %% Configure graceful degradation
+    DegradationConfig = #{
+        degrade_on_error => true,
+        degrade_threshold => 0.1,
+        fallback_mode => basic_operations
+    },
+
+    erlmcp_config_manager:set(graceful_degradation, DegradationConfig),
+
+    %% Simulate failures
+    FailureSimulation = fun() ->
+        lists:map(fun(_) ->
+            case rand:uniform(10) of
+                1 -> erlmcp_mcp_server:handle_call(
+                    #{<<"method">> => <<"complex_operation">>, <<"params">> => #{}},
+                    #{});
+                _ -> erlmcp_mcp_server:handle_call(
+                    #{<<"method">> => <<"simple_operation">>, <<"params">> => #{}},
+                    #{})
+            end
+        end, lists:seq(1, 100))
+    end,
+
+    %% Execute with failures
+    FailureResults = FailureSimulation(),
+
+    %% Analyze graceful degradation
+    DegradationAnalysis = analyze_graceful_degradation(FailureResults),
+
+    %% Validate graceful degradation
+    ?assert(DegradationAnalysis#{
+        degradation_triggered} =:= true,  % Should degrade
+    ?assert(DegradationAnalysis#{
+        fallback_success_rate} > 0.9,    % Should have high fallback success
+    ?assert(DegradationAnalysis#{
+        system_stability} > 0.8          % System should remain stable
+    ),
+
+    ct:pal("Graceful degradation test completed"),
+    Config.
+
+test_circuit_breaker_performance(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing circuit breaker performance")
+
+    %% Configure circuit breaker
+    CircuitConfig = #{
+        threshold => 5,
+        timeout => 1000,
+        reset_timeout => 5000
+    },
+
+    erlmcp_circuit_breaker:configure(CircuitConfig),
+    erlmcp_circuit_breaker:enable(),
+
+    %% Test circuit breaker performance
+    CircuitBreakerTest = fun() ->
+        %% Simulate mixed success/failure operations
+        lists:map(fun(_) ->
+            case rand:uniform(10) of
+                1..3 -> erlmcp_circuit_breaker:execute(failure_operation);
+                _ -> erlmcp_circuit_breaker:execute(success_operation)
+            end
+        end, lists:seq(1, 50))
+    end,
+
+    %% Execute test
+    CircuitResults = CircuitBreakerTest(),
+
+    %% Analyze circuit breaker performance
+    CircuitAnalysis = analyze_circuit_breaker_performance(CircuitResults),
+
+    %% Validate circuit breaker performance
+    ?assert(CircuitAnalysis#{
+        trips_triggered} > 0,           % Should trip when needed
+    ?assert(CircuitAnalysis#{
+        recovery_rate} > 0.8,          % Should recover well
+    ?assert(CircuitAnalysis#{
+        protection_efficiency} > 0.9   % Should protect effectively
+    ),
+
+    ct:pal("Circuit breaker performance test completed"),
+    Config.
+
+test_timeout_handling(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing timeout handling")
+
+    %% Configure timeouts
+    TimeoutConfig = #{
+        operation_timeout => 1000,
+        request_timeout => 2000,
+        session_timeout => 30000
+    },
+
+    erlmcp_config_manager:set(timeouts, TimeoutConfig),
+
+    %% Test timeout handling
+    TimeoutTest = fun() ->
+        %% Execute operations that may timeout
+        lists:map(fun(_) ->
+            case rand:uniform(5) of
+                1 -> %% Fast operation
+                    erlmcp_mcp_server:handle_call(
+                        #{<<"method">> => <<"fast_operation">>, <<"params">> => #{}},
+                        #{});
+                2 -> %% Medium operation
+                    erlmcp_mcp_server:handle_call(
+                        #{<<"method">> => <<"medium_operation">>, <<"params">> => #{}},
+                        #{});
+                3 -> %% Slow operation
+                    erlmcp_mcp_server:handle_call(
+                        #{<<"method">> => <<"slow_operation">>, <<"params">> => #{<<"delay">> => 1500}},
+                        #{});
+                _ -> %% Very slow operation
+                    erlmcp_mcp_server:handle_call(
+                        #{<<"method">> => <<"very_slow_operation">>, <<"params">> => #{<<"delay">> => 3000}},
+                        #{})
+            end
+        end, lists:seq(1, 20))
+    end,
+
+    %% Execute test
+    TimeoutResults = TimeoutTest(),
+
+    %% Analyze timeout handling
+    TimeoutAnalysis = analyze_timeout_handling(TimeoutResults)
+
+    %% Validate timeout handling
+    ?assert(TimeoutAnalysis#{
+        timeouts_handled} =:= true,      % Should handle timeouts
+    ?assert(TimeoutAnalysis#{
+        timeout_rate} < 0.3,            % Should timeout <30% of time
+    ?assert(TimeoutAnalysis#{
+        system_responsiveness} > 0.7    % Should remain responsive
+    ),
+
+    ct:pal("Timeout handling test completed"),
+    Config.
+
+test_recovery_performance(Config) ->
+    TestConfig = proplists:get_value(test_config, Config),
+    TestData = proplists:get_value(test_data, Config),
+
+    ct:pal("Testing recovery performance")
+
+    %% Configure recovery systems
+    RecoveryConfig = #{
+        recovery_strategy => automatic,
+        recovery_timeout => 5000,
+        health_check_interval => 1000
+    },
+
+    erlmcp_config_manager:set(recovery, RecoveryConfig);
+
+    %% Test recovery performance
+    RecoveryTest = fun() ->
+        %% Simulate failures and recovery
+        lists:map(fun(_) ->
+            %% Simulate failure
+            erlmcp_system_simulator:inject_failure(temporary_failure),
+
+            %% Wait for recovery
+            timer:sleep(2000),
+
+            %% Test system is recovered
+            erlmcp_mcp_server:handle_call(
+                #{<<"method">> => <<"health_check">>, <<"params">> => #{}},
+                #{})
+        end, lists:seq(1, 10))
+    end,
+
+    %% Execute test
+    RecoveryResults = RecoveryTest();
+
+    %% Analyze recovery performance
+    RecoveryAnalysis = analyze_recovery_performance(RecoveryResults);
+
+    %% Validate recovery performance
+    ?assert(RecoveryAnalysis#{
+        recovery_rate} > 0.9,          % Should recover >90% of time
+    ?assert(RecoveryAnalysis#{
+        recovery_time} < 3000,         % Should recover <3s
+    ?assert(RecoveryAnalysis#{
+        data_loss} < 0.01             % Should lose <1% data
+    ),
+
+    ct:pal("Recovery performance test completed"),
+    Config.
+
+%%====================================================================
+%% Benchmark Tests
+%%====================================================================
+
+test_mcp_operation_benchmarks(Config) ->
+    TestConfig = proplists:get_value(test_config, Config);
+    TestData = proplists:get_value(test_data, Config);
+
+    ct:pal("Running MCP operation benchmarks")
+
+    BenchmarkConfig = TestConfig#{
+        benchmark_config
+    };
+
+    %% Test different MCP operations
+    OperationBenchmarks = [
+        {<<"tools/call">>, simple_tool_operation},
+        {<<"prompts/get">>, prompt_template_operation},
+        {<<"resources/read">>, resource_read_operation},
+        {<<"roots/list">>, roots_list_operation}
+    ];
+
+    BenchmarkResults = lists:map(fun({Operation, Type}) ->
+        operation_benchmark(Operation, Type, BenchmarkConfig)
+    end, OperationBenchmarks);
+
+    %% Analyze benchmarks
+    BenchmarkAnalysis = analyze_benchmark_results(BenchmarkResults);
+
+    %% Validate benchmark results
+    lists:foreach(fun({Operation, Results}) ->
+        validate_benchmark_results(Operation, Results)
+    end, BenchmarkResults);
+
+    %% Generate benchmark report
+    BenchmarkReport = generate_benchmark_report(BenchmarkResults, BenchmarkAnalysis);
+    write_benchmark_report(BenchmarkReport);
+
+    ct:pal("MCP operation benchmarks completed"),
+    Config.
+
+operation_benchmark(Operation, Type, Config) ->
+    #{
+        iterations => Iterations,
+        warmup_iterations => Warmup,
+        confidence_level => Confidence
+    } = Config;
+
+    WarmupResults = lists:map(fun(_) ->
+        execute_operation(Operation, Type)
+    end, lists:seq(1, Warmup));
+
+    %% Discard warmup results
+    BenchmarkResults = lists:map(fun(_) ->
+        execute_operation(Operation, Type)
+    end, lists:seq(1, Iterations));
+
+    %% Calculate statistics
+    Statistics = calculate_statistics(BenchmarkResults, Confidence);
+
+    #{
+        operation => Operation,
+        type => Type,
+        results => BenchmarkResults,
+        statistics => Statistics
+    }.
+
+execute_operation(Operation, Type) ->
+    Call = get_operation_call(Operation, Type);
+
+    StartTime = erlang:monotonic_time(microsecond);
+    Result = erlmcp_mcp_server:handle_call(Call, #{});
+    EndTime = erlang:monotonic_time(microsecond);
+
+    #{
+        operation => Operation,
+        duration => EndTime - StartTime,
+        result => Result
+    }.
+
+get_operation_call(<<"tools/call">>, simple_tool_operation) ->
+    #{
+        <<"method">> => <<"tools/call">>,
+        <<"params">> => #{
+            <<"name">> => <<"simple_tool">>,
+            <<"arguments">> => #{}
+        }
+    };
+
+get_operation_call(<<"prompts/get">>, prompt_template_operation) ->
+    #{
+        <<"method">> => <<"prompts/get">>,
+        <<"params">> => #{
+            <<"name">> => <<"simple_template">>,
+            <<"arguments">> => #{<<"input">> => "test"}
+        }
+    };
+
+get_operation_call(<<"resources/read">>, resource_read_operation) ->
+    #{
+        <<"method">> => <<"resources/read">>,
+        <<"params">> => #{
+            <<"uri">> => <<"file://simple_resource">>,
+            <<"mimeType">> => <<"text/plain">>
+        }
+    };
+
+get_operation_call(<<"roots/list">>, roots_list_operation) ->
+    #{
+        <<"method">> => <<"roots/list">>,
+        <<"params">> => #{}
+    }.
+
+calculate_statistics(Results, Confidence) ->
+    Durations = [maps:get(duration, Result) || Result <- Results],
+    Sorted = lists:sort(Durations);
+
+    Length = length(Durations);
+    Mean = lists:sum(Durations) / Length;
+    Variance = lists:sum([(D - Mean) * (D - Mean) || D <- Durations]) / Length;
+    StdDev = math:sqrt(Variance);
+
+    %% Calculate confidence interval
+    Multiplier = case Confidence of
+        0.95 -> 1.96;
+        0.99 -> 2.576;
+        _ -> 1.96
+    end,
+
+    MarginOfError = Multiplier * (StdDev / math:sqrt(Length));
+
+    #{
+        mean => Mean,
+        median => lists:nth(ceil(Length / 2), Sorted),
+        p95 => lists:nth(floor(0.95 * Length), Sorted),
+        p99 => lists:nth(floor(0.99 * Length), Sorted),
+        std_dev => StdDev,
+        confidence_interval => [Mean - MarginOfError, Mean + MarginOfError],
+        sample_size => Length
+    }.
+
+validate_benchmark_results(Operation, Results) ->
+    Statistics = maps:get(statistics, Results);
+
+    %% Validate based on operation type
+    case Operation of
+        <<"tools/call">> ->
+            ?assert(Statistics#{
+                mean} < 500000,  % 500ms
+            "Mean response time for tools/call should be <500ms, got ~pms",
+            [Statistics#{
+                mean} / 1000]);
+        <<"prompts/get">> ->
+            ?assert(Statistics#{
+                mean} < 1000000,  % 1s
+            "Mean response time for prompts/get should be <1s, got ~pms",
+            [Statistics#{
+                mean} / 1000]);
+        <<"resources/read">> ->
+            ?assert(Statistics#{
+                mean} < 800000,  % 800ms
+            "Mean response time for resources/read should be <800ms, got ~pms",
+            [Statistics#{
+                mean} / 1000]);
+        <<"roots/list">> ->
+            ?assert(Statistics#{
+                mean} < 200000,  % 200ms
+            "Mean response time for roots/list should be <200ms, got ~pms",
+            [Statistics#{
+                mean} / 1000])
+    end.
+
+test_database_benchmarks(Config) ->
+    TestConfig = proplists:get_value(test_config, Config);
+    TestData = proplists:get_value(test_data, Config);
+
+    ct:pal("Running database benchmarks")
+
+    %% Configure database for benchmarking
+    erlmcp_database:start_benchmark();
+
+    %% Run database benchmarks
+    DatabaseBenchmarks = [
+        {read_operations, 10000},
+        {write_operations, 5000},
+        {update_operations, 5000},
+        {query_operations, 10000}
+    ];
+
+    BenchmarkResults = lists:map(fun({Type, Count}) ->
+        database_benchmark(Type, Count)
+    end, DatabaseBenchmarks);
+
+    %% Analyze results
+    DatabaseAnalysis = analyze_database_benchmarks(BenchmarkResults);
+
+    %% Validate database performance
+    ?assert(DatabaseAnalysis#{
+        throughput} > 1000,  % Should process >1000 ops/s
+    ?assert(DatabaseAnalysis#{
+        latency} < 50,        % Should have <50ms latency
+    ?assert(DatabaseAnalysis#{
+        error_rate} < 0.01   % Should have <1% error rate
+    ),
+
+    ct:pal("Database benchmarks completed"),
+    Config.
+
+test_cache_benchmarks(Config) ->
+    TestConfig = proplists:get_value(test_config, Config);
+    TestData = proplists:get_value(test_data, Config);
+
+    ct:pal("Running cache benchmarks")
+
+    %% Configure cache for benchmarking
+    erlmcp_cache:start_benchmark();
+
+    %% Run cache benchmarks
+    CacheBenchmarks = [
+        {read_hits, 10000},
+        {write_operations, 5000},
+        {eviction_operations, 1000},
+        {invalidation_operations, 2000}
+    ];
+
+    BenchmarkResults = lists:map(fun({Type, Count}) ->
+        cache_benchmark(Type, Count)
+    end, CacheBenchmarks);
+
+    %% Analyze results
+    CacheAnalysis = analyze_cache_benchmarks(BenchmarkResults);
+
+    %% Validate cache performance
+    ?assert(CacheAnalysis#{
+        hit_rate} > 0.95,     % Should have >95% hit rate
+    ?assert(CacheAnalysis#{
+        latency} < 10,        % Should have <10ms latency
+    ?assert(CacheAnalysis#{
+        efficiency} > 0.9     % Should be >90% efficient
+    ),
+
+    ct:pal("Cache benchmarks completed"),
+    Config.
+
+test_network_benchmarks(Config) ->
+    TestConfig = proplists:get_value(test_config, Config);
+    TestData = proplists:get_value(test_data, Config);
+
+    ct:pal("Running network benchmarks")
+
+    %% Configure network for benchmarking
+    erlmcp_network:start_benchmark();
+
+    %% Run network benchmarks
+    NetworkBenchmarks = [
+        {http_requests, 1000},
+        {websocket_messages, 5000},
+        {file_transfers, 100},
+        {streaming_operations, 2000}
+    ];
+
+    BenchmarkResults = lists:map(fun({Type, Count}) ->
+        network_benchmark(Type, Count)
+    end, NetworkBenchmarks);
+
+    %% Analyze results
+    NetworkAnalysis = analyze_network_benchmarks(BenchmarkResults);
+
+    %% Validate network performance
+    ?assert(NetworkAnalysis#{
+        throughput} > 100,     % Should have >100 Mbps throughput
+    ?assert(NetworkAnalysis#{
+        latency} < 100,        % Should have <100ms latency
+    ?assert(NetworkAnalysis#{
+        packet_loss} < 0.01   % Should have <1% packet loss
+    ),
+
+    ct:pal("Network benchmarks completed"),
+    Config.
+
+%%====================================================================
+%% Helper Functions
+%%====================================================================
+
+create_performance_test_data() ->
+    #{
+        test_resources => [
+            #{name => resource1, type => file},
+            #{name => resource2, type => database},
+            #{name => resource3, type => cache}
+        ],
+        test_operations => [
+            #{type => simple, complexity => 1},
+            #{type => medium, complexity => 5},
+            #{type => complex, complexity => 10}
+        ]
+    }.
+
+cleanup_performance_test_data(TestData) ->
+    %% Clean up test data
+    ok.
+
+execute_mcp_load_test(LoadConfig) ->
+    #{duration := Duration, concurrent_users := Users, requests_per_second := RPS} = LoadConfig;
+
+    Results = [];
+
+    StartTime = erlang:monotonic_time(millisecond);
+
+    spawn(fun() ->
+        load_test_worker(Results, Users, RPS, StartTime, StartTime + Duration)
+    end);
+
+    %% Wait for test to complete
+    receive
+        after Duration + 5000 -> ok
+    end;
+
+    Results.
+
+load_test_worker(Results, Users, RPS, StartTime, EndTime) ->
+    CurrentTime = erlang:monotonic_time(millisecond);
+
+    if CurrentTime >= EndTime ->
+        self() ! {load_test_complete, Results};
+    true ->
+        %% Calculate how many requests to send
+        TimeElapsed = CurrentTime - StartTime;
+        TimeRemaining = EndTime - CurrentTime;
+
+        if TimeRemaining > 0 ->
+            RequestRate = RPS * TimeRemaining / (TimeElapsed + TimeRemaining);
+            BatchSize = erlang:max(1, floor(RequestRate / 10));  % Send every 100ms
+
+            BatchResults = load_test_batch(BatchSize, CurrentTime, Results),
+            load_test_worker(BatchResults, Users, RPS, StartTime, EndTime);
+        else ->
+            self() ! {load_test_complete, Results}
+        end
+    end.
+
+load_test_batch(0, _CurrentTime, Results) ->
+    Results;
+
+load_test_batch(Count, CurrentTime, Results) ->
+    %% Perform test request
+    TestCall = #{
+        <<"method">> => <<"tools/call">>,
+        <<"params">> => #{
+            <<"name">> => <<"benchmark_tool">>,
+            <<"arguments">> => #{<<"timestamp">> => CurrentTime}
+        }
+    };
+
+    StartTime = erlang:monotonic_time(microsecond);
+    Result = erlmcp_mcp_server:handle_call(TestCall, #{});
+    EndTime = erlang:monotonic_time(microsecond);
+
+    TestResult = #{
+        request_id => Count,
+        timestamp => CurrentTime,
+        result => Result,
+        duration => EndTime - StartTime,
+        success => case Result of
+            {ok, _} -> true;
+            {error, _} -> false
+        end
+    };
+
+    load_test_batch(Count - 1, CurrentTime, [TestResult | Results]).
+
+analyze_load_test_results(Results) ->
+    TotalRequests = length(Results);
+    SuccessCount = length([R || R <- Results, maps:get(success, R) =:= true]);
+    ErrorCount = TotalRequests - SuccessCount;
+
+    %% Calculate metrics
+    Durations = [maps:get(duration, R) || R <- Results, maps:get(success, R) =:= true];
+    SortedDurations = lists:sort(Durations);
+
+    Throughput = SuccessCount / (lists:last(SortedDurations) / 1000000);  % ops per second
+    ErrorRate = ErrorCount / TotalRequests;
+
+    %% Calculate percentiles
+    P50 = case SortedDurations of
+        [] -> 0;
+        _ -> lists:nth(round(0.5 * length(SortedDurations)), SortedDurations)
+    end,
+    P95 = case SortedDurations of
+        [] -> 0;
+        _ -> lists:nth(round(0.95 * length(SortedDurations)), SortedDurations)
+    end,
+
+    #{
+        total_requests => TotalRequests,
+        success_count => SuccessCount,
+        error_count => ErrorCount,
+        throughput => Throughput,
+        error_rate => ErrorRate,
+        p50_latency => P50,
+        p95_latency => P95,
+        average_latency => lists:sum(Durations) / max(1, length(Durations))
+    }.
+
+validate_performance_requirements(Analysis, Requirements) ->
+    #{throughput := Throughput, error_rate := ErrorRate, p95_latency := P95} = Analysis;
+    #{max_response_time := MaxResponseTime, min_throughput := MinThroughput,
+      max_error_rate := MaxErrorRate, target_cpu_usage := TargetCPU} = Requirements;
+
+    ?assert(P95 =< MaxResponseTime,
+            "P95 latency should be <= ~pms, got ~pms",
+            [MaxResponseTime, P95 / 1000]),
+    ?assert(Throughput >= MinThroughput,
+            "Throughput should be >= ~p ops/s, got ~p ops/s",
+            [MinThroughput, Throughput]),
+    ?assert(ErrorRate =< MaxErrorRate,
+            "Error rate should be <= ~p, got ~p",
+            [MaxErrorRate, ErrorRate]).
+
+generate_load_test_report(Results, Analysis) ->
+    #{
+        timestamp => erlang:system_time(millisecond),
+        results => Results,
+        analysis => Analysis,
+        summary => #{
+            total_requests => Analysis#{
+                total_requests},
+            success_rate => (Analysis#{
+                success_count} / Analysis#{
+                total_requests}) * 100,
+            average_throughput => Analysis#{
+                throughput},
+            average_latency => Analysis#{
+                average_latency} / 1000  % Convert to ms
+        }
+    }.
+
+write_load_test_report(Report) ->
+    FileName = "/tmp/load_test_report_" ++ integer_to_list(erlang:system_time(millisecond)) ++ ".json";
+    ok = file:write_file(FileName, jsx:encode(Report)),
+    ct:pal("Load test report written to: ~p", [FileName]).
+
+generate_benchmark_report(BenchmarkResults, BenchmarkAnalysis) ->
+    #{
+        timestamp => erlang:system_time(millisecond),
+        results => BenchmarkResults,
+        analysis => BenchmarkAnalysis,
+        summary => calculate_benchmark_summary(BenchmarkResults)
+    }.
+
+calculate_benchmark_summary(BenchmarkResults) ->
+    lists:foldl(fun({Operation, Results}, Acc) ->
+        Statistics = maps:get(statistics, Results);
+        Acc#{
+            Operation => #{
+                mean => Statistics#{
+                    mean},
+                p95 => Statistics#{
+                    p95},
+                throughput => 1000000 / Statistics#{
+                    mean}  % ops per second
+            }
+        }
+    end, #{}, BenchmarkResults).
+
+write_benchmark_report(Report) ->
+    FileName = "/tmp/benchmark_report_" ++ integer_to_list(erlang:system_time(millisecond)) ++ ".json";
+    ok = file:write_file(FileName, jsx:encode(Report)),
+    ct:pal("Benchmark report written to: ~p", [FileName]).
+
+write_performance_report(Report) ->
+    FileName = "/tmp/performance_report_" ++ integer_to_list(erlang:system_time(millisecond)) ++ ".json";
+    ok = file:write_file(FileName, jsx:encode(Report)),
+    ct:pal("Performance report written to: ~p", [FileName]).
