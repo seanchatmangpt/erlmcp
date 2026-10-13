@@ -8,7 +8,8 @@
          acknowledge/2,
          nack/2, nack/3,
          get_stats/1,
-         stop/1]).
+         stop/1,
+         priority_key/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -88,12 +89,19 @@
 -spec start_link(queue_name()) -> {ok, pid()} | {error, term()}.
 start_link(Name) when is_binary(Name) ->
     Config = default_config(),
-    gen_server:start_link(?MODULE, [Name, Config], []).
+    gen_server:start_link(?MODULE, [Name, Config], hibernate_options()).
 
 %% @doc Start a message queue with custom configuration.
 -spec start_link(queue_name(), queue_config()) -> {ok, pid()} | {error, term()}.
 start_link(Name, Config) when is_binary(Name), is_map(Config) ->
-    gen_server:start_link(?MODULE, [Name, Config], []).
+    gen_server:start_link(?MODULE, [Name, Config], hibernate_options()).
+
+%% @doc Server start options. `{hibernate_after, Ms}' is a gen_server start
+%% option (gen:hibernate_after/1); it is NOT a valid init/1 return value, so it
+%% must be passed here rather than returned from init/1.
+-spec hibernate_options() -> [gen:start_opt()].
+hibernate_options() ->
+    [{hibernate_after, ?HIBERNATE_AFTER_MS}].
 
 %% @doc Enqueue a message with default priority (5).
 -spec enqueue(pid(), payload()) -> {ok, message_id()} | {error, term()}.
@@ -184,7 +192,7 @@ init([Name, Config]) ->
     ?LOG_INFO("Message queue ~p started (backend=~p, max_size=~p)",
               [Name, StorageBackend, MaxSize]),
 
-    {ok, State, {hibernate_after, ?HIBERNATE_AFTER_MS}}.
+    {ok, State}.
 
 handle_call({enqueue, Payload, Priority}, _From, State) ->
     #state{
@@ -355,15 +363,14 @@ handle_cast(_Msg, State) ->
 handle_info(ack_timeout_check, State) ->
     #state{
         delivered = Delivered,
-        config = Config,
-        stats = Stats
+        config = Config
     } = State,
 
     AckTimeoutMs = maps_get_safe(ack_timeout_ms, Config, ?DEFAULT_ACK_TIMEOUT_MS),
     Now = erlang:system_time(millisecond),
 
     %% Check for timed out deliveries
-    {TimeoutDeliveries, ActiveDeliveries} =
+    {TimeoutDeliveries, _ActiveDeliveries} =
         maps:fold(fun(_MessageId, Delivery, {TimeoutAcc, ActiveAcc}) ->
             DeliveredAt = maps_get_safe(delivered_at, Delivery, 0),
             case Now - DeliveredAt >= AckTimeoutMs of
@@ -437,15 +444,21 @@ queue_table_name(Name) ->
     binary_to_atom(BinaryName, utf8).
 
 %% @doc Insert message into queue (priority-aware for ETS).
+%%
+%% Priority is carried by an ETS ordered_set key, since the stdlib queue
+%% module has no priority API on any OTP release including OTP 28 (verified:
+%% stdlib-7.2 queue.erl contains no priority functions). The key is
+%% {10 - Priority, Milliseconds, UniqueInteger}: higher priority first
+%% (inverted), then FIFO by insertion time, disambiguated by a monotonic
+%% unique integer so two same-priority messages in the same millisecond can
+%% never collide and overwrite each other on the ordered_set table.
 -spec insert_message(message(), queue:queue(message()) | ets:tid(), priority(), state()) ->
     queue:queue(message()) | ets:tid().
 insert_message(Message, PendingQueue, _Priority, #state{storage_backend = memory}) ->
-    %% Simple FIFO for in-memory (queue module doesn't support priority)
+    %% In-memory backend is FIFO by design (see priority_key/2 for the ETS case)
     queue:in(Message, PendingQueue);
 insert_message(Message, PendingQueue, Priority, #state{storage_backend = ets}) ->
-    %% Priority-based insert for ETS (use key = {Priority, Timestamp})
-    Now = erlang:system_time(millisecond),
-    Key = {10 - Priority, Now},  % Invert priority so higher = first
+    Key = priority_key(Priority),
     ets:insert(PendingQueue, {Key, Message}),
     PendingQueue.
 
@@ -456,10 +469,15 @@ insert_message_simple(Message, PendingQueue, #state{storage_backend = memory}) -
     queue:in(Message, PendingQueue);
 insert_message_simple(Message, PendingQueue, #state{storage_backend = ets}) ->
     Priority = maps_get_safe(priority, Message, 5),
-    Now = erlang:system_time(millisecond),
-    Key = {10 - Priority, Now},
+    Key = priority_key(Priority),
     ets:insert(PendingQueue, {Key, Message}),
     PendingQueue.
+
+%% @doc Collision-free ordered key for the ETS priority queue.
+-spec priority_key(priority()) -> {1..10, integer(), pos_integer()}.
+priority_key(Priority) ->
+    {10 - Priority, erlang:system_time(millisecond),
+     erlang:unique_integer([monotonic, positive])}.
 
 %% @doc Pop message from queue.
 -spec pop_message(queue:queue(message()) | ets:tid(), state()) ->
@@ -510,7 +528,7 @@ handle_nack_internal(Delivery, Requeue, State) ->
     #state{
         pending_queue = PendingQueue,
         delivered = Delivered,
-        config = Config,
+        config = _Config,
         stats = Stats
     } = State,
 
@@ -561,4 +579,6 @@ maps_get_safe(Key, Map, Default) ->
 -spec generate_message_id() -> message_id().
 generate_message_id() ->
     UniqueInt = erlang:unique_integer([positive]),
-    <<UniqueInt:64/integer-unsigned-little, (erlang:timestamp()):64/integer-unsigned-little>>.
+    %% erlang:timestamp()/0 returns a 3-tuple and cannot be embedded as a
+    %% 64-bit integer field; use system_time in nanoseconds instead.
+    <<UniqueInt:64/integer-unsigned-little, (erlang:system_time(nanosecond)):64/integer-unsigned-little>>.
